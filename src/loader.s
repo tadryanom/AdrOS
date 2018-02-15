@@ -19,14 +19,14 @@ loader:                         ; ponto de entrada para o kernel definido no lin
     xor eax, eax                ; zera registro eax
     mov ah, 0xC4                ; define cores de fundo da tela e para os caracteres
                                 ; aqui eu usei vermelho para o fundo e vermelho claro para os caracteres
-    mov esi, wcmsg              ; carrega o endereço onde se incia a string no registrador esi
+    mov esi, wcmsg              ; carrega o endereco onde se incia a string no registrador esi
 
 .repeat:                        ; label para repeticao ate o fim da string
     lodsb                       ; carrega os proximos bytes da string no registrador al
-                                ; avança 1 byte toda vez que essa intrucao eh executada
+                                ; avanca 1 byte toda vez que essa intrucao eh executada
     or al, al                   ; compara o registrador al com 0 (zero eh usado para indicar fim da string)
-    jz .loop                    ; se for igual a 0, entao pula para a label .loop, se não, vai para a prox. instrucao
-    mov [ebx], eax              ; coloca os dados no endereço de memoria apontado por ebx
+    jz .loop                    ; se for igual a 0, entao pula para a label .loop, se nao, vai para a prox. instrucao
+    mov [ebx], eax              ; coloca os dados no endereco de memoria apontado por ebx
                                 ; (no caso, o endereco da memoria de video, carregado em ebx anteriormente)
     add ebx, 0x2                ; incrementa o registrador ebx (indica avanco para o proximo byte da memoria de video,
                                 ; aqui, eh onde eu faco colocar o proximo caracter da string mais a direita na tela)
@@ -35,7 +35,7 @@ loader:                         ; ponto de entrada para o kernel definido no lin
 .loop:                          ; label para o loop eterno
     cli                         ; desativa todas a interrupcoes de hardware
     jmp .loop                   ; bom, aqui o kernel permanece em um loop eterno
-                                ; irei futuramente chamar a função kmain() para o kernel fazer outras coisas
+                                ; irei futuramente chamar a funcao kmain() para o kernel fazer outras coisas
 
 section .bss                    ; inicio da secao de dados nao inicializados
 align 4                         ; alinha em 4 bytes
