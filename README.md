@@ -1,5 +1,5 @@
 # AdrOS
-*Operating System Unix-like based.
+*** Operating System Unix-like based. ***
 
 O AdrOs é um kernel baseado em Unix, no momento ele está no início de sua implementacão, ele apenas imprime uma mensagem na tela, por enquanto, não faz muita coisa além disso.
 
