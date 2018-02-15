@@ -2,7 +2,7 @@ MAGIC_NUMBER equ 0x1BADB002     ; define o numero magico para o GRUB
 FLAGS        equ 0x0            ; GRUB multiboot flags
 CHECKSUM     equ -MAGIC_NUMBER  ; calcula o checksum
                                 ; (numero magico + checksum + GRUB flags igual a 0)
-KERNEL_STACK_SIZE equ 4096      ; tamanho da pilha em bytes
+KERNEL_STACK_SIZE equ 4096      ; tamanho da pilha (stack) em bytes
 
 global loader                   ; declaracao global para o ponto de entrada do ELF do kernel
 
