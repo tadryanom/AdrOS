@@ -13,7 +13,7 @@ align 4                         ; alinha codigo em 4 bytes
     dd CHECKSUM                 ; e tambem o checksum
 
 loader:                         ; ponto de entrada para o kernel definido no linker script)
-    mov esp, kernel_stack + KERNEL_STACK_SIZE   ; aponta em no registrador esp o inicio da pilha (stack)
+    mov esp, kernel_stack + KERNEL_STACK_SIZE   ; aponta no registrador esp o inicio da pilha (stack)
                                 ; (stack) (fim da area de memoria)
     mov ebx, 0x000B8000         ; carrega no resgistrador ebx o endereco da memoria de video
     xor eax, eax                ; zera registro eax
