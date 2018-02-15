@@ -13,7 +13,7 @@ align 4                         ; alinha em 4 bytes
     dd CHECKSUM                 ; e tambem o checksum
 
 loader:                         ; ponto de entrada para o kernel definido no linker script)
-    mov esp, kernel_stack + KERNEL_STACK_SIZE   ; aponta no registrador esp o inicio da pilha (stack)
+    mov esp, kernel_stack + KERNEL_STACK_SIZE ; aponta no registrador esp o inicio da pilha (stack)
                                 ; e o fim da area de memoria
     mov ebx, 0x000B8000         ; carrega no resgistrador ebx o endereco da memoria de video
     xor eax, eax                ; zera registro eax
@@ -26,8 +26,8 @@ loader:                         ; ponto de entrada para o kernel definido no lin
                                 ; avanca 1 byte toda vez que essa intrucao eh executada
     or al, al                   ; compara o registrador al com 0 (zero eh usado para indicar fim da string)
     jz .loop                    ; se for igual a 0, entao pula para a label .loop, se nao, vai para a prox. instrucao
-    mov [ebx], eax              ; coloca os dados no endereco de memoria apontado por ebx
-                                ; (no caso, o endereco da memoria de video, carregado em ebx anteriormente)
+    mov [ebx], eax              ; coloca os dados respectivos dos caracteres e suas cores no endereco de memoria
+                                ; apontado por ebx (no caso, o endereco da memoria de video, carregado em ebx anteriormente)
     add ebx, 0x2                ; incrementa o registrador ebx (indica avanco para o proximo byte da memoria de video,
                                 ; aqui, eh onde eu faco colocar o proximo caracter da string mais a direita na tela)
     jmp .repeat                 ; repete ate chegar o final da string
