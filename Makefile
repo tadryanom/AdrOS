@@ -5,7 +5,6 @@ CFLAGS = -m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector \
 LDFLAGS = -T scripts/link.ld -melf_i386
 AS = nasm
 ASFLAGS = -f elf
-#ASFLAGS = -f elf -l debug/loader.asm
 
 all: kernel.elf
 
