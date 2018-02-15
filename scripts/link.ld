@@ -1,7 +1,7 @@
 ENTRY(loader)                /* define a label para o ponto de entrada do kernel*/
 
 SECTIONS {
-    . = 0x00100000;          /* aqui diz onde o codigo do kernel será caregado na memoria, no caso, a cima de 1 MB */
+    . = 0x00100000;          /* aqui diz onde o codigo do kernel sera caregado na memoria, no caso, a cima de 1 MB */
 
     .text ALIGN (0x1000) :   /* alinha em 4 KB */
     {
