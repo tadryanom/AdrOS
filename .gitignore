@@ -1,0 +1,8 @@
+#arquivos objetos compilados
+*.o
+
+#arquivos compilados
+*.elf
+
+#imagens de disco
+*.iso
