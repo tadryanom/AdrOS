@@ -6,6 +6,7 @@ LD = ld
 LDFLAGS = -T scripts/link.ld -melf_i386
 AS = nasm
 ASFLAGS = -f elf
+QEMU = qemu-system-i386
 
 all: kernel.elf
 
@@ -26,7 +27,7 @@ adros.iso: kernel.elf
 	iso
 
 run: adros.iso
-	qemu-system-i386 -monitor stdio -m 32 -cdrom iso/adros.iso
+	$(QEMU) -monitor stdio -m 32 -cdrom iso/adros.iso
 
 %.o: %.c
 	$(CC) $(CFLAGS)  $< -o $@
