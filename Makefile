@@ -2,6 +2,7 @@ OBJECTS = src/loader.o src/kmain.o
 CC = gcc
 CFLAGS = -m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector \
 	-nostartfiles -nodefaultlibs -Wall -Wextra -Werror -c
+LD = ld
 LDFLAGS = -T scripts/link.ld -melf_i386
 AS = nasm
 ASFLAGS = -f elf
@@ -9,7 +10,7 @@ ASFLAGS = -f elf
 all: kernel.elf
 
 kernel.elf: $(OBJECTS)
-	ld $(LDFLAGS) $(OBJECTS) -o bin/kernel.elf
+	$(LD) $(LDFLAGS) $(OBJECTS) -o bin/kernel.elf
 
 adros.iso: kernel.elf
 	cp bin/kernel.elf iso/boot/kernel.elf
