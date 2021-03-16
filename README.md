@@ -28,3 +28,7 @@ Todo o projeto está sendo desenvolvido e compilado em Linux. Para compilar em W
 Thanks!
 
 
+TODO:
+
+- Construir um gerenciador de memoria
+
