@@ -31,4 +31,4 @@ Thanks!
 TODO:
 
 - Construir um gerenciador de memoria
-
+- Obter argumentos passados pelo bootloader
