@@ -5,10 +5,10 @@ MULTIBOOT_HEADER_MAGIC equ 0x1BADB002
 MULTIBOOT_HEADER_FLAGS equ MULTIBOOT_PAGE_ALIGN | MULTIBOOT_MEMORY_INFO | MULTIBOOT_VIDEO_MODE
 MULTIBOOT_CHECKSUM     equ -(MULTIBOOT_HEADER_MAGIC + MULTIBOOT_HEADER_FLAGS)
 
-VIDEO_MODE             equ 0x0   ; graphical
-VIDEO_WIDTH            equ 0x400 ; 1024
-VIDEO_HEIGHT           equ 0x300 ;  768
-VIDEO_DEPTH            equ 0x30  ;   32
+VIDEO_MODE             equ 0x1  ; 0 - graphical, 1 - text
+VIDEO_WIDTH            equ 0x50 ; 80
+VIDEO_HEIGHT           equ 0x19 ; 25
+VIDEO_DEPTH            equ 0x0  ;  0
 
 KERNEL_STACK_SIZE      equ 0x4000 ; Stack size in bytes
 

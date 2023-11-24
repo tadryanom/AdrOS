@@ -17,14 +17,12 @@ static int xpos;
 static int ypos;
 static volatile unsigned char *video;
 
+/* Multiboot Info */
 static multiboot_info_t *mbi;
 
 /* Forward declarations. */
 void kmain (unsigned long magic, unsigned long addr);
-void putpixel(int pos_x, int pos_y, int color); 
-void sgrubi (void);
-void drawline (void);
-//static void cls (void);
+void putpixel(int pos_x, int pos_y, int color);
 void cls (void);
 static void itoa (char *buf, int base, int d);
 static void putchar (int c);
@@ -32,33 +30,15 @@ void printf (const char *format, ...);
 
 void kmain (unsigned long magic, unsigned long addr)
 {
+    cls();
     /* Am I booted by a Multiboot-compliant boot loader? */
     if (magic != MULTIBOOT_BOOTLOADER_MAGIC) {
         printf ("Invalid magic number: 0x%x\n", (unsigned) magic);
         return;
-    } else {
-        /* Set MBI to the address of the Multiboot information structure. */
-        mbi = (multiboot_info_t *) addr;
     }
+    mbi = (multiboot_info_t *) addr;
 
-    putpixel(511, 383, RED);
-    putpixel(515, 383, GREEN);
-}
-
-void putpixel(int pos_x, int pos_y, int color)
-{
-    if (CHECK_FLAG (mbi->flags, 12)) {
-        void *fb = (void *) (unsigned long) mbi->framebuffer_addr;
-        multiboot_uint32_t *pixel
-            = fb + mbi->framebuffer_pitch * pos_y + 4 * pos_x;
-        *pixel = color;
-    }
-}
-
-/* Show grub info. */
-void sgrubi (void)
-{
-	/* Print out the flags. */
+    /* Print out the flags. */
     printf ("flags = 0x%x\n", (unsigned) mbi->flags);
 
     /* Are mem_* valid? */
@@ -119,80 +99,23 @@ void sgrubi (void)
             (unsigned) (mmap->len & 0xffffffff),
             (unsigned) mmap->type);
     }
+
+    //putpixel(511, 383, RED);
+    //putpixel(515, 383, GREEN);
 }
 
-/* Draw pixel on screen. */
-void drawline (void)
+/* Print a pixel on screen */
+void putpixel(int pos_x, int pos_y, int color)
 {
     if (CHECK_FLAG (mbi->flags, 12)) {
-        multiboot_uint32_t color;
-        unsigned i;
         void *fb = (void *) (unsigned long) mbi->framebuffer_addr;
-
-        switch (mbi->framebuffer_type) {
-            case MULTIBOOT_FRAMEBUFFER_TYPE_INDEXED: {
-                unsigned best_distance, distance;
-                struct multiboot_color *palette;
-            
-                palette = (struct multiboot_color *) mbi->framebuffer_palette_addr;
-                color = 0;
-                best_distance = 4*256*256;
-                for (i = 0; i < mbi->framebuffer_palette_num_colors; i++) {
-                    distance = (0xff - palette[i].blue) * (0xff - palette[i].blue)
-                        + palette[i].red * palette[i].red
-                        + palette[i].green * palette[i].green;
-                    if (distance < best_distance) {
-                        color = i;
-                        best_distance = distance;
-                    }
-                }
-            }
-                break;
-            case MULTIBOOT_FRAMEBUFFER_TYPE_RGB:
-                color = ((1 << mbi->framebuffer_blue_mask_size) - 1) 
-                    << mbi->framebuffer_blue_field_position;
-                break;
-            case MULTIBOOT_FRAMEBUFFER_TYPE_EGA_TEXT:
-                color = '\\' | 0x0100;
-                break;
-            default:
-                color = 0xffffffff;
-                break;
-        }
-        for (i = 0; i < mbi->framebuffer_width
-            && i < mbi->framebuffer_height; i++) {
-            switch (mbi->framebuffer_bpp) {
-                case 8: {
-                    multiboot_uint8_t *pixel = fb + mbi->framebuffer_pitch * i + i;
-                    *pixel = color;
-                }
-                    break;
-                case 15:
-                case 16: {
-                    multiboot_uint16_t *pixel
-                        = fb + mbi->framebuffer_pitch * i + 2 * i;
-                    *pixel = color;
-                }
-                    break;
-                case 24: {
-                    multiboot_uint32_t *pixel
-                        = fb + mbi->framebuffer_pitch * i + 3 * i;
-                    *pixel = (color & 0xffffff) | (*pixel & 0xff000000);
-                }
-                    break;
-                case 32: {
-                    multiboot_uint32_t *pixel
-                        = fb + mbi->framebuffer_pitch * i + 4 * i;
-                    *pixel = color;
-                }
-                    break;
-            }
-        }
+        multiboot_uint32_t *pixel
+            = fb + mbi->framebuffer_pitch * pos_y + 4 * pos_x;
+        *pixel = color;
     }
 }
 
 /* Clear the screen and initialize VIDEO, XPOS and YPOS. */
-//static void cls (void)
 void cls (void)
 {
     int i;
