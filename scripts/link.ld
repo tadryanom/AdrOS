@@ -1,26 +1,23 @@
-ENTRY(loader)                /* define a label para o ponto de entrada do kernel*/
-
+ENTRY(start)                /* Defines the label for the kernel entry point */
 SECTIONS {
-    . = 0x00100000;          /* aqui diz onde o codigo do kernel sera caregado na memoria, no caso, a cima de 1 MB */
-
-    .text ALIGN (0x1000) :   /* alinha em 4 KB */
+    . = 0x00100000;          /* Here it says where the kernel code will be loaded into memory, in this case, over 1 MB */
+    .text ALIGN (0x1000) :   /* Aligns in 4 KB */
     {
-        *(.text)             /* todos as secoes de codigo de todos os arquivos */
+        *(.multiboot_header) /* Multiboot header on start.s file */
+        *(.text)             /* All code sections of all files */
     }
-
-    .rodata ALIGN (0x1000) : /* alinha em 4 KB */
+    .rodata ALIGN (0x1000) : /* Aligns in 4 KB */
     {
-        *(.rodata*)          /* todas as secoes de dados somente leitura de todos os arquivos */
+        *(.rodata*)          /* All read-only data sections of all files */
     }
-
-    .data ALIGN (0x1000) :   /* alinha em 4 KB */
+    .data ALIGN (0x1000) :   /* Aligns in 4 KB */
     {
-        *(.data)             /* todas as secoes de dados de todos os arquivos */
+        *(.data)             /* All data sections of all files */
     }
-
-    .bss ALIGN (0x1000) :    /* alinha em 4 KB */
+    .bss ALIGN (0x1000) :    /* Aligns in 4 KB */
     {
-        *(COMMON)            /* todas as secoes COMMON de todos os arquivos */
-        *(.bss)              /* todas as secoes bss (dados nao inicializados) de todos os arquivos */
+        *(COMMON)            /* All COMMON sections of all files */
+        *(.bss)              /* All bss (uninitialized data) sections of all files */
+        *(.kernel_stack)     /* Kernel stack on start.s file */
     }
 }
