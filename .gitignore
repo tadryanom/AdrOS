@@ -1,8 +1,11 @@
-#arquivos objetos compilados
+# Compiled object files
 *.o
 
-#arquivos compilados
+# Compiled files
 *.elf
 
-#imagens de disco
+# CD-ROM images
 *.iso
+
+# IDA files
+*.i64
