@@ -1,6 +1,9 @@
 # Compiled object files
 *.o
 
+# Static libraries
+*.a
+
 # Compiled files
 *.elf
 
