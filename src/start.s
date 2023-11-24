@@ -15,7 +15,7 @@ KERNEL_STACK_SIZE      equ 0x4000 ; Stack size in bytes
 section .text                     ; Start of code section
 global start                      ; Global declaration for kernel ELF entry point
 start:                            ; Entry point for the kernel defined in the linker script
-    jmp multiboot_entry
+    jmp kernel_entry
 
 align 0x4                         ; Aligns to 4 bytes
 multiboot_header:
@@ -28,7 +28,7 @@ multiboot_header:
     dd VIDEO_HEIGHT
     dd VIDEO_DEPTH
 
-multiboot_entry:
+kernel_entry:
     mov esp, kernel_stack + KERNEL_STACK_SIZE ; Initialize the stack pointer.
 
     push 0x0                      ; Reset EFLAGS
