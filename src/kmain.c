@@ -1,34 +1,10 @@
-#include <multiboot.h>
+#include <kmain.h>
 
-/* Check if the bit BIT in FLAGS is set. */
-#define CHECK_FLAG(flags,bit) ((flags) & (1 << (bit)))
-
-/* Some screen stuff. */
-#define COLUMNS   80
-#define LINES     24
-#define ATTRIBUTE 7
-#define VIDEO     0xB8000 /* The video memory address. */
-
-#define RED   0xFF0000
-#define GREEN 0xFF00
-#define BLUE  0xFF
-
-static int xpos;
-static int ypos;
-static volatile unsigned char *video;
-
-/* Multiboot Info */
-static multiboot_info_t *mbi;
-
-/* Forward declarations. */
-void kmain (unsigned long magic, unsigned long addr);
-void putpixel(int pos_x, int pos_y, int color);
-void cls (void);
-static void itoa (char *buf, int base, int d);
-static void putchar (int c);
-void printf (const char *format, ...);
-
-void kmain (unsigned long magic, unsigned long addr)
+/*
+ * Kernel main function
+ * Here w'll starting all kernel services
+ */
+void kmain (u64int magic, u64int addr)
 {
     cls();
     /* Am I booted by a Multiboot-compliant boot loader? */
@@ -38,6 +14,17 @@ void kmain (unsigned long magic, unsigned long addr)
     }
     mbi = (multiboot_info_t *) addr;
 
+    printmbi();
+
+    //putpixel(511, 383, RED);
+    //putpixel(515, 383, GREEN);
+}
+
+/*
+ * Print Multiboot Info
+ */
+void printmbi(void)
+{
     /* Print out the flags. */
     printf ("flags = 0x%x\n", (unsigned) mbi->flags);
 
@@ -52,22 +39,22 @@ void kmain (unsigned long magic, unsigned long addr)
 
     /* Is the command line passed? */
     if (CHECK_FLAG (mbi->flags, 2))
-        printf ("cmdline = %s\n", (char *) mbi->cmdline);
+        printf ("cmdline = %s\n", (s8int *) mbi->cmdline);
 
     /* Are mods_* valid? */
     if (CHECK_FLAG (mbi->flags, 3)) {
         multiboot_module_t *mod;
-        int i;
+        s32int i;
 
         printf ("mods_count = %d, mods_addr = 0x%x\n",
-            (int) mbi->mods_count, (int) mbi->mods_addr);
+            (s32int) mbi->mods_count, (s32int) mbi->mods_addr);
         for (i = 0, mod = (multiboot_module_t *) mbi->mods_addr;
-            i < (int)mbi->mods_count;
+            i < (s32int)mbi->mods_count;
             i++, mod++)
             printf (" mod_start = 0x%x, mod_end = 0x%x, cmdline = %s\n",
                 (unsigned) mod->mod_start,
                 (unsigned) mod->mod_end,
-                (char *) mod->cmdline);
+                (s8int *) mod->cmdline);
     }
 
     /* Is the section header table of ELF valid? */
@@ -87,8 +74,8 @@ void kmain (unsigned long magic, unsigned long addr)
     printf ("mmap_addr = 0x%x, mmap_length = 0x%x\n",
         (unsigned) mbi->mmap_addr, (unsigned) mbi->mmap_length);
     for (mmap = (multiboot_memory_map_t *) mbi->mmap_addr;
-        (unsigned long) mmap < mbi->mmap_addr + mbi->mmap_length;
-        mmap = (multiboot_memory_map_t *) ((unsigned long) mmap
+        (u64int) mmap < mbi->mmap_addr + mbi->mmap_length;
+        mmap = (multiboot_memory_map_t *) ((u64int) mmap
             + mmap->size + sizeof (mmap->size)))
         printf (" size = 0x%x, base_addr = 0x%x%08x,"
             " length = 0x%x%08x, type = 0x%x\n",
@@ -99,142 +86,15 @@ void kmain (unsigned long magic, unsigned long addr)
             (unsigned) (mmap->len & 0xffffffff),
             (unsigned) mmap->type);
     }
-
-    //putpixel(511, 383, RED);
-    //putpixel(515, 383, GREEN);
 }
 
 /* Print a pixel on screen */
-void putpixel(int pos_x, int pos_y, int color)
+void putpixel(s32int pos_x, s32int pos_y, s32int color)
 {
     if (CHECK_FLAG (mbi->flags, 12)) {
-        void *fb = (void *) (unsigned long) mbi->framebuffer_addr;
+        void *fb = (void *) (u64int) mbi->framebuffer_addr;
         multiboot_uint32_t *pixel
             = fb + mbi->framebuffer_pitch * pos_y + 4 * pos_x;
         *pixel = color;
-    }
-}
-
-/* Clear the screen and initialize VIDEO, XPOS and YPOS. */
-void cls (void)
-{
-    int i;
-    video = (unsigned char *) VIDEO;
-  
-    for (i = 0; i < COLUMNS * LINES * 2; i++)
-        *(video + i) = 0;
-
-    xpos = 0;
-    ypos = 0;
-}
-
-/* Convert the integer D to a string and save the string in BUF. If
- * BASE is equal to ’d’, interpret that D is decimal, and if BASE is
- * equal to ’x’, interpret that D is hexadecimal.
- */
-static void itoa (char *buf, int base, int d)
-{
-    char *p = buf;
-    char *p1, *p2;
-    unsigned long ud = d;
-    int divisor = 10;
-  
-    /* If %d is specified and D is minus, put ‘-’ in the head. */
-    if (base == 'd' && d < 0) {
-        *p++ = '-';
-        buf++;
-        ud = -d;
-    } else if (base == 'x')
-       divisor = 16;
-
-    /* Divide UD by DIVISOR until UD == 0. */
-    do {
-        int remainder = ud % divisor;
-        *p++ = (remainder < 10) ? remainder + '0' : remainder + 'a' - 10;
-    } while (ud /= divisor);
-
-    /* Terminate BUF. */
-    *p = 0;
-    /* Reverse BUF. */
-    p1 = buf;
-    p2 = p - 1;
-    while (p1 < p2) {
-        char tmp = *p1;
-        *p1 = *p2;
-        *p2 = tmp;
-        p1++;
-        p2--;
-    }
-}
-
-/* Put the character C on the screen. */
-static void putchar (int c)
-{
-    if (c == '\n' || c == '\r') {
-        newline:
-        xpos = 0;
-        ypos++;
-        if (ypos >= LINES)
-            ypos = 0;
-        return;
-    }
-
-    *(video + (xpos + ypos * COLUMNS) * 2) = c & 0xFF;
-    *(video + (xpos + ypos * COLUMNS) * 2 + 1) = ATTRIBUTE;
-
-    xpos++;
-    if (xpos >= COLUMNS)
-        goto newline;
-}
-
-/* Format a string and print it on the screen, just like the libc
- * function printf. 
- */
-void printf (const char *format, ...)
-{
-    char **arg = (char **) &format;
-    int c;
-    char buf[20];
-
-    arg++;
-    while ((c = *format++) != 0) {
-        if (c != '%')
-            putchar (c);
-        else {
-            char *p, *p2;
-            int pad0 = 0, pad = 0;
-            c = *format++;
-            if (c == '0') {
-                pad0 = 1;
-                c = *format++;
-            }
-            if (c >= '0' && c <= '9') {
-                pad = c - '0';
-                c = *format++;
-            }
-            switch (c) {
-                case 'd':
-                case 'u':
-                case 'x':
-                    itoa (buf, c, *((int *) arg++));
-                    p = buf;
-                    goto string;
-                    break;
-                case 's':
-                    p = *arg++;
-                    if (! p)
-                        p = "(null)";
-                string:
-                    for (p2 = p; *p2; p2++){}
-                    for (; p2 < p + pad; p2++)
-                        putchar (pad0 ? '0' : ' ');
-                    while (*p)
-                        putchar (*p++);
-                    break;
-                default:
-                    putchar (*((int *) arg++));
-                    break;
-            }
-        }
     }
 }

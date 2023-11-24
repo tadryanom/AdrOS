@@ -1,49 +1,63 @@
 # Tools
 AS = nasm
+AR = ar
 CC = gcc
 LD = ld
+GENISO = grub-mkrescue
 QEMU = qemu-system-i386
 
 # Flags to Assembler, Compiller and Linker
 ASFLAGS = -f elf
-CFLAGS = -m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector \
-	-nostartfiles -nodefaultlibs -Wall -Wextra -Werror -c -I./include
+CFLAGS = -m32 -Wall -Wextra -Werror -O -nostdlib -nostdinc -fno-builtin \
+	-nostartfiles -nodefaultlibs -fno-stack-protector -fstrength-reduce \
+	-fomit-frame-pointer -finline-functions -I./include -c
 LDFLAGS = -T scripts/link.ld -melf_i386
 
 # Kernel objects
-OBJECTS = src/start.o src/kmain.o
+KOBJ = src/start.o src/kmain.o src/system.o src/screen.o
+
+# Kernel libc objects
+KLIBOBJ = src/string.o src/stdlib.o src/stdio.o
+
+# Kernel/klibc
+KERNEL = bin/kernel.elf
+LIBK = bin/libk.a
+
+# CD-ROM ISO image
+CDROM = iso/adros.iso
 
 # Build
-all: kernel.elf
+all: $(KERNEL)
 
-kernel.elf: $(OBJECTS)
-	$(LD) $(LDFLAGS) $(OBJECTS) -o bin/kernel.elf
+$(KERNEL): $(KOBJ) $(LIBK)
+	@echo "[LD] $(KERNEL)"
+	@$(LD) $(LDFLAGS) $(KOBJ) $(LIBK) -o $(KERNEL)
 
-%.o: %.c
-	$(CC) $(CFLAGS)  $< -o $@
+$(LIBK): $(KLIBOBJ)
+	@if ! [ -d bin ] ; then mkdir -p bin ; fi
+	@echo "[AR] $(LIBK)"
+	@$(AR) -rcs $(LIBK) $(KLIBOBJ)
 
 %.o: %.s
-	$(AS) $(ASFLAGS) $< -o $@
+	@echo "[AS] $@"
+	@$(AS) $(ASFLAGS) $< -o $@
 
-# ISO file
-adros.iso: kernel.elf
-	cp bin/kernel.elf iso/boot/kernel.elf
-	if [ -f iso/adros.iso ]; then rm -vf iso/adros.iso ; fi
-#	genisoimage -R                  \
-#	-b boot/grub/stage2_eltorito    \
-#	-no-emul-boot                   \
-#	-boot-load-size 4               \
-#	-A AdrOS                        \
-#	-input-charset utf8             \
-#	-boot-info-table                \
-#	-o iso/adros.iso                \
-#	iso
-	grub-mkrescue -o iso/adros.iso iso
+%.o: %.c
+	@echo "[CC] $@"
+	@$(CC) $(CFLAGS)  $< -o $@
+
+$(CDROM): $(KERNEL)
+	@echo "Creating CD-ROM ISO image..."
+	@cp $(KERNEL) iso/boot/kernel.elf
+	@if [ -f $(CDROM) ]; then rm -vf $(CDROM) ; fi
+	@$(GENISO) -o $(CDROM) iso
 
 # Test run
-run: adros.iso
-	$(QEMU) -monitor stdio -m 32 -cdrom iso/adros.iso -boot d
+run: $(CDROM)
+	@echo "Running kernel test..."
+	@$(QEMU) -monitor stdio -m 32 -cdrom $(CDROM) -boot d
 
 # Clean
 clean:
-	rm -vrf src/*.o bin/kernel.elf iso/boot/kernel.elf iso/adros.iso
+	@echo "Cleaning compiled objects..."
+	@rm -vf src/*.o $(LIBK) $(KERNEL) iso/boot/kernel.elf $(CDROM)
