@@ -14,24 +14,24 @@
 //#define GREEN 0xFF00
 //#define BLUE  0xFF
 
-/* Check if the bit BIT in FLAGS is set. */
+// Check if the bit BIT in FLAGS is set.
 #define CHECK_FLAG(flags,bit) ((flags) & (1 << (bit)))
 
-/* Multiboot Info */
+// Multiboot Info
 static multiboot_info_t *mbi;
 
-/* Forward declarations. */
+// Forward declarations.
 static void printmbi(void);
 //static void putpixel(s32int, s32int, s32int);
 
 /*
- * Kernel main function
+ * Kernel main function 
  * Here w'll starting all kernel services
  */
 void kmain (u64int magic, u64int addr)
 {
     init_video();
-    /* Am I booted by a Multiboot-compliant boot loader? */
+    // Am I booted by a Multiboot-compliant boot loader?
     if (magic != MULTIBOOT_BOOTLOADER_MAGIC) {
         printf ("Invalid magic number: 0x%x\n", (unsigned) magic);
         return;
@@ -53,28 +53,26 @@ void kmain (u64int magic, u64int addr)
     //putpixel(515, 383, GREEN);
 }
 
-/*
- * Print Multiboot Info
- */
+// Print Multiboot Info
 static void printmbi(void)
 {
-    /* Print out the flags. */
+    // Print out the flags.
     printf ("flags = 0x%x\n", (unsigned) mbi->flags);
 
-    /* Are mem_* valid? */
+    // Are mem_* valid?
     if (CHECK_FLAG (mbi->flags, 0))
         printf ("mem_lower = %uKB, mem_upper = %uKB\n",
             (unsigned) mbi->mem_lower, (unsigned) mbi->mem_upper);
 
-    /* Is boot_device valid? */
+    // Is boot_device valid?
     if (CHECK_FLAG (mbi->flags, 1))
         printf ("boot_device = 0x%x\n", (unsigned) mbi->boot_device);
 
-    /* Is the command line passed? */
+    // Is the command line passed?
     if (CHECK_FLAG (mbi->flags, 2))
         printf ("cmdline = %s\n", (s8int *) mbi->cmdline);
 
-    /* Are mods_* valid? */
+    // Are mods_* valid?
     if (CHECK_FLAG (mbi->flags, 3)) {
         multiboot_module_t *mod;
         s32int i;
@@ -90,7 +88,7 @@ static void printmbi(void)
                 (s8int *) mod->cmdline);
     }
 
-    /* Is the section header table of ELF valid? */
+    // Is the section header table of ELF valid?
     if (CHECK_FLAG (mbi->flags, 5)) {
         multiboot_elf_section_header_table_t *multiboot_elf_sec = &(mbi->u.elf_sec);
 
@@ -100,7 +98,7 @@ static void printmbi(void)
             (unsigned) multiboot_elf_sec->addr, (unsigned) multiboot_elf_sec->shndx);
     }
 
-    /* Are mmap_* valid? */
+    // Are mmap_* valid?
     if (CHECK_FLAG (mbi->flags, 6)) {
         multiboot_memory_map_t *mmap;
 
@@ -121,7 +119,7 @@ static void printmbi(void)
     }
 }
 
-/* Print a pixel on screen */
+// Print a pixel on screen
 /*static void putpixel(s32int pos_x, s32int pos_y, s32int color)
 {
     if (CHECK_FLAG (mbi->flags, 12)) {
