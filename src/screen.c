@@ -1,30 +1,32 @@
 #include <screen.h>
 #include <system.h>
 
-/* Some screen stuff. */
+// Some screen stuff.
 #define COLUMNS   80
 #define LINES     25
 #define BACKCOLOR 1
 #define FORECOLOR 15
-#define VIDEO     0xB8000 /* The video memory address. */
+#define VIDEO     0xB8000 // The video memory address.
 
 static s32int xpos;
 static s32int ypos;
 static volatile u16int *video;
 
-/* Scrolls the screen */
+// Scrolls the screen
 static void scroll(void)
 {
     if(ypos >= LINES)
     {
-        /* Move the current text chunk that makes up the screen
-         *  back in the buffer by a line 
+        /* 
+         * Move the current text chunk that makes up the screen
+         * back in the buffer by a line 
          */
         s32int i;
         for (i = 0; i < (LINES - 1) * COLUMNS; i++)
             *(video + i) = *(video + i + COLUMNS);
 
-        /* Finally, we set the chunk of memory that occupies
+        /* 
+         * Finally, we set the chunk of memory that occupies
          * the last line of text to our 'blank' character 
          */
         for (i = (LINES - 1) * COLUMNS; i < LINES * COLUMNS; i++)
@@ -34,7 +36,7 @@ static void scroll(void)
     }
 }
 
-/* Updates the hardware cursor. */
+// Updates the hardware cursor.
 static void move_cursor(void)
 {
     u16int cpos = ypos * COLUMNS + xpos;
@@ -44,14 +46,14 @@ static void move_cursor(void)
     outportb(0x3D5, cpos);      // Send the low cursor byte.
 }
 
-/* Sets our text-mode VGA pointer, then clears the screen for us */
+// Sets our text-mode VGA pointer, then clears the screen for us
 void init_video(void)
 {
     video = (u16int *) VIDEO;
     cls();
 }
 
-/* Clear the screen and initialize VIDEO, XPOS and YPOS. */
+// Clear the screen and initialize VIDEO, XPOS and YPOS.
 void cls (void)
 {
     for (s32int i = 0; i < COLUMNS * LINES; i++)
@@ -62,7 +64,7 @@ void cls (void)
     move_cursor();
 }
 
-/* Put the character C on the screen. */
+// Put the character C on the screen.
 void put_char (s8int c)
 {
     if(c == 0x08 && xpos) { // Back-space

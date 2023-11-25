@@ -3,20 +3,20 @@
 #include <string.h>
 #include <screen.h>
 
-/* Put the character */
+// Put the character
 void putchar (s8int c)
 {
     put_char(c);
 }
 
-/* Print a string on screen */
+// Print a string on screen
 void puts(s8int *text)
 {
     for (s32int i = 0; i < strlen((const s8int*)text); i++)
         putchar(text[i]);
 }
 
-/* Format a string and print */
+// Format a string and print
 void printf (const s8int *format, ...)
 {
     s8int **arg = (s8int **) &format;
