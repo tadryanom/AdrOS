@@ -58,7 +58,7 @@ $(CDROM2): $(KERNEL)
 	@echo "Creating CD-ROM ISO image..."
 	@cp $(KERNEL) iso/boot/kernel.elf
 	@if [ -f $(CDROM2) ]; then rm -vf $(CDROM2) ; fi
-	@$(genisoimage) -R           \
+	@$(GENISO2) -R               \
 	-b boot/grub/stage2_eltorito \
 	-no-emul-boot                \
 	-boot-load-size 4            \
