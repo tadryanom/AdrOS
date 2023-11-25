@@ -32,8 +32,8 @@ multiboot_header:
 kernel_entry:                     ; Entry point for the kernel defined in the linker script
     mov esp, kernel_stack_top     ; Initialize the stack pointer.
 
-    push 0x0                      ; Reset EFLAGS
-    popf
+    push 0x0
+    popf                          ; Reset EFLAGS to disables all hardware interrupts
 
     push ebx                      ; Push the pointer to the Multiboot information structure.
     push eax                      ; Push the magic value.
@@ -42,7 +42,6 @@ kernel_entry:                     ; Entry point for the kernel defined in the li
     push haltmsg                  ; Print on screen "System has halted" message
     call puts
 
-    cli                           ; Disables all hardware interrupts
     hlt
     jmp $                         ; Kernel goes into infinite loop
 
