@@ -46,6 +46,8 @@ kernel_entry:                     ; Entry point for the kernel defined in the li
     hlt
     jmp $                         ; Kernel goes into infinite loop
 
+size_kernel_entry: dd $-$$
+
     section .data                 ; Beginning of section with initialized data
 haltmsg: db 'System has halted.',0x0
 

@@ -4,6 +4,7 @@ AR = ar
 CC = gcc
 LD = ld
 GENISO = grub-mkrescue
+GENISO2 = genisoimage
 QEMU = qemu-system-i386
 
 # Flags to Assembler, Compiller and Linker
@@ -25,6 +26,7 @@ LIBK = bin/libk.a
 
 # CD-ROM ISO image
 CDROM = iso/adros.iso
+CDROM2 = iso/adros2.iso
 
 # Build
 all: $(KERNEL)
@@ -52,12 +54,30 @@ $(CDROM): $(KERNEL)
 	@if [ -f $(CDROM) ]; then rm -vf $(CDROM) ; fi
 	@$(GENISO) -o $(CDROM) iso
 
+$(CDROM2): $(KERNEL)
+	@echo "Creating CD-ROM ISO image..."
+	@cp $(KERNEL) iso/boot/kernel.elf
+	@if [ -f $(CDROM2) ]; then rm -vf $(CDROM2) ; fi
+	@$(genisoimage) -R           \
+	-b boot/grub/stage2_eltorito \
+	-no-emul-boot                \
+	-boot-load-size 4            \
+	-A AdrOS                     \
+	-input-charset utf8          \
+	-boot-info-table             \
+	-o $(CDROM2)                 \
+	iso
+
 # Test run
 run: $(CDROM)
 	@echo "Running kernel test..."
 	@$(QEMU) -monitor stdio -m 32 -cdrom $(CDROM) -boot d
 
+run2: $(CDROM2)
+	@echo "Running kernel test..."
+	@$(QEMU) -monitor stdio -m 32 -cdrom $(CDROM2) -boot d
+
 # Clean
 clean:
 	@echo "Cleaning compiled objects..."
-	@rm -vf src/*.o $(LIBK) $(KERNEL) iso/boot/kernel.elf $(CDROM)
+	@rm -vf src/*.o $(LIBK) $(KERNEL) iso/boot/kernel.elf $(CDROM) $(CDROM2)
