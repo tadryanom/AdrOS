@@ -1,13 +1,16 @@
 # Compiled object files
 *.o
 
-# Static libraries
+# Static libraries files
 *.a
 
 # Compiled files
 *.elf
 
-# CD-ROM images
+# RAW image files
+*.img
+
+# CD-ROM images files
 *.iso
 
 # IDA files
