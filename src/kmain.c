@@ -4,6 +4,16 @@
 //#define GREEN 0xFF00
 //#define BLUE  0xFF
 
+/* Check if the bit BIT in FLAGS is set. */
+#define CHECK_FLAG(flags,bit) ((flags) & (1 << (bit)))
+
+/* Multiboot Info */
+static multiboot_info_t *mbi;
+
+/* Forward declarations. */
+static void printmbi(void);
+//static void putpixel(s32int, s32int, s32int);
+
 /*
  * Kernel main function
  * Here w'll starting all kernel services
@@ -36,7 +46,7 @@ void kmain (u64int magic, u64int addr)
 /*
  * Print Multiboot Info
  */
-void printmbi(void)
+static void printmbi(void)
 {
     /* Print out the flags. */
     printf ("flags = 0x%x\n", (unsigned) mbi->flags);
@@ -102,7 +112,7 @@ void printmbi(void)
 }
 
 /* Print a pixel on screen */
-void putpixel(s32int pos_x, s32int pos_y, s32int color)
+/*static void putpixel(s32int pos_x, s32int pos_y, s32int color)
 {
     if (CHECK_FLAG (mbi->flags, 12)) {
         void *fb = (void *) (u64int) mbi->framebuffer_addr;
@@ -110,4 +120,4 @@ void putpixel(s32int pos_x, s32int pos_y, s32int color)
             = fb + mbi->framebuffer_pitch * pos_y + 4 * pos_x;
         *pixel = color;
     }
-}
+}*/

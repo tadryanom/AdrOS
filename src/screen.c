@@ -13,7 +13,7 @@ static s32int ypos;
 static volatile u16int *video;
 
 /* Scrolls the screen */
-void scroll(void)
+static void scroll(void)
 {
     if(ypos >= LINES)
     {
@@ -35,7 +35,7 @@ void scroll(void)
 }
 
 /* Updates the hardware cursor. */
-void move_cursor(void)
+static void move_cursor(void)
 {
     u16int cpos = ypos * COLUMNS + xpos;
     outportb(0x3D4, 14);        // Tell the VGA board we are setting the high cursor byte.
