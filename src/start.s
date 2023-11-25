@@ -13,8 +13,8 @@ VIDEO_DEPTH            equ 0x0    ;  0 Undefined
 KERNEL_STACK_SIZE      equ 0x4000 ; Stack size (16384 bytes)
 
     global kernel_entry           ; Export kernel_entry symbol
-    extern kmain                  ; Import kmain and printf symbols
-    extern printf
+    extern kmain                  ; Import kmain and puts symbols
+    extern puts
 
     section .multiboot
     align 0x4                     ; Aligns to 4 bytes
@@ -40,7 +40,7 @@ kernel_entry:                     ; Entry point for the kernel defined in the li
     call kmain                    ; I will call the kmain() function for the kernel to do other things
 
     push haltmsg                  ; Print on screen "System has halted" message
-    call  printf
+    call puts
 
     cli                           ; Disables all hardware interrupts
     hlt
