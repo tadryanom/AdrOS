@@ -7,12 +7,9 @@
 // Check if the bit BIT in FLAGS is set.
 #define CHECK_FLAG(flags,bit) ((flags) & (1 << (bit)))
 
-// Multiboot Info
-static multiboot_info_t *mbi;
-
 // Forward declarations.
-static void printmbi(void);
-//static void putpixel(s32int, s32int, s32int);
+static void printmbi(multiboot_info_t *);
+//static void putpixel(s32int, s32int, s32int, multiboot_info_t *);
 
 /*
  * Kernel main function 
@@ -26,9 +23,9 @@ void kmain (u64int magic, u64int addr, u32int initial_stack)
         printf ("Invalid magic number: 0x%x\n", (unsigned) magic);
         return;
     }
-    mbi = (multiboot_info_t *) addr;
+    multiboot_info_t *mbi = (multiboot_info_t *) addr;
 
-    printmbi();
+    printmbi(mbi);
 
     s32int cr0_value = 0;
     asm volatile ("movl %%cr0, %0" : "=r" (cr0_value));
@@ -45,33 +42,33 @@ void kmain (u64int magic, u64int addr, u32int initial_stack)
 }
 
 // Print Multiboot Info
-static void printmbi(void)
+static void printmbi(multiboot_info_t *multiboot_info)
 {
     // Print out the flags.
-    printf ("flags = 0x%x\n", (unsigned) mbi->flags);
+    printf ("flags = 0x%x\n", (unsigned) multiboot_info->flags);
 
     // Are mem_* valid?
-    if (CHECK_FLAG (mbi->flags, 0))
+    if (CHECK_FLAG (multiboot_info->flags, 0))
         printf ("mem_lower = %uKB, mem_upper = %uKB\n",
-            (unsigned) mbi->mem_lower, (unsigned) mbi->mem_upper);
+            (unsigned) multiboot_info->mem_lower, (unsigned) multiboot_info->mem_upper);
 
     // Is boot_device valid?
-    if (CHECK_FLAG (mbi->flags, 1))
-        printf ("boot_device = 0x%x\n", (unsigned) mbi->boot_device);
+    if (CHECK_FLAG (multiboot_info->flags, 1))
+        printf ("boot_device = 0x%x\n", (unsigned) multiboot_info->boot_device);
 
     // Is the command line passed?
-    if (CHECK_FLAG (mbi->flags, 2))
-        printf ("cmdline = %s\n", (s8int *) mbi->cmdline);
+    if (CHECK_FLAG (multiboot_info->flags, 2))
+        printf ("cmdline = %s\n", (s8int *) multiboot_info->cmdline);
 
     // Are mods_* valid?
-    if (CHECK_FLAG (mbi->flags, 3)) {
+    if (CHECK_FLAG (multiboot_info->flags, 3)) {
         multiboot_module_t *mod;
         s32int i;
 
         printf ("mods_count = %d, mods_addr = 0x%x\n",
-            (s32int) mbi->mods_count, (s32int) mbi->mods_addr);
-        for (i = 0, mod = (multiboot_module_t *) mbi->mods_addr;
-            i < (s32int)mbi->mods_count;
+            (s32int) multiboot_info->mods_count, (s32int) multiboot_info->mods_addr);
+        for (i = 0, mod = (multiboot_module_t *) multiboot_info->mods_addr;
+            i < (s32int)multiboot_info->mods_count;
             i++, mod++)
             printf (" mod_start = 0x%x, mod_end = 0x%x, cmdline = %s\n",
                 (unsigned) mod->mod_start,
@@ -80,8 +77,8 @@ static void printmbi(void)
     }
 
     // Is the section header table of ELF valid?
-    if (CHECK_FLAG (mbi->flags, 5)) {
-        multiboot_elf_section_header_table_t *multiboot_elf_sec = &(mbi->u.elf_sec);
+    if (CHECK_FLAG (multiboot_info->flags, 5)) {
+        multiboot_elf_section_header_table_t *multiboot_elf_sec = &(multiboot_info->u.elf_sec);
 
         printf ("multiboot_elf_sec: num = %u, size = 0x%x,"
             " addr = 0x%x, shndx = 0x%x\n",
@@ -90,13 +87,13 @@ static void printmbi(void)
     }
 
     // Are mmap_* valid?
-    if (CHECK_FLAG (mbi->flags, 6)) {
+    if (CHECK_FLAG (multiboot_info->flags, 6)) {
         multiboot_memory_map_t *mmap;
 
     printf ("mmap_addr = 0x%x, mmap_length = 0x%x\n",
-        (unsigned) mbi->mmap_addr, (unsigned) mbi->mmap_length);
-    for (mmap = (multiboot_memory_map_t *) mbi->mmap_addr;
-        (u64int) mmap < mbi->mmap_addr + mbi->mmap_length;
+        (unsigned) multiboot_info->mmap_addr, (unsigned) multiboot_info->mmap_length);
+    for (mmap = (multiboot_memory_map_t *) multiboot_info->mmap_addr;
+        (u64int) mmap < multiboot_info->mmap_addr + multiboot_info->mmap_length;
         mmap = (multiboot_memory_map_t *) ((u64int) mmap
             + mmap->size + sizeof (mmap->size)))
         printf (" size = 0x%x, base_addr = 0x%x%08x,"
@@ -111,12 +108,12 @@ static void printmbi(void)
 }
 
 // Print a pixel on screen
-/*static void putpixel(s32int pos_x, s32int pos_y, s32int color)
+/*static void putpixel(s32int pos_x, s32int pos_y, s32int color, multiboot_info_t *multiboot_info)
 {
-    if (CHECK_FLAG (mbi->flags, 12)) {
-        void *fb = (void *) (u64int) mbi->framebuffer_addr;
+    if (CHECK_FLAG (multiboot_info->flags, 12)) {
+        void *fb = (void *) (u64int) multiboot_info->framebuffer_addr;
         multiboot_uint32_t *pixel
-            = fb + mbi->framebuffer_pitch * pos_y + 4 * pos_x;
+            = fb + multiboot_info->framebuffer_pitch * pos_y + 4 * pos_x;
         *pixel = color;
     }
 }*/
