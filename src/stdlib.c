@@ -18,7 +18,7 @@ void itoa (s8int *buf, s32int base, s32int d)
         buf++;
         ud = -d;
     } else if (base == 'x')
-       divisor = 16;
+        divisor = 16;
 
     // Divide UD by DIVISOR until UD == 0.
     do {

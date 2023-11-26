@@ -9,7 +9,7 @@ QEMU = qemu-system-i386
 
 # Flags to Assembler, Compiller and Linker
 ASFLAGS = -f elf
-CFLAGS = -m32 -Wall -Wextra -Werror -O -nostdlib -nostdinc -fno-builtin \
+CFLAGS = -m32 -Wall -Wextra -Werror -nostdlib -nostdinc -fno-builtin \
 	-nostartfiles -nodefaultlibs -fno-stack-protector -fstrength-reduce \
 	-fomit-frame-pointer -finline-functions -I./include -c
 LDFLAGS = -T scripts/link.ld -melf_i386
