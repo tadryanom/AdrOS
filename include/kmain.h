@@ -1,7 +1,7 @@
 #ifndef __KMAIN_H
 #define __KMAIN_H 1
 
-#include <common.h>
+#include <typedefs.h>
 #include <multiboot.h>
 #include <system.h>
 #include <screen.h>
