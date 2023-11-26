@@ -40,13 +40,13 @@ kernel_entry:                     ; Entry point for the kernel defined in the li
     push eax                      ; Push the magic value.
     call kmain                    ; I will call the kmain() function for the kernel to do other things
 
-    push haltmsg                  ; Print on screen "System has halted" message
-    call puts
+    push haltmsg
+    call puts                     ; Print on screen "System has halted" message
 
     hlt
     jmp $                         ; Kernel goes into infinite loop
 
-size_kernel_entry: dd $-$$
+kernel_entry_size: dd $-$$
 
     section .data                 ; Beginning of section with initialized data
 haltmsg: db 'System has halted.',0x0

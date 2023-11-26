@@ -8,8 +8,8 @@
 #define CHECK_FLAG(flags,bit) ((flags) & (1 << (bit)))
 
 // Forward declarations.
-static void printmbi(multiboot_info_t *);
-//static void putpixel(s32int, s32int, s32int, multiboot_info_t *);
+static void printmbi (multiboot_info_t *);
+//static void putpixel (s32int, s32int, s32int, multiboot_info_t *);
 
 /*
  * Kernel main function 
@@ -30,6 +30,7 @@ void kmain (u64int magic, u64int addr, u32int initial_stack)
     s32int cr0_value = 0;
     asm volatile ("movl %%cr0, %0" : "=r" (cr0_value));
     printf("cr0_value = 0x%08x\n", cr0_value);
+
     printf("initial_stack = 0x%08x\n", initial_stack);
 
     for (s32int i = 0; i < 1500; i++){
@@ -37,12 +38,13 @@ void kmain (u64int magic, u64int addr, u32int initial_stack)
         for (u64int j = 0; j < 10000000; j++){}
     }
     puts("OK\n");
+
     //putpixel(511, 383, RED);
     //putpixel(515, 383, GREEN);
 }
 
 // Print Multiboot Info
-static void printmbi(multiboot_info_t *multiboot_info)
+static void printmbi (multiboot_info_t *multiboot_info)
 {
     // Print out the flags.
     printf ("flags = 0x%x\n", (unsigned) multiboot_info->flags);
@@ -108,7 +110,7 @@ static void printmbi(multiboot_info_t *multiboot_info)
 }
 
 // Print a pixel on screen
-/*static void putpixel(s32int pos_x, s32int pos_y, s32int color, multiboot_info_t *multiboot_info)
+/*static void putpixel (s32int pos_x, s32int pos_y, s32int color, multiboot_info_t *multiboot_info)
 {
     if (CHECK_FLAG (multiboot_info->flags, 12)) {
         void *fb = (void *) (u64int) multiboot_info->framebuffer_addr;

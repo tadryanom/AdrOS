@@ -10,7 +10,7 @@ void putchar (s8int c)
 }
 
 // Print a string on screen
-void puts(s8int *text)
+void puts (s8int *text)
 {
     for (s32int i = 0; i < strlen((const s8int*)text); i++)
         putchar(text[i]);
