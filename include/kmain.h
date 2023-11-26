@@ -7,6 +7,6 @@
 #include <screen.h>
 #include <stdio.h>
 
-extern void kmain (u64int, u64int);
+extern void kmain (u64int, u64int, u32int);
 
 #endif

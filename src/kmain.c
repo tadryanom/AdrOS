@@ -18,7 +18,7 @@ static void printmbi(void);
  * Kernel main function 
  * Here w'll starting all kernel services
  */
-void kmain (u64int magic, u64int addr)
+void kmain (u64int magic, u64int addr, u32int initial_stack)
 {
     init_video();
     // Am I booted by a Multiboot-compliant boot loader?
@@ -32,7 +32,8 @@ void kmain (u64int magic, u64int addr)
 
     s32int cr0_value = 0;
     asm volatile ("movl %%cr0, %0" : "=r" (cr0_value));
-    printf("cr0_value = 0x%x\n", cr0_value);
+    printf("cr0_value = 0x%08x\n", cr0_value);
+    printf("initial_stack = 0x%08x\n", initial_stack);
 
     for (s32int i = 0; i < 1500; i++){
         puts(".");

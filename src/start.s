@@ -35,6 +35,7 @@ kernel_entry:                     ; Entry point for the kernel defined in the li
     push 0x0
     popf                          ; Reset EFLAGS to disables all hardware interrupts
 
+    push esp                      ; Push the pointer of the initial stack
     push ebx                      ; Push the pointer to the Multiboot information structure.
     push eax                      ; Push the magic value.
     call kmain                    ; I will call the kmain() function for the kernel to do other things
