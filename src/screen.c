@@ -40,10 +40,10 @@ static void scroll(void)
 static void move_cursor(void)
 {
     u16int cpos = ypos * COLUMNS + xpos;
-    outportb(0x3D4, 14);        // Tell the VGA board we are setting the high cursor byte.
-    outportb(0x3D5, cpos >> 8); // Send the high cursor byte.
-    outportb(0x3D4, 15);        // Tell the VGA board we are setting the low cursor byte.
-    outportb(0x3D5, cpos);      // Send the low cursor byte.
+    outportb(0x3D4, 0xE);         // Tell the VGA board we are setting the high cursor byte.
+    outportb(0x3D5, cpos >> 0x8); // Send the high cursor byte.
+    outportb(0x3D4, 0xF);         // Tell the VGA board we are setting the low cursor byte.
+    outportb(0x3D5, cpos);        // Send the low cursor byte.
 }
 
 // Sets our text-mode VGA pointer, then clears the screen for us
