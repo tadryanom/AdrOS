@@ -15,6 +15,7 @@
 
 # IDA files
 *.i64
+*.elf.*
 
 # Bochs log file
 bochs_logs.txt

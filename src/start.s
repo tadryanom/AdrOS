@@ -38,7 +38,7 @@ kernel_entry:                     ; Entry point for the kernel defined in the li
     push esp                      ; Push the pointer of the initial stack
     push ebx                      ; Push the pointer to the Multiboot information structure.
     push eax                      ; Push the magic value.
-    call kmain                    ; I will call the kmain() function for the kernel to do other things
+    call kmain                    ; I will call the kmain() function to do other things
 
     push haltmsg
     call puts                     ; Print on screen "System has halted" message
@@ -56,3 +56,4 @@ haltmsg: db 'System has halted.',0x0
 kernel_stack_bottom:
     resb KERNEL_STACK_SIZE
 kernel_stack_top:
+    resb 0x1
