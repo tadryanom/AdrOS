@@ -8,8 +8,8 @@
  * Mirror: https://github.com/tadryanom/AdrOS
  */
 
-#ifndef COMMON_H
-#define COMMON_H 1
+#ifndef __TYPEDEFS_H
+#define __TYPEDEFS_H 1
 
 // Some nice typedefs, to standardise sizes across platforms.
 typedef unsigned long  u64int;
