@@ -12,6 +12,7 @@ static void printmbi (multiboot_info_t *);
 //static void putpixel (s32int, s32int, s32int, multiboot_info_t *);
 
 extern u32int placement_address;
+u32int initial_esp;
 
 /*
  * Kernel main function 
@@ -34,12 +35,14 @@ void kmain (u64int magic, u64int addr, u32int initial_stack)
     asm volatile ("movl %%cr0, %0" : "=r" (cr0_value));
     printf("cr0_value = 0x%08x\n", cr0_value);
 
-    printf("initial_stack = 0x%08x\n", initial_stack);
+    initial_esp = initial_stack;
+    printf("initial_esp = 0x%08x\n", initial_esp);
 
     // Initialise all the ISRs and segmentation
     init_descriptors();
     // Initialise the PIT to 1000Hz
     init_timer(1000);
+	init_rtc();
     asm volatile("sti");
 
     // Find the location of our initial ramdisk.
@@ -53,8 +56,20 @@ void kmain (u64int magic, u64int addr, u32int initial_stack)
     // Start paging.
     initialise_paging();
 
+    // Start multitasking.
+    //initialise_tasking();
+
     // Initialise the initial ramdisk, and set it as the filesystem root.
     fs_root = initialise_initrd(initrd_location);
+
+    // Create a new process in a new address space which is a clone of this.
+    /*s32int ret = fork();
+    printf("fork() returned %d, and getpid() returned %d\
+        \n============================================================================\n \
+    ", ret, getpid());*/
+
+    // The next section of code is not reentrant so make sure we aren't interrupted during.
+    //asm volatile("cli");
     // list the contents of /
 	s32int i = 0;
 	struct dirent *node = 0;
@@ -76,12 +91,15 @@ void kmain (u64int magic, u64int addr, u32int initial_stack)
 		}
 		i++;
 	}
+    //puts("/n");
 	//kfree(buf);
+    //asm volatile("sti");
 
-    for (s32int i = 0; i < 1500; i++){
-        //puts(".");
+    //for (s32int i = 0; i < 1500; i++) {
+	for (s32int i = 0; i < 15; i++){
+        puts(".");
         //for (u64int j = 0; j < 10000000; j++){}
-        sleep_ms(10);
+        sleep_ms(1000);
     }
     puts("OK\n");
 

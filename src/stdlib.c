@@ -5,7 +5,8 @@
  * BASE is equal to ’d’, interpret that D is decimal, and if BASE is
  * equal to ’x’, interpret that D is hexadecimal.
  */
-void itoa (s8int *buf, s32int base, s32int d)
+//void itoa (s8int *buf, s32int base, s32int d)
+s8int * itoa (s32int d, s8int *buf, s32int base)
 {
     s8int *p = buf;
     s8int *p1, *p2;
@@ -38,4 +39,5 @@ void itoa (s8int *buf, s32int base, s32int d)
         p1++;
         p2--;
     }
+    return buf;
 }

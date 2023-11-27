@@ -10,12 +10,13 @@
 #include <string.h>
 #include <system.h>
 
-#define GDT_ENTRIES 6
+//#define GDT_ENTRIES 6
+#define GDT_ENTRIES 5
 #define IDT_ENTRIES 256
 
 // Lets us access our ASM functions from our C code.
 extern void gdt_flush (u32int);
-extern void tss_flush (void);
+//extern void tss_flush (void);
 extern void idt_flush (u32int);
 
 // Internal function prototypes.
@@ -27,7 +28,7 @@ static void idt_set_gate (u8int, u32int, u16int, u8int);
 
 gdt_entry_t gdt[GDT_ENTRIES];
 gdt_ptr_t   gdt_ptr;
-tss_entry_t tss;
+//tss_entry_t tss;
 idt_entry_t idt[IDT_ENTRIES];
 idt_ptr_t   idt_ptr;
 
@@ -45,10 +46,10 @@ void init_descriptors (void)
     memset((u8int *)&interrupt_handlers, 0, sizeof(isr_t) * IDT_ENTRIES); // Nullify all the interrupt handlers.
 }
 
-void set_kernel_stack (u32int stack)
+/*void set_kernel_stack (u32int stack)
 {
     tss.esp0 = stack;
-}
+}*/
 
 static void init_gdt (void)
 {

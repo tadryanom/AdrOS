@@ -18,7 +18,7 @@ LDFLAGS = -T scripts/link.ld -melf_i386
 KOBJ = src/start.o src/kmain.o src/system.o src/screen.o src/descriptors.o \
 	src/descriptors_ext.o src/isr.o src/interrupts.o src/timer.o \
 	src/paging.o src/kheap.o src/ordered_array.o src/process.o \
-	src/fs.o src/initrd.o
+	src/fs.o src/initrd.o src/task.o
 
 # Kernel libc objects
 KLIBOBJ = src/string.o src/stdlib.o src/stdio.o

@@ -9,6 +9,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <system.h>
+#include <stdlib.h>
 
 // The kernel's page directory
 page_directory_t *kernel_directory = 0;
@@ -105,7 +106,8 @@ void initialise_paging (void)
      * initialised properly.
      */
     i = 0;
-    while (i < 0x400000 ) { //placement_address+0x1000
+    //while (i < 0x400000 ) { //placement_address+0x1000
+    while ((u32int)i < (placement_address + 0x1000)) {
         // Kernel code is readable but not writeable from userspace.
         alloc_frame( get_page(i, 1, kernel_directory), 0, 0);
         i += 0x1000;
@@ -159,6 +161,7 @@ page_t *get_page (u32int address, s32int make, page_directory_t *dir)
 
 void page_fault (registers_t *regs)
 {
+    s8int buff[256];
     /*
      * A page fault has occurred.
      * The faulting address is stored in the CR2 register.
@@ -171,14 +174,15 @@ void page_fault (registers_t *regs)
     s32int rw = regs->err_code & 0x2;           // Write operation?
     s32int us = regs->err_code & 0x4;           // Processor was in user-mode?
     s32int reserved = regs->err_code & 0x8;     // Overwritten CPU-reserved bits of page entry?
-    //s32int id = regs->err_code & 0x10;          // Caused by an instruction fetch?
+    s32int id = regs->err_code & 0x10;          // Caused by an instruction fetch?
 
     // Output an error message.
-    printf("Page fault! ( %s %s %s %s ) at 0x%04x - EIP: 0x%04x\n", 
+    printf("Page fault! ( %s %s %s %s %s) at 0x%04x - EIP: 0x%04x\n", 
         present ? "present" : "",
         rw ? "read-only" : "",
         us ? "user-mode" : "",
         reserved ? "reserved" : "",
+        id ? strcat("id: ", itoa(id, buff , 'd')) : "",
         faulting_address,
         regs->eip);
     PANIC("Page fault");

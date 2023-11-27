@@ -43,6 +43,7 @@ kernel_entry:                     ; Entry point for the kernel defined in the li
     push haltmsg
     call puts                     ; Print on screen "System has halted" message
 
+    cli
     hlt
     jmp $                         ; Kernel goes into infinite loop
 

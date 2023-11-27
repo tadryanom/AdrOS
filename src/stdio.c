@@ -43,7 +43,8 @@ void printf (const s8int *format, ...)
                 case 'd':
                 case 'u':
                 case 'x':
-                    itoa (buf, c, *((s32int *) arg++));
+                    //itoa (buf, c, *((s32int *) arg++));
+                    itoa (*((s32int *) arg++), buf, c);
                     p = buf;
                     goto string;
                     break;

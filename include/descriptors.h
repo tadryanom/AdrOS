@@ -14,7 +14,7 @@
 void init_descriptors (void);
 
 // Allows the kernel stack in the TSS to be changed.
-void set_kernel_stack (u32int);
+//void set_kernel_stack (u32int);
 
 /*
  * This structure contains the value of one GDT entry.
