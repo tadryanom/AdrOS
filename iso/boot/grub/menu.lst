@@ -2,3 +2,4 @@ default=0
 timeout=3
 title AdrOS Kernel
 kernel /boot/kernel.elf
+module /boot/initrd.img
