@@ -16,7 +16,7 @@ LDFLAGS = -T scripts/link.ld -melf_i386
 
 # Kernel objects
 KOBJ = src/start.o src/kmain.o src/system.o src/screen.o src/descriptors.o \
-	src/descriptors_ext.o src/isr.o src/interrupts.o
+	src/descriptors_ext.o src/isr.o src/interrupts.o src/timer.o
 
 # Kernel libc objects
 KLIBOBJ = src/string.o src/stdlib.o src/stdio.o

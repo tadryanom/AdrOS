@@ -6,6 +6,7 @@
 #include <screen.h>
 #include <stdio.h>
 #include <descriptors.h>
+#include <timer.h>
 
 void kmain (u64int, u64int, u32int);
 

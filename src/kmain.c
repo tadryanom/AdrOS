@@ -19,14 +19,6 @@ void kmain (u64int magic, u64int addr, u32int initial_stack)
 {
     // Initialise the screen (by clearing it)
     init_video();
-    // Initialise all the ISRs and segmentation
-    init_descriptors();
-    // Initialise the PIT to 100Hz
-    //asm volatile("sti");
-
-	asm volatile ("int $0x3");
-    asm volatile ("int $0x4");
-
     // Am I booted by a Multiboot-compliant boot loader?
     if (magic != MULTIBOOT_BOOTLOADER_MAGIC) {
         printf ("Invalid magic number: 0x%x\n", (unsigned) magic);
@@ -42,11 +34,21 @@ void kmain (u64int magic, u64int addr, u32int initial_stack)
 
     printf("initial_stack = 0x%08x\n", initial_stack);
 
+    // Initialise all the ISRs and segmentation
+    init_descriptors();
+    // Initialise the PIT to 1000Hz
+    init_timer(1000);
+    asm volatile("sti");
+
     for (s32int i = 0; i < 1500; i++){
         puts(".");
-        for (u64int j = 0; j < 10000000; j++){}
+        //for (u64int j = 0; j < 10000000; j++){}
+        sleep_ms(10);
     }
     puts("OK\n");
+
+    //asm volatile ("int $0x3");
+    //asm volatile ("int $0x4");
 
     //putpixel(511, 383, RED);
     //putpixel(515, 383, GREEN);
