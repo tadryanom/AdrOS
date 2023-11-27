@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <descriptors.h>
 #include <timer.h>
+#include <paging.h>
 
 void kmain (u64int, u64int, u32int);
 
