@@ -12,8 +12,8 @@
 
 #include <typedefs.h>
 
-extern void init_video (void);
-extern void cls (void);
-extern void put_char (s8int);
+void init_video (void);
+void cls (void);
+void put_char (s8int);
 
 #endif
