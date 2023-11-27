@@ -22,6 +22,7 @@
 #include <system.h>
 #include <initrd.h>
 #include <string.h>
+#include <task.h>
 
 void kmain (u64int, u64int, u32int);
 
