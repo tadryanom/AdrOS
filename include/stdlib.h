@@ -3,6 +3,6 @@
 
 #include <typedefs.h>
 
-extern void itoa (s8int *, s32int, s32int);
+void itoa (s8int *, s32int, s32int);
 
 #endif

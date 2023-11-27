@@ -17,7 +17,16 @@ static void printmbi (multiboot_info_t *);
  */
 void kmain (u64int magic, u64int addr, u32int initial_stack)
 {
+    // Initialise the screen (by clearing it)
     init_video();
+    // Initialise all the ISRs and segmentation
+    init_descriptors();
+    // Initialise the PIT to 100Hz
+    //asm volatile("sti");
+
+	asm volatile ("int $0x3");
+    asm volatile ("int $0x4");
+
     // Am I booted by a Multiboot-compliant boot loader?
     if (magic != MULTIBOOT_BOOTLOADER_MAGIC) {
         printf ("Invalid magic number: 0x%x\n", (unsigned) magic);

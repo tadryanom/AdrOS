@@ -15,7 +15,8 @@ CFLAGS = -m32 -Wall -Wextra -Werror -nostdlib -nostdinc -fno-builtin \
 LDFLAGS = -T scripts/link.ld -melf_i386
 
 # Kernel objects
-KOBJ = src/start.o src/kmain.o src/system.o src/screen.o
+KOBJ = src/start.o src/kmain.o src/system.o src/screen.o src/descriptors.o \
+	src/descriptors_ext.o src/isr.o src/interrupts.o
 
 # Kernel libc objects
 KLIBOBJ = src/string.o src/stdlib.o src/stdio.o

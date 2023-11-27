@@ -3,10 +3,10 @@
 
 #include <typedefs.h>
 #include <multiboot.h>
-#include <system.h>
 #include <screen.h>
 #include <stdio.h>
+#include <descriptors.h>
 
-extern void kmain (u64int, u64int, u32int);
+void kmain (u64int, u64int, u32int);
 
 #endif
