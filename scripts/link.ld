@@ -28,4 +28,5 @@ SECTIONS {
         *(COMMON)                          /* All COMMON sections of all files */
         *(.bss)                            /* All bss (uninitialized data) sections of all files */
     }
+    end = .; _end = .; __end = .;
 }
