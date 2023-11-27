@@ -32,3 +32,46 @@ s32int strlen (const s8int *str)
         ret++;
     return ret;
 }
+
+s32int strcmp (s8int *str1, s8int *str2)
+{
+    s32int i = 0;
+    s32int failed = 0;
+    while(str1[i] != '\0' && str2[i] != '\0') {
+        if(str1[i] != str2[i]) {
+            failed = 1;
+            break;
+        }
+        i++;
+    }
+    // why did the loop exit?
+    if( (str1[i] == '\0' && str2[i] != '\0') || (str1[i] != '\0' && str2[i] == '\0') )
+        failed = 1;
+  
+    return failed;
+}
+
+s8int *strcpy(s8int *dest, const s8int *src)
+{
+    do {
+        *dest++ = *src++;
+    }
+    while (*src != 0);
+    return dest;
+}
+
+s8int *strcat (s8int *dest, const s8int *src)
+{
+    volatile s8int *tmp = 0;
+    while (*dest != 0) {
+        *tmp = *dest++;
+        //*dest = *dest++;
+        *dest = *tmp;
+    }
+
+    do {
+        *dest++ = *src++;
+    }
+    while (*src != 0);
+    return dest;
+}

@@ -1,6 +1,6 @@
 /* 
  * Defines the interface for all PIT-related functions.
- * Based on code from Bran's and JamesM's kernel development tutorials.
+ * Based on code from JamesM's kernel development tutorials.
  * Rewritten by Tulio Mendes to AdrOS Kernel
  */
 

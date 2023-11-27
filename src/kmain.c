@@ -40,6 +40,13 @@ void kmain (u64int magic, u64int addr, u32int initial_stack)
     init_timer(1000);
     asm volatile("sti");
 
+    // Start paging.
+    initialise_paging();
+
+	u32int *ptr = (u32int*)0xA0000000;
+    u32int do_page_fault = *ptr;
+	do_page_fault++;
+
     for (s32int i = 0; i < 1500; i++){
         puts(".");
         //for (u64int j = 0; j < 10000000; j++){}
