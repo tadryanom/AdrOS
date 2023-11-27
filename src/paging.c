@@ -66,38 +66,44 @@ void free_frame (page_t *page)
 
 void initialise_paging (void)
 {
-    // The size of physical memory. For the moment we 
-    // assume it is 16MB big.
+    /*
+     * The size of physical memory. For the moment we 
+     * assume it is 16MB big.
+     */
     u32int mem_end_page = 0x1000000;
 
     nframes = mem_end_page / 0x1000;
     frames = (u32int*)kmalloc(INDEX_FROM_BIT(nframes));
     memset((u8int *)frames, 0, INDEX_FROM_BIT(nframes));
-    
+
     // Let's make a page directory.
     //u32int phys;
     kernel_directory = (page_directory_t*)kmalloc_a(sizeof(page_directory_t));
     memset((u8int *)kernel_directory, 0, sizeof(page_directory_t));
     kernel_directory->physicalAddr = (u32int)kernel_directory->physicalTables;
 
-    // Map some pages in the kernel heap area.
-    // Here we call get_page but not alloc_frame. This causes page_table_t's 
-    // to be created where necessary. We can't allocate frames yet because they
-    // they need to be identity mapped first below, and yet we can't increase
-    // placement_address between identity mapping and enabling the heap!
+    /*
+     * Map some pages in the kernel heap area.
+     * Here we call get_page but not alloc_frame. This causes page_table_t's 
+     * to be created where necessary. We can't allocate frames yet because they
+     * they need to be identity mapped first below, and yet we can't increase
+     * placement_address between identity mapping and enabling the heap!
+     */
     s32int i = 0;
     for (i = KHEAP_START; (u32int)i < KHEAP_START + KHEAP_INITIAL_SIZE; i += 0x1000)
         get_page(i, 1, kernel_directory);
 
-    // We need to identity map (phys addr = virt addr) from
-    // 0x0 to the end of used memory, so we can access this
-    // transparently, as if paging wasn't enabled.
-    // NOTE that we use a while loop here deliberately.
-    // inside the loop body we actually change placement_address
-    // by calling kmalloc(). A while loop causes this to be
-    // computed on-the-fly rather than once at the start.
-    // Allocate a lil' bit extra so the kernel heap can be
-    // initialised properly.
+    /*
+     * We need to identity map (phys addr = virt addr) from
+     * 0x0 to the end of used memory, so we can access this
+     * transparently, as if paging wasn't enabled.
+     * NOTE that we use a while loop here deliberately.
+     * inside the loop body we actually change placement_address
+     * by calling kmalloc(). A while loop causes this to be
+     * computed on-the-fly rather than once at the start.
+     * Allocate a lil' bit extra so the kernel heap can be
+     * initialised properly.
+     */
     i = 0;
     while (i < 0x400000 ) { //placement_address+0x1000
         // Kernel code is readable but not writeable from userspace.
@@ -153,8 +159,10 @@ page_t *get_page (u32int address, s32int make, page_directory_t *dir)
 
 void page_fault (registers_t *regs)
 {
-    // A page fault has occurred.
-    // The faulting address is stored in the CR2 register.
+    /*
+     * A page fault has occurred.
+     * The faulting address is stored in the CR2 register.
+     */
     u32int faulting_address;
     asm volatile("mov %%cr2, %0" : "=r" (faulting_address));
 

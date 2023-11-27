@@ -162,8 +162,10 @@ void *alloc (u32int size, u8int page_align, heap_t *heap)
     header_t *orig_hole_header = (header_t *)lookup_ordered_array(iterator, &heap->index);
     u32int orig_hole_pos = (u32int)orig_hole_header;
     u32int orig_hole_size = orig_hole_header->size;
-    // Here we work out if we should split the hole we found into two parts.
-    // Is the original hole size - requested hole size less than the overhead for adding a new hole?
+    /* 
+     * Here we work out if we should split the hole we found into two parts.
+     * Is the original hole size - requested hole size less than the overhead for adding a new hole?
+     */
     if (orig_hole_size-new_size < sizeof(header_t) + sizeof(footer_t)) {
         // Then just increase the requested size to the size of the hole we found.
         size += orig_hole_size-new_size;
@@ -197,8 +199,10 @@ void *alloc (u32int size, u8int page_align, heap_t *heap)
     block_footer->magic     = HEAP_MAGIC;
     block_footer->header    = block_header;
 
-    // We may need to write a new hole after the allocated block.
-    // We do this only if the new hole would have positive size...
+    /*
+     * We may need to write a new hole after the allocated block.
+     * We do this only if the new hole would have positive size...
+     */
     if (orig_hole_size - new_size > 0) {
         header_t *hole_header = (header_t *) (orig_hole_pos + sizeof(header_t) + size + sizeof(footer_t));
         hole_header->magic    = HEAP_MAGIC;
@@ -237,8 +241,10 @@ void free (void *p, heap_t *heap)
     // Do we want to add this header into the 'free holes' index?
     char do_add = 1;
 
-    // Unify left
-    // If the thing immediately to the left of us is a footer...
+    /*
+     * Unify left
+     * If the thing immediately to the left of us is a footer...
+     */
     footer_t *test_footer = (footer_t*) ( (u32int)header - sizeof(footer_t) );
     if (test_footer->magic == HEAP_MAGIC &&
         test_footer->header->is_hole == 1) {
@@ -249,8 +255,10 @@ void free (void *p, heap_t *heap)
         do_add = 0;                       // Since this header is already in the index, we don't want to add it again.
     }
 
-    // Unify right
-    // If the thing immediately to the right of us is a header...
+    /*
+     * Unify right
+     * If the thing immediately to the right of us is a header...
+     */
     header_t *test_header = (header_t*) ( (u32int)footer + sizeof(footer_t) );
     if (test_header->magic == HEAP_MAGIC &&
         test_header->is_hole) {

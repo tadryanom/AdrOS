@@ -11,6 +11,8 @@
 static void printmbi (multiboot_info_t *);
 //static void putpixel (s32int, s32int, s32int, multiboot_info_t *);
 
+extern u32int placement_address;
+
 /*
  * Kernel main function 
  * Here w'll starting all kernel services
@@ -40,15 +42,44 @@ void kmain (u64int magic, u64int addr, u32int initial_stack)
     init_timer(1000);
     asm volatile("sti");
 
+    // Find the location of our initial ramdisk.
+    ASSERT(mbi->mods_count > 0);
+    u32int initrd_location = *((u32int*)mbi->mods_addr);
+    u32int initrd_end = *(u32int*)(mbi->mods_addr + 4);
+    // Don't trample our module with placement accesses, please!
+    placement_address = initrd_end;
+    printf("initrd_location = 0x%04x - initrd_end = 0x%04x\n", initrd_location, placement_address);
+
     // Start paging.
     initialise_paging();
 
-	u32int *ptr = (u32int*)0xA0000000;
-    u32int do_page_fault = *ptr;
-	do_page_fault++;
+    // Initialise the initial ramdisk, and set it as the filesystem root.
+    fs_root = initialise_initrd(initrd_location);
+    // list the contents of /
+	s32int i = 0;
+	struct dirent *node = 0;
+	//u8int * buf = (u8int*)kmalloc(sizeof(u8int) * 1024);
+	while ((node = readdir_fs(fs_root, i)) != 0) {
+		printf("Found file %s", node->name);
+		fs_node_t *fsnode = finddir_fs(fs_root, node->name);
+		if ((fsnode->flags&0x7) == FS_DIRECTORY)
+			puts("\n\t(directory)\n");
+		else {
+			puts("\n\t contents: \"");
+			u8int buf[1024];
+			//memset(buf, 0, 1024);
+			u32int sz = read_fs(fsnode, 0, 1024, buf);
+			s32int j;
+			for (j = 0; (u32int)j < sz; j++)
+				printf("%c", buf[j]);
+			puts("\"\n");
+		}
+		i++;
+	}
+	//kfree(buf);
 
     for (s32int i = 0; i < 1500; i++){
-        puts(".");
+        //puts(".");
         //for (u64int j = 0; j < 10000000; j++){}
         sleep_ms(10);
     }

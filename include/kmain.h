@@ -8,6 +8,10 @@
 #include <descriptors.h>
 #include <timer.h>
 #include <paging.h>
+#include <kheap.h>
+#include <system.h>
+#include <initrd.h>
+#include <string.h>
 
 void kmain (u64int, u64int, u32int);
 
