@@ -27,6 +27,8 @@
 #define IRQ14 46
 #define IRQ15 47
 
+#define IDT_ENTRIES 256
+
 typedef struct registers
 {
     u32int ds;                  // Data segment selector

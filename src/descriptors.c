@@ -12,7 +12,6 @@
 
 //#define GDT_ENTRIES 6
 #define GDT_ENTRIES 5
-#define IDT_ENTRIES 256
 
 // Lets us access our ASM functions from our C code.
 extern void gdt_flush (u32int);
