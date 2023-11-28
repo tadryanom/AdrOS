@@ -19,3 +19,6 @@
 
 # Bochs log file
 bochs_logs.txt
+
+# Old files
+*.old
