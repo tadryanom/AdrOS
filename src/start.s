@@ -6,15 +6,18 @@ MULTIBOOT_HEADER_FLAGS equ MULTIBOOT_PAGE_ALIGN | MULTIBOOT_MEMORY_INFO | MULTIB
 MULTIBOOT_CHECKSUM     equ -(MULTIBOOT_HEADER_MAGIC + MULTIBOOT_HEADER_FLAGS)
 
 VIDEO_MODE             equ 0x1    ; 0 = graphical, 1 = text
-VIDEO_WIDTH            equ 0x50   ; 80 caracteres of width
-VIDEO_HEIGHT           equ 0x19   ; 25 caracteres of height
-VIDEO_DEPTH            equ 0x0    ;  0 Undefined
+VIDEO_WIDTH            equ 0x0    ; xx caracteres or pixels of width, 0 = undefined
+VIDEO_HEIGHT           equ 0x0    ; xx caracteres or pixels of width, 0 = undefined
+VIDEO_DEPTH            equ 0x0    ; 0 Undefined
 
 KERNEL_STACK_SIZE      equ 0x4000 ; Stack size (16384 bytes)
 
-    global kernel_entry           ; Export kernel_entry symbol
     extern kmain                  ; Import kmain and puts symbols
     extern puts
+    global kernel_entry           ; Export kernel_entry symbol
+    global gdt_flush              ; Export gdt_flush, tss_flush and idt_flush symbols
+    global tss_flush
+    global idt_flush
 
     section .multiboot
     align 0x4                     ; Aligns to 4 bytes
@@ -33,7 +36,7 @@ kernel_entry:                     ; Entry point for the kernel defined in the li
     mov esp, kernel_stack_top     ; Initialize the stack pointer.
 
     push 0x0
-    popf                          ; Reset EFLAGS to disables all hardware interrupts
+    popf                          ; Reset EFLAGS register
 
     push esp                      ; Push the pointer of the initial stack
     push ebx                      ; Push the pointer to the Multiboot information structure.
@@ -43,11 +46,38 @@ kernel_entry:                     ; Entry point for the kernel defined in the li
     push haltmsg
     call puts                     ; Print on screen "System has halted" message
 
-    cli
-    hlt
+    cli                           ; Disables all hardware interrupts
+    hlt                           ; Do halt CPU
     jmp $                         ; Kernel goes into infinite loop
 
 kernel_entry_size: dd $-$$
+
+gdt_flush:            ; Allows the C code to call gdt_flush().
+    mov eax, [esp+4]  ; Get the pointer to the GDT, passed as a parameter.
+    lgdt [eax]        ; Load the new GDT pointer
+
+    mov ax, 0x10      ; 0x10 is the offset in the GDT to our data segment
+    mov ds, ax        ; Load all data segment selectors
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+    jmp 0x08:.flush   ; 0x08 is the offset to our code segment: Far jump!
+.flush:
+    ret
+
+tss_flush:            ; Allows our C code to call tss_flush().
+    mov ax, 0x2B      ; Load the index of our TSS structure - The index is
+                      ; 0x28, as it is the 5th selector and each is 8 bytes
+                      ; long, but we set the bottom two bits (making 0x2B)
+                      ; so that it has an RPL of 3, not zero.
+    ltr ax            ; Load 0x2B into the task state register.
+    ret
+
+idt_flush:            ; Allows the C code to call idt_flush().
+    mov eax, [esp+4]  ; Get the pointer to the IDT, passed as a parameter. 
+    lidt [eax]        ; Load the IDT pointer.
+    ret
 
     section .data                 ; Beginning of section with initialized data
 haltmsg: db 'System has halted.',0x0

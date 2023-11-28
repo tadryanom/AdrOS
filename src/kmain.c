@@ -13,6 +13,7 @@ static void printmbi (multiboot_info_t *);
 
 extern u32int placement_address;
 u32int initial_esp;
+u8int shutdown = 0;
 
 /*
  * Kernel main function 
@@ -71,43 +72,27 @@ void kmain (u64int magic, u64int addr, u32int initial_stack)
     // The next section of code is not reentrant so make sure we aren't interrupted during.
     //asm volatile("cli");
     // list the contents of /
-	s32int i = 0;
 	struct dirent *node = 0;
-	//u8int * buf = (u8int*)kmalloc(sizeof(u8int) * 1024);
-	while ((node = readdir_fs(fs_root, i)) != 0) {
+	for (s32int i = 0; (node = readdir_fs(fs_root, i)) != 0; i++) {
 		printf("Found file %s", node->name);
 		fs_node_t *fsnode = finddir_fs(fs_root, node->name);
 		if ((fsnode->flags&0x7) == FS_DIRECTORY)
 			puts("\n\t(directory)\n");
 		else {
+			u8int * buf = (u8int*)kmalloc(sizeof(u8int) * 1024);
 			puts("\n\t contents: \"");
-			u8int buf[1024];
-			//memset(buf, 0, 1024);
-			u32int sz = read_fs(fsnode, 0, 1024, buf);
-			s32int j;
-			for (j = 0; (u32int)j < sz; j++)
-				printf("%c", buf[j]);
-			puts("\"\n");
+			memset(buf, 0, 1024);
+			read_fs(fsnode, 0, 1024, buf);
+			printf("%s\"\n", buf);
+			kfree(buf);
 		}
-		i++;
 	}
     //puts("/n");
-	//kfree(buf);
     //asm volatile("sti");
-
-    //for (s32int i = 0; i < 1500; i++) {
-	for (s32int i = 0; i < 15; i++){
-        puts(".");
-        //for (u64int j = 0; j < 10000000; j++){}
-        sleep_ms(1000);
-    }
-    puts("OK\n");
-
-    //asm volatile ("int $0x3");
-    //asm volatile ("int $0x4");
 
     //putpixel(511, 383, RED);
     //putpixel(515, 383, GREEN);
+    while(!shutdown){}
 }
 
 // Print Multiboot Info
