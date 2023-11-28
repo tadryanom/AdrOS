@@ -43,7 +43,7 @@ void kmain (u64int magic, u64int addr, u32int initial_stack)
     init_descriptors();
     // Initialise the PIT to 1000Hz
     init_timer(1000);
-	init_rtc();
+	//init_rtc(); // rtc ok
     asm volatile("sti");
 
     // Find the location of our initial ramdisk.
