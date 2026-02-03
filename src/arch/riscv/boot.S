@@ -1,0 +1,39 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * AdrOS Kernel - Copyright (c) 2018, Tulio A M Mendes <myself@tadryanom.me>
+ * All rights reserved.
+ * See LICENSE for details.
+ *
+ * Source: https://projects.tadryanom.me/?p=AdrOS.git;a=summary
+ * Mirror: https://github.com/tadryanom/AdrOS
+ */
+
+/*
+ * AdrOS - RISC-V 64-bit Bootstrap
+ * Target: QEMU 'virt' machine (starts at 0x80000000)
+ */
+
+.section .text
+.global _start
+
+_start:
+    /* Disable interrupts (sie = Supervisor Interrupt Enable) */
+    csrw sie, zero
+
+    /* Set up stack pointer.
+     * In linker.ld we will define a symbol for the stack top.
+     */
+    la sp, stack_top
+
+    /* Call C kernel */
+    call kernel_main
+
+    /* Hang if return */
+1:  wfi
+    j 1b
+
+.section .bss
+.align 16
+stack_bottom:
+    .skip 16384 /* 16KB Stack */
+stack_top:
