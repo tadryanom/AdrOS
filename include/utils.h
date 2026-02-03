@@ -16,5 +16,7 @@ void reverse(char* str, int length);
 void itoa(int num, char* str, int base);
 // ASCII to Integer
 int atoi(const char* str);
+// Hex dumper
+void itoa_hex(uint32_t num, char* str);
 
 #endif

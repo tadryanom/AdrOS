@@ -97,3 +97,15 @@ int atoi(const char* str) {
   
     return sign * res;
 }
+
+void itoa_hex(uint32_t num, char* str) {
+    const char hex_chars[] = "0123456789ABCDEF";
+    str[0] = '0';
+    str[1] = 'x';
+    
+    for (int i = 0; i < 8; i++) {
+        str[9 - i] = hex_chars[num & 0xF];
+        num >>= 4;
+    }
+    str[10] = '\0';
+}

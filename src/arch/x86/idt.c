@@ -142,6 +142,19 @@ void register_interrupt_handler(uint8_t n, isr_handler_t handler) {
     interrupt_handlers[n] = handler;
 }
 
+#include "utils.h"
+
+// ... imports ...
+
+void print_reg(const char* name, uint32_t val) {
+    char buf[16];
+    uart_print(name);
+    uart_print(": ");
+    itoa_hex(val, buf);
+    uart_print(buf);
+    uart_print("  ");
+}
+
 // The Main Handler called by assembly
 void isr_handler(struct registers* regs) {
     // Check if we have a custom handler
@@ -151,18 +164,35 @@ void isr_handler(struct registers* regs) {
     } else {
         // If Exception (0-31), Panic
         if (regs->int_no < 32) {
-            uart_print("\n[PANIC] Unhandled Exception: ");
-            // TODO: Print int_no hex
-            uart_print(" (Halting)\n");
+            __asm__ volatile("cli"); // Stop everything
             
+            uart_print("\n\n!!! KERNEL PANIC !!!\n");
+            uart_print("Exception Number: ");
+            char num_buf[16];
+            itoa(regs->int_no, num_buf, 10);
+            uart_print(num_buf);
+            uart_print("\n");
+            
+            uart_print("registers:\n");
+            print_reg("EAX", regs->eax); print_reg("EBX", regs->ebx); print_reg("ECX", regs->ecx); print_reg("EDX", regs->edx);
+            uart_print("\n");
+            print_reg("ESI", regs->esi); print_reg("EDI", regs->edi); print_reg("EBP", regs->ebp); print_reg("ESP", regs->esp);
+            uart_print("\n");
+            print_reg("EIP", regs->eip); print_reg("CS ", regs->cs);  print_reg("EFLAGS", regs->eflags);
+            uart_print("\n");
+
             // Print Page Fault specifics
             if (regs->int_no == 14) {
-                uart_print("Page Fault! Address: ");
                 uint32_t cr2;
                 __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
-                // Print CR2
+                uart_print("\nPAGE FAULT at address: ");
+                char cr2_buf[16];
+                itoa_hex(cr2, cr2_buf);
+                uart_print(cr2_buf);
+                uart_print("\n");
             }
             
+            uart_print("\nSystem Halted.\n");
             for(;;) __asm__("hlt");
         }
     }
