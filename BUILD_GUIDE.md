@@ -32,18 +32,33 @@ Isso gera o arquivo `adros-x86.bin`.
 
 ### Criar ISO Bootável (GRUB)
 Para x86, precisamos empacotar o kernel numa ISO com GRUB.
-Crie um arquivo `grub.cfg` em `iso_root/boot/grub/`:
 
+1. Compile o gerador de InitRD:
+```bash
+gcc tools/mkinitrd.c -o mkinitrd
+```
+
+2. Crie arquivos de teste:
+```bash
+echo "Hello from File System!" > test.txt
+echo "AdrOS v0.3" > version.txt
+./mkinitrd initrd.img test.txt version.txt
+```
+
+3. Empacote a ISO:
 ```bash
 mkdir -p iso_root/boot/grub
+cp adros-x86.bin iso_root/boot/
+cp initrd.img iso_root/boot/
+
 cat > iso_root/boot/grub/grub.cfg << EOF
 menuentry "AdrOS" {
     multiboot2 /boot/adros-x86.bin
+    module2 /boot/initrd.img
     boot
 }
 EOF
 
-cp adros-x86.bin iso_root/boot/
 grub-mkrescue -o adros.iso iso_root
 ```
 
