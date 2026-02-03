@@ -4,6 +4,7 @@
 #include "utils.h"
 #include "pmm.h"
 #include "vga_console.h"
+#include "process.h" // For sleep
 
 #define MAX_CMD_LEN 256
 static char cmd_buffer[MAX_CMD_LEN];
@@ -18,18 +19,24 @@ void execute_command(char* cmd) {
     
     if (strcmp(cmd, "help") == 0) {
         uart_print("Available commands:\n");
-        uart_print("  help   - Show this list\n");
-        uart_print("  clear  - Clear screen (if VGA)\n");
-        uart_print("  mem    - Show memory stats\n");
-        uart_print("  panic  - Trigger kernel panic\n");
-        uart_print("  reboot - Restart system\n");
+        uart_print("  help        - Show this list\n");
+        uart_print("  clear       - Clear screen (if VGA)\n");
+        uart_print("  mem         - Show memory stats\n");
+        uart_print("  panic       - Trigger kernel panic\n");
+        uart_print("  reboot      - Restart system\n");
+        uart_print("  sleep <num> - Sleep for N ticks (50Hz)\n");
     } 
     else if (strcmp(cmd, "clear") == 0) {
         // ANSI clear screen for UART
         uart_print("\033[2J\033[1;1H");
-        
-        // TODO: Clear VGA if active
-        // vga_clear();
+    }
+    else if (strncmp(cmd, "sleep ", 6) == 0) {
+        int ticks = atoi(cmd + 6);
+        uart_print("Sleeping for ");
+        uart_print(cmd + 6);
+        uart_print(" ticks...\n");
+        process_sleep(ticks);
+        uart_print("Woke up!\n");
     }
     else if (strcmp(cmd, "mem") == 0) {
         // pmm_print_stats() is not impl yet, so let's fake it or add it

@@ -3,26 +3,26 @@
 #include "vmm.h"
 #include "uart_console.h"
 
-// Heap starts at 3GB + 256MB (Arbitrary safe high location)
+// Heap starts at 3GB + 256MB
 #define KHEAP_START 0xD0000000
 #define KHEAP_INITIAL_SIZE (10 * 1024 * 1024) // 10MB
 #define PAGE_SIZE 4096
 
+// Advanced Header: Doubly Linked List
 typedef struct heap_header {
-    size_t size;            // Size of the data block (excluding header)
-    uint8_t is_free;        // 1 if free, 0 if used
-    struct heap_header* next; // Next block in the list
+    size_t size;              // Size of data
+    uint8_t is_free;          // 1 = Free, 0 = Used
+    struct heap_header* next; // Next block
+    struct heap_header* prev; // Previous block (New!)
 } heap_header_t;
 
 static heap_header_t* head = NULL;
+static heap_header_t* tail = NULL; // Keep track of tail for easier expansion later
 
 void kheap_init(void) {
-    uart_print("[HEAP] Initializing Kernel Heap...\n");
+    uart_print("[HEAP] Initializing Advanced Heap (Doubly Linked)...\n");
     
-    // 1. Map pages for the heap
-    // We need to map Virtual Addresses [KHEAP_START] to [KHEAP_START + SIZE]
-    // to physical frames.
-    
+    // 1. Map pages
     uint32_t pages_needed = KHEAP_INITIAL_SIZE / PAGE_SIZE;
     if (KHEAP_INITIAL_SIZE % PAGE_SIZE != 0) pages_needed++;
     
@@ -35,46 +35,53 @@ void kheap_init(void) {
             return;
         }
         
-        // Map it!
-        // Note: vmm_map_page expects 64-bit phys but we give it 32-bit cast
+        // Map 4KB frame
         vmm_map_page((uint64_t)(uintptr_t)phys_frame, (uint64_t)virt_addr, 
                      VMM_FLAG_PRESENT | VMM_FLAG_RW);
                      
         virt_addr += PAGE_SIZE;
     }
     
-    // 2. Create the initial huge free block
+    // 2. Initial Block
     head = (heap_header_t*)KHEAP_START;
     head->size = KHEAP_INITIAL_SIZE - sizeof(heap_header_t);
     head->is_free = 1;
     head->next = NULL;
+    head->prev = NULL;
     
-    uart_print("[HEAP] Initialized 10MB at 0xD0000000.\n");
+    tail = head;
+    
+    uart_print("[HEAP] 10MB Heap Ready.\n");
 }
 
 void* kmalloc(size_t size) {
     if (size == 0) return NULL;
     
-    // Align size to 8 bytes for performance/safety
+    // Align to 8 bytes
     size_t aligned_size = (size + 7) & ~7;
     
     heap_header_t* current = head;
     
     while (current) {
         if (current->is_free && current->size >= aligned_size) {
-            // Found a block!
-            
-            // Can we split it? 
-            // Only split if remaining space is big enough for a header + minimal data
-            if (current->size > aligned_size + sizeof(heap_header_t) + 8) {
+            // Found candidate. Split?
+            if (current->size > aligned_size + sizeof(heap_header_t) + 16) {
+                // Create new header in the remaining space
                 heap_header_t* new_block = (heap_header_t*)((uint8_t*)current + sizeof(heap_header_t) + aligned_size);
                 
                 new_block->size = current->size - aligned_size - sizeof(heap_header_t);
                 new_block->is_free = 1;
                 new_block->next = current->next;
+                new_block->prev = current;
                 
-                current->size = aligned_size;
+                // Update pointers
+                if (current->next) {
+                    current->next->prev = new_block;
+                }
                 current->next = new_block;
+                current->size = aligned_size;
+                
+                if (current == tail) tail = new_block;
             }
             
             current->is_free = 0;
@@ -83,24 +90,42 @@ void* kmalloc(size_t size) {
         current = current->next;
     }
     
-    uart_print("[HEAP] OOM: No block large enough!\n");
+    uart_print("[HEAP] OOM: kmalloc failed.\n");
     return NULL;
 }
 
 void kfree(void* ptr) {
     if (!ptr) return;
     
-    // Get header
     heap_header_t* header = (heap_header_t*)((uint8_t*)ptr - sizeof(heap_header_t));
     header->is_free = 1;
     
-    // Merge with next block if free (Coalescing)
+    // 1. Coalesce Right (Forward)
     if (header->next && header->next->is_free) {
-        header->size += sizeof(heap_header_t) + header->next->size;
-        header->next = header->next->next;
+        heap_header_t* next_block = header->next;
+        
+        header->size += sizeof(heap_header_t) + next_block->size;
+        header->next = next_block->next;
+        
+        if (header->next) {
+            header->next->prev = header;
+        } else {
+            tail = header; // If next was tail, now current is tail
+        }
     }
     
-    // TODO: We should ideally merge with PREVIOUS block too, 
-    // but a singly linked list makes that O(N). 
-    // A doubly linked list is better for production heaps.
+    // 2. Coalesce Left (Backward) - The Power of Double Links!
+    if (header->prev && header->prev->is_free) {
+        heap_header_t* prev_block = header->prev;
+        
+        prev_block->size += sizeof(heap_header_t) + header->size;
+        prev_block->next = header->next;
+        
+        if (header->next) {
+            header->next->prev = prev_block;
+        } else {
+            tail = prev_block;
+        }
+        // No need to update 'header' anymore, prev_block is the merged one
+    }
 }

@@ -14,5 +14,7 @@ void* memcpy(void* dst, const void* src, size_t n);
 void reverse(char* str, int length);
 // Integer to ASCII
 void itoa(int num, char* str, int base);
+// ASCII to Integer
+int atoi(const char* str);
 
 #endif

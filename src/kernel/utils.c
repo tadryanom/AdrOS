@@ -79,3 +79,21 @@ void itoa(int num, char* str, int base) {
     str[i] = '\0';
     reverse(str, i);
 }
+
+int atoi(const char* str) {
+    int res = 0;
+    int sign = 1;
+    int i = 0;
+  
+    if (str[0] == '-') {
+        sign = -1;
+        i++;
+    }
+  
+    for (; str[i] != '\0'; ++i) {
+        if (str[i] >= '0' && str[i] <= '9')
+            res = res * 10 + str[i] - '0';
+    }
+  
+    return sign * res;
+}
