@@ -6,41 +6,13 @@
 #include "idt.h"
 #include "io.h"
 #include "process.h"
+#include "keyboard.h"
+#include "shell.h"
 
 /* Check if the compiler thinks we are targeting the wrong operating system. */
 #if defined(__linux__)
 #error "You are not using a cross-compiler, you will run into trouble"
 #endif
-
-// Simple Keyboard Handler Stub
-void keyboard_handler(struct registers* regs) {
-    (void)regs;
-    // Read scan code from port 0x60
-    uint8_t scancode = inb(0x60);
-    
-    // If top bit is set, it's a key release. Ignore.
-    if (!(scancode & 0x80)) {
-        uart_print("[KEY] Pressed!\n");
-    }
-}
-
-void task_a(void) {
-    uart_print("Task A Started!\n");
-    for(;;) {
-        uart_print("A");
-        for(volatile int i=0; i<5000000; i++);
-        schedule();
-    }
-}
-
-void task_b(void) {
-    uart_print("Task B Started!\n");
-    for(;;) {
-        uart_print("B");
-        for(volatile int i=0; i<5000000; i++);
-        schedule();
-    }
-}
 
 /*
  * Kernel Entry Point
@@ -79,29 +51,35 @@ void kernel_main(unsigned long magic, unsigned long addr) {
     uart_print("[AdrOS] Initializing IDT...\n");
     idt_init();
     
-    register_interrupt_handler(33, keyboard_handler);
+    // 5. Initialize Drivers
+    keyboard_init();
     
-    // 5. Initialize Multitasking
+    // 6. Initialize Multitasking (Optional for Shell, but good to have)
     uart_print("[AdrOS] Initializing Scheduler...\n");
     process_init();
     
-    process_create_kernel(task_a);
-    process_create_kernel(task_b);
+    // Start Shell as the main interaction loop
+    shell_init();
     
 #else
     uart_print("[WARN] VMM/IDT/Sched not implemented for this architecture yet.\n");
 #endif
 
     uart_print("Welcome to AdrOS (x86/ARM/RISC-V/MIPS)!\n");
-    uart_print("System Halted. Starting Multitasking...\n");
 
     // Infinite loop acting as Idle Task
+    // Shell is interrupt driven, so we just idle here.
     for(;;) {
-        // uart_print(".");
-        schedule();
-        
+        // We can execute background tasks here if needed
         #if defined(__i386__) || defined(__x86_64__)
         __asm__("hlt");
+        #elif defined(__aarch64__)
+        __asm__("wfi");
+        #elif defined(__riscv)
+        __asm__("wfi");
         #endif
+        
+        // If we had preemptive scheduling, the timer would wake us up.
+        // For cooperative, we assume shell is ISR based so HLT is fine.
     }
 }
