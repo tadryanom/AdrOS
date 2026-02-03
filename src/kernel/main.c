@@ -8,6 +8,8 @@
 #include "process.h"
 #include "keyboard.h"
 #include "shell.h"
+#include "heap.h"
+#include "timer.h"
 
 /* Check if the compiler thinks we are targeting the wrong operating system. */
 #if defined(__linux__)
@@ -47,16 +49,22 @@ void kernel_main(unsigned long magic, unsigned long addr) {
 #if defined(__i386__)
     vmm_init(); 
     
-    // 4. Initialize Interrupts (x86)
+    // 4. Initialize Kernel Heap
+    kheap_init();
+    
+    // 5. Initialize Interrupts (x86)
     uart_print("[AdrOS] Initializing IDT...\n");
     idt_init();
     
-    // 5. Initialize Drivers
+    // 6. Initialize Drivers
     keyboard_init();
     
-    // 6. Initialize Multitasking (Optional for Shell, but good to have)
+    // 7. Initialize Multitasking
     uart_print("[AdrOS] Initializing Scheduler...\n");
     process_init();
+    
+    // 8. Start Timer (Preemption!) - 50Hz
+    timer_init(50);
     
     // Start Shell as the main interaction loop
     shell_init();
@@ -68,9 +76,8 @@ void kernel_main(unsigned long magic, unsigned long addr) {
     uart_print("Welcome to AdrOS (x86/ARM/RISC-V/MIPS)!\n");
 
     // Infinite loop acting as Idle Task
-    // Shell is interrupt driven, so we just idle here.
     for(;;) {
-        // We can execute background tasks here if needed
+        // HLT puts CPU to sleep until next interrupt (Timer or Keyboard)
         #if defined(__i386__) || defined(__x86_64__)
         __asm__("hlt");
         #elif defined(__aarch64__)
@@ -78,8 +85,5 @@ void kernel_main(unsigned long magic, unsigned long addr) {
         #elif defined(__riscv)
         __asm__("wfi");
         #endif
-        
-        // If we had preemptive scheduling, the timer would wake us up.
-        // For cooperative, we assume shell is ISR based so HLT is fine.
     }
 }
