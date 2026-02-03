@@ -1,0 +1,16 @@
+# Build artifacts
+build/
+*.o
+*.bin
+*.iso
+*.img
+
+# Temporary folders
+iso_root/
+isodir/
+
+# Editor/OS clutter
+.DS_Store
+.vscode/
+*.swp
+*~
