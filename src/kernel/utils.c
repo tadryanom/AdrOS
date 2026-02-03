@@ -40,6 +40,15 @@ void* memcpy(void* dst, const void* src, size_t n) {
     return dst;
 }
 
+char* strcpy(char* dest, const char* src) {
+    char* saved = dest;
+    while (*src) {
+        *dest++ = *src++;
+    }
+    *dest = 0;
+    return saved;
+}
+
 void reverse(char* str, int length) {
     int start = 0;
     int end = length - 1;

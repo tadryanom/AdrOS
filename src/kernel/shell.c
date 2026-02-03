@@ -4,16 +4,13 @@
 #include "utils.h"
 #include "pmm.h"
 #include "vga_console.h"
-#include "process.h"
+#include "process.h" 
 #include "fs.h"
+#include "heap.h"
 
 #define MAX_CMD_LEN 256
 static char cmd_buffer[MAX_CMD_LEN];
 static int cmd_index = 0;
-
-// HACK: To list files since we lack readdir
-extern int n_root_nodes;
-extern fs_node_t* root_nodes;
 
 void print_prompt(void) {
     uart_print("\nAdrOS $> ");
@@ -26,23 +23,19 @@ void execute_command(char* cmd) {
         uart_print("Available commands:\n");
         uart_print("  help        - Show this list\n");
         uart_print("  clear       - Clear screen\n");
+        uart_print("  ls          - List files (Dummy)\n");
+        uart_print("  cat <file>  - Read file content\n");
         uart_print("  mem         - Show memory stats\n");
         uart_print("  panic       - Trigger kernel panic\n");
         uart_print("  reboot      - Restart system\n");
         uart_print("  sleep <num> - Sleep for N ticks\n");
-        uart_print("  ls          - List files\n");
-        uart_print("  cat <file>  - Print file content\n");
     } 
     else if (strcmp(cmd, "ls") == 0) {
         if (!fs_root) {
             uart_print("No filesystem mounted.\n");
         } else {
-            uart_print("Files:\n");
-            for(int i=0; i<n_root_nodes; i++) {
-                uart_print("  ");
-                uart_print(root_nodes[i].name);
-                uart_print("\n");
-            }
+            uart_print("Filesystem Mounted (InitRD).\n");
+            uart_print("Try: cat test.txt\n");
         }
     }
     else if (strncmp(cmd, "cat ", 4) == 0) {
@@ -50,28 +43,25 @@ void execute_command(char* cmd) {
             uart_print("No filesystem mounted.\n");
         } else {
             char* fname = cmd + 4;
-            // Trim spaces?
-            fs_node_t* file = NULL;
-            if (fs_root->finddir)
-                file = fs_root->finddir(fs_root, fname);
-            
+            fs_node_t* file = fs_root->finddir(fs_root, fname);
             if (file) {
-                // Alloc buffer or use stack
-                uint8_t buf[1024]; 
-                // Cap read at 1023
-                uint32_t len = file->length > 1023 ? 1023 : file->length;
-                
-                vfs_read(file, 0, len, buf);
-                buf[len] = 0;
-                uart_print((char*)buf);
-                uart_print("\n");
+                uart_print("Reading "); uart_print(fname); uart_print("...\n");
+                uint8_t* buf = (uint8_t*)kmalloc(file->length + 1);
+                if (buf) {
+                    uint32_t sz = vfs_read(file, 0, file->length, buf);
+                    buf[sz] = 0;
+                    uart_print((char*)buf);
+                    uart_print("\n");
+                    kfree(buf);
+                } else {
+                    uart_print("OOM: File too big for heap.\n");
+                }
             } else {
                 uart_print("File not found.\n");
             }
         }
     }
     else if (strcmp(cmd, "clear") == 0) {
-        // ANSI clear screen for UART
         uart_print("\033[2J\033[1;1H");
     }
     else if (strncmp(cmd, "sleep ", 6) == 0) {
@@ -83,29 +73,16 @@ void execute_command(char* cmd) {
         uart_print("Woke up!\n");
     }
     else if (strcmp(cmd, "mem") == 0) {
-        // pmm_print_stats() is not impl yet, so let's fake it or add it
         uart_print("Memory Stats:\n");
         uart_print("  Total RAM: [TODO] MB\n");
-        uart_print("  Used:      [TODO] KB\n");
-        uart_print("  Free:      [TODO] KB\n");
     }
     else if (strcmp(cmd, "panic") == 0) {
-        // Trigger Int 0 (Div by zero)
-        int a = 1;
-        int b = 0;
-        int c = a / b;
-        (void)c;
+        int a = 1; int b = 0; int c = a / b; (void)c;
     }
     else if (strcmp(cmd, "reboot") == 0) {
-        // 8042 keyboard controller reset command
         uint8_t good = 0x02;
-        while (good & 0x02)
-            good = inb(0x64);
+        while (good & 0x02) good = inb(0x64);
         outb(0x64, 0xFE);
-        
-        // Triple Fault fallback
-        // idt_set_gate(0, 0, 0, 0);
-        // __asm__("int $0");
     }
     else if (strlen(cmd) > 0) {
         uart_print("Unknown command: ");
@@ -117,18 +94,17 @@ void execute_command(char* cmd) {
 }
 
 void shell_callback(char c) {
-    // Echo to screen
     char str[2] = { c, 0 };
     
     if (c == '\n') {
-        cmd_buffer[cmd_index] = 0; // Null terminate
+        cmd_buffer[cmd_index] = 0;
         execute_command(cmd_buffer);
         cmd_index = 0;
     }
     else if (c == '\b') {
         if (cmd_index > 0) {
             cmd_index--;
-            uart_print("\b \b"); // Backspace hack
+            uart_print("\b \b");
         }
     }
     else {

@@ -61,7 +61,7 @@ struct multiboot_tag_module {
     uint32_t size;
     uint32_t mod_start;
     uint32_t mod_end;
-    char cmdline[0];
+    char string[0];
 };
 
 struct multiboot_mmap_entry {

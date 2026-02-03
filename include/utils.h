@@ -10,6 +10,7 @@ int strncmp(const char* s1, const char* s2, size_t n);
 char* strcpy(char* dest, const char* src);
 void* memset(void* ptr, int value, size_t num);
 void* memcpy(void* dst, const void* src, size_t n);
+char* strcpy(char* dest, const char* src);
 
 // Reverse a string (helper for itoa)
 void reverse(char* str, int length);
