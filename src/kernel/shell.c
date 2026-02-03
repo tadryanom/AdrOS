@@ -4,11 +4,16 @@
 #include "utils.h"
 #include "pmm.h"
 #include "vga_console.h"
-#include "process.h" // For sleep
+#include "process.h"
+#include "fs.h"
 
 #define MAX_CMD_LEN 256
 static char cmd_buffer[MAX_CMD_LEN];
 static int cmd_index = 0;
+
+// HACK: To list files since we lack readdir
+extern int n_root_nodes;
+extern fs_node_t* root_nodes;
 
 void print_prompt(void) {
     uart_print("\nAdrOS $> ");
@@ -20,12 +25,51 @@ void execute_command(char* cmd) {
     if (strcmp(cmd, "help") == 0) {
         uart_print("Available commands:\n");
         uart_print("  help        - Show this list\n");
-        uart_print("  clear       - Clear screen (if VGA)\n");
+        uart_print("  clear       - Clear screen\n");
         uart_print("  mem         - Show memory stats\n");
         uart_print("  panic       - Trigger kernel panic\n");
         uart_print("  reboot      - Restart system\n");
-        uart_print("  sleep <num> - Sleep for N ticks (50Hz)\n");
+        uart_print("  sleep <num> - Sleep for N ticks\n");
+        uart_print("  ls          - List files\n");
+        uart_print("  cat <file>  - Print file content\n");
     } 
+    else if (strcmp(cmd, "ls") == 0) {
+        if (!fs_root) {
+            uart_print("No filesystem mounted.\n");
+        } else {
+            uart_print("Files:\n");
+            for(int i=0; i<n_root_nodes; i++) {
+                uart_print("  ");
+                uart_print(root_nodes[i].name);
+                uart_print("\n");
+            }
+        }
+    }
+    else if (strncmp(cmd, "cat ", 4) == 0) {
+        if (!fs_root) {
+            uart_print("No filesystem mounted.\n");
+        } else {
+            char* fname = cmd + 4;
+            // Trim spaces?
+            fs_node_t* file = NULL;
+            if (fs_root->finddir)
+                file = fs_root->finddir(fs_root, fname);
+            
+            if (file) {
+                // Alloc buffer or use stack
+                uint8_t buf[1024]; 
+                // Cap read at 1023
+                uint32_t len = file->length > 1023 ? 1023 : file->length;
+                
+                vfs_read(file, 0, len, buf);
+                buf[len] = 0;
+                uart_print((char*)buf);
+                uart_print("\n");
+            } else {
+                uart_print("File not found.\n");
+            }
+        }
+    }
     else if (strcmp(cmd, "clear") == 0) {
         // ANSI clear screen for UART
         uart_print("\033[2J\033[1;1H");
