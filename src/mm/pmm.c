@@ -57,35 +57,39 @@ void pmm_init(void* boot_info) {
 
 #if defined(__i386__) || defined(__x86_64__)
     // Parse Multiboot2 Info
-    struct multiboot_tag *tag;
-    uint32_t mbi_size = *(uint32_t *)boot_info;
-    
-    uart_print("[PMM] Parsing Multiboot2 info...\n");
+    if (boot_info) {
+        struct multiboot_tag *tag;
+        uint32_t mbi_size = *(uint32_t *)boot_info;
+        
+        uart_print("[PMM] Parsing Multiboot2 info...\n");
 
-    for (tag = (struct multiboot_tag *)((uint8_t *)boot_info + 8);
-       tag->type != MULTIBOOT_TAG_TYPE_END;
-       tag = (struct multiboot_tag *)((uint8_t *)tag + ((tag->size + 7) & ~7)))
-    {
-        if (tag->type == MULTIBOOT_TAG_TYPE_BASIC_MEMINFO) {
-             struct multiboot_tag_basic_meminfo *meminfo = (struct multiboot_tag_basic_meminfo *)tag;
-             // Basic info just gives lower/upper KB
-             uint64_t mem_kb = meminfo->mem_upper; // Upper memory only
-             total_memory = (mem_kb * 1024) + (1024*1024); // +1MB low mem
-        }
-        else if (tag->type == MULTIBOOT_TAG_TYPE_MMAP) {
-            struct multiboot_tag_mmap *mmap = (struct multiboot_tag_mmap *)tag;
-            struct multiboot_mmap_entry *entry;
-            
-            for (entry = mmap->entries;
-                 (uint8_t *)entry < (uint8_t *)mmap + mmap->size;
-                 entry = (struct multiboot_mmap_entry *)((uint32_t)entry + mmap->entry_size))
-            {
-                // Only mark AVAILABLE regions as free
-                if (entry->type == MULTIBOOT_MEMORY_AVAILABLE) {
-                    pmm_mark_region(entry->addr, entry->len, 0); // 0 = Free
+        for (tag = (struct multiboot_tag *)((uint8_t *)boot_info + 8);
+           tag->type != MULTIBOOT_TAG_TYPE_END;
+           tag = (struct multiboot_tag *)((uint8_t *)tag + ((tag->size + 7) & ~7)))
+        {
+            if (tag->type == MULTIBOOT_TAG_TYPE_BASIC_MEMINFO) {
+                 struct multiboot_tag_basic_meminfo *meminfo = (struct multiboot_tag_basic_meminfo *)tag;
+                 // Basic info just gives lower/upper KB
+                 uint64_t mem_kb = meminfo->mem_upper; // Upper memory only
+                 total_memory = (mem_kb * 1024) + (1024*1024); // +1MB low mem
+            }
+            else if (tag->type == MULTIBOOT_TAG_TYPE_MMAP) {
+                struct multiboot_tag_mmap *mmap = (struct multiboot_tag_mmap *)tag;
+                struct multiboot_mmap_entry *entry;
+                
+                for (entry = mmap->entries;
+                     (uint8_t *)entry < (uint8_t *)mmap + mmap->size;
+                     entry = (struct multiboot_mmap_entry *)((uint32_t)entry + mmap->entry_size))
+                {
+                    // Only mark AVAILABLE regions as free
+                    if (entry->type == MULTIBOOT_MEMORY_AVAILABLE) {
+                        pmm_mark_region(entry->addr, entry->len, 0); // 0 = Free
+                    }
                 }
             }
         }
+    } else {
+        uart_print("[PMM] Error: boot_info is NULL!\n");
     }
 #else
     // Manual setup for ARM/RISC-V (assuming fixed RAM for now)
