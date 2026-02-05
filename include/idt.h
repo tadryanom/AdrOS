@@ -3,34 +3,25 @@
 
 #include <stdint.h>
 
-/* IDT Entry (Gate Descriptor) */
-struct idt_entry {
-    uint16_t base_lo;   // Lower 16 bits of handler address
-    uint16_t sel;       // Kernel segment selector
-    uint8_t  always0;   // This must always be zero
-    uint8_t  flags;     // Type and attributes
-    uint16_t base_hi;   // Upper 16 bits of handler address
-} __attribute__((packed));
+#if defined(__i386__) || defined(__x86_64__)
+#include "arch/x86/idt.h"
+#else
 
-/* IDT Pointer (Loaded into IDTR) */
-struct idt_ptr {
-    uint16_t limit;
-    uint32_t base;
-} __attribute__((packed));
-
-/* Registers saved by our assembly ISR stub */
+/* Non-x86: provide a minimal compatibility surface.
+   Interrupt controller specifics live in arch code. */
 struct registers {
-    uint32_t ds;                                     // Data segment selector
-    uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax; // Pushed by pusha
-    uint32_t int_no, err_code;                       // Interrupt number and error code
-    uint32_t eip, cs, eflags, useresp, ss;           // Pushed by the processor automatically
+    uint32_t int_no;
+    uint32_t err_code;
 };
 
-// Initialize IDT and PIC
-void idt_init(void);
-
-// Register a custom handler for a specific interrupt
 typedef void (*isr_handler_t)(struct registers*);
-void register_interrupt_handler(uint8_t n, isr_handler_t handler);
+
+static inline void idt_init(void) { }
+static inline void register_interrupt_handler(uint8_t n, isr_handler_t handler) {
+    (void)n;
+    (void)handler;
+}
+
+#endif
 
 #endif
