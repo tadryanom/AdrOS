@@ -15,12 +15,29 @@ C_SOURCES += $(wildcard $(SRC_DIR)/mm/*.c)
 
 # --- x86 Configuration ---
 ifeq ($(ARCH),x86)
-    CC := gcc
-    AS := as
-    LD := ld
-    CFLAGS := -m32 -ffreestanding -O2 -Wall -Wextra -Iinclude
-    LDFLAGS := -m elf_i386 -T $(SRC_DIR)/arch/x86/linker.ld
-    ASFLAGS := --32
+    # Default Toolchain Prefix (can be overridden)
+    ifdef CROSS
+        TOOLPREFIX ?= i686-elf-
+    endif
+
+    # Toolchain tools (Allow user override via make CC=...)
+    CC ?= $(TOOLPREFIX)gcc
+    AS ?= $(TOOLPREFIX)as
+    LD ?= $(TOOLPREFIX)ld
+    
+    # Mandatory Architecture Flags
+    ARCH_CFLAGS := -m32 -ffreestanding -Iinclude
+    ARCH_LDFLAGS := -m elf_i386 -T $(SRC_DIR)/arch/x86/linker.ld
+    ARCH_ASFLAGS := --32
+
+    # Default User Flags (Allow override via make CFLAGS=...)
+    CFLAGS ?= -O2 -Wall -Wextra
+    
+    # Merge Flags
+    CFLAGS := $(ARCH_CFLAGS) $(CFLAGS)
+    LDFLAGS := $(ARCH_LDFLAGS) $(LDFLAGS)
+    ASFLAGS := $(ARCH_ASFLAGS) $(ASFLAGS)
+
     ASM_SOURCES := $(wildcard $(SRC_DIR)/arch/x86/*.S)
     C_SOURCES += $(wildcard $(SRC_DIR)/arch/x86/*.c)
 endif
