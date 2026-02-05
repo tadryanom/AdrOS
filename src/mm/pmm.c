@@ -19,6 +19,14 @@ static uint64_t total_memory = 0;
 static uint64_t used_memory = 0;
 static uint64_t max_frames = 0;
 
+static uint64_t align_down(uint64_t value, uint64_t align) {
+    return value & ~(align - 1);
+}
+
+static uint64_t align_up(uint64_t value, uint64_t align) {
+    return (value + align - 1) & ~(align - 1);
+}
+
 static void bitmap_set(uint64_t bit) {
     memory_bitmap[bit / 8] |= (1 << (bit % 8));
 }
@@ -59,7 +67,8 @@ void pmm_init(void* boot_info) {
     // Parse Multiboot2 Info
     if (boot_info) {
         struct multiboot_tag *tag;
-        uint32_t mbi_size = *(uint32_t *)boot_info;
+        (void)*(uint32_t *)boot_info;
+        uint64_t highest_addr = 0;
         
         uart_print("[PMM] Parsing Multiboot2 info...\n");
 
@@ -81,9 +90,63 @@ void pmm_init(void* boot_info) {
                      (uint8_t *)entry < (uint8_t *)mmap + mmap->size;
                      entry = (struct multiboot_mmap_entry *)((uint32_t)entry + mmap->entry_size))
                 {
+                    uint64_t end = entry->addr + entry->len;
+                    if (end > highest_addr) highest_addr = end;
+
                     // Only mark AVAILABLE regions as free
                     if (entry->type == MULTIBOOT_MEMORY_AVAILABLE) {
                         pmm_mark_region(entry->addr, entry->len, 0); // 0 = Free
+                    }
+                }
+            }
+        }
+
+        // Finalize memory limits (must be done BEFORE pmm_mark_region is meaningful)
+        if (highest_addr > total_memory) {
+            total_memory = highest_addr;
+        }
+
+        if (total_memory == 0) {
+            total_memory = 16 * 1024 * 1024; // Fallback to 16MB
+        }
+
+        if (total_memory > MAX_RAM_SIZE) {
+            total_memory = MAX_RAM_SIZE;
+        }
+
+        total_memory = align_down(total_memory, PAGE_SIZE);
+        max_frames = total_memory / PAGE_SIZE;
+
+        // After "everything used", used_memory should reflect that state.
+        used_memory = max_frames * PAGE_SIZE;
+
+        // Re-run map processing to free AVAILABLE regions now that max_frames is valid.
+        for (tag = (struct multiboot_tag *)((uint8_t *)boot_info + 8);
+           tag->type != MULTIBOOT_TAG_TYPE_END;
+           tag = (struct multiboot_tag *)((uint8_t *)tag + ((tag->size + 7) & ~7)))
+        {
+            if (tag->type == MULTIBOOT_TAG_TYPE_MMAP) {
+                struct multiboot_tag_mmap *mmap = (struct multiboot_tag_mmap *)tag;
+                struct multiboot_mmap_entry *entry;
+
+                for (entry = mmap->entries;
+                     (uint8_t *)entry < (uint8_t *)mmap + mmap->size;
+                     entry = (struct multiboot_mmap_entry *)((uint32_t)entry + mmap->entry_size))
+                {
+                    if (entry->type == MULTIBOOT_MEMORY_AVAILABLE) {
+                        // Clamp to our supported range
+                        uint64_t base = entry->addr;
+                        uint64_t len = entry->len;
+
+                        if (base >= total_memory) continue;
+                        if (base + len > total_memory) {
+                            len = total_memory - base;
+                        }
+                        base = align_up(base, PAGE_SIZE);
+                        len = align_down(len, PAGE_SIZE);
+                        if (len == 0) continue;
+
+                        pmm_mark_region(base, len, 0);
                     }
                 }
             }
@@ -104,7 +167,10 @@ void pmm_init(void* boot_info) {
     #endif
 
     uint64_t ram_size = 128 * 1024 * 1024; // Assume 128MB
+    if (ram_size > MAX_RAM_SIZE) ram_size = MAX_RAM_SIZE;
+    ram_size = align_down(ram_size, PAGE_SIZE);
     max_frames = ram_size / PAGE_SIZE;
+    used_memory = max_frames * PAGE_SIZE;
     
     // Mark all RAM as free
     pmm_mark_region(ram_base, ram_size, 0);
@@ -126,6 +192,14 @@ void pmm_init(void* boot_info) {
         phys_end -= 0xC0000000;
         uart_print("[PMM] Detected Higher Half Kernel. Adjusting protection range.\n");
     }
+
+#if defined(__mips__)
+    // MIPS KSEG0 virtual addresses are 0x80000000..0x9FFFFFFF mapped to physical 0x00000000..
+    if (virt_start >= 0x80000000ULL && virt_start < 0xA0000000ULL) {
+        phys_start = virt_start - 0x80000000ULL;
+        phys_end = virt_end - 0x80000000ULL;
+    }
+#endif
 
     uint64_t kernel_size = phys_end - phys_start;
     
