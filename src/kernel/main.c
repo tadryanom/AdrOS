@@ -23,6 +23,8 @@
 #include "initrd.h"
 #include "fs.h"
 
+#include "gdt.h"
+
 #include "syscall.h"
 
 /* Check if the compiler thinks we are targeting the wrong operating system. */
@@ -66,6 +68,9 @@ void kernel_main(unsigned long magic, unsigned long addr) {
     
     // 4. Initialize Kernel Heap
     kheap_init();
+
+    uart_print("[AdrOS] Initializing GDT/TSS...\n");
+    gdt_init();
     
     // 5. Initialize Interrupts (x86)
     uart_print("[AdrOS] Initializing IDT...\n");
