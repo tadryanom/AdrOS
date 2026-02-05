@@ -8,7 +8,7 @@
 #
 
 # AdrOS Makefile
-# Usage: make ARCH=x86 (default) | arm | riscv
+# Usage: make ARCH=x86 (default) | arm | riscv | mips
 
 ARCH ?= x86
 KERNEL_NAME := adros-$(ARCH).bin
@@ -21,6 +21,9 @@ BUILD_DIR := build/$(ARCH)
 C_SOURCES := $(wildcard $(SRC_DIR)/kernel/*.c)
 C_SOURCES += $(wildcard $(SRC_DIR)/drivers/*.c)
 C_SOURCES += $(wildcard $(SRC_DIR)/mm/*.c)
+ 
+ # HAL sources (architecture-specific)
+ C_SOURCES += $(wildcard $(SRC_DIR)/hal/$(ARCH)/*.c)
 
 # --- x86 Configuration ---
 ifeq ($(ARCH),x86)
@@ -73,6 +76,18 @@ ifeq ($(ARCH),riscv)
     ASFLAGS := 
     ASM_SOURCES := $(wildcard $(SRC_DIR)/arch/riscv/*.S)
     C_SOURCES += $(wildcard $(SRC_DIR)/arch/riscv/*.c)
+endif
+
+# --- MIPS 32 Configuration ---
+ifeq ($(ARCH),mips)
+    CC := mipsel-linux-gnu-gcc
+    AS := mipsel-linux-gnu-as
+    LD := mipsel-linux-gnu-ld
+    CFLAGS := -ffreestanding -O2 -Wall -Wextra -Iinclude -mabi=32 -march=mips32
+    LDFLAGS := -T $(SRC_DIR)/arch/mips/linker.ld
+    ASFLAGS :=
+    ASM_SOURCES := $(wildcard $(SRC_DIR)/arch/mips/*.S)
+    C_SOURCES += $(wildcard $(SRC_DIR)/arch/mips/*.c)
 endif
 
 # Object generation
