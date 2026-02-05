@@ -8,21 +8,16 @@
  * Mirror: https://github.com/tadryanom/AdrOS
  */
 
-#include <stdint.h>
-#include "uart_console.h"
-
 #include "hal/uart.h"
+#include <stdint.h>
 
-void uart_init(void) {
-    hal_uart_init();
+#define UART_BASE 0x09000000
+
+void hal_uart_init(void) {
 }
 
-void uart_put_char(char c) {
-    hal_uart_putc(c);
-}
-
-void uart_print(const char* str) {
-    for (int i = 0; str[i] != '\0'; i++) {
-        uart_put_char(str[i]);
-    }
+void hal_uart_putc(char c) {
+    volatile uint32_t* uart = (volatile uint32_t*)UART_BASE;
+    while (uart[6] & (1 << 5)) { }
+    uart[0] = (uint32_t)c;
 }
