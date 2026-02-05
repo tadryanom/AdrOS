@@ -24,6 +24,8 @@
 #include "initrd.h"
 #include "fs.h"
 
+#include "syscall.h"
+
 /* Check if the compiler thinks we are targeting the wrong operating system. */
 #if defined(__linux__)
 #error "You are not using a cross-compiler, you will run into trouble"
@@ -68,6 +70,8 @@ void kernel_main(unsigned long magic, unsigned long addr) {
     // 5. Initialize Interrupts (x86)
     uart_print("[AdrOS] Initializing IDT...\n");
     idt_init();
+
+    syscall_init();
     
     // 6. Initialize Drivers
     keyboard_init();
