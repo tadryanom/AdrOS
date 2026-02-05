@@ -4,6 +4,7 @@
 #include "uart_console.h"
 #include "timer.h" // Need access to current tick usually, but we pass it in wake_check
 #include "spinlock.h"
+#include "gdt.h"
 #include <stddef.h>
 
 struct process* current_process = NULL;
@@ -45,6 +46,11 @@ void process_init(void) {
     ready_queue_head = kernel_proc;
     ready_queue_tail = kernel_proc;
     kernel_proc->next = kernel_proc;
+
+    // Best effort: set esp0 to current stack until we have a dedicated kernel stack for PID 0
+    uintptr_t cur_esp;
+    __asm__ volatile("mov %%esp, %0" : "=r"(cur_esp));
+    tss_set_kernel_stack(cur_esp);
 
     spin_unlock_irqrestore(&sched_lock, flags);
 }
@@ -152,6 +158,11 @@ void schedule(void) {
 
     current_process = next;
     current_process->state = PROCESS_RUNNING;
+
+    // For ring3->ring0 transitions, esp0 must point to the top of the kernel stack.
+    if (current_process->kernel_stack) {
+        tss_set_kernel_stack((uintptr_t)current_process->kernel_stack + 4096);
+    }
 
     spin_unlock(&sched_lock);
     
