@@ -26,6 +26,8 @@ extern void irq4(); extern void irq5(); extern void irq6(); extern void irq7();
 extern void irq8(); extern void irq9(); extern void irq10(); extern void irq11();
 extern void irq12(); extern void irq13(); extern void irq14(); extern void irq15();
 
+extern void isr128();
+
 void idt_set_gate(uint8_t num, uint32_t base, uint16_t sel, uint8_t flags) {
     idt[num].base_lo = base & 0xFFFF;
     idt[num].base_hi = (base >> 16) & 0xFFFF;
@@ -129,6 +131,9 @@ void idt_init(void) {
     idt_set_gate(46, (uint32_t)irq14, 0x08, 0x8E);
     idt_set_gate(47, (uint32_t)irq15, 0x08, 0x8E);
 
+    // Syscall gate (int 0x80) must be callable from user mode (DPL=3)
+    idt_set_gate(128, (uint32_t)isr128, 0x08, 0xEE);
+
     // Load IDT
     __asm__ volatile("lidt %0" : : "m"(idtp));
     
@@ -198,7 +203,7 @@ void isr_handler(struct registers* regs) {
     }
     
     // Send EOI (End of Interrupt) to PICs for IRQs (32-47)
-    if (regs->int_no >= 32) {
+    if (regs->int_no >= 32 && regs->int_no <= 47) {
         if (regs->int_no >= 40) {
             outb(0xA0, 0x20); // Slave EOI
         }
