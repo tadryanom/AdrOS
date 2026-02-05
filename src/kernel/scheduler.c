@@ -4,7 +4,7 @@
 #include "uart_console.h"
 #include "timer.h" // Need access to current tick usually, but we pass it in wake_check
 #include "spinlock.h"
-#include "gdt.h"
+#include "hal/cpu.h"
 #include <stddef.h>
 
 struct process* current_process = NULL;
@@ -40,7 +40,7 @@ void process_init(void) {
     kernel_proc->pid = 0;
     kernel_proc->state = PROCESS_RUNNING;
     kernel_proc->wake_at_tick = 0;
-    __asm__ volatile("mov %%cr3, %0" : "=r"(kernel_proc->cr3));
+    kernel_proc->addr_space = hal_cpu_get_address_space();
     
     current_process = kernel_proc;
     ready_queue_head = kernel_proc;
@@ -48,18 +48,17 @@ void process_init(void) {
     kernel_proc->next = kernel_proc;
 
     // Best effort: set esp0 to current stack until we have a dedicated kernel stack for PID 0
-    uintptr_t cur_esp;
-    __asm__ volatile("mov %%esp, %0" : "=r"(cur_esp));
-    tss_set_kernel_stack(cur_esp);
+    uintptr_t cur_esp = hal_cpu_get_stack_pointer();
+    hal_cpu_set_kernel_stack(cur_esp);
 
     spin_unlock_irqrestore(&sched_lock, flags);
 }
 
 void thread_wrapper(void (*fn)(void)) {
-    __asm__ volatile("sti"); 
+    hal_cpu_enable_interrupts();
     fn();
     uart_print("[SCHED] Thread exited.\n");
-    for(;;) __asm__("hlt");
+    for(;;) hal_cpu_idle();
 }
 
 struct process* process_create_kernel(void (*entry_point)(void)) {
@@ -72,7 +71,7 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
 
     proc->pid = next_pid++;
     proc->state = PROCESS_READY;
-    proc->cr3 = current_process->cr3; 
+    proc->addr_space = current_process->addr_space;
     proc->wake_at_tick = 0;
     
     void* stack_phys = pmm_alloc_page_low();
@@ -92,7 +91,7 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
     *--sp = (uint32_t)thread_wrapper;
     *--sp = 0; *--sp = 0; *--sp = 0; *--sp = 0;
     
-    proc->esp = (uint32_t)sp;
+    proc->sp = (uintptr_t)sp;
 
     proc->next = ready_queue_head;
     ready_queue_tail->next = proc;
@@ -161,12 +160,12 @@ void schedule(void) {
 
     // For ring3->ring0 transitions, esp0 must point to the top of the kernel stack.
     if (current_process->kernel_stack) {
-        tss_set_kernel_stack((uintptr_t)current_process->kernel_stack + 4096);
+        hal_cpu_set_kernel_stack((uintptr_t)current_process->kernel_stack + 4096);
     }
 
     spin_unlock(&sched_lock);
     
-    context_switch(&prev->esp, current_process->esp);
+    context_switch(&prev->sp, current_process->sp);
 
     irq_restore(irq_flags);
 }

@@ -14,8 +14,8 @@ typedef enum {
 
 struct process {
     uint32_t pid;
-    uint32_t esp;
-    uint32_t cr3;
+    uintptr_t sp;
+    uintptr_t addr_space;
     uint32_t* kernel_stack;
     process_state_t state;
     uint32_t wake_at_tick;      // New: When to wake up (global tick count)
@@ -41,7 +41,7 @@ void process_wake_check(uint32_t current_tick);
 // The magic function that switches stacks (Implemented in Assembly)
 // old_esp_ptr: Address where we save the OLD process's ESP
 // new_esp: The NEW process's ESP to load
-extern void context_switch(uint32_t* old_esp_ptr, uint32_t new_esp);
+extern void context_switch(uintptr_t* old_sp_ptr, uintptr_t new_sp);
 
 // Yield the CPU to the next process voluntarily
 void schedule(void);
