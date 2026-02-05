@@ -1,6 +1,8 @@
 #include "vga_console.h"
 
-static volatile uint16_t* const VGA_BUFFER = (uint16_t*) 0xB8000;
+#include "hal/video.h"
+
+static volatile uint16_t* VGA_BUFFER = 0;
 static const int VGA_WIDTH = 80;
 static const int VGA_HEIGHT = 25;
 
@@ -9,9 +11,14 @@ static int term_row = 0;
 static uint8_t term_color = 0x0F; // White on Black
 
 void vga_init(void) {
+    VGA_BUFFER = (volatile uint16_t*)hal_video_text_buffer();
     term_col = 0;
     term_row = 0;
     term_color = 0x07; // Light Grey on Black
+
+    if (!VGA_BUFFER) {
+        return;
+    }
     
     for (int y = 0; y < VGA_HEIGHT; y++) {
         for (int x = 0; x < VGA_WIDTH; x++) {
@@ -19,7 +26,11 @@ void vga_init(void) {
             VGA_BUFFER[index] = (uint16_t) ' ' | (uint16_t) term_color << 8;
         }
     }
-}
+}!VGA_BUFFER) {
+        return;
+    }
+
+    if (
 
 void vga_set_color(uint8_t fg, uint8_t bg) {
     term_color = fg | (bg << 4);

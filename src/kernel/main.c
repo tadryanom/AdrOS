@@ -32,10 +32,6 @@ void kernel_main(unsigned long magic, unsigned long addr) {
     uart_print("\n[AdrOS] Booting...\n");
 
 #if defined(__i386__) || defined(__x86_64__)
-    vga_init();
-    vga_set_color(0x0A, 0x00); 
-    vga_print("[AdrOS] Kernel Initialized (VGA).\n");
-    
     // Check Multiboot2 Magic
     if (magic != 0x36d76289) {
         uart_print("[ERR] Invalid Multiboot2 Magic!\n");
@@ -53,6 +49,11 @@ void kernel_main(unsigned long magic, unsigned long addr) {
     uart_print("[AdrOS] Initializing VMM...\n");
 #if defined(__i386__)
     vmm_init(); 
+
+    // VGA console depends on higher-half mapping (VMM)
+    vga_init();
+    vga_set_color(0x0A, 0x00);
+    vga_print("[AdrOS] Kernel Initialized (VGA).\n");
     
     // 4. Initialize Kernel Heap
     kheap_init();
