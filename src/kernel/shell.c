@@ -8,6 +8,8 @@
 #include "fs.h"
 #include "heap.h"
 
+#include "hal/system.h"
+
 #define MAX_CMD_LEN 256
 static char cmd_buffer[MAX_CMD_LEN];
 static int cmd_index = 0;
@@ -80,9 +82,7 @@ void execute_command(char* cmd) {
         int a = 1; int b = 0; int c = a / b; (void)c;
     }
     else if (strcmp(cmd, "reboot") == 0) {
-        uint8_t good = 0x02;
-        while (good & 0x02) good = inb(0x64);
-        outb(0x64, 0xFE);
+        hal_system_reboot();
     }
     else if (strlen(cmd) > 0) {
         uart_print("Unknown command: ");
