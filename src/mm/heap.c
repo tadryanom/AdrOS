@@ -1,9 +1,10 @@
 #include "heap.h"
-#include "pmm.h"
-#include "vmm.h"
 #include "uart_console.h"
-
+#include "pmm.h"
 #include "spinlock.h"
+#include "hal/cpu.h"
+#include <stddef.h>
+#include <stdint.h>
 
 // Heap starts at 3GB + 256MB
 #define KHEAP_START 0xD0000000
@@ -33,7 +34,7 @@ void check_integrity(heap_header_t* header) {
         uart_print("Block at: ");
         // TODO: print address
         uart_print(" has invalid magic number.\n");
-        for(;;) __asm__("hlt");
+        for(;;) hal_cpu_idle();
     }
 }
 void kheap_init(void) {
@@ -91,7 +92,7 @@ void* kmalloc(size_t size) {
         if (current->magic != HEAP_MAGIC) {
             spin_unlock_irqrestore(&heap_lock, flags);
             uart_print("[HEAP] Corruption Detected in kmalloc scan!\n");
-            for(;;) __asm__("hlt");
+            for(;;) hal_cpu_idle();
         }
 
         if (current->is_free && current->size >= aligned_size) {
@@ -139,7 +140,7 @@ void kfree(void* ptr) {
     if (header->magic != HEAP_MAGIC) {
         spin_unlock_irqrestore(&heap_lock, flags);
         uart_print("[HEAP] Corruption Detected in kfree!\n");
-        for(;;) __asm__("hlt");
+        for(;;) hal_cpu_idle();
     }
 
     header->is_free = 1;
