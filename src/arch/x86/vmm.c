@@ -21,6 +21,20 @@
    So accessing boot_pd directly works fine! */
 extern uint32_t boot_pd[1024];
 
+static void* pmm_alloc_page_low(void) {
+    // Bring-up safety: allocate only from identity-mapped area (0-4MB)
+    // until we have a general phys->virt mapping.
+    for (int tries = 0; tries < 1024; tries++) {
+        void* p = pmm_alloc_page();
+        if (!p) return 0;
+        if ((uintptr_t)p < 0x00400000) {
+            return p;
+        }
+        pmm_free_page(p);
+    }
+    return 0;
+}
+
 static inline void invlpg(uintptr_t vaddr) {
     __asm__ volatile("invlpg (%0)" : : "r" (vaddr) : "memory");
 }
@@ -32,7 +46,7 @@ void vmm_map_page(uint64_t phys, uint64_t virt, uint32_t flags) {
     // Check if Page Table exists
     if (!(boot_pd[pd_index] & X86_PTE_PRESENT)) {
         // Allocate a new PT
-        uint32_t pt_phys = (uint32_t)pmm_alloc_page();
+        uint32_t pt_phys = (uint32_t)pmm_alloc_page_low();
         if (!pt_phys) return; // OOM
 
         // ACCESS SAFETY: Convert Physical to Virtual to write to it

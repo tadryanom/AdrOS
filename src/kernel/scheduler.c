@@ -10,11 +10,26 @@ struct process* ready_queue_head = NULL;
 struct process* ready_queue_tail = NULL;
 static uint32_t next_pid = 1;
 
+static void* pmm_alloc_page_low(void) {
+    // Bring-up safety: ensure we allocate from the identity-mapped area (0-4MB)
+    // until we have a full kernel virtual mapping for arbitrary phys pages.
+    for (int tries = 0; tries < 1024; tries++) {
+        void* p = pmm_alloc_page();
+        if (!p) return 0;
+        if ((uint32_t)p < 0x00400000) {
+            return p;
+        }
+        // Not safe to touch yet; put it back.
+        pmm_free_page(p);
+    }
+    return 0;
+}
+
 void process_init(void) {
     uart_print("[SCHED] Initializing Multitasking...\n");
 
     // Initial Kernel Thread (PID 0) - IDLE TASK
-    struct process* kernel_proc = (struct process*)pmm_alloc_page();
+    struct process* kernel_proc = (struct process*)pmm_alloc_page_low();
     
     kernel_proc->pid = 0;
     kernel_proc->state = PROCESS_RUNNING;
@@ -35,7 +50,7 @@ void thread_wrapper(void (*fn)(void)) {
 }
 
 struct process* process_create_kernel(void (*entry_point)(void)) {
-    struct process* proc = (struct process*)pmm_alloc_page();
+    struct process* proc = (struct process*)pmm_alloc_page_low();
     if (!proc) return NULL;
 
     proc->pid = next_pid++;
@@ -43,11 +58,15 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
     proc->cr3 = current_process->cr3; 
     proc->wake_at_tick = 0;
     
-    void* stack_phys = pmm_alloc_page();
-    uint32_t stack_virt = (uint32_t)stack_phys + 0xC0000000;
-    proc->kernel_stack = (uint32_t*)stack_virt;
+    void* stack_phys = pmm_alloc_page_low();
+    if (!stack_phys) return NULL;
+
+    // Until we guarantee a linear phys->virt mapping, use the identity-mapped address
+    // for kernel thread stacks during bring-up.
+    uint32_t stack_addr = (uint32_t)stack_phys;
+    proc->kernel_stack = (uint32_t*)stack_addr;
     
-    uint32_t* sp = (uint32_t*)((uint8_t*)stack_virt + 4096);
+    uint32_t* sp = (uint32_t*)((uint8_t*)stack_addr + 4096);
     
     *--sp = (uint32_t)entry_point;
     *--sp = (uint32_t)thread_wrapper;
