@@ -18,6 +18,8 @@
 
 #include "syscall.h"
 
+#include "hal/cpu.h"
+
 /* Check if the compiler thinks we are targeting the wrong operating system. */
 #if defined(__linux__)
 #error "You are not using a cross-compiler, you will run into trouble"
@@ -116,12 +118,6 @@ void kernel_main(unsigned long magic, unsigned long addr) {
 
     // Infinite loop acting as Idle Task
     for(;;) {
-        #if defined(__i386__) || defined(__x86_64__)
-        __asm__("hlt");
-        #elif defined(__aarch64__)
-        __asm__("wfi");
-        #elif defined(__riscv)
-        __asm__("wfi");
-        #endif
+        hal_cpu_idle();
     }
 }
