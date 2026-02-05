@@ -3,12 +3,15 @@
 #include "vmm.h"
 #include "uart_console.h"
 #include "timer.h" // Need access to current tick usually, but we pass it in wake_check
+#include "spinlock.h"
 #include <stddef.h>
 
 struct process* current_process = NULL;
 struct process* ready_queue_head = NULL;
 struct process* ready_queue_tail = NULL;
 static uint32_t next_pid = 1;
+
+static spinlock_t sched_lock = {0};
 
 static void* pmm_alloc_page_low(void) {
     // Bring-up safety: ensure we allocate from the identity-mapped area (0-4MB)
@@ -28,6 +31,8 @@ static void* pmm_alloc_page_low(void) {
 void process_init(void) {
     uart_print("[SCHED] Initializing Multitasking...\n");
 
+    uintptr_t flags = spin_lock_irqsave(&sched_lock);
+
     // Initial Kernel Thread (PID 0) - IDLE TASK
     struct process* kernel_proc = (struct process*)pmm_alloc_page_low();
     
@@ -40,6 +45,8 @@ void process_init(void) {
     ready_queue_head = kernel_proc;
     ready_queue_tail = kernel_proc;
     kernel_proc->next = kernel_proc;
+
+    spin_unlock_irqrestore(&sched_lock, flags);
 }
 
 void thread_wrapper(void (*fn)(void)) {
@@ -50,8 +57,12 @@ void thread_wrapper(void (*fn)(void)) {
 }
 
 struct process* process_create_kernel(void (*entry_point)(void)) {
+    uintptr_t flags = spin_lock_irqsave(&sched_lock);
     struct process* proc = (struct process*)pmm_alloc_page_low();
-    if (!proc) return NULL;
+    if (!proc) {
+        spin_unlock_irqrestore(&sched_lock, flags);
+        return NULL;
+    }
 
     proc->pid = next_pid++;
     proc->state = PROCESS_READY;
@@ -59,7 +70,10 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
     proc->wake_at_tick = 0;
     
     void* stack_phys = pmm_alloc_page_low();
-    if (!stack_phys) return NULL;
+    if (!stack_phys) {
+        spin_unlock_irqrestore(&sched_lock, flags);
+        return NULL;
+    }
 
     // Until we guarantee a linear phys->virt mapping, use the identity-mapped address
     // for kernel thread stacks during bring-up.
@@ -78,6 +92,7 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
     ready_queue_tail->next = proc;
     ready_queue_tail = proc;
 
+    spin_unlock_irqrestore(&sched_lock, flags);
     return proc;
 }
 
@@ -111,10 +126,12 @@ struct process* get_next_ready_process(void) {
 }
 
 void schedule(void) {
-    __asm__ volatile("cli");
+    uintptr_t irq_flags = irq_save();
+    spin_lock(&sched_lock);
 
     if (!current_process) {
-        __asm__ volatile("sti");
+        spin_unlock(&sched_lock);
+        irq_restore(irq_flags);
         return;
     }
 
@@ -122,7 +139,8 @@ void schedule(void) {
     struct process* next = get_next_ready_process();
     
     if (prev == next) {
-        __asm__ volatile("sti");
+        spin_unlock(&sched_lock);
+        irq_restore(irq_flags);
         return; 
     }
 
@@ -134,10 +152,12 @@ void schedule(void) {
 
     current_process = next;
     current_process->state = PROCESS_RUNNING;
+
+    spin_unlock(&sched_lock);
     
     context_switch(&prev->esp, current_process->esp);
-    
-    __asm__ volatile("sti");
+
+    irq_restore(irq_flags);
 }
 
 void process_sleep(uint32_t ticks) {
@@ -151,34 +171,31 @@ void process_sleep(uint32_t ticks) {
     extern uint32_t get_tick_count(void);
     
     uint32_t current_tick = get_tick_count();
-    
-    __asm__ volatile("cli");
+
+    uintptr_t flags = spin_lock_irqsave(&sched_lock);
     current_process->wake_at_tick = current_tick + ticks;
     current_process->state = PROCESS_SLEEPING;
     
-    // Force switch immediately
-    // Since current state is SLEEPING, schedule() will pick someone else.
-    // We call schedule() directly (but we need to re-enable interrupts inside schedule logic or before context switch return)
-    // Our schedule() handles interrupt flag management, but we called CLI above.
-    // schedule() calls CLI again (no-op) and then STI at end.
-    
-    // BUT we need to manually invoke the scheduler logic here because schedule() usually triggered by ISR.
-    // Just calling schedule() works.
-    
+    spin_unlock_irqrestore(&sched_lock, flags);
+
+    // Force switch immediately. Since current state is SLEEPING, schedule() will pick someone else.
     schedule();
-    
+
     // When we return here, we woke up!
-    __asm__ volatile("sti");
 }
 
 void process_wake_check(uint32_t current_tick) {
     // Called by Timer ISR
+    uintptr_t flags = spin_lock_irqsave(&sched_lock);
     struct process* iter = ready_queue_head;
     
     // Iterate all processes (Circular list)
     // Warning: O(N) inside ISR. Not ideal for 1000 processes.
     
-    if (!iter) return;
+    if (!iter) {
+        spin_unlock_irqrestore(&sched_lock, flags);
+        return;
+    }
     
     struct process* start = iter;
     do {
@@ -190,4 +207,6 @@ void process_wake_check(uint32_t current_tick) {
         }
         iter = iter->next;
     } while (iter != start);
+
+    spin_unlock_irqrestore(&sched_lock, flags);
 }

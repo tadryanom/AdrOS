@@ -3,6 +3,8 @@
 #include "vmm.h"
 #include "uart_console.h"
 
+#include "spinlock.h"
+
 // Heap starts at 3GB + 256MB
 #define KHEAP_START 0xD0000000
 #define KHEAP_INITIAL_SIZE (10 * 1024 * 1024) // 10MB
@@ -22,6 +24,8 @@ typedef struct heap_header {
 static heap_header_t* head = NULL;
 static heap_header_t* tail = NULL;
 
+static spinlock_t heap_lock = {0};
+
 // Helper to check corruption
 void check_integrity(heap_header_t* header) {
     if (header->magic != HEAP_MAGIC) {
@@ -34,6 +38,8 @@ void check_integrity(heap_header_t* header) {
 }
 void kheap_init(void) {
     uart_print("[HEAP] Initializing Advanced Heap (Doubly Linked)...\n");
+
+    uintptr_t flags = spin_lock_irqsave(&heap_lock);
     
     // 1. Map pages
     uint32_t pages_needed = KHEAP_INITIAL_SIZE / PAGE_SIZE;
@@ -44,6 +50,7 @@ void kheap_init(void) {
     for (uint32_t i = 0; i < pages_needed; i++) {
         void* phys_frame = pmm_alloc_page();
         if (!phys_frame) {
+            spin_unlock_irqrestore(&heap_lock, flags);
             uart_print("[HEAP] OOM during init!\n");
             return;
         }
@@ -64,12 +71,15 @@ void kheap_init(void) {
     head->prev = NULL;
     
     tail = head;
-    
+    spin_unlock_irqrestore(&heap_lock, flags);
+
     uart_print("[HEAP] 10MB Heap Ready.\n");
 }
 
 void* kmalloc(size_t size) {
     if (size == 0) return NULL;
+
+    uintptr_t flags = spin_lock_irqsave(&heap_lock);
     
     // Align to 8 bytes
     size_t aligned_size = (size + 7) & ~7;
@@ -79,6 +89,7 @@ void* kmalloc(size_t size) {
     while (current) {
         // Sanity Check
         if (current->magic != HEAP_MAGIC) {
+            spin_unlock_irqrestore(&heap_lock, flags);
             uart_print("[HEAP] Corruption Detected in kmalloc scan!\n");
             for(;;) __asm__("hlt");
         }
@@ -106,21 +117,27 @@ void* kmalloc(size_t size) {
             }
             
             current->is_free = 0;
-            return (void*)((uint8_t*)current + sizeof(heap_header_t));
+            void* ret = (void*)((uint8_t*)current + sizeof(heap_header_t));
+            spin_unlock_irqrestore(&heap_lock, flags);
+            return ret;
         }
         current = current->next;
     }
     
+    spin_unlock_irqrestore(&heap_lock, flags);
     uart_print("[HEAP] OOM: kmalloc failed.\n");
     return NULL;
 }
 
 void kfree(void* ptr) {
     if (!ptr) return;
+
+    uintptr_t flags = spin_lock_irqsave(&heap_lock);
     
     heap_header_t* header = (heap_header_t*)((uint8_t*)ptr - sizeof(heap_header_t));
     
     if (header->magic != HEAP_MAGIC) {
+        spin_unlock_irqrestore(&heap_lock, flags);
         uart_print("[HEAP] Corruption Detected in kfree!\n");
         for(;;) __asm__("hlt");
     }
@@ -155,4 +172,6 @@ void kfree(void* ptr) {
         }
         // No need to update 'header' anymore, prev_block is the merged one
     }
+
+    spin_unlock_irqrestore(&heap_lock, flags);
 }

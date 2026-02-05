@@ -1,6 +1,7 @@
 #include "idt.h"
 #include "io.h"
 #include "uart_console.h"
+#include "spinlock.h"
 #include <stddef.h>
 
 #define IDT_ENTRIES 256
@@ -10,6 +11,8 @@ struct idt_ptr idtp;
 
 // Array of function pointers for handlers
 isr_handler_t interrupt_handlers[IDT_ENTRIES];
+
+static spinlock_t idt_handlers_lock = {0};
 
 // Extern prototypes for Assembly stubs
 extern void isr0();  extern void isr1();  extern void isr2();  extern void isr3();
@@ -144,7 +147,9 @@ void idt_init(void) {
 }
 
 void register_interrupt_handler(uint8_t n, isr_handler_t handler) {
+    uintptr_t flags = spin_lock_irqsave(&idt_handlers_lock);
     interrupt_handlers[n] = handler;
+    spin_unlock_irqrestore(&idt_handlers_lock, flags);
 }
 
 #include "utils.h"
