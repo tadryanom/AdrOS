@@ -1,0 +1,26 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * Copyright (c) 2018, Tulio A M Mendes <tadryanom@hotmail.com>
+ * All rights reserved.
+ * See LICENSE for details.
+ *
+ * Source: https://github.com/tadryanom/AdrOS
+ */
+
+#include "hal/uart.h"
+#include "io.h"
+#include <stdint.h>
+
+/*
+ * QEMU MIPS Malta exposes a 16550-compatible UART at 0xBFD003F8.
+ */
+#define UART_BASE 0xBFD003F8
+
+void hal_uart_init(void) {
+    /* Minimal init: assume firmware/QEMU defaults are usable */
+}
+
+void hal_uart_putc(char c) {
+    while ((mmio_read8(UART_BASE + 5) & 0x20) == 0) { }
+    mmio_write8(UART_BASE, (uint8_t)c);
+}
