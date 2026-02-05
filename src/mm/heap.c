@@ -32,22 +32,6 @@ void check_integrity(heap_header_t* header) {
         for(;;) __asm__("hlt");
     }
 }
-
-void kheap_init(void) {
-    uart_print("[HEAP] Initializing Advanced Heap (Doubly Linked)...\n");
-    
-    // ... (rest of mapping code) ...
-    // Note: I will need to replace the mapping code block manually or be careful
-    // Since I'm using 'edit', let's stick to what changes.
-    // I need to find the exact block to replace.
-    
-    // Actually, I can replace the whole struct definition and init logic.
-    // But 'edit' tool replaces EXACT text matches.
-    // The previous text block I provided in 'newText' won't match because I added functions.
-    
-    // Let's abort this 'edit' approach for the whole file and do precise replacements.
-
-
 void kheap_init(void) {
     uart_print("[HEAP] Initializing Advanced Heap (Doubly Linked)...\n");
     
