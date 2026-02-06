@@ -12,7 +12,8 @@ ENTRY(_start)
 
 PHDRS
 {
-    text PT_LOAD FLAGS(7);
+    text PT_LOAD FLAGS(5);
+    data PT_LOAD FLAGS(6);
 }
 
 SECTIONS
@@ -29,10 +30,10 @@ SECTIONS
 
     .data : {
         *(.data*)
-    } :text
+    } :data
 
     .bss : {
         *(.bss*)
         *(COMMON)
-    } :text
+    } :data
 }
