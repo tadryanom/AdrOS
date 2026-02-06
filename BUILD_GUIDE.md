@@ -31,43 +31,27 @@ make ARCH=x86
 Isso gera o arquivo `adros-x86.bin`.
 
 ### Criar ISO Bootável (GRUB)
-Para x86, precisamos empacotar o kernel numa ISO com GRUB.
+Para x86, o repositório já inclui uma árvore `iso/` com o GRUB configurado.
 
-1. Compile o gerador de InitRD:
 ```bash
-gcc tools/mkinitrd.c -o mkinitrd
+make ARCH=x86 iso
 ```
 
-2. Crie arquivos de teste:
-```bash
-echo "Hello from File System!" > test.txt
-echo "AdrOS v0.3" > version.txt
-./mkinitrd initrd.img test.txt version.txt
-```
-
-3. Empacote a ISO:
-```bash
-mkdir -p iso_root/boot/grub
-cp adros-x86.bin iso_root/boot/
-cp initrd.img iso_root/boot/
-
-cat > iso_root/boot/grub/grub.cfg << EOF
-menuentry "AdrOS" {
-    multiboot2 /boot/adros-x86.bin
-    module2 /boot/initrd.img
-    boot
-}
-EOF
-
-grub-mkrescue -o adros.iso iso_root
-```
+Isso gera `adros-x86.iso`.
 
 ### Rodar no QEMU
 ```bash
-qemu-system-i386 -cdrom adros.iso -serial stdio
+make ARCH=x86 run
 ```
-- A saída de texto aparecerá no terminal (`-serial stdio`).
-- Se tivermos VGA ativado, uma janela gráfica abrirá.
+
+Saídas/artefatos gerados:
+- `serial.log`: log do UART (saída principal do kernel)
+- `qemu.log`: só é gerado quando o debug do QEMU está habilitado (veja abaixo)
+
+Para habilitar debug do QEMU (mais leve por padrão, para evitar travamentos por I/O excessivo):
+```bash
+make ARCH=x86 run QEMU_DEBUG=1
+```
 
 ## 3. Compilando e Rodando (ARM64)
 
@@ -104,5 +88,5 @@ qemu-system-riscv64 -machine virt -m 128M -nographic \
 ## 5. Troubleshooting Comum
 
 - **"Multiboot header not found"**: Verifique se o `grub-file --is-x86-multiboot2 adros-x86.bin` retorna sucesso (0). Se falhar, a ordem das seções no `linker.ld` pode estar errada.
-- **Triple Fault (Reset infinito)**: Geralmente erro na tabela de paginação (VMM) ou IDT mal configurada. Use `-d int,cpu_reset -D log.txt` no QEMU para debugar.
+- **"Triple Fault (Reset infinito)"**: Geralmente erro na tabela de paginação (VMM) ou IDT mal configurada. Rode `make ARCH=x86 run QEMU_DEBUG=1` e inspecione `qemu.log`.
 - **Tela preta (VGA)**: Se estiver rodando com `-nographic`, você não verá o VGA. Remova essa flag para ver a janela.
