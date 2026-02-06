@@ -2,6 +2,7 @@
  * AdrOS - x86 Linker Script (Higher Half)
  */
 
+/* The entry point reverts to the default _start */
 ENTRY(_start)
 
 /* The bootloader loads us at 1MB physical */
@@ -14,23 +15,20 @@ SECTIONS
 {
     /* 
      * We start at 1MB physical. 
-     * The symbol '.' tracks the VIRTUAL address.
-     * We offset it to 3GB + 1MB.
      */
-    . = KERNEL_VIRT_BASE + PHYSICAL_BASE;
+    . = PHYSICAL_BASE;
 
-    _start = .;
-
-    /* 
-     * The AT(...) keyword tells the linker:
-     * "Put this section at PHYSICAL address X in the file, 
-     *  but calculate symbols as if it were at VIRTUAL address Y"
+    /** TEXT SECTION:
+     * VMA = 0xC0100000 (3GB + 1MB)
+     * LMA = 0x00100000 (1MB) - Defined by AT()
      */
-
-    .text : AT(ADDR(.text) - KERNEL_VIRT_BASE)
+    .text KERNEL_VIRT_BASE + PHYSICAL_BASE : AT(PHYSICAL_BASE)
     {
-        /* Multiboot header must be very early physically */
+        /* REQUIRED: The Header MUST be the first thing */
         KEEP(*(.multiboot_header))
+        /* Boot code (boot.o) */
+        *(.boot_text)
+        /* Rest of the kernel code */
         *(.text)
     }
 

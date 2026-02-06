@@ -27,7 +27,7 @@ static void* pmm_alloc_page_low(void) {
     for (int tries = 0; tries < 1024; tries++) {
         void* p = pmm_alloc_page();
         if (!p) return 0;
-        if ((uintptr_t)p < 0x00400000) {
+        if ((uintptr_t)p < 0x01000000) {
             return p;
         }
         pmm_free_page(p);
@@ -47,7 +47,10 @@ void vmm_map_page(uint64_t phys, uint64_t virt, uint32_t flags) {
     if (!(boot_pd[pd_index] & X86_PTE_PRESENT)) {
         // Allocate a new PT
         uint32_t pt_phys = (uint32_t)pmm_alloc_page_low();
-        if (!pt_phys) return; // OOM
+        if (!pt_phys) {
+            uart_print("[VMM] OOM allocating page table.\n");
+            return;
+        }
 
         // ACCESS SAFETY: Convert Physical to Virtual to write to it
         uint32_t* pt_virt = (uint32_t*)P2V(pt_phys);

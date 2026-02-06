@@ -6,13 +6,13 @@
 .set MB_MAGIC, 0xE85250D6
 .set MB_ARCH,  0          /* i386 */
 .set KERNEL_VIRT_BASE, 0xC0000000
-.set PAGE_SIZE, 4096
 
 /* 
  * Convert virtual symbols to physical addresses before paging is enabled
  * by subtracting KERNEL_VIRT_BASE.
  */
 
+/* .multiboot_header section (Goes to the .boot file in the linker) */
 .section .multiboot_header
 .align 8
 multiboot_header_start:
@@ -24,17 +24,22 @@ multiboot_header_start:
     .long 8
 multiboot_header_end:
 
-.section .text
+/** .boot_text section (Goes to the .boot file in the linker)
+ * This runs in 1MB (Identity Mapped by the Linker)
+ */
+.section .boot_text
 .global _start
 .type _start, @function
 
 _start:
+    /* Disable interrupts until the kernel installs a valid IDT */
+    cli
     /* 
      * We are loaded at 1MB physical. Paging is OFF.
      * CPU is executing instructions here.
      * ESP is unknown.
      */
-    
+
     /* Setup a temporary stack (using physical address) */
     mov $stack_top, %esp
     sub $KERNEL_VIRT_BASE, %esp
@@ -43,6 +48,11 @@ _start:
     push %eax
     push %ebx
 
+    /* Mask PIC (disable all IRQs) until kernel remaps/unmasks */
+    movb $0xFF, %al
+    outb %al, $0x21
+    outb %al, $0xA1
+
     /* 
      * SETUP PAGING (Manually)
      * We need to map:
@@ -50,36 +60,55 @@ _start:
      * 2. Virt 0xC0000000 -> Phys 0x00000000 (Kernel Space)
      */
 
-    /* 1. Get Physical Address of Page Table 0 (PT0) */
+    /*
+     * Map 0-512MB using 128 page tables.
+     * Multiboot2 info is a physical pointer (EBX) and GRUB may place it high.
+     * Keeping a wide identity + higher-half window avoids early page faults
+     * while PMM/VMM/heap are coming up.
+     */
+
+    /* Fill PTs (boot_pt0..boot_pt127) */
     mov $boot_pt0, %edi
-    sub $KERNEL_VIRT_BASE, %edi
-    
-    /* 2. Map 0-4MB to this PT (fill 1024 entries) */
-    /* Entry 0: Addr 0 | Present | RW */
-    mov $0, %esi
-    mov $1023, %ecx
+    sub $KERNEL_VIRT_BASE, %edi /* Physical address of PT0 */
+    xor %ebx, %ebx              /* pt_index = 0 */
+
 1:
-    cmpl $_kernel_physical_end, %esi /* Only map what we need? Nah, map 4MB */
+    /* Fill current PT with 0x003 | (pt_index*4MB + i*4KB) */
+    mov %ebx, %eax
+    shl $22, %eax               /* base = pt_index * 4MB */
+    mov %eax, %esi
+
+    mov $1024, %ecx
+2:
     mov %esi, %edx
-    or $3, %edx        /* Present + RW */
+    or $3, %edx
     mov %edx, (%edi)
     add $4096, %esi
     add $4, %edi
-    loop 1b
+    loop 2b
+
+    inc %ebx
+    cmp $128, %ebx
+    jne 1b
 
     /* 3. Get Physical Address of Page Directory */
     mov $boot_pd, %edi
     sub $KERNEL_VIRT_BASE, %edi
 
-    /* 4. Link PT0 to PD at index 0 (Identity Map 0-4MB) */
+    /* Link PT0..PT127 into PD for both identity and higher-half mapping */
     mov $boot_pt0, %edx
-    sub $KERNEL_VIRT_BASE, %edx
-    or $3, %edx
-    mov %edx, (%edi)
+    sub $KERNEL_VIRT_BASE, %edx /* pt_phys = physical address of PT0 */
+    mov $0, %ebx                /* i = 0 */
 
-    /* 5. Link PT0 to PD at index 768 (3GB mark -> 0xC0000000) */
-    /* 768 * 4MB = 3072MB = 3GB */
-    mov %edx, 3072(%edi) /* Offset 768 * 4 bytes = 3072 */
+3:
+    mov %edx, %eax
+    or $3, %eax
+    mov %eax, (%edi,%ebx,4)         /* PD[i] */
+    mov %eax, 3072(%edi,%ebx,4)     /* PD[768+i] */
+    add $4096, %edx
+    inc %ebx
+    cmp $128, %ebx
+    jne 3b
 
     /* 6. Recursive Mapping (Optional, good for VMM later) at index 1023 */
     mov $boot_pd, %edx
@@ -94,7 +123,7 @@ _start:
 
     /* 8. Enable Paging (Set PG bit in CR0) */
     mov %cr0, %ecx
-    or $0x80000000, %ecx
+    or $0x80000000, %ecx /* Bit 31 (PG) e Bit 0 (PE - Protection Enable) */
     mov %ecx, %cr0
 
     /* 
@@ -105,6 +134,10 @@ _start:
     lea higher_half_start, %ecx
     jmp *%ecx
 
+/** From here, we switch to the default .text section.
+ * The linker will place this in the 3GB area.
+ */
+.section .text 
 higher_half_start:
     /* 
      * We are now running at 0xC0xxxxxx.
@@ -112,40 +145,25 @@ higher_half_start:
      * but let's leave it for C code to clean up.
      */
 
-    /* Unmap the low 4MB (Security: Null pointer deref should fault now!) */
-    movl $0, boot_pd
-    invlpg 0
-
     /* Update Stack Pointer to be Virtual */
     /* (Currently ESP points to physical, which is valid mapped, 
-        but let's fix it to use the virtual range) */
+     *  but let's fix it to use the virtual range) */
     add $KERNEL_VIRT_BASE, %esp
 
     /* Restore Multiboot args (popped from stack) */
-    pop %ebx
-    pop %eax
+    pop %ebx /* EBX now has the Multiboot Info address */
+    pop %eax /* EAX now has the Magic Number */
 
-    /* 
-     * Pass args to kernel_main.
-     * NOTE: 'ebx' (multiboot info) is a PHYSICAL address.
-     * kernel_main might need to map it or we identity map enough RAM.
-     * Since we kept identity mapping for now (or just unmapped 0-4MB?), 
-     * Wait, I unmapped 0. If multiboot struct is in low mem, we lost access.
-     * Let's Re-map 0 temporarily inside C or pass physical address and let C handle it.
-     * For now, let's NOT unmap 0 in asm to be safe, let C do it.
-     */
-    
-    /* Re-map low memory for safety until PMM parses tags */
-    mov $boot_pt0, %edx
-    sub $KERNEL_VIRT_BASE, %edx
-    or $3, %edx
-    mov %edx, boot_pd
+    /* Build arch_boot_args (in .bss) and call arch_start(args) */
+    mov $arch_boot_args, %ecx
+    mov %eax, 0(%ecx)          /* args->a0 = multiboot magic */
+    mov %ebx, 4(%ecx)          /* args->a1 = multiboot info phys */
+    movl $0, 8(%ecx)           /* args->a2 = 0 */
+    movl $0, 12(%ecx)          /* args->a3 = 0 */
 
-    /* Call C Kernel */
-    /* void kernel_main(uint32_t magic, uint32_t phys_addr) */
-    push %ebx
-    push %eax
-    call kernel_main
+    push %ecx
+    call arch_start
+    add $4, %esp
 
     /* Hang */
     cli
@@ -160,7 +178,12 @@ boot_pd:
     .skip 4096
 .global boot_pt0
 boot_pt0:
-    .skip 4096
+    .skip 4096*128
+
+.align 16
+.global arch_boot_args
+arch_boot_args:
+    .skip 16
 
 .align 16
 stack_bottom:
