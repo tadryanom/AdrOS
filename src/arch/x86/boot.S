@@ -9,10 +9,9 @@
 .set PAGE_SIZE, 4096
 
 /* 
- * This macro converts a virtual address (symbol) to a physical address 
- * by subtracting 3GB. We need this before paging is enabled.
+ * Convert virtual symbols to physical addresses before paging is enabled
+ * by subtracting KERNEL_VIRT_BASE.
  */
-#define V2P(x) ((x) - KERNEL_VIRT_BASE)
 
 .section .multiboot_header
 .align 8
@@ -37,7 +36,8 @@ _start:
      */
     
     /* Setup a temporary stack (using physical address) */
-    mov $(V2P(stack_top)), %esp
+    mov $stack_top, %esp
+    sub $KERNEL_VIRT_BASE, %esp
 
     /* Save Multiboot Info (ebx) and Magic (eax) */
     push %eax
@@ -51,7 +51,8 @@ _start:
      */
 
     /* 1. Get Physical Address of Page Table 0 (PT0) */
-    mov $(V2P(boot_pt0)), %edi
+    mov $boot_pt0, %edi
+    sub $KERNEL_VIRT_BASE, %edi
     
     /* 2. Map 0-4MB to this PT (fill 1024 entries) */
     /* Entry 0: Addr 0 | Present | RW */
@@ -67,10 +68,12 @@ _start:
     loop 1b
 
     /* 3. Get Physical Address of Page Directory */
-    mov $(V2P(boot_pd)), %edi
+    mov $boot_pd, %edi
+    sub $KERNEL_VIRT_BASE, %edi
 
     /* 4. Link PT0 to PD at index 0 (Identity Map 0-4MB) */
-    mov $(V2P(boot_pt0)), %edx
+    mov $boot_pt0, %edx
+    sub $KERNEL_VIRT_BASE, %edx
     or $3, %edx
     mov %edx, (%edi)
 
@@ -79,12 +82,14 @@ _start:
     mov %edx, 3072(%edi) /* Offset 768 * 4 bytes = 3072 */
 
     /* 6. Recursive Mapping (Optional, good for VMM later) at index 1023 */
-    mov $(V2P(boot_pd)), %edx
+    mov $boot_pd, %edx
+    sub $KERNEL_VIRT_BASE, %edx
     or $3, %edx
     mov %edx, 4092(%edi)
 
     /* 7. Load CR3 */
-    mov $(V2P(boot_pd)), %ecx
+    mov $boot_pd, %ecx
+    sub $KERNEL_VIRT_BASE, %ecx
     mov %ecx, %cr3
 
     /* 8. Enable Paging (Set PG bit in CR0) */
@@ -131,7 +136,8 @@ higher_half_start:
      */
     
     /* Re-map low memory for safety until PMM parses tags */
-    mov $(V2P(boot_pt0)), %edx
+    mov $boot_pt0, %edx
+    sub $KERNEL_VIRT_BASE, %edx
     or $3, %edx
     mov %edx, boot_pd
 
