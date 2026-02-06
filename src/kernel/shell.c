@@ -9,6 +9,7 @@
 #include "heap.h"
 
 #include "hal/system.h"
+#include "hal/cpu.h"
 
 #define MAX_CMD_LEN 256
 static char cmd_buffer[MAX_CMD_LEN];
@@ -79,7 +80,14 @@ void execute_command(char* cmd) {
         uart_print("  Total RAM: [TODO] MB\n");
     }
     else if (strcmp(cmd, "panic") == 0) {
-        int a = 1; int b = 0; int c = a / b; (void)c;
+#if defined(__i386__) || defined(__x86_64__)
+        __asm__ volatile("cli");
+        __asm__ volatile("ud2");
+#else
+        for(;;) {
+            hal_cpu_idle();
+        }
+#endif
     }
     else if (strcmp(cmd, "reboot") == 0) {
         hal_system_reboot();
