@@ -9,6 +9,7 @@
  */
 
 #include <stdint.h>
+#include <stddef.h>
 #include "vga_console.h"
 #include "uart_console.h"
 #include "pmm.h"
@@ -31,6 +32,30 @@
 #include "syscall.h"
 
 #include "hal/cpu.h"
+
+#if defined(__i386__)
+extern void x86_usermode_test_start(void);
+
+static int cmdline_has_token(const char* cmdline, const char* token) {
+    if (!cmdline || !token) return 0;
+
+    for (size_t i = 0; cmdline[i] != 0; i++) {
+        size_t j = 0;
+        while (token[j] != 0 && cmdline[i + j] == token[j]) {
+            j++;
+        }
+        if (token[j] == 0) {
+            char before = (i == 0) ? ' ' : cmdline[i - 1];
+            char after = cmdline[i + j];
+            int before_ok = (before == ' ' || before == '\t');
+            int after_ok = (after == 0 || after == ' ' || after == '\t');
+            if (before_ok && after_ok) return 1;
+        }
+    }
+
+    return 0;
+}
+#endif
 
 /* Check if the compiler thinks we are targeting the wrong operating system. */
 #if defined(__linux__)
@@ -74,6 +99,12 @@ void kernel_main(const struct boot_info* bi) {
     timer_init(50);
 
     hal_cpu_enable_interrupts();
+
+#if defined(__i386__)
+    if (bi && cmdline_has_token(bi->cmdline, "ring3")) {
+        x86_usermode_test_start();
+    }
+#endif
 
     // 9. Load InitRD (if available)
     if (bi && bi->initrd_start) {
