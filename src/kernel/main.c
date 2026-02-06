@@ -14,6 +14,8 @@
 #include "initrd.h"
 #include "fs.h"
 
+#include "kernel/boot_info.h"
+
 #include "gdt.h"
 
 #include "syscall.h"
@@ -29,25 +31,12 @@
  * Kernel Entry Point
  * Arguments are passed from boot.S (architecture specific)
  */
-void kernel_main(unsigned long magic, unsigned long addr) {
+void kernel_main(const struct boot_info* bi) {
     
-    // 1. Initialize Console (UART works everywhere)
-    uart_init();
-    uart_print("\n[AdrOS] Booting...\n");
-
-#if defined(__i386__) || defined(__x86_64__)
-    // Check Multiboot2 Magic
-    if (magic != 0x36d76289) {
-        uart_print("[ERR] Invalid Multiboot2 Magic!\n");
-    } else {
-        uart_print("[OK] Multiboot2 Magic Confirmed.\n");
-    }
-#endif
-
     uart_print("[AdrOS] Initializing PMM...\n");
     
     // 2. Initialize Physical Memory Manager
-    pmm_init((void*)addr);
+    pmm_init((void*)(bi ? bi->arch_boot_info : 0));
     
     // 3. Initialize Virtual Memory Manager
     uart_print("[AdrOS] Initializing VMM...\n");
@@ -62,13 +51,6 @@ void kernel_main(unsigned long magic, unsigned long addr) {
     // 4. Initialize Kernel Heap
     kheap_init();
 
-    uart_print("[AdrOS] Initializing GDT/TSS...\n");
-    gdt_init();
-    
-    // 5. Initialize Interrupts (x86)
-    uart_print("[AdrOS] Initializing IDT...\n");
-    idt_init();
-
     syscall_init();
     
     // 6. Initialize Drivers
@@ -81,30 +63,11 @@ void kernel_main(unsigned long magic, unsigned long addr) {
     // 8. Start Timer (Preemption!) - 50Hz
     timer_init(50);
 
+    hal_cpu_enable_interrupts();
+
     // 9. Load InitRD (if available)
-    struct multiboot_tag *tag;
-    // addr is physical. In Higher Half, we might need to convert it?
-    // boot.S mapped 0-4MB identity, so if multiboot struct is there, we are good.
-    // Let's assume addr is accessible.
-    
-    for (tag = (struct multiboot_tag *)((uint8_t *)addr + 8);
-       tag->type != MULTIBOOT_TAG_TYPE_END;
-       tag = (struct multiboot_tag *)((uint8_t *)tag + ((tag->size + 7) & ~7)))
-    {
-        if (tag->type == MULTIBOOT_TAG_TYPE_MODULE) {
-            struct multiboot_tag_module *mod = (struct multiboot_tag_module *)tag;
-            
-            uart_print("[INITRD] Module found at: ");
-            // TODO: Print Hex
-            uart_print("\n");
-            
-            // mod->mod_start is Physical Address.
-            // We need to access it. Assuming Identity Map covers it or we use P2V logic.
-            // Let's rely on P2V macro logic if it was available here, or just cast.
-            // For now, let's assume it's low memory and identity mapped.
-            
-            fs_root = initrd_init(mod->mod_start);
-        }
+    if (bi && bi->initrd_start) {
+        fs_root = initrd_init((uint32_t)bi->initrd_start);
     }
     
     // Start Shell as the main interaction loop

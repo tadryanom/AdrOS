@@ -15,8 +15,9 @@ _start:
      */
     la sp, stack_top
 
-    /* Call C kernel */
-    call kernel_main
+    /* Build arch_boot_args (in .bss) and call arch_start(args) */
+    la a0, arch_boot_args
+    call arch_start
 
     /* Hang if return */
 1:  wfi
@@ -24,6 +25,8 @@ _start:
 
 .section .bss
 .align 16
+arch_boot_args:
+    .skip 16
 stack_bottom:
     .skip 16384 /* 16KB Stack */
 stack_top:
