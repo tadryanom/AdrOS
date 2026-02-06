@@ -6,10 +6,12 @@ build/
 *.img
 *.log
 
+# ISO staging: keep config, ignore generated kernel binaries
+iso/boot/*.bin
+
 # Temporary folders
 iso_root/
 isodir/
-iso/
 
 # Editor/OS clutter
 .DS_Store

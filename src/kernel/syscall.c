@@ -24,6 +24,18 @@ static void syscall_handler(struct registers* regs) {
         return;
     }
 
+    if (syscall_no == SYSCALL_GETPID) {
+        regs->eax = 0;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_EXIT) {
+        uart_print("[USER] exit()\n");
+        for(;;) {
+            __asm__ volatile("cli; hlt");
+        }
+    }
+
     regs->eax = (uint32_t)-1;
 }
 

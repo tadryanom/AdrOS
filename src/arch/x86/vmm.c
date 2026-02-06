@@ -59,7 +59,13 @@ void vmm_map_page(uint64_t phys, uint64_t virt, uint32_t flags) {
         for(int i=0; i<1024; i++) pt_virt[i] = 0;
 
         // Add to Directory
-        boot_pd[pd_index] = pt_phys | X86_PTE_PRESENT | X86_PTE_RW;
+        uint32_t pde_flags = X86_PTE_PRESENT | X86_PTE_RW;
+        if (flags & VMM_FLAG_USER) pde_flags |= X86_PTE_USER;
+        boot_pd[pd_index] = pt_phys | pde_flags;
+    }
+
+    if ((flags & VMM_FLAG_USER) && !(boot_pd[pd_index] & X86_PTE_USER)) {
+        boot_pd[pd_index] |= X86_PTE_USER;
     }
 
     // Get table address from Directory

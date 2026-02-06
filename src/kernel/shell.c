@@ -30,6 +30,7 @@ void execute_command(char* cmd) {
         uart_print("  cat <file>  - Read file content\n");
         uart_print("  mem         - Show memory stats\n");
         uart_print("  panic       - Trigger kernel panic\n");
+        uart_print("  ring3       - Run x86 ring3 syscall test\n");
         uart_print("  reboot      - Restart system\n");
         uart_print("  sleep <num> - Sleep for N ticks\n");
     } 
@@ -87,6 +88,14 @@ void execute_command(char* cmd) {
         for(;;) {
             hal_cpu_idle();
         }
+#endif
+    }
+    else if (strcmp(cmd, "ring3") == 0) {
+#if defined(__i386__)
+        extern void x86_usermode_test_start(void);
+        x86_usermode_test_start();
+#else
+        uart_print("ring3 test only available on x86.\n");
 #endif
     }
     else if (strcmp(cmd, "reboot") == 0) {
