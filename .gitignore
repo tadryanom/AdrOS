@@ -4,6 +4,7 @@ build/
 *.bin
 *.iso
 *.img
+*.log
 
 # Temporary folders
 iso_root/
