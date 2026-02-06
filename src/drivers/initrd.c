@@ -8,29 +8,12 @@ fs_node_t* initrd_root;
 fs_node_t* root_nodes; // Array of file nodes
 int n_root_nodes;
 
+uint32_t initrd_read_impl(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer);
+
 uint32_t initrd_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
-    initrd_file_header_t header = file_headers[node->inode];
-    
-    if (offset > header.length) return 0;
-    if (offset + size > header.length)
-        size = header.length - offset;
-        
-    // Calculate memory location: location_of_headers + sizeof(headers) + offset_in_file
-    // Wait, our simple format:
-    // [n_files] [header 0] [header 1] ... [data]
-    // The 'offset' in header is relative to the START of the initrd or the data region?
-    // Let's assume relative to START of InitRD location.
-    
-    // We need to know the base address of InitRD. Let's store it globally or in node.
-    // Hack: Assuming offset in header is absolute address for now (patched during build)
-    // OR: offset is relative to initrd start.
-    
-    // Let's refine the format logic in initrd_init.
-    return 0; // Placeholder until init logic fixed below
+    return initrd_read_impl(node, offset, size, buffer);
 }
 
-// Fixed read function
-// We need to store the base address somewhere.
 static uint32_t initrd_location_base = 0;
 
 uint32_t initrd_read_impl(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {

@@ -9,6 +9,12 @@ build/
 # ISO staging: keep config, ignore generated kernel binaries
 iso/boot/*.bin
 
+# Static analysis artifacts
+compile_commands.json
+clang-tidy.txt
+cppcheck.txt
+scanbuild-out/
+
 # Temporary folders
 iso_root/
 isodir/
