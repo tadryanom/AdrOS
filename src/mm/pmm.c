@@ -1,7 +1,10 @@
 #include "pmm.h"
 #include "multiboot2.h"
+#include "utils.h"
 #include "uart_console.h"
+#include "hal/cpu.h"
 #include <stddef.h>
+#include <stdint.h>
 
 // Defined in linker script
 extern uint8_t _start;
@@ -18,6 +21,7 @@ static uint8_t memory_bitmap[BITMAP_SIZE];
 static uint64_t total_memory = 0;
 static uint64_t used_memory = 0;
 static uint64_t max_frames = 0;
+static uint64_t last_alloc_frame = 1;
 
 static uint64_t align_down(uint64_t value, uint64_t align) {
     return value & ~(align - 1);
@@ -46,13 +50,20 @@ static void pmm_mark_region(uint64_t base, uint64_t size, int used) {
 
     for (uint64_t i = 0; i < frames_count; i++) {
         if (start_frame + i >= max_frames) break;
-        
+
+        uint64_t frame = start_frame + i;
+        int was_used = bitmap_test(frame) ? 1 : 0;
+
         if (used) {
-            bitmap_set(start_frame + i);
-            used_memory += PAGE_SIZE;
+            if (!was_used) {
+                bitmap_set(frame);
+                used_memory += PAGE_SIZE;
+            }
         } else {
-            bitmap_unset(start_frame + i);
-            used_memory -= PAGE_SIZE;
+            if (was_used) {
+                bitmap_unset(frame);
+                used_memory -= PAGE_SIZE;
+            }
         }
     }
 }
@@ -69,6 +80,8 @@ void pmm_init(void* boot_info) {
         struct multiboot_tag *tag;
         (void)*(uint32_t *)boot_info;
         uint64_t highest_addr = 0;
+        int saw_mmap = 0;
+        uint64_t freed_frames = 0;
         
         uart_print("[PMM] Parsing Multiboot2 info...\n");
 
@@ -83,6 +96,7 @@ void pmm_init(void* boot_info) {
                  total_memory = (mem_kb * 1024) + (1024*1024); // +1MB low mem
             }
             else if (tag->type == MULTIBOOT_TAG_TYPE_MMAP) {
+                saw_mmap = 1;
                 struct multiboot_tag_mmap *mmap = (struct multiboot_tag_mmap *)tag;
                 struct multiboot_mmap_entry *entry;
                 
@@ -126,6 +140,7 @@ void pmm_init(void* boot_info) {
            tag = (struct multiboot_tag *)((uint8_t *)tag + ((tag->size + 7) & ~7)))
         {
             if (tag->type == MULTIBOOT_TAG_TYPE_MMAP) {
+                saw_mmap = 1;
                 struct multiboot_tag_mmap *mmap = (struct multiboot_tag_mmap *)tag;
                 struct multiboot_mmap_entry *entry;
 
@@ -147,9 +162,47 @@ void pmm_init(void* boot_info) {
                         if (len == 0) continue;
 
                         pmm_mark_region(base, len, 0);
+                        freed_frames += (len / PAGE_SIZE);
                     }
                 }
             }
+        }
+
+        // Fallback: if we didn't manage to see an MMAP tag, assume everything above 1MB
+        // up to total_memory is usable. This is less accurate, but prevents "all used"
+        // which breaks early-boot allocators.
+        if (!saw_mmap) {
+            uint64_t base = 0x00100000;
+            uint64_t len = (total_memory > base) ? (total_memory - base) : 0;
+            base = align_up(base, PAGE_SIZE);
+            len = align_down(len, PAGE_SIZE);
+            if (len) {
+                pmm_mark_region(base, len, 0);
+                freed_frames += (len / PAGE_SIZE);
+            }
+        }
+
+        // Reserve low memory and frame 0.
+        // Frame 0 must never be returned because it aliases NULL in C.
+        // Also keep the first 1MB used (BIOS/real-mode areas, multiboot scratch, etc.).
+        pmm_mark_region(0, 0x00100000, 1);
+
+        uart_print("[PMM] total_memory bytes: ");
+        char tmp[11];
+        itoa_hex((uint32_t)total_memory, tmp);
+        uart_print(tmp);
+        uart_print("\n");
+        uart_print("[PMM] max_frames: ");
+        itoa_hex((uint32_t)max_frames, tmp);
+        uart_print(tmp);
+        uart_print("\n");
+        uart_print("[PMM] freed_frames: ");
+        itoa_hex((uint32_t)freed_frames, tmp);
+        uart_print(tmp);
+        uart_print("\n");
+
+        if (freed_frames == 0) {
+            uart_print("[PMM] WARN: no free frames detected (MMAP missing or parse failed).\n");
         }
     } else {
         uart_print("[PMM] Error: boot_info is NULL!\n");
@@ -181,13 +234,13 @@ void pmm_init(void* boot_info) {
     // We must ensure the kernel code itself is marked USED
     
     // Check if we are Higher Half (start > 3GB)
-    uint64_t virt_start = (uint64_t)&_start;
-    uint64_t virt_end = (uint64_t)&_end;
+    uintptr_t virt_start_ptr = (uintptr_t)&_start;
+    uintptr_t virt_end_ptr = (uintptr_t)&_end;
     
-    uint64_t phys_start = virt_start;
-    uint64_t phys_end = virt_end;
+    uint64_t phys_start = (uint64_t)virt_start_ptr;
+    uint64_t phys_end = (uint64_t)virt_end_ptr;
 
-    if (virt_start >= 0xC0000000) {
+    if (virt_start_ptr >= 0xC0000000U) {
         phys_start -= 0xC0000000;
         phys_end -= 0xC0000000;
         uart_print("[PMM] Detected Higher Half Kernel. Adjusting protection range.\n");
@@ -207,25 +260,39 @@ void pmm_init(void* boot_info) {
 
     // 3. Protect Multiboot info (if x86)
     if (boot_info) {
-        pmm_mark_region((uint64_t)boot_info, 4096, 1); // Protect at least 1 page
+        uintptr_t bi_ptr = (uintptr_t)boot_info;
+        if (bi_ptr < 0xC0000000U) {
+            pmm_mark_region((uint64_t)bi_ptr, 4096, 1); // Protect at least 1 page
+        }
     }
 
     uart_print("[PMM] Initialized.\n");
 }
 
 void* pmm_alloc_page(void) {
-    for (uint64_t i = 0; i < max_frames; i++) {
+    // Start from frame 1 so we never return physical address 0.
+    if (last_alloc_frame < 1) last_alloc_frame = 1;
+    if (last_alloc_frame >= max_frames) last_alloc_frame = 1;
+
+    for (uint64_t scanned = 0; scanned < (max_frames - 1); scanned++) {
+        uint64_t i = last_alloc_frame + scanned;
+        if (i >= max_frames) {
+            i = 1 + (i - max_frames);
+        }
+
         if (!bitmap_test(i)) {
             bitmap_set(i);
             used_memory += PAGE_SIZE;
-            return (void*)(i * PAGE_SIZE);
+            last_alloc_frame = i + 1;
+            if (last_alloc_frame >= max_frames) last_alloc_frame = 1;
+            return (void*)(uintptr_t)(i * PAGE_SIZE);
         }
     }
     return NULL; // OOM
 }
 
 void pmm_free_page(void* ptr) {
-    uint64_t addr = (uint64_t)ptr;
+    uintptr_t addr = (uintptr_t)ptr;
     uint64_t frame = addr / PAGE_SIZE;
     bitmap_unset(frame);
     used_memory -= PAGE_SIZE;
