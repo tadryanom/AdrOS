@@ -4,3 +4,5 @@ tss_flush:
     mov 4(%esp), %ax
     ltr %ax
     ret
+
+ .section .note.GNU-stack,"",@progbits

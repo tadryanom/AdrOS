@@ -133,3 +133,5 @@ IRQ 15, 47
 
 /* Syscall vector (int 0x80 -> 128) */
 ISR_NOERRCODE 128
+
+ .section .note.GNU-stack,"",@progbits

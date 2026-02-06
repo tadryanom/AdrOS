@@ -14,3 +14,5 @@ gdt_flush:
     ljmp $0x08, $flush_cs
 flush_cs:
     ret
+
+ .section .note.GNU-stack,"",@progbits

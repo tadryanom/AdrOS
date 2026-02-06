@@ -32,3 +32,5 @@ context_switch:
     /* 5. Return */
     /* Since we changed ESP, this 'ret' pops the EIP from the NEW stack! */
     ret
+
+ .section .note.GNU-stack,"",@progbits
