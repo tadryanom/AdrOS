@@ -22,7 +22,7 @@
 
 /* Check if the compiler thinks we are targeting the wrong operating system. */
 #if defined(__linux__)
-#error "You are not using a cross-compiler, you will run into trouble"
+#warning "You are not using a cross-compiler, you may run into trouble"
 #endif
 
 /*

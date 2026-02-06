@@ -1,6 +1,7 @@
 #include "heap.h"
 #include "uart_console.h"
 #include "pmm.h"
+#include "vmm.h"
 #include "spinlock.h"
 #include "hal/cpu.h"
 #include <stddef.h>

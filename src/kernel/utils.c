@@ -107,12 +107,6 @@ int atoi(const char* str) {
     return sign * res;
 }
 
-char* strcpy(char* dest, const char* src) {
-    char* temp = dest;
-    while ((*dest++ = *src++));
-    return temp;
-}
-
 void itoa_hex(uint32_t num, char* str) {
     const char hex_chars[] = "0123456789ABCDEF";
     str[0] = '0';
