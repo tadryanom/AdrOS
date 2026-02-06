@@ -156,6 +156,11 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
         if (ph[i].p_memsz > ph[i].p_filesz) {
             memset((void*)(uintptr_t)(ph[i].p_vaddr + ph[i].p_filesz), 0, ph[i].p_memsz - ph[i].p_filesz);
         }
+
+        if ((ph[i].p_flags & PF_W) == 0) {
+            vmm_protect_range((uint64_t)(uintptr_t)ph[i].p_vaddr, (uint64_t)ph[i].p_memsz,
+                              VMM_FLAG_USER);
+        }
     }
 
     const uintptr_t user_stack_base = 0x00800000U;

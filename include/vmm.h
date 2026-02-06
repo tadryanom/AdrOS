@@ -23,6 +23,18 @@ void vmm_init(void);
 void vmm_map_page(uint64_t phys, uint64_t virt, uint32_t flags);
 
 /*
+ * Update flags for an already-mapped virtual page.
+ * Keeps the physical frame, only changes PRESENT/RW/USER bits.
+ */
+void vmm_set_page_flags(uint64_t virt, uint32_t flags);
+
+/*
+ * Update flags for an already-mapped virtual range.
+ * vaddr/len may be unaligned.
+ */
+void vmm_protect_range(uint64_t vaddr, uint64_t len, uint32_t flags);
+
+/*
  * Unmap a virtual page.
  */
 void vmm_unmap_page(uint64_t virt);

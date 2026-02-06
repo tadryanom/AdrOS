@@ -39,6 +39,14 @@ static inline void invlpg(uintptr_t vaddr) {
     __asm__ volatile("invlpg (%0)" : : "r" (vaddr) : "memory");
 }
 
+static uint32_t vmm_flags_to_x86(uint32_t flags) {
+    uint32_t x86_flags = 0;
+    if (flags & VMM_FLAG_PRESENT) x86_flags |= X86_PTE_PRESENT;
+    if (flags & VMM_FLAG_RW)      x86_flags |= X86_PTE_RW;
+    if (flags & VMM_FLAG_USER)    x86_flags |= X86_PTE_USER;
+    return x86_flags;
+}
+
 void vmm_map_page(uint64_t phys, uint64_t virt, uint32_t flags) {
     uint32_t pd_index = virt >> 22;
     uint32_t pt_index = (virt >> 12) & 0x03FF;
@@ -73,14 +81,41 @@ void vmm_map_page(uint64_t phys, uint64_t virt, uint32_t flags) {
     
     // ACCESS SAFETY: Convert to Virtual
     uint32_t* pt = (uint32_t*)P2V(pt_phys);
-    
-    uint32_t x86_flags = 0;
-    if (flags & VMM_FLAG_PRESENT) x86_flags |= X86_PTE_PRESENT;
-    if (flags & VMM_FLAG_RW)      x86_flags |= X86_PTE_RW;
-    if (flags & VMM_FLAG_USER)    x86_flags |= X86_PTE_USER;
-    
-    pt[pt_index] = ((uint32_t)phys) | x86_flags;
+
+    pt[pt_index] = ((uint32_t)phys) | vmm_flags_to_x86(flags);
     invlpg(virt);
+}
+
+void vmm_set_page_flags(uint64_t virt, uint32_t flags) {
+    uint32_t pd_index = virt >> 22;
+    uint32_t pt_index = (virt >> 12) & 0x03FF;
+
+    if (!(boot_pd[pd_index] & X86_PTE_PRESENT)) {
+        return;
+    }
+
+    uint32_t pt_phys = boot_pd[pd_index] & 0xFFFFF000;
+    uint32_t* pt = (uint32_t*)P2V(pt_phys);
+
+    uint32_t pte = pt[pt_index];
+    if (!(pte & X86_PTE_PRESENT)) {
+        return;
+    }
+
+    uint32_t phys = pte & 0xFFFFF000;
+    pt[pt_index] = phys | vmm_flags_to_x86(flags);
+    invlpg((uintptr_t)virt);
+}
+
+void vmm_protect_range(uint64_t vaddr, uint64_t len, uint32_t flags) {
+    if (len == 0) return;
+
+    uint64_t start = vaddr & ~0xFFFULL;
+    uint64_t end = (vaddr + len - 1) & ~0xFFFULL;
+    for (uint64_t va = start;; va += 0x1000ULL) {
+        vmm_set_page_flags(va, flags | VMM_FLAG_PRESENT);
+        if (va == end) break;
+    }
 }
 
 void vmm_unmap_page(uint64_t virt) {
