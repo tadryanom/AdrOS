@@ -104,7 +104,7 @@ run: iso
 	@rm -f serial.log qemu.log
 	@qemu-system-i386 -boot d -cdrom adros-$(ARCH).iso -m 128M -display none \
 		-serial file:serial.log -monitor none -no-reboot -no-shutdown \
-		-d int,cpu_reset,guest_errors -D qemu.log
+		$(if $(QEMU_DEBUG),-d guest_errors -D qemu.log,)
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(dir $@)
