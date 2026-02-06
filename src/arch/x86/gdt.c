@@ -11,6 +11,7 @@
 #include "gdt.h"
 
 #include "uart_console.h"
+ #include "utils.h"
 
 struct gdt_entry {
     uint16_t limit_low;

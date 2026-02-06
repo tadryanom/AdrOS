@@ -5,6 +5,7 @@ build/
 *.iso
 *.img
 *.log
+*.elf
 
 # ISO staging: keep config, ignore generated kernel binaries
 iso/boot/*.bin
@@ -13,9 +14,14 @@ iso/boot/*.bin
 compile_commands.json
 clang-tidy.txt
 cppcheck.txt
+cppcheck2.txt
+cppcheck3.txt
 scanbuild-out/
 gcc-analyzer.txt
 splint.txt
+
+# Tools (built binaries)
+tools/mkinitrd
 
 # Temporary folders
 iso_root/
