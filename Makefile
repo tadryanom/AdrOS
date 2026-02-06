@@ -85,11 +85,26 @@ endif
 OBJ := $(patsubst $(SRC_DIR)/%.c, $(BUILD_DIR)/%.o, $(C_SOURCES))
 OBJ += $(patsubst $(SRC_DIR)/%.S, $(BUILD_DIR)/%.o, $(ASM_SOURCES))
 
+BOOT_OBJ := $(BUILD_DIR)/arch/x86/boot.o
+KERNEL_OBJ := $(filter-out $(BOOT_OBJ), $(OBJ))
+
 all: $(KERNEL_NAME)
 
 $(KERNEL_NAME): $(OBJ)
 	@echo "  LD      $@"
-	@$(LD) $(LDFLAGS) -n -o $@ $(OBJ)
+	@$(LD) $(LDFLAGS) -n -o $@ $(BOOT_OBJ) $(KERNEL_OBJ)
+
+iso: $(KERNEL_NAME)
+	@mkdir -p iso/boot
+	@cp -f $(KERNEL_NAME) iso/boot/$(KERNEL_NAME)
+	@echo "  GRUB-MKRESCUE  adros-$(ARCH).iso"
+	@grub-mkrescue -o adros-$(ARCH).iso iso > /dev/null
+
+run: iso
+	@rm -f serial.log qemu.log
+	@qemu-system-i386 -boot d -cdrom adros-$(ARCH).iso -m 128M -display none \
+		-serial file:serial.log -monitor none -no-reboot -no-shutdown \
+		-d int,cpu_reset,guest_errors -D qemu.log
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(dir $@)
@@ -104,4 +119,4 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.S
 clean:
 	rm -rf build $(KERNEL_NAME)
 
-.PHONY: all clean
+.PHONY: all clean iso run
