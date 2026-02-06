@@ -8,6 +8,7 @@ build/
 # Temporary folders
 iso_root/
 isodir/
+iso/
 
 # Editor/OS clutter
 .DS_Store
