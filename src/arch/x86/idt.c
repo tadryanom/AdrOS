@@ -149,11 +149,8 @@ void idt_init(void) {
 
     // Load IDT
     __asm__ volatile("lidt %0" : : "m"(idtp));
-    
-    // Enable interrupts!
-    __asm__ volatile("sti");
-    
-    uart_print("[IDT] Interrupts Enabled!\n");
+
+    uart_print("[IDT] Loaded.\n");
 }
 
 void register_interrupt_handler(uint8_t n, isr_handler_t handler) {
