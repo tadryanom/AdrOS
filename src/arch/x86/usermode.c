@@ -8,6 +8,55 @@
 
 #if defined(__i386__)
 
+enum {
+    SYSCALL_WRITE_NO = 1,
+    SYSCALL_EXIT_NO  = 2,
+};
+
+struct emitter {
+    uint8_t* buf;
+    size_t pos;
+};
+
+struct patch {
+    size_t at;
+    size_t target;
+};
+
+static void emit8(struct emitter* e, uint8_t v) { e->buf[e->pos++] = v; }
+static void emit32(struct emitter* e, uint32_t v) {
+    e->buf[e->pos++] = (uint8_t)(v & 0xFF);
+    e->buf[e->pos++] = (uint8_t)((v >> 8) & 0xFF);
+    e->buf[e->pos++] = (uint8_t)((v >> 16) & 0xFF);
+    e->buf[e->pos++] = (uint8_t)((v >> 24) & 0xFF);
+}
+
+static void emit_mov_eax_imm(struct emitter* e, uint32_t imm) { emit8(e, 0xB8); emit32(e, imm); }
+static void emit_mov_ebx_imm(struct emitter* e, uint32_t imm) { emit8(e, 0xBB); emit32(e, imm); }
+static void emit_mov_ecx_imm(struct emitter* e, uint32_t imm) { emit8(e, 0xB9); emit32(e, imm); }
+static void emit_mov_edx_imm(struct emitter* e, uint32_t imm) { emit8(e, 0xBA); emit32(e, imm); }
+static void emit_int80(struct emitter* e) { emit8(e, 0xCD); emit8(e, 0x80); }
+static void emit_cmp_eax_imm(struct emitter* e, uint32_t imm) { emit8(e, 0x3D); emit32(e, imm); }
+
+static void emit_jne_rel8_patch(struct emitter* e, struct patch* p, size_t target) {
+    emit8(e, 0x75);
+    p->at = e->pos;
+    p->target = target;
+    emit8(e, 0x00);
+}
+
+static void emit_jmp_rel8_patch(struct emitter* e, struct patch* p, size_t target) {
+    emit8(e, 0xEB);
+    p->at = e->pos;
+    p->target = target;
+    emit8(e, 0x00);
+}
+
+static void patch_rel8(uint8_t* buf, size_t at, size_t target) {
+    int32_t rel = (int32_t)target - (int32_t)(at + 1);
+    buf[at] = (uint8_t)(int8_t)rel;
+}
+
 static void* pmm_alloc_page_low_16mb(void) {
     for (int tries = 0; tries < 4096; tries++) {
         void* p = pmm_alloc_page();
@@ -63,21 +112,121 @@ void x86_usermode_test_start(void) {
     vmm_map_page((uint64_t)(uintptr_t)stack_phys, (uint64_t)user_stack_vaddr,
                  VMM_FLAG_PRESENT | VMM_FLAG_RW | VMM_FLAG_USER);
 
-    static const uint8_t user_prog[] = {
-        0xB8, 0x01, 0x00, 0x00, 0x00,             /* mov eax, 1 (SYSCALL_WRITE) */
-        0xBB, 0x01, 0x00, 0x00, 0x00,             /* mov ebx, 1 (stdout) */
-        0xB9, 0x40, 0x00, 0x40, 0x00,             /* mov ecx, 0x00400040 */
-        0xBA, 0x12, 0x00, 0x00, 0x00,             /* mov edx, 0x12 */
-        0xCD, 0x80,                               /* int 0x80 */
-        0xB8, 0x02, 0x00, 0x00, 0x00,             /* mov eax, 2 (SYSCALL_EXIT) */
-        0xCD, 0x80,                               /* int 0x80 */
-        0xEB, 0xFE                                /* jmp $ (loop) */
-    };
+    const uintptr_t base = user_code_vaddr;
+    const uint32_t addr_t1_ok = (uint32_t)(base + 0x200);
+    const uint32_t addr_t1_fail = (uint32_t)(base + 0x210);
+    const uint32_t addr_t2_ok = (uint32_t)(base + 0x220);
+    const uint32_t addr_t2_fail = (uint32_t)(base + 0x230);
+    const uint32_t addr_t3_ok = (uint32_t)(base + 0x240);
+    const uint32_t addr_t3_fail = (uint32_t)(base + 0x250);
+    const uint32_t addr_msg = (uint32_t)(base + 0x300);
 
-    static const char msg[] = "Hello from ring3!\n";
+    const uint32_t t1_ok_len = 6;
+    const uint32_t t1_fail_len = 8;
+    const uint32_t t2_ok_len = 6;
+    const uint32_t t2_fail_len = 8;
+    const uint32_t t3_ok_len = 6;
+    const uint32_t t3_fail_len = 8;
+    const uint32_t msg_len = 18;
 
-    memcpy((void*)(uintptr_t)code_phys, user_prog, sizeof(user_prog));
-    memcpy((void*)((uintptr_t)code_phys + 0x40), msg, sizeof(msg) - 1);
+    struct emitter e = { .buf = (uint8_t*)(uintptr_t)code_phys, .pos = 0 };
+
+    /* T1: write(NULL) -> -1 */
+    emit_mov_eax_imm(&e, SYSCALL_WRITE_NO);
+    emit_mov_ebx_imm(&e, 1);
+    emit_mov_ecx_imm(&e, 0x00000000U);
+    emit_mov_edx_imm(&e, 10);
+    emit_int80(&e);
+    emit_cmp_eax_imm(&e, 0xFFFFFFFFU);
+    struct patch t1_fail_jne = {0};
+    emit_jne_rel8_patch(&e, &t1_fail_jne, 0);
+    /* OK print */
+    emit_mov_eax_imm(&e, SYSCALL_WRITE_NO);
+    emit_mov_ebx_imm(&e, 1);
+    emit_mov_ecx_imm(&e, addr_t1_ok);
+    emit_mov_edx_imm(&e, t1_ok_len);
+    emit_int80(&e);
+    struct patch t1_to_t2 = {0};
+    emit_jmp_rel8_patch(&e, &t1_to_t2, 0);
+    /* FAIL label */
+    size_t t1_fail_pos = e.pos;
+    emit_mov_eax_imm(&e, SYSCALL_WRITE_NO);
+    emit_mov_ebx_imm(&e, 1);
+    emit_mov_ecx_imm(&e, addr_t1_fail);
+    emit_mov_edx_imm(&e, t1_fail_len);
+    emit_int80(&e);
+    size_t t2_pos = e.pos;
+
+    /* T2: write(0xC0000000) -> -1 */
+    emit_mov_eax_imm(&e, SYSCALL_WRITE_NO);
+    emit_mov_ebx_imm(&e, 1);
+    emit_mov_ecx_imm(&e, 0xC0000000U);
+    emit_mov_edx_imm(&e, 10);
+    emit_int80(&e);
+    emit_cmp_eax_imm(&e, 0xFFFFFFFFU);
+    struct patch t2_fail_jne = {0};
+    emit_jne_rel8_patch(&e, &t2_fail_jne, 0);
+    /* OK print */
+    emit_mov_eax_imm(&e, SYSCALL_WRITE_NO);
+    emit_mov_ebx_imm(&e, 1);
+    emit_mov_ecx_imm(&e, addr_t2_ok);
+    emit_mov_edx_imm(&e, t2_ok_len);
+    emit_int80(&e);
+    struct patch t2_to_t3 = {0};
+    emit_jmp_rel8_patch(&e, &t2_to_t3, 0);
+    /* FAIL label */
+    size_t t2_fail_pos = e.pos;
+    emit_mov_eax_imm(&e, SYSCALL_WRITE_NO);
+    emit_mov_ebx_imm(&e, 1);
+    emit_mov_ecx_imm(&e, addr_t2_fail);
+    emit_mov_edx_imm(&e, t2_fail_len);
+    emit_int80(&e);
+    size_t t3_pos = e.pos;
+
+    /* T3: write(valid buf) -> msg_len */
+    emit_mov_eax_imm(&e, SYSCALL_WRITE_NO);
+    emit_mov_ebx_imm(&e, 1);
+    emit_mov_ecx_imm(&e, addr_msg);
+    emit_mov_edx_imm(&e, msg_len);
+    emit_int80(&e);
+    emit_cmp_eax_imm(&e, msg_len);
+    struct patch t3_fail_jne = {0};
+    emit_jne_rel8_patch(&e, &t3_fail_jne, 0);
+    /* OK print */
+    emit_mov_eax_imm(&e, SYSCALL_WRITE_NO);
+    emit_mov_ebx_imm(&e, 1);
+    emit_mov_ecx_imm(&e, addr_t3_ok);
+    emit_mov_edx_imm(&e, t3_ok_len);
+    emit_int80(&e);
+    struct patch t3_to_exit = {0};
+    emit_jmp_rel8_patch(&e, &t3_to_exit, 0);
+    /* FAIL label */
+    size_t t3_fail_pos = e.pos;
+    emit_mov_eax_imm(&e, SYSCALL_WRITE_NO);
+    emit_mov_ebx_imm(&e, 1);
+    emit_mov_ecx_imm(&e, addr_t3_fail);
+    emit_mov_edx_imm(&e, t3_fail_len);
+    emit_int80(&e);
+    size_t exit_pos = e.pos;
+    emit_mov_eax_imm(&e, SYSCALL_EXIT_NO);
+    emit_int80(&e);
+    emit8(&e, 0xEB);
+    emit8(&e, 0xFE);
+
+    patch_rel8(e.buf, t1_fail_jne.at, t1_fail_pos);
+    patch_rel8(e.buf, t1_to_t2.at, t2_pos);
+    patch_rel8(e.buf, t2_fail_jne.at, t2_fail_pos);
+    patch_rel8(e.buf, t2_to_t3.at, t3_pos);
+    patch_rel8(e.buf, t3_fail_jne.at, t3_fail_pos);
+    patch_rel8(e.buf, t3_to_exit.at, exit_pos);
+
+    memcpy((void*)((uintptr_t)code_phys + 0x200), "T1 OK\n", t1_ok_len);
+    memcpy((void*)((uintptr_t)code_phys + 0x210), "T1 FAIL\n", t1_fail_len);
+    memcpy((void*)((uintptr_t)code_phys + 0x220), "T2 OK\n", t2_ok_len);
+    memcpy((void*)((uintptr_t)code_phys + 0x230), "T2 FAIL\n", t2_fail_len);
+    memcpy((void*)((uintptr_t)code_phys + 0x240), "T3 OK\n", t3_ok_len);
+    memcpy((void*)((uintptr_t)code_phys + 0x250), "T3 FAIL\n", t3_fail_len);
+    memcpy((void*)((uintptr_t)code_phys + 0x300), "Hello from ring3!\n", msg_len);
 
     uintptr_t user_esp = user_stack_vaddr + 4096;
     enter_usermode(user_code_vaddr, user_esp);
