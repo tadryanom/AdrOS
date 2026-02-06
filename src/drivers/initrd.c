@@ -58,8 +58,6 @@ fs_node_t* initrd_init(uint32_t location) {
     root_nodes = (fs_node_t*)kmalloc(sizeof(fs_node_t) * n_root_nodes);
     
     for (int i = 0; i < n_root_nodes; i++) {
-        file_headers[i].offset += location; // Fixup offset to be absolute address
-        
         strcpy(root_nodes[i].name, file_headers[i].name);
         root_nodes[i].inode = i;
         root_nodes[i].length = file_headers[i].length;

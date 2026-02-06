@@ -5,6 +5,7 @@
 #include "vmm.h"
 #include "uart_console.h"
 #include "utils.h"
+ #include "arch/x86/usermode.h"
 
 #if defined(__i386__)
 
@@ -69,26 +70,27 @@ static void* pmm_alloc_page_low_16mb(void) {
     return NULL;
 }
 
-__attribute__((noreturn)) static void enter_usermode(uintptr_t user_eip, uintptr_t user_esp) {
+__attribute__((noreturn)) void x86_enter_usermode(uintptr_t user_eip, uintptr_t user_esp) {
+    uart_print("[USER] enter ring3 eip=");
+    char tmp[16];
+    itoa_hex((uint32_t)user_eip, tmp);
+    uart_print(tmp);
+    uart_print(" esp=");
+    itoa_hex((uint32_t)user_esp, tmp);
+    uart_print(tmp);
+    uart_print("\n");
+
     __asm__ volatile(
         "cli\n"
-        "mov $0x23, %%ax\n"
-        "mov %%ax, %%ds\n"
-        "mov %%ax, %%es\n"
-        "mov %%ax, %%fs\n"
-        "mov %%ax, %%gs\n"
         "pushl $0x23\n"         /* ss */
         "pushl %[esp]\n"        /* esp */
-        "pushfl\n"
-        "popl %%eax\n"
-        "orl $0x200, %%eax\n"   /* IF=1 */
-        "pushl %%eax\n"
+        "pushl $0x202\n"        /* eflags: IF=1 */
         "pushl $0x1B\n"         /* cs */
         "pushl %[eip]\n"        /* eip */
         "iret\n"
         :
         : [eip] "r"(user_eip), [esp] "r"(user_esp)
-        : "eax", "memory"
+        : "memory"
     );
 
     __builtin_unreachable();
@@ -229,7 +231,7 @@ void x86_usermode_test_start(void) {
     memcpy((void*)((uintptr_t)code_phys + 0x300), "Hello from ring3!\n", msg_len);
 
     uintptr_t user_esp = user_stack_vaddr + 4096;
-    enter_usermode(user_code_vaddr, user_esp);
+    x86_enter_usermode(user_code_vaddr, user_esp);
 }
 
 #endif

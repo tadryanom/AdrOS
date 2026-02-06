@@ -14,6 +14,8 @@
 #include "multiboot2.h"
 #include "initrd.h"
 #include "fs.h"
+ #include "elf.h"
+ #include "uaccess.h"
 
 #include "kernel/boot_info.h"
 
@@ -24,7 +26,13 @@
 #include "hal/cpu.h"
 
 #if defined(__i386__)
+#include "arch/x86/usermode.h"
+#endif
+
+#if defined(__i386__)
 extern void x86_usermode_test_start(void);
+
+static uint8_t ring0_trap_stack[16384] __attribute__((aligned(16)));
 
 static int cmdline_has_token(const char* cmdline, const char* token) {
     if (!cmdline || !token) return 0;
@@ -90,12 +98,6 @@ void kernel_main(const struct boot_info* bi) {
 
     hal_cpu_enable_interrupts();
 
-#if defined(__i386__)
-    if (bi && cmdline_has_token(bi->cmdline, "ring3")) {
-        x86_usermode_test_start();
-    }
-#endif
-
     // 9. Load InitRD (if available)
     if (bi && bi->initrd_start) {
         const uintptr_t initrd_virt_base = 0xE0000000U;
@@ -119,6 +121,29 @@ void kernel_main(const struct boot_info* bi) {
         uintptr_t initrd_virt = initrd_virt_base + ((uintptr_t)bi->initrd_start - phys_start);
         fs_root = initrd_init((uint32_t)initrd_virt);
     }
+
+#if defined(__i386__)
+    if (fs_root) {
+        uintptr_t entry = 0;
+        uintptr_t user_sp = 0;
+        if (elf32_load_user_from_initrd("init.elf", &entry, &user_sp) == 0) {
+            uart_print("[ELF] starting init.elf\n");
+
+            uart_print("[ELF] user_range_ok(entry)=");
+            uart_put_char(user_range_ok((const void*)entry, 1) ? '1' : '0');
+            uart_print(" user_range_ok(stack)=");
+            uart_put_char(user_range_ok((const void*)(user_sp - 16), 16) ? '1' : '0');
+            uart_print("\n");
+
+            hal_cpu_set_kernel_stack((uintptr_t)&ring0_trap_stack[sizeof(ring0_trap_stack)]);
+            x86_enter_usermode(entry, user_sp);
+        }
+    }
+
+    if (bi && cmdline_has_token(bi->cmdline, "ring3")) {
+        x86_usermode_test_start();
+    }
+#endif
     
     // Start Shell as the main interaction loop
     shell_init();

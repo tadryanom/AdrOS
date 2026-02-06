@@ -254,17 +254,48 @@ void pmm_init(void* boot_info) {
     }
 #endif
 
-    uint64_t kernel_size = phys_end - phys_start;
-    
-    pmm_mark_region(phys_start, kernel_size, 1); // Mark Used
+    uint64_t phys_start_aligned = align_down(phys_start, PAGE_SIZE);
+    uint64_t phys_end_aligned = align_up(phys_end, PAGE_SIZE);
+    if (phys_end_aligned < phys_start_aligned) {
+        phys_end_aligned = phys_start_aligned;
+    }
+    uint64_t kernel_size = phys_end_aligned - phys_start_aligned;
 
-    // 3. Protect Multiboot info (if x86)
+    pmm_mark_region(phys_start_aligned, kernel_size, 1); // Mark Used
+
+#if defined(__i386__) || defined(__x86_64__)
+    // 3. Protect Multiboot2 modules (e.g. initrd)
+    // The initrd is loaded by GRUB into physical memory. If we don't reserve it,
+    // the PMM may allocate those frames and overwrite the initrd header/data.
     if (boot_info) {
+        struct multiboot_tag *tag;
+        for (tag = (struct multiboot_tag *)((uint8_t *)boot_info + 8);
+             tag->type != MULTIBOOT_TAG_TYPE_END;
+             tag = (struct multiboot_tag *)((uint8_t *)tag + ((tag->size + 7) & ~7)))
+        {
+            if (tag->type == MULTIBOOT_TAG_TYPE_MODULE) {
+                struct multiboot_tag_module* mod = (struct multiboot_tag_module*)tag;
+                uint64_t mod_start = (uint64_t)mod->mod_start;
+                uint64_t mod_end = (uint64_t)mod->mod_end;
+                if (mod_end < mod_start) mod_end = mod_start;
+
+                uint64_t mod_start_aligned = align_down(mod_start, PAGE_SIZE);
+                uint64_t mod_end_aligned = align_up(mod_end, PAGE_SIZE);
+                if (mod_end_aligned < mod_start_aligned) {
+                    mod_end_aligned = mod_start_aligned;
+                }
+
+                pmm_mark_region(mod_start_aligned, mod_end_aligned - mod_start_aligned, 1);
+            }
+        }
+
+        // 4. Protect Multiboot info (if x86)
         uintptr_t bi_ptr = (uintptr_t)boot_info;
         if (bi_ptr < 0xC0000000U) {
             pmm_mark_region((uint64_t)bi_ptr, 4096, 1); // Protect at least 1 page
         }
     }
+#endif
 
     uart_print("[PMM] Initialized.\n");
 }

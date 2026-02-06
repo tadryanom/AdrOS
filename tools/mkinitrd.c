@@ -28,11 +28,16 @@ int main(int argc, char **argv) {
     // Prepare headers
     for(int i = 0; i < nheader; i++) {
         printf("Adding: %s\n", argv[i+2]);
-        strcpy(headers[i].name, argv[i+2]); // Warning: Buffer overflow unsafe, good enough for tool
+
+        const char* in = argv[i+2];
+        const char* base = strrchr(in, '/');
+        base = base ? (base + 1) : in;
+
+        strcpy(headers[i].name, base); // Warning: Buffer overflow unsafe, good enough for tool
         headers[i].offset = data_offset;
         headers[i].magic = 0xBF;
         
-        FILE *stream = fopen(argv[i+2], "r");
+        FILE *stream = fopen(argv[i+2], "rb");
         if(!stream) {
             printf("Error opening file: %s\n", argv[i+2]);
             return 1;
@@ -43,7 +48,7 @@ int main(int argc, char **argv) {
         fclose(stream);
     }
     
-    FILE *wstream = fopen(argv[1], "w");
+    FILE *wstream = fopen(argv[1], "wb");
     if(!wstream) {
         printf("Error opening output: %s\n", argv[1]);
         return 1;
@@ -56,7 +61,7 @@ int main(int argc, char **argv) {
     
     // Write data
     for(int i = 0; i < nheader; i++) {
-        FILE *stream = fopen(argv[i+2], "r");
+        FILE *stream = fopen(argv[i+2], "rb");
         unsigned char *buf = (unsigned char *)malloc(headers[i].length);
         fread(buf, 1, headers[i].length, stream);
         fwrite(buf, 1, headers[i].length, wstream);

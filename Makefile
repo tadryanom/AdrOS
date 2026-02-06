@@ -43,6 +43,10 @@ ifeq ($(ARCH),x86)
 
     ASM_SOURCES := $(wildcard $(SRC_DIR)/arch/x86/*.S)
     C_SOURCES += $(wildcard $(SRC_DIR)/arch/x86/*.c)
+
+    USER_ELF := user/init.elf
+    INITRD_IMG := initrd.img
+    MKINITRD := tools/mkinitrd
 endif
 
 # --- ARM64 Configuration ---
@@ -85,6 +89,15 @@ endif
 OBJ := $(patsubst $(SRC_DIR)/%.c, $(BUILD_DIR)/%.o, $(C_SOURCES))
 OBJ += $(patsubst $(SRC_DIR)/%.S, $(BUILD_DIR)/%.o, $(ASM_SOURCES))
 
+QEMU_DFLAGS :=
+ifneq ($(QEMU_DEBUG),)
+QEMU_DFLAGS := -d guest_errors,cpu_reset -D qemu.log
+endif
+
+ifneq ($(QEMU_INT),)
+QEMU_DFLAGS := $(QEMU_DFLAGS) -d int
+endif
+
 BOOT_OBJ := $(BUILD_DIR)/arch/x86/boot.o
 KERNEL_OBJ := $(filter-out $(BOOT_OBJ), $(OBJ))
 
@@ -94,17 +107,27 @@ $(KERNEL_NAME): $(OBJ)
 	@echo "  LD      $@"
 	@$(LD) $(LDFLAGS) -n -o $@ $(BOOT_OBJ) $(KERNEL_OBJ)
 
-iso: $(KERNEL_NAME)
+iso: $(KERNEL_NAME) $(INITRD_IMG)
 	@mkdir -p iso/boot
 	@cp -f $(KERNEL_NAME) iso/boot/$(KERNEL_NAME)
+	@cp -f $(INITRD_IMG) iso/boot/$(INITRD_IMG)
 	@echo "  GRUB-MKRESCUE  adros-$(ARCH).iso"
 	@grub-mkrescue -o adros-$(ARCH).iso iso > /dev/null
+
+$(MKINITRD): tools/mkinitrd.c
+	@gcc tools/mkinitrd.c -o $(MKINITRD)
+
+$(USER_ELF): user/init.c user/linker.ld
+	@i686-elf-gcc -m32 -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(USER_ELF) user/init.c
+
+$(INITRD_IMG): $(MKINITRD) $(USER_ELF)
+	@./$(MKINITRD) $(INITRD_IMG) $(USER_ELF)
 
 run: iso
 	@rm -f serial.log qemu.log
 	@qemu-system-i386 -boot d -cdrom adros-$(ARCH).iso -m 128M -display none \
 		-serial file:serial.log -monitor none -no-reboot -no-shutdown \
-		$(if $(QEMU_DEBUG),-d guest_errors -D qemu.log,)
+		$(QEMU_DFLAGS)
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(dir $@)

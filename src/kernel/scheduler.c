@@ -41,6 +41,7 @@ void process_init(void) {
         spin_unlock_irqrestore(&sched_lock, flags);
         uart_print("[SCHED] OOM allocating kernel process struct.\n");
         for(;;) hal_cpu_idle();
+        __builtin_unreachable();
     }
     
     kernel_proc->pid = 0;
