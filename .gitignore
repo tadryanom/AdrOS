@@ -14,6 +14,8 @@ compile_commands.json
 clang-tidy.txt
 cppcheck.txt
 scanbuild-out/
+gcc-analyzer.txt
+splint.txt
 
 # Temporary folders
 iso_root/
