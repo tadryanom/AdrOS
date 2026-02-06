@@ -67,7 +67,26 @@ void kernel_main(const struct boot_info* bi) {
 
     // 9. Load InitRD (if available)
     if (bi && bi->initrd_start) {
-        fs_root = initrd_init((uint32_t)bi->initrd_start);
+        const uintptr_t initrd_virt_base = 0xE0000000U;
+        uintptr_t phys_start = (uintptr_t)bi->initrd_start & ~(uintptr_t)0xFFF;
+        uintptr_t phys_end = (uintptr_t)bi->initrd_end;
+        if (phys_end < (uintptr_t)bi->initrd_start) {
+            phys_end = (uintptr_t)bi->initrd_start;
+        }
+        phys_end = (phys_end + 0xFFF) & ~(uintptr_t)0xFFF;
+
+        uintptr_t size = phys_end - phys_start;
+        uintptr_t pages = size >> 12;
+        uintptr_t virt = initrd_virt_base;
+        uintptr_t phys = phys_start;
+        for (uintptr_t i = 0; i < pages; i++) {
+            vmm_map_page((uint64_t)phys, (uint64_t)virt, VMM_FLAG_PRESENT | VMM_FLAG_RW);
+            phys += 0x1000;
+            virt += 0x1000;
+        }
+
+        uintptr_t initrd_virt = initrd_virt_base + ((uintptr_t)bi->initrd_start - phys_start);
+        fs_root = initrd_init((uint32_t)initrd_virt);
     }
     
     // Start Shell as the main interaction loop

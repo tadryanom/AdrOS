@@ -61,11 +61,12 @@ _start:
      */
 
     /*
-     * Map 0-64MB using 16 page tables.
-     * This keeps enough low physical memory identity-mapped for bring-up.
+     * Map 0-16MB using 4 page tables.
+     * With Multiboot2 info copied in arch_start and initrd mapped via VMM,
+     * we only need a small identity window for early bring-up.
      */
 
-    /* Fill PTs (boot_pt0..boot_pt15) */
+    /* Fill PTs (boot_pt0..boot_pt3) */
     mov $boot_pt0, %edi
     sub $KERNEL_VIRT_BASE, %edi /* Physical address of PT0 */
     xor %ebx, %ebx              /* pt_index = 0 */
@@ -86,14 +87,14 @@ _start:
     loop 2b
 
     inc %ebx
-    cmp $16, %ebx
+    cmp $4, %ebx
     jne 1b
 
     /* 3. Get Physical Address of Page Directory */
     mov $boot_pd, %edi
     sub $KERNEL_VIRT_BASE, %edi
 
-    /* Link PT0..PT15 into PD for both identity and higher-half mapping */
+    /* Link PT0..PT3 into PD for both identity and higher-half mapping */
     mov $boot_pt0, %edx
     sub $KERNEL_VIRT_BASE, %edx /* pt_phys = physical address of PT0 */
     mov $0, %ebx                /* i = 0 */
@@ -105,7 +106,7 @@ _start:
     mov %eax, 3072(%edi,%ebx,4)     /* PD[768+i] */
     add $4096, %edx
     inc %ebx
-    cmp $16, %ebx
+    cmp $4, %ebx
     jne 3b
 
     /* 6. Recursive Mapping (Optional, good for VMM later) at index 1023 */
@@ -176,7 +177,7 @@ boot_pd:
     .skip 4096
 .global boot_pt0
 boot_pt0:
-    .skip 4096*16
+    .skip 4096*4
 
 .align 16
 .global arch_boot_args

@@ -21,7 +21,7 @@ static void* pmm_alloc_page_low(void) {
         void* p = pmm_alloc_page();
         if (!p) return 0;
         // boot.S currently identity-maps a large low window; keep allocations within it.
-        if ((uint32_t)p < 0x04000000) {
+        if ((uint32_t)p < 0x01000000) {
             return p;
         }
         // Not safe to touch yet; put it back.
