@@ -20,7 +20,8 @@ static void* pmm_alloc_page_low(void) {
     for (int tries = 0; tries < 1024; tries++) {
         void* p = pmm_alloc_page();
         if (!p) return 0;
-        if ((uint32_t)p < 0x00400000) {
+        // boot.S currently identity-maps a large low window; keep allocations within it.
+        if ((uint32_t)p < 0x20000000) {
             return p;
         }
         // Not safe to touch yet; put it back.
@@ -36,6 +37,11 @@ void process_init(void) {
 
     // Initial Kernel Thread (PID 0) - IDLE TASK
     struct process* kernel_proc = (struct process*)pmm_alloc_page_low();
+    if (!kernel_proc) {
+        spin_unlock_irqrestore(&sched_lock, flags);
+        uart_print("[SCHED] OOM allocating kernel process struct.\n");
+        for(;;) hal_cpu_idle();
+    }
     
     kernel_proc->pid = 0;
     kernel_proc->state = PROCESS_RUNNING;
