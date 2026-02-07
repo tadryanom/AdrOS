@@ -2,6 +2,8 @@
 #include "idt.h"
 #include "fs.h"
 #include "heap.h"
+#include "keyboard.h"
+#include "keyboard.h"
 #include "process.h"
 #include "uart_console.h"
 #include "uaccess.h"
@@ -80,6 +82,18 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
 static int syscall_read_impl(int fd, void* user_buf, uint32_t len) {
     if (len > 1024 * 1024) return -1;
     if (user_range_ok(user_buf, (size_t)len) == 0) return -1;
+
+    if (fd == 0) {
+        char kbuf[256];
+        uint32_t chunk = len;
+        if (chunk > sizeof(kbuf)) chunk = (uint32_t)sizeof(kbuf);
+        int rd = keyboard_read_nonblock(kbuf, chunk);
+        if (rd <= 0) return 0;
+        if (copy_to_user(user_buf, kbuf, (size_t)rd) < 0) return -1;
+        return rd;
+    }
+
+    if (fd == 1 || fd == 2) return -1;
 
     struct file* f = fd_get(fd);
     if (!f || !f->node) return -1;
