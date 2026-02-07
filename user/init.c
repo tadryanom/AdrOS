@@ -221,6 +221,126 @@ void _start(void) {
 
     sys_write(1, "[init] lseek/stat/fstat OK\n", 27);
 
+    fd = sys_open("/tmp/hello.txt", 0);
+    if (fd < 0) {
+        sys_write(1, "[init] tmpfs open failed\n", 24);
+        sys_exit(1);
+    }
+
+    if (sys_stat("/tmp/hello.txt", &st) < 0) {
+        sys_write(1, "[init] tmpfs stat failed\n", 24);
+        sys_exit(1);
+    }
+    if ((st.st_mode & S_IFMT) != S_IFREG) {
+        sys_write(1, "[init] tmpfs stat not reg\n", 26);
+        sys_exit(1);
+    }
+    if (st.st_size == 0) {
+        sys_write(1, "[init] tmpfs stat size 0\n", 25);
+        sys_exit(1);
+    }
+
+    struct stat fst;
+    if (sys_fstat(fd, &fst) < 0) {
+        sys_write(1, "[init] tmpfs fstat failed\n", 25);
+        sys_exit(1);
+    }
+    if (fst.st_size != st.st_size) {
+        sys_write(1, "[init] tmpfs stat size mismatch\n", 31);
+        sys_exit(1);
+    }
+
+    int end = sys_lseek(fd, 0, SEEK_END);
+    if (end < 0 || (uint32_t)end != st.st_size) {
+        sys_write(1, "[init] tmpfs lseek end bad\n", 27);
+        sys_exit(1);
+    }
+
+    uint8_t eofb;
+    if (sys_read(fd, &eofb, 1) != 0) {
+        sys_write(1, "[init] tmpfs eof read bad\n", 27);
+        sys_exit(1);
+    }
+
+    if (sys_lseek(fd, 0, 999) >= 0) {
+        sys_write(1, "[init] tmpfs lseek whence bad\n", 30);
+        sys_exit(1);
+    }
+
+    if (sys_lseek(fd, 0, SEEK_SET) < 0) {
+        sys_write(1, "[init] tmpfs lseek set failed\n", 30);
+        sys_exit(1);
+    }
+
+    uint8_t tbuf[6];
+    if (sys_read(fd, tbuf, 5) != 5) {
+        sys_write(1, "[init] tmpfs read failed\n", 24);
+        sys_exit(1);
+    }
+    tbuf[5] = 0;
+    if (tbuf[0] != 'h' || tbuf[1] != 'e' || tbuf[2] != 'l' || tbuf[3] != 'l' || tbuf[4] != 'o') {
+        sys_write(1, "[init] tmpfs bad data\n", 22);
+        sys_exit(1);
+    }
+
+    if (sys_close(fd) < 0) {
+        sys_write(1, "[init] tmpfs close failed\n", 25);
+        sys_exit(1);
+    }
+
+    if (sys_open("/tmp/does_not_exist", 0) >= 0) {
+        sys_write(1, "[init] tmpfs open nonexist bad\n", 32);
+        sys_exit(1);
+    }
+
+    fd = sys_open("/tmp/hello.txt", 0);
+    if (fd < 0) {
+        sys_write(1, "[init] tmpfs open3 failed\n", 25);
+        sys_exit(1);
+    }
+
+    if (sys_fstat(fd, &fst) < 0) {
+        sys_write(1, "[init] tmpfs fstat2 failed\n", 26);
+        sys_exit(1);
+    }
+
+    if (sys_lseek(fd, 0, SEEK_END) < 0) {
+        sys_write(1, "[init] tmpfs lseek end2 failed\n", 31);
+        sys_exit(1);
+    }
+
+    static const char suf[] = "XYZ";
+    if (sys_write(fd, suf, 3) != 3) {
+        sys_write(1, "[init] tmpfs write failed\n", 25);
+        sys_exit(1);
+    }
+
+    if (sys_fstat(fd, &fst) < 0) {
+        sys_write(1, "[init] tmpfs fstat3 failed\n", 26);
+        sys_exit(1);
+    }
+    if (fst.st_size != st.st_size + 3) {
+        sys_write(1, "[init] tmpfs size not grown\n", 27);
+        sys_exit(1);
+    }
+
+    if (sys_lseek(fd, -3, SEEK_END) < 0) {
+        sys_write(1, "[init] tmpfs lseek back failed\n", 31);
+        sys_exit(1);
+    }
+    uint8_t s2[3];
+    if (sys_read(fd, s2, 3) != 3 || s2[0] != 'X' || s2[1] != 'Y' || s2[2] != 'Z') {
+        sys_write(1, "[init] tmpfs suffix mismatch\n", 27);
+        sys_exit(1);
+    }
+
+    if (sys_close(fd) < 0) {
+        sys_write(1, "[init] tmpfs close3 failed\n", 26);
+        sys_exit(1);
+    }
+
+    sys_write(1, "[init] tmpfs/mount OK\n", 22);
+
     enum { NCHILD = 100 };
     int children[NCHILD];
     for (int i = 0; i < NCHILD; i++) {

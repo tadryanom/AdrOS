@@ -199,6 +199,41 @@ static int syscall_read_impl(int fd, void* user_buf, uint32_t len) {
     return (int)total;
 }
 
+static int syscall_write_impl(int fd, const void* user_buf, uint32_t len) {
+    if (len > 1024 * 1024) return -EINVAL;
+    if (user_range_ok(user_buf, (size_t)len) == 0) return -EFAULT;
+
+    if (fd == 1 || fd == 2) {
+        return tty_write((const char*)user_buf, len);
+    }
+
+    if (fd == 0) return -EBADF;
+
+    struct file* f = fd_get(fd);
+    if (!f || !f->node) return -EBADF;
+    if (f->node->flags != FS_FILE) return -ESPIPE;
+    if (!f->node->write) return -ESPIPE;
+
+    uint8_t kbuf[256];
+    uint32_t total = 0;
+    while (total < len) {
+        uint32_t chunk = len - total;
+        if (chunk > sizeof(kbuf)) chunk = (uint32_t)sizeof(kbuf);
+
+        if (copy_from_user(kbuf, (const uint8_t*)user_buf + total, chunk) < 0) {
+            return -EFAULT;
+        }
+
+        uint32_t wr = vfs_write(f->node, f->offset, chunk, kbuf);
+        if (wr == 0) break;
+        f->offset += wr;
+        total += wr;
+        if (wr < chunk) break;
+    }
+
+    return (int)total;
+}
+
 static void syscall_handler(struct registers* regs) {
     uint32_t syscall_no = regs->eax;
 
@@ -207,12 +242,7 @@ static void syscall_handler(struct registers* regs) {
         const char* buf = (const char*)regs->ecx;
         uint32_t len = regs->edx;
 
-        if (fd != 1 && fd != 2) {
-            regs->eax = (uint32_t)-1;
-            return;
-        }
-
-        regs->eax = (uint32_t)tty_write(buf, len);
+        regs->eax = (uint32_t)syscall_write_impl((int)fd, buf, len);
         return;
     }
 
