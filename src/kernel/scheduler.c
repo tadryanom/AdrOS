@@ -29,6 +29,36 @@ static struct process* process_find_locked(uint32_t pid) {
     return NULL;
 }
 
+static void process_reap_locked(struct process* p) {
+    if (!p) return;
+    if (p->pid == 0) return;
+
+    if (p == ready_queue_head && p == ready_queue_tail) {
+        return;
+    }
+
+    if (p->next) {
+        p->next->prev = p->prev;
+    }
+    if (p->prev) {
+        p->prev->next = p->next;
+    }
+
+    if (p == ready_queue_head) {
+        ready_queue_head = p->next;
+    }
+    if (p == ready_queue_tail) {
+        ready_queue_tail = p->prev;
+    }
+
+    if (p->kernel_stack) {
+        kfree(p->kernel_stack);
+        p->kernel_stack = NULL;
+    }
+
+    kfree(p);
+}
+
 int process_waitpid(int pid, int* status_out) {
     if (!current_process) return -1;
 
@@ -45,9 +75,11 @@ int process_waitpid(int pid, int* status_out) {
                     found_child = 1;
                     if (pid == -1 || (int)it->pid == pid) {
                         if (it->state == PROCESS_ZOMBIE) {
-                            if (status_out) *status_out = it->exit_status;
                             int retpid = (int)it->pid;
+                            int st = it->exit_status;
+                            process_reap_locked(it);
                             spin_unlock_irqrestore(&sched_lock, flags);
+                            if (status_out) *status_out = st;
                             return retpid;
                         }
                     }
@@ -72,11 +104,20 @@ int process_waitpid(int pid, int* status_out) {
         schedule();
 
         if (current_process->wait_result_pid != -1) {
-            if (status_out) *status_out = current_process->wait_result_status;
             int rp = current_process->wait_result_pid;
+            int st = current_process->wait_result_status;
+
+            uintptr_t flags2 = spin_lock_irqsave(&sched_lock);
+            struct process* child = process_find_locked((uint32_t)rp);
+            if (child && child->parent_pid == current_process->pid && child->state == PROCESS_ZOMBIE) {
+                process_reap_locked(child);
+            }
+            spin_unlock_irqrestore(&sched_lock, flags2);
+
             current_process->waiting = 0;
             current_process->wait_pid = -1;
             current_process->wait_result_pid = -1;
+            if (status_out) *status_out = st;
             return rp;
         }
     }
