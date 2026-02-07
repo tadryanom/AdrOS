@@ -15,6 +15,9 @@ struct tmpfs_node {
 
 static uint32_t g_tmpfs_next_inode = 1;
 
+static struct fs_node* tmpfs_finddir_impl(struct fs_node* node, char* name);
+static uint32_t tmpfs_write_impl(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer);
+
 static struct tmpfs_node* tmpfs_node_alloc(const char* name, uint32_t flags) {
     struct tmpfs_node* n = (struct tmpfs_node*)kmalloc(sizeof(*n));
     if (!n) return NULL;
@@ -47,6 +50,48 @@ static void tmpfs_child_add(struct tmpfs_node* dir, struct tmpfs_node* child) {
     child->parent = dir;
     child->next_sibling = dir->first_child;
     dir->first_child = child;
+}
+
+static struct tmpfs_node* tmpfs_child_ensure_dir(struct tmpfs_node* dir, const char* name) {
+    if (!dir || !name || name[0] == 0) return NULL;
+    struct tmpfs_node* existing = tmpfs_child_find(dir, name);
+    if (existing) {
+        if (existing->vfs.flags != FS_DIRECTORY) return NULL;
+        return existing;
+    }
+
+    struct tmpfs_node* nd = tmpfs_node_alloc(name, FS_DIRECTORY);
+    if (!nd) return NULL;
+    nd->vfs.read = 0;
+    nd->vfs.write = 0;
+    nd->vfs.open = 0;
+    nd->vfs.close = 0;
+    nd->vfs.finddir = &tmpfs_finddir_impl;
+    tmpfs_child_add(dir, nd);
+    return nd;
+}
+
+static int tmpfs_split_next(const char** p_inout, char* out, size_t out_sz) {
+    if (!p_inout || !*p_inout || !out || out_sz == 0) return 0;
+    const char* p = *p_inout;
+    while (*p == '/') p++;
+    if (*p == 0) {
+        *p_inout = p;
+        out[0] = 0;
+        return 0;
+    }
+
+    size_t i = 0;
+    while (*p != 0 && *p != '/') {
+        if (i + 1 < out_sz) {
+            out[i++] = *p;
+        }
+        p++;
+    }
+    out[i] = 0;
+    while (*p == '/') p++;
+    *p_inout = p;
+    return out[0] != 0;
 }
 
 static uint32_t tmpfs_read_impl(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
@@ -144,4 +189,80 @@ int tmpfs_add_file(fs_node_t* root_dir, const char* name, const uint8_t* data, u
 
     tmpfs_child_add(dir, f);
     return 0;
+}
+
+int tmpfs_mkdir_p(fs_node_t* root_dir, const char* path) {
+    if (!root_dir || root_dir->flags != FS_DIRECTORY) return -1;
+    if (!path) return -1;
+
+    struct tmpfs_node* cur = (struct tmpfs_node*)root_dir;
+    const char* p = path;
+    char part[128];
+
+    while (tmpfs_split_next(&p, part, sizeof(part))) {
+        struct tmpfs_node* next = tmpfs_child_ensure_dir(cur, part);
+        if (!next) return -1;
+        cur = next;
+    }
+
+    return 0;
+}
+
+fs_node_t* tmpfs_create_file(fs_node_t* root_dir, const char* path, const uint8_t* data, uint32_t len) {
+    if (!root_dir || root_dir->flags != FS_DIRECTORY) return NULL;
+    if (!path) return NULL;
+
+    struct tmpfs_node* cur = (struct tmpfs_node*)root_dir;
+    const char* p = path;
+    char part[128];
+    char leaf[128];
+    leaf[0] = 0;
+
+    while (tmpfs_split_next(&p, part, sizeof(part))) {
+        if (*p == 0) {
+            strcpy(leaf, part);
+            break;
+        }
+        struct tmpfs_node* next = tmpfs_child_ensure_dir(cur, part);
+        if (!next) return NULL;
+        cur = next;
+    }
+
+    if (leaf[0] == 0) return NULL;
+
+    struct tmpfs_node* existing = tmpfs_child_find(cur, leaf);
+    if (existing) {
+        if (existing->vfs.flags != FS_FILE) return NULL;
+        if (len && data) {
+            uint8_t* buf = (uint8_t*)kmalloc(len);
+            if (!buf) return NULL;
+            memcpy(buf, data, len);
+            (void)tmpfs_write_impl(&existing->vfs, 0, len, buf);
+            kfree(buf);
+        }
+        return &existing->vfs;
+    }
+
+    struct tmpfs_node* f = tmpfs_node_alloc(leaf, FS_FILE);
+    if (!f) return NULL;
+
+    f->vfs.read = &tmpfs_read_impl;
+    f->vfs.write = &tmpfs_write_impl;
+    f->vfs.open = 0;
+    f->vfs.close = 0;
+    f->vfs.finddir = 0;
+
+    if (len && data) {
+        f->data = (uint8_t*)kmalloc(len);
+        if (!f->data) {
+            kfree(f);
+            return NULL;
+        }
+        memcpy(f->data, data, len);
+        f->cap = len;
+        f->vfs.length = len;
+    }
+
+    tmpfs_child_add(cur, f);
+    return &f->vfs;
 }

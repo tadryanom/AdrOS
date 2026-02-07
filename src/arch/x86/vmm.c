@@ -100,6 +100,9 @@ uintptr_t vmm_as_create_kernel_clone(void) {
         pd_virt[i] = boot_pd[i];
     }
 
+    // Fix recursive mapping: PDE[1023] must point to this PD, not boot_pd.
+    pd_virt[1023] = pd_phys | X86_PTE_PRESENT | X86_PTE_RW;
+
     return (uintptr_t)pd_phys;
 }
 

@@ -4,6 +4,7 @@
 
 #include "fs.h"
 #include "initrd.h"
+#include "overlayfs.h"
 #include "tmpfs.h"
 #include "tty.h"
 #include "uart_console.h"
@@ -40,6 +41,16 @@ int init_start(const struct boot_info* bi) {
             fs_root = initrd_init((uint32_t)initrd_virt);
         } else {
             uart_print("[INITRD] Failed to map initrd physical range.\n");
+        }
+    }
+
+    if (fs_root) {
+        fs_node_t* upper = tmpfs_create_root();
+        if (upper) {
+            fs_node_t* ovl = overlayfs_create_root(fs_root, upper);
+            if (ovl) {
+                (void)vfs_mount("/", ovl);
+            }
         }
     }
 

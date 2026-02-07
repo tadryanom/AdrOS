@@ -93,12 +93,6 @@ void vfs_close(fs_node_t* node) {
 fs_node_t* vfs_lookup(const char* path) {
     if (!path || !fs_root) return NULL;
 
-    if (strcmp(path, "/") == 0) return fs_root;
-
-    const char* start_path = path;
-    while (*start_path == '/') start_path++;
-    if (*start_path == 0) return fs_root;
-
     fs_node_t* base = fs_root;
     const char* rel = path;
     size_t best_len = 0;
@@ -117,6 +111,7 @@ fs_node_t* vfs_lookup(const char* path) {
         }
     }
 
+    if (!rel) return NULL;
     while (*rel == '/') rel++;
     if (*rel == 0) return base;
 
