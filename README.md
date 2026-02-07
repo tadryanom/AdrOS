@@ -62,7 +62,7 @@ QEMU debug helpers:
 ## TODO
 - **Multi-architecture kernel bring-up**
   - Implement VMM/interrupts/scheduler for ARM/RISC-V/MIPS
-  - Standardize arch entrypoint behavior (`arch_start`) across architectures
+  - Standardize arch entrypoint behavior (`arch_early_setup`) across architectures
 - **Userspace**
   - Process model (fork/exec/wait), per-process address spaces, and cleanup on `exit`
   - Syscall ABI expansion (read/open/close, file descriptors, etc.)

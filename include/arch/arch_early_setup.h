@@ -8,11 +8,11 @@
  * Mirror: https://github.com/tadryanom/AdrOS
  */
 
-#ifndef ARCH_START_H
-#define ARCH_START_H
+ #ifndef ARCH_EARLY_SETUP_H
+ #define ARCH_EARLY_SETUP_H
 
-#include "arch/arch_boot_args.h"
+ #include "arch/arch_boot_args.h"
 
-void arch_start(const struct arch_boot_args* args);
+ void arch_early_setup(const struct arch_boot_args* args);
 
-#endif
+ #endif
