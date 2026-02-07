@@ -8,6 +8,25 @@ enum {
     SYSCALL_CLOSE = 6,
     SYSCALL_WAITPID = 7,
     SYSCALL_SPAWN = 8,
+    SYSCALL_LSEEK = 9,
+    SYSCALL_FSTAT = 10,
+    SYSCALL_STAT = 11,
+};
+
+enum {
+    SEEK_SET = 0,
+    SEEK_CUR = 1,
+    SEEK_END = 2,
+};
+
+#define S_IFMT  0170000
+#define S_IFREG 0100000
+
+struct stat {
+    uint32_t st_ino;
+    uint32_t st_mode;
+    uint32_t st_nlink;
+    uint32_t st_size;
 };
 
 static int sys_write(int fd, const void* buf, uint32_t len) {
@@ -76,6 +95,39 @@ static int sys_close(int fd) {
     return ret;
 }
 
+static int sys_lseek(int fd, int32_t offset, int whence) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_LSEEK), "b"(fd), "c"(offset), "d"(whence)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_fstat(int fd, struct stat* st) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_FSTAT), "b"(fd), "c"(st)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_stat(const char* path, struct stat* st) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_STAT), "b"(path), "c"(st)
+        : "memory"
+    );
+    return ret;
+}
+
 __attribute__((noreturn)) static void sys_exit(int code) {
     __asm__ volatile(
         "int $0x80\n"
@@ -102,22 +154,72 @@ void _start(void) {
     static const char path[] = "/bin/init.elf";
     int fd = sys_open(path, 0);
     if (fd < 0) {
-        static const char emsg[] = "[init] open(/bin/init.elf) failed\n";
-        (void)sys_write(1, emsg, (uint32_t)(sizeof(emsg) - 1));
+        sys_write(1, "[init] open failed\n", 18);
         sys_exit(1);
     }
 
     uint8_t hdr[4];
     int rd = sys_read(fd, hdr, (uint32_t)sizeof(hdr));
-    (void)sys_close(fd);
+    if (sys_close(fd) < 0) {
+        sys_write(1, "[init] close failed\n", 19);
+        sys_exit(1);
+    }
 
     if (rd == 4 && hdr[0] == 0x7F && hdr[1] == 'E' && hdr[2] == 'L' && hdr[3] == 'F') {
-        static const char ok[] = "[init] open/read/close OK (ELF magic)\n";
-        (void)sys_write(1, ok, (uint32_t)(sizeof(ok) - 1));
+        sys_write(1, "[init] open/read/close OK (ELF magic)\n",
+                  (uint32_t)(sizeof("[init] open/read/close OK (ELF magic)\n") - 1));
     } else {
-        static const char bad[] = "[init] read failed or bad header\n";
-        (void)sys_write(1, bad, (uint32_t)(sizeof(bad) - 1));
+        sys_write(1, "[init] read failed or bad header\n", 30);
+        sys_exit(1);
     }
+
+    fd = sys_open("/bin/init.elf", 0);
+    if (fd < 0) {
+        sys_write(1, "[init] open2 failed\n", 19);
+        sys_exit(1);
+    }
+
+    struct stat st;
+    if (sys_fstat(fd, &st) < 0) {
+        sys_write(1, "[init] fstat failed\n", 19);
+        sys_exit(1);
+    }
+
+    if ((st.st_mode & S_IFMT) != S_IFREG || st.st_size == 0) {
+        sys_write(1, "[init] fstat bad\n", 16);
+        sys_exit(1);
+    }
+
+    if (sys_lseek(fd, 0, SEEK_SET) < 0) {
+        sys_write(1, "[init] lseek set failed\n", 24);
+        sys_exit(1);
+    }
+
+    uint8_t m2[4];
+    if (sys_read(fd, m2, 4) != 4) {
+        sys_write(1, "[init] read2 failed\n", 19);
+        sys_exit(1);
+    }
+    if (m2[0] != 0x7F || m2[1] != 'E' || m2[2] != 'L' || m2[3] != 'F') {
+        sys_write(1, "[init] lseek/read mismatch\n", 27);
+        sys_exit(1);
+    }
+
+    if (sys_close(fd) < 0) {
+        sys_write(1, "[init] close2 failed\n", 20);
+        sys_exit(1);
+    }
+
+    if (sys_stat("/bin/init.elf", &st) < 0) {
+        sys_write(1, "[init] stat failed\n", 18);
+        sys_exit(1);
+    }
+    if ((st.st_mode & S_IFMT) != S_IFREG || st.st_size == 0) {
+        sys_write(1, "[init] stat bad\n", 15);
+        sys_exit(1);
+    }
+
+    sys_write(1, "[init] lseek/stat/fstat OK\n", 27);
 
     enum { NCHILD = 100 };
     int children[NCHILD];

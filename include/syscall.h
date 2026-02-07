@@ -18,6 +18,10 @@ enum {
 
     // Temporary: spawn a kernel-thread child for waitpid testing.
     SYSCALL_SPAWN = 8,
+
+    SYSCALL_LSEEK = 9,
+    SYSCALL_FSTAT = 10,
+    SYSCALL_STAT = 11,
 };
 
 #endif
