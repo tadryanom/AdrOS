@@ -121,7 +121,7 @@ $(USER_ELF): user/init.c user/linker.ld
 	@i686-elf-gcc -m32 -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(USER_ELF) user/init.c
 
 $(INITRD_IMG): $(MKINITRD) $(USER_ELF)
-	@./$(MKINITRD) $(INITRD_IMG) $(USER_ELF)
+	@./$(MKINITRD) $(INITRD_IMG) $(USER_ELF):bin/init.elf
 
 run: iso
 	@rm -f serial.log qemu.log

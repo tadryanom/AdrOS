@@ -76,10 +76,10 @@ void _start(void) {
     static const char msg[] = "[init] hello from init.elf\n";
     (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
 
-    static const char path[] = "/init.elf";
+    static const char path[] = "/bin/init.elf";
     int fd = sys_open(path, 0);
     if (fd < 0) {
-        static const char emsg[] = "[init] open(/init.elf) failed\n";
+        static const char emsg[] = "[init] open(/bin/init.elf) failed\n";
         (void)sys_write(1, emsg, (uint32_t)(sizeof(emsg) - 1));
         sys_exit(1);
     }

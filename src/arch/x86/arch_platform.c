@@ -46,11 +46,11 @@ int arch_platform_start_userspace(const struct boot_info* bi) {
 
     uintptr_t entry = 0;
     uintptr_t user_sp = 0;
-    if (elf32_load_user_from_initrd("init.elf", &entry, &user_sp) != 0) {
+    if (elf32_load_user_from_initrd("/bin/init.elf", &entry, &user_sp) != 0) {
         return -1;
     }
 
-    uart_print("[ELF] starting init.elf\n");
+    uart_print("[ELF] starting /bin/init.elf\n");
 
     uart_print("[ELF] user_range_ok(entry)=");
     uart_put_char(user_range_ok((const void*)entry, 1) ? '1' : '0');
