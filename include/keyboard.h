@@ -11,4 +11,6 @@ void keyboard_set_callback(keyboard_callback_t callback);
 
 int keyboard_read_nonblock(char* out, uint32_t max_len);
 
+int keyboard_read_blocking(char* out, uint32_t max_len);
+
 #endif

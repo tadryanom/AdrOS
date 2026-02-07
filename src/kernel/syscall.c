@@ -87,8 +87,8 @@ static int syscall_read_impl(int fd, void* user_buf, uint32_t len) {
         char kbuf[256];
         uint32_t chunk = len;
         if (chunk > sizeof(kbuf)) chunk = (uint32_t)sizeof(kbuf);
-        int rd = keyboard_read_nonblock(kbuf, chunk);
-        if (rd <= 0) return 0;
+        int rd = keyboard_read_blocking(kbuf, chunk);
+        if (rd <= 0) return -1;
         if (copy_to_user(user_buf, kbuf, (size_t)rd) < 0) return -1;
         return rd;
     }
