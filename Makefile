@@ -139,6 +139,11 @@ run: iso
 		-serial file:serial.log -monitor none -no-reboot -no-shutdown \
 		$(QEMU_DFLAGS)
 
+cppcheck:
+	@cppcheck --version >/dev/null
+	@cppcheck --quiet --enable=warning,performance,portability --error-exitcode=1 \
+		-I include $(SRC_DIR)
+
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(dir $@)
 	@echo "  CC      $<"
@@ -152,4 +157,4 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.S
 clean:
 	rm -rf build $(KERNEL_NAME)
 
-.PHONY: all clean iso run
+.PHONY: all clean iso run cppcheck
