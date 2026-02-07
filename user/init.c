@@ -119,20 +119,32 @@ void _start(void) {
         (void)sys_write(1, bad, (uint32_t)(sizeof(bad) - 1));
     }
 
-    int child = sys_spawn();
-    if (child < 0) {
-        static const char smsg[] = "[init] spawn failed\n";
-        (void)sys_write(1, smsg, (uint32_t)(sizeof(smsg) - 1));
-        sys_exit(2);
+    enum { NCHILD = 100 };
+    int children[NCHILD];
+    for (int i = 0; i < NCHILD; i++) {
+        children[i] = sys_spawn();
+        if (children[i] < 0) {
+            static const char smsg[] = "[init] spawn failed\n";
+            (void)sys_write(1, smsg, (uint32_t)(sizeof(smsg) - 1));
+            sys_exit(2);
+        }
     }
 
-    int st = 0;
-    int wp = sys_waitpid(child, &st, 0);
-    if (wp == child && st == 42) {
-        static const char wmsg[] = "[init] waitpid OK\n";
+    int ok = 1;
+    for (int i = 0; i < NCHILD; i++) {
+        int st = 0;
+        int wp = sys_waitpid(children[i], &st, 0);
+        if (wp != children[i] || st != 42) {
+            ok = 0;
+            break;
+        }
+    }
+
+    if (ok) {
+        static const char wmsg[] = "[init] waitpid OK (100 children, explicit)\n";
         (void)sys_write(1, wmsg, (uint32_t)(sizeof(wmsg) - 1));
     } else {
-        static const char wbad[] = "[init] waitpid failed\n";
+        static const char wbad[] = "[init] waitpid failed (100 children, explicit)\n";
         (void)sys_write(1, wbad, (uint32_t)(sizeof(wbad) - 1));
     }
     sys_exit(0);
