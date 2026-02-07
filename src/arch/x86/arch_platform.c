@@ -6,6 +6,7 @@
 #include "syscall.h"
 #include "timer.h"
 #include "uart_console.h"
+#include "console.h"
 #include "uaccess.h"
 #include "vga_console.h"
 #include "vmm.h"
@@ -72,7 +73,8 @@ int arch_platform_setup(const struct boot_info* bi) {
 
     vga_init();
     vga_set_color(0x0A, 0x00);
-    vga_print("[AdrOS] Kernel Initialized (VGA).\n");
+    console_enable_vga(1);
+    kprintf("[AdrOS] Kernel Initialized (VGA).\n");
 
     syscall_init();
     keyboard_init();
