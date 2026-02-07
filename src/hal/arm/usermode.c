@@ -1,0 +1,16 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * Copyright (c) 2018, Tulio A M Mendes <tadryanom@hotmail.com>
+ * All rights reserved.
+ * See LICENSE for details.
+ *
+ * Source: https://github.com/tadryanom/AdrOS
+ */
+
+#include "hal/usermode.h"
+
+int hal_usermode_enter(uintptr_t user_eip, uintptr_t user_esp) {
+    (void)user_eip;
+    (void)user_esp;
+    return -1;
+}
