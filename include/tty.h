@@ -8,11 +8,17 @@
  * Mirror: https://github.com/tadryanom/AdrOS
  */
 
-#ifndef KERNEL_INIT_H
-#define KERNEL_INIT_H
+#ifndef TTY_H
+#define TTY_H
 
-#include "kernel/boot_info.h"
+#include <stddef.h>
+#include <stdint.h>
 
-int init_start(const struct boot_info* bi);
+void tty_init(void);
+
+int tty_read(void* user_buf, uint32_t len);
+int tty_write(const void* user_buf, uint32_t len);
+
+void tty_input_char(char c);
 
 #endif

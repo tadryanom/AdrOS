@@ -14,6 +14,7 @@
 
 #include "fs.h"
 #include "initrd.h"
+#include "tty.h"
 #include "uart_console.h"
 
 #include "hal/mm.h"
@@ -40,7 +41,7 @@ static int cmdline_has_token(const char* cmdline, const char* token) {
     return 0;
 }
 
-void init_start(const struct boot_info* bi) {
+int init_start(const struct boot_info* bi) {
     if (bi && bi->initrd_start) {
         uintptr_t initrd_virt = 0;
         if (hal_mm_map_physical_range((uintptr_t)bi->initrd_start, (uintptr_t)bi->initrd_end,
@@ -51,9 +52,13 @@ void init_start(const struct boot_info* bi) {
         }
     }
 
-    (void)arch_platform_start_userspace(bi);
+    tty_init();
+
+    int user_ret = arch_platform_start_userspace(bi);
 
     if (bi && cmdline_has_token(bi->cmdline, "ring3")) {
         arch_platform_usermode_test_start();
     }
+
+    return user_ret;
 }
