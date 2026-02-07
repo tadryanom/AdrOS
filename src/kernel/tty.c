@@ -16,6 +16,8 @@
 #include "uart_console.h"
 #include "uaccess.h"
 
+#include "hal/cpu.h"
+
 #define TTY_LINE_MAX 256
 #define TTY_CANON_BUF 1024
 #define TTY_WAITQ_MAX 16
@@ -196,6 +198,8 @@ int tty_read(void* user_buf, uint32_t len) {
         }
 
         spin_unlock_irqrestore(&tty_lock, flags);
+
+        hal_cpu_enable_interrupts();
         schedule();
     }
 }
