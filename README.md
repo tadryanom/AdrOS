@@ -35,15 +35,23 @@ AdrOS is a multi-architecture operating system developed for research and academ
   - PIT timer + periodic tick
 - **Kernel services**
   - Simple scheduler / multitasking (kernel threads)
-  - Basic shell with built-in commands
-- **InitRD + VFS glue**
-  - InitRD-backed filesystem node tree
-  - Minimal VFS helpers (`vfs_read`/`vfs_write`/open/close)
-- **Syscalls & ring3 bring-up (x86)**
+  - Basic shell with built-in commands (fallback when userspace fails)
+- **InitRD + VFS (read-only)**
+  - InitRD image in TAR/USTAR format (with directory support)
+  - InitRD-backed filesystem node tree (`fs_node_t` + `finddir`)
+  - Absolute path lookup (`vfs_lookup("/bin/init.elf")`)
+- **File descriptors + syscalls (x86)**
   - `int 0x80` syscall gate
-  - `SYSCALL_WRITE`, `SYSCALL_EXIT`, `SYSCALL_GETPID`
+  - `SYSCALL_WRITE`, `SYSCALL_EXIT`, `SYSCALL_GETPID`, `SYSCALL_OPEN`, `SYSCALL_READ`, `SYSCALL_CLOSE`
+  - Per-process fd table (starting at fd=3)
   - Centralized user-pointer access API (`user_range_ok`, `copy_from_user`, `copy_to_user`)
-  - Ring3 stub test program with fault-injection for invalid pointers
+  - Ring3 init program (`/bin/init.elf`) exercising open/read/close
+- **TTY (canonical line discipline)**
+  - Keyboard -> TTY input path
+  - Canonical mode input (line-buffered until `\n`)
+  - Echo + backspace handling
+  - Blocking reads with a simple wait queue (multiple waiters)
+  - `fd=0` wired to `tty_read`, `fd=1/2` wired to `tty_write`
 - **W^X (Option 1) for user ELFs (x86)**
   - User segments are mapped RW during load, then write permissions are dropped for non-writable segments
   - This provides "text is read-only" hardening without requiring NX/PAE
@@ -63,15 +71,27 @@ QEMU debug helpers:
 - **Multi-architecture kernel bring-up**
   - Implement VMM/interrupts/scheduler for ARM/RISC-V/MIPS
   - Standardize arch entrypoint behavior (`arch_early_setup`) across architectures
-- **Userspace**
-  - Process model (fork/exec/wait), per-process address spaces, and cleanup on `exit`
-  - Syscall ABI expansion (read/open/close, file descriptors, etc.)
+- **Userspace / POSIX process model**
+  - Per-process address spaces (currently a single shared address space)
+  - `fork`, `execve`, `waitpid`, `getppid`, `brk`/`sbrk`
+  - Proper process lifecycle: `exit` cleanup, zombies, reaping
+  - Signals (at least `SIGKILL`/`SIGSEGV` basics)
+- **Syscalls / ABI**
+  - `dup`, `dup2`, `pipe`, `ioctl` (TTY), `stat`, `fstat`, `lseek`, `getcwd`, `chdir`
+  - Error reporting via `errno` conventions
 - **Virtual memory hardening**
   - Option 2: PAE + NX enforcement (execute disable for data/stack)
   - Guard pages, and tighter user/kernel separation checks
 - **Filesystem**
+  - VFS mount table (multiple filesystems)
   - Persisted storage (ATA/AHCI/virtio-blk or similar)
-  - Path resolution, directories, permissions
+  - Permissions/ownership (`uid/gid`, mode bits) and `umask`
+  - Special files: char devices, block devices, `/dev`, `/proc`
+  - Writable fs (tmpfs) and a real on-disk fs (ext2/fat)
+- **TTY / PTY**
+  - Termios-like mode flags (canonical/raw, echo, erase, intr)
+  - Sessions / process groups / controlling terminal
+  - PTYs for userland shells
 - **Observability & tooling**
   - Better memory stats (`mem` shell command)
   - Debug facilities (panic backtraces, symbolization, structured logs)
