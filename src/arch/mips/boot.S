@@ -13,14 +13,14 @@
 _start:
     la   $sp, stack_top
 
-    /* Build arch_boot_args (in .bss) and call arch_start(args) */
+    /* Build arch_boot_args (in .bss) and call arch_early_setup(args) */
     la   $a0, arch_boot_args
     sw   $zero, 0($a0)
     sw   $zero, 4($a0)
     sw   $zero, 8($a0)
     sw   $zero, 12($a0)
 
-    jal  arch_start
+    jal  arch_early_setup
     nop
 
 1:

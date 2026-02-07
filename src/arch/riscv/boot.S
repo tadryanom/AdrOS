@@ -15,9 +15,9 @@ _start:
      */
     la sp, stack_top
 
-    /* Build arch_boot_args (in .bss) and call arch_start(args) */
+    /* Build arch_boot_args (in .bss) and call arch_early_setup(args) */
     la a0, arch_boot_args
-    call arch_start
+    call arch_early_setup
 
     /* Hang if return */
 1:  wfi

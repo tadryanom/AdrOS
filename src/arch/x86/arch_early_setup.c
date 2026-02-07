@@ -1,4 +1,4 @@
-#include "arch/arch_start.h"
+ #include "arch/arch_early_setup.h"
 
 #include "kernel/boot_info.h"
 
@@ -13,7 +13,7 @@ extern void kernel_main(const struct boot_info* bi);
 static uint8_t multiboot_copy[65536];
 static uint32_t multiboot_copy_size;
 
-void arch_start(const struct arch_boot_args* args) {
+ void arch_early_setup(const struct arch_boot_args* args) {
     uart_init();
     uart_print("\n[AdrOS] Booting...\n");
 

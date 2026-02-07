@@ -1,11 +1,11 @@
-#include "arch/arch_start.h"
+ #include "arch/arch_early_setup.h"
 #include "kernel/boot_info.h"
 
 #include "uart_console.h"
 
 extern void kernel_main(const struct boot_info* bi);
 
-void arch_start(const struct arch_boot_args* args) {
+ void arch_early_setup(const struct arch_boot_args* args) {
     (void)args;
 
     uart_init();
@@ -21,6 +21,6 @@ void arch_start(const struct arch_boot_args* args) {
     kernel_main(&bi);
 
     for(;;) {
-        __asm__ volatile("wfi");
+        __asm__ volatile("nop");
     }
 }

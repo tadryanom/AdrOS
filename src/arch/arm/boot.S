@@ -17,9 +17,9 @@ _start:
     ldr x0, =stack_top
     mov sp, x0
 
-    /* Build arch_boot_args (in .bss) and call arch_start(args) */
+    /* Build arch_boot_args (in .bss) and call arch_early_setup(args) */
     ldr x0, =arch_boot_args
-    bl arch_start
+    bl arch_early_setup
 
     /* Hang */
 1:  wfi

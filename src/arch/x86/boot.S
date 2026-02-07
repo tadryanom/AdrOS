@@ -62,7 +62,7 @@ _start:
 
     /*
      * Map 0-16MB using 4 page tables.
-     * With Multiboot2 info copied in arch_start and initrd mapped via VMM,
+     * With Multiboot2 info copied in arch_early_setup and initrd mapped via VMM,
      * we only need a small identity window for early bring-up.
      */
 
@@ -153,7 +153,7 @@ higher_half_start:
     pop %ebx /* EBX now has the Multiboot Info address */
     pop %eax /* EAX now has the Magic Number */
 
-    /* Build arch_boot_args (in .bss) and call arch_start(args) */
+    /* Build arch_boot_args (in .bss) and call arch_early_setup(args) */
     mov $arch_boot_args, %ecx
     mov %eax, 0(%ecx)          /* args->a0 = multiboot magic */
     mov %ebx, 4(%ecx)          /* args->a1 = multiboot info phys */
@@ -161,7 +161,7 @@ higher_half_start:
     movl $0, 12(%ecx)          /* args->a3 = 0 */
 
     push %ecx
-    call arch_start
+    call arch_early_setup
     add $4, %esp
 
     /* Hang */
