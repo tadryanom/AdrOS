@@ -44,9 +44,19 @@ This produces `adros-x86.iso`.
 make ARCH=x86 run
 ```
 
+If you are iterating on kernel changes and want to avoid hanging runs, you can wrap it with a timeout:
+```bash
+timeout 60s make ARCH=x86 run || true
+```
+
 Generated outputs/artifacts:
 - `serial.log`: UART log (primary kernel output)
 - `qemu.log`: only generated when QEMU debug logging is enabled (see below)
+
+Static analysis helper:
+```bash
+make ARCH=x86 cppcheck
+```
 
 To enable QEMU debug logging (disabled by default to avoid excessive I/O):
 ```bash
