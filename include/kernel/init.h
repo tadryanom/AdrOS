@@ -3,6 +3,6 @@
 
 #include "kernel/boot_info.h"
 
-void init_start(const struct boot_info* bi);
+int init_start(const struct boot_info* bi);
 
 #endif

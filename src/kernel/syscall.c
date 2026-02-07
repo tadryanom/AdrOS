@@ -2,8 +2,7 @@
 #include "idt.h"
 #include "fs.h"
 #include "heap.h"
-#include "keyboard.h"
-#include "keyboard.h"
+#include "tty.h"
 #include "process.h"
 #include "uart_console.h"
 #include "uaccess.h"
@@ -84,13 +83,7 @@ static int syscall_read_impl(int fd, void* user_buf, uint32_t len) {
     if (user_range_ok(user_buf, (size_t)len) == 0) return -1;
 
     if (fd == 0) {
-        char kbuf[256];
-        uint32_t chunk = len;
-        if (chunk > sizeof(kbuf)) chunk = (uint32_t)sizeof(kbuf);
-        int rd = keyboard_read_blocking(kbuf, chunk);
-        if (rd <= 0) return -1;
-        if (copy_to_user(user_buf, kbuf, (size_t)rd) < 0) return -1;
-        return rd;
+        return tty_read(user_buf, len);
     }
 
     if (fd == 1 || fd == 2) return -1;
@@ -133,38 +126,7 @@ static void syscall_handler(struct registers* regs) {
             return;
         }
 
-        if (len > 1024 * 1024) {
-            regs->eax = (uint32_t)-1;
-            return;
-        }
-
-        if (user_range_ok(buf, (size_t)len) == 0) {
-            regs->eax = (uint32_t)-1;
-            return;
-        }
-
-        char kbuf[256];
-        uint32_t remaining = len;
-        uintptr_t up = (uintptr_t)buf;
-
-        while (remaining) {
-            uint32_t chunk = remaining;
-            if (chunk > sizeof(kbuf)) chunk = (uint32_t)sizeof(kbuf);
-
-            if (copy_from_user(kbuf, (const void*)up, (size_t)chunk) < 0) {
-                regs->eax = (uint32_t)-1;
-                return;
-            }
-
-            for (uint32_t i = 0; i < chunk; i++) {
-                uart_put_char(kbuf[i]);
-            }
-
-            up += chunk;
-            remaining -= chunk;
-        }
-
-        regs->eax = len;
+        regs->eax = (uint32_t)tty_write(buf, len);
         return;
     }
 

@@ -59,10 +59,12 @@ void kernel_main(const struct boot_info* bi) {
 
     hal_cpu_enable_interrupts();
 
-    init_start(bi);
+    int init_ret = init_start(bi);
     
-    // Start Shell as the main interaction loop
-    shell_init();
+    if (init_ret < 0) {
+        // Start Shell as the main interaction loop
+        shell_init();
+    }
     
 done:
     uart_print("Welcome to AdrOS (x86/ARM/RISC-V/MIPS)!\n");
