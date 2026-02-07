@@ -18,11 +18,18 @@ struct file;
 
 struct process {
     uint32_t pid;
+    uint32_t parent_pid;
     uintptr_t sp;
     uintptr_t addr_space;
     uint32_t* kernel_stack;
     process_state_t state;
     uint32_t wake_at_tick;      // New: When to wake up (global tick count)
+    int exit_status;
+
+    int waiting;
+    int wait_pid;
+    int wait_result_pid;
+    int wait_result_status;
     struct file* files[PROCESS_MAX_FILES];
     struct process* next;
     struct process* prev;       // Doubly linked list helps here too! (Optional but good)
@@ -50,5 +57,14 @@ extern void context_switch(uintptr_t* old_sp_ptr, uintptr_t new_sp);
 
 // Yield the CPU to the next process voluntarily
 void schedule(void);
+
+// Wait for a child to exit. Returns child's pid on success, -1 on error.
+int process_waitpid(int pid, int* status_out);
+
+// Mark current process as exiting and notify/wake a waiter (if any).
+void process_exit_notify(int status);
+
+// Temporary: spawn a kernel-thread child that sleeps briefly and exits.
+int process_spawn_test_child(void);
 
 #endif

@@ -7,6 +7,8 @@
 #include "uart_console.h"
 #include "uaccess.h"
 
+#include "hal/cpu.h"
+
 #include <stddef.h>
 
 struct file {
@@ -131,7 +133,7 @@ static void syscall_handler(struct registers* regs) {
     }
 
     if (syscall_no == SYSCALL_GETPID) {
-        regs->eax = 0;
+        regs->eax = current_process ? current_process->pid : 0;
         return;
     }
 
@@ -157,10 +159,56 @@ static void syscall_handler(struct registers* regs) {
     }
 
     if (syscall_no == SYSCALL_EXIT) {
-        uart_print("[USER] exit()\n");
+        int status = (int)regs->ebx;
+
+        for (int fd = 3; fd < PROCESS_MAX_FILES; fd++) {
+            if (current_process && current_process->files[fd]) {
+                (void)fd_close(fd);
+            }
+        }
+
+        process_exit_notify(status);
+
+        hal_cpu_enable_interrupts();
+        schedule();
         for(;;) {
             __asm__ volatile("cli; hlt");
         }
+    }
+
+    if (syscall_no == SYSCALL_WAITPID) {
+        int pid = (int)regs->ebx;
+        int* user_status = (int*)regs->ecx;
+        uint32_t options = regs->edx;
+        (void)options;
+
+        if (user_status && user_range_ok(user_status, sizeof(int)) == 0) {
+            regs->eax = (uint32_t)-1;
+            return;
+        }
+
+        int status = 0;
+        int retpid = process_waitpid(pid, &status);
+        if (retpid < 0) {
+            regs->eax = (uint32_t)-1;
+            return;
+        }
+
+        if (user_status) {
+            if (copy_to_user(user_status, &status, sizeof(status)) < 0) {
+                regs->eax = (uint32_t)-1;
+                return;
+            }
+        }
+
+        regs->eax = (uint32_t)retpid;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SPAWN) {
+        int pid = process_spawn_test_child();
+        regs->eax = (pid < 0) ? (uint32_t)-1 : (uint32_t)pid;
+        return;
     }
 
     regs->eax = (uint32_t)-1;

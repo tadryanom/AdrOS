@@ -13,6 +13,11 @@ enum {
     SYSCALL_OPEN  = 4,
     SYSCALL_READ  = 5,
     SYSCALL_CLOSE = 6,
+
+    SYSCALL_WAITPID = 7,
+
+    // Temporary: spawn a kernel-thread child for waitpid testing.
+    SYSCALL_SPAWN = 8,
 };
 
 #endif

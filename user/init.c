@@ -6,6 +6,8 @@ enum {
     SYSCALL_OPEN  = 4,
     SYSCALL_READ  = 5,
     SYSCALL_CLOSE = 6,
+    SYSCALL_WAITPID = 7,
+    SYSCALL_SPAWN = 8,
 };
 
 static int sys_write(int fd, const void* buf, uint32_t len) {
@@ -14,6 +16,28 @@ static int sys_write(int fd, const void* buf, uint32_t len) {
         "int $0x80"
         : "=a"(ret)
         : "a"(SYSCALL_WRITE), "b"(fd), "c"(buf), "d"(len)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_waitpid(int pid, int* status, uint32_t options) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_WAITPID), "b"(pid), "c"(status), "d"(options)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_spawn(void) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_SPAWN)
         : "memory"
     );
     return ret;
@@ -53,12 +77,11 @@ static int sys_close(int fd) {
 }
 
 __attribute__((noreturn)) static void sys_exit(int code) {
-    (void)code;
     __asm__ volatile(
         "int $0x80\n"
         "1: jmp 1b\n"
         :
-        : "a"(SYSCALL_EXIT)
+        : "a"(SYSCALL_EXIT), "b"(code)
         : "memory"
     );
     __builtin_unreachable();
@@ -94,6 +117,23 @@ void _start(void) {
     } else {
         static const char bad[] = "[init] read failed or bad header\n";
         (void)sys_write(1, bad, (uint32_t)(sizeof(bad) - 1));
+    }
+
+    int child = sys_spawn();
+    if (child < 0) {
+        static const char smsg[] = "[init] spawn failed\n";
+        (void)sys_write(1, smsg, (uint32_t)(sizeof(smsg) - 1));
+        sys_exit(2);
+    }
+
+    int st = 0;
+    int wp = sys_waitpid(child, &st, 0);
+    if (wp == child && st == 42) {
+        static const char wmsg[] = "[init] waitpid OK\n";
+        (void)sys_write(1, wmsg, (uint32_t)(sizeof(wmsg) - 1));
+    } else {
+        static const char wbad[] = "[init] waitpid failed\n";
+        (void)sys_write(1, wbad, (uint32_t)(sizeof(wbad) - 1));
     }
     sys_exit(0);
 }

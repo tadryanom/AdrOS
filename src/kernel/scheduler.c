@@ -1,9 +1,11 @@
 #include "process.h"
 #include "pmm.h"
 #include "vmm.h"
+#include "heap.h"
 #include "uart_console.h"
 #include "timer.h" // Need access to current tick usually, but we pass it in wake_check
 #include "spinlock.h"
+#include "utils.h"
 #include "hal/cpu.h"
 #include <stddef.h>
 
@@ -14,20 +16,105 @@ static uint32_t next_pid = 1;
 
 static spinlock_t sched_lock = {0};
 
-static void* pmm_alloc_page_low(void) {
-    // Bring-up safety: ensure we allocate from the identity-mapped area (0-4MB)
-    // until we have a full kernel virtual mapping for arbitrary phys pages.
-    for (int tries = 0; tries < 1024; tries++) {
-        void* p = pmm_alloc_page();
-        if (!p) return 0;
-        // boot.S currently identity-maps a large low window; keep allocations within it.
-        if ((uint32_t)p < 0x01000000) {
-            return p;
+static struct process* process_find_locked(uint32_t pid) {
+    if (!ready_queue_head) return NULL;
+
+    struct process* it = ready_queue_head;
+    struct process* start = it;
+    do {
+        if (it->pid == pid) return it;
+        it = it->next;
+    } while (it && it != start);
+
+    return NULL;
+}
+
+int process_waitpid(int pid, int* status_out) {
+    if (!current_process) return -1;
+
+    while (1) {
+        uintptr_t flags = spin_lock_irqsave(&sched_lock);
+
+        struct process* it = ready_queue_head;
+        struct process* start = it;
+        int found_child = 0;
+
+        if (it) {
+            do {
+                if (it->parent_pid == current_process->pid) {
+                    found_child = 1;
+                    if (pid == -1 || (int)it->pid == pid) {
+                        if (it->state == PROCESS_ZOMBIE) {
+                            if (status_out) *status_out = it->exit_status;
+                            int retpid = (int)it->pid;
+                            spin_unlock_irqrestore(&sched_lock, flags);
+                            return retpid;
+                        }
+                    }
+                }
+                it = it->next;
+            } while (it != start);
         }
-        // Not safe to touch yet; put it back.
-        pmm_free_page(p);
+
+        if (!found_child) {
+            spin_unlock_irqrestore(&sched_lock, flags);
+            return -1;
+        }
+
+        current_process->waiting = 1;
+        current_process->wait_pid = pid;
+        current_process->wait_result_pid = -1;
+        current_process->state = PROCESS_BLOCKED;
+
+        spin_unlock_irqrestore(&sched_lock, flags);
+
+        hal_cpu_enable_interrupts();
+        schedule();
+
+        if (current_process->wait_result_pid != -1) {
+            if (status_out) *status_out = current_process->wait_result_status;
+            int rp = current_process->wait_result_pid;
+            current_process->waiting = 0;
+            current_process->wait_pid = -1;
+            current_process->wait_result_pid = -1;
+            return rp;
+        }
     }
-    return 0;
+}
+
+void process_exit_notify(int status) {
+    if (!current_process) return;
+
+    uintptr_t flags = spin_lock_irqsave(&sched_lock);
+
+    current_process->exit_status = status;
+    current_process->state = PROCESS_ZOMBIE;
+
+    if (current_process->pid != 0) {
+        struct process* parent = process_find_locked(current_process->parent_pid);
+        if (parent && parent->state == PROCESS_BLOCKED && parent->waiting) {
+            if (parent->wait_pid == -1 || parent->wait_pid == (int)current_process->pid) {
+                parent->wait_result_pid = (int)current_process->pid;
+                parent->wait_result_status = status;
+                parent->state = PROCESS_READY;
+            }
+        }
+    }
+
+    spin_unlock_irqrestore(&sched_lock, flags);
+}
+static void spawn_test_child_entry(void) {
+    process_exit_notify(42);
+    schedule();
+    for(;;) {
+        hal_cpu_idle();
+    }
+}
+
+int process_spawn_test_child(void) {
+    struct process* p = process_create_kernel(spawn_test_child_entry);
+    if (!p) return -1;
+    return (int)p->pid;
 }
 
 void process_init(void) {
@@ -36,18 +123,26 @@ void process_init(void) {
     uintptr_t flags = spin_lock_irqsave(&sched_lock);
 
     // Initial Kernel Thread (PID 0) - IDLE TASK
-    struct process* kernel_proc = (struct process*)pmm_alloc_page_low();
+    struct process* kernel_proc = (struct process*)kmalloc(sizeof(*kernel_proc));
     if (!kernel_proc) {
         spin_unlock_irqrestore(&sched_lock, flags);
         uart_print("[SCHED] OOM allocating kernel process struct.\n");
         for(;;) hal_cpu_idle();
         __builtin_unreachable();
     }
+
+    memset(kernel_proc, 0, sizeof(*kernel_proc));
     
     kernel_proc->pid = 0;
+    kernel_proc->parent_pid = 0;
     kernel_proc->state = PROCESS_RUNNING;
     kernel_proc->wake_at_tick = 0;
     kernel_proc->addr_space = hal_cpu_get_address_space();
+    kernel_proc->exit_status = 0;
+    kernel_proc->waiting = 0;
+    kernel_proc->wait_pid = -1;
+    kernel_proc->wait_result_pid = -1;
+    kernel_proc->wait_result_status = 0;
 
     for (int i = 0; i < PROCESS_MAX_FILES; i++) {
         kernel_proc->files[i] = NULL;
@@ -57,6 +152,7 @@ void process_init(void) {
     ready_queue_head = kernel_proc;
     ready_queue_tail = kernel_proc;
     kernel_proc->next = kernel_proc;
+    kernel_proc->prev = kernel_proc;
 
     // Best effort: set esp0 to current stack until we have a dedicated kernel stack for PID 0
     uintptr_t cur_esp = hal_cpu_get_stack_pointer();
@@ -68,48 +164,55 @@ void process_init(void) {
 void thread_wrapper(void (*fn)(void)) {
     hal_cpu_enable_interrupts();
     fn();
-    uart_print("[SCHED] Thread exited.\n");
     for(;;) hal_cpu_idle();
 }
 
 struct process* process_create_kernel(void (*entry_point)(void)) {
     uintptr_t flags = spin_lock_irqsave(&sched_lock);
-    struct process* proc = (struct process*)pmm_alloc_page_low();
+    struct process* proc = (struct process*)kmalloc(sizeof(*proc));
     if (!proc) {
         spin_unlock_irqrestore(&sched_lock, flags);
         return NULL;
     }
 
+    memset(proc, 0, sizeof(*proc));
+
     proc->pid = next_pid++;
+    proc->parent_pid = current_process ? current_process->pid : 0;
     proc->state = PROCESS_READY;
     proc->addr_space = current_process->addr_space;
     proc->wake_at_tick = 0;
+    proc->exit_status = 0;
+    proc->waiting = 0;
+    proc->wait_pid = -1;
+    proc->wait_result_pid = -1;
+    proc->wait_result_status = 0;
 
     for (int i = 0; i < PROCESS_MAX_FILES; i++) {
         proc->files[i] = NULL;
     }
     
-    void* stack_phys = pmm_alloc_page_low();
-    if (!stack_phys) {
+    void* stack = kmalloc(4096);
+    if (!stack) {
         spin_unlock_irqrestore(&sched_lock, flags);
         return NULL;
     }
 
-    // Until we guarantee a linear phys->virt mapping, use the identity-mapped address
-    // for kernel thread stacks during bring-up.
-    uint32_t stack_addr = (uint32_t)stack_phys;
-    proc->kernel_stack = (uint32_t*)stack_addr;
+    proc->kernel_stack = (uint32_t*)stack;
     
-    uint32_t* sp = (uint32_t*)((uint8_t*)stack_addr + 4096);
+    uint32_t* sp = (uint32_t*)((uint8_t*)stack + 4096);
     
     *--sp = (uint32_t)entry_point;
+    *--sp = 0;
     *--sp = (uint32_t)thread_wrapper;
     *--sp = 0; *--sp = 0; *--sp = 0; *--sp = 0;
     
     proc->sp = (uintptr_t)sp;
 
     proc->next = ready_queue_head;
+    proc->prev = ready_queue_tail;
     ready_queue_tail->next = proc;
+    ready_queue_head->prev = proc;
     ready_queue_tail = proc;
 
     spin_unlock_irqrestore(&sched_lock, flags);
@@ -146,12 +249,10 @@ struct process* get_next_ready_process(void) {
 }
 
 void schedule(void) {
-    uintptr_t irq_flags = irq_save();
-    spin_lock(&sched_lock);
+    uintptr_t irq_flags = spin_lock_irqsave(&sched_lock);
 
     if (!current_process) {
-        spin_unlock(&sched_lock);
-        irq_restore(irq_flags);
+        spin_unlock_irqrestore(&sched_lock, irq_flags);
         return;
     }
 
@@ -159,8 +260,7 @@ void schedule(void) {
     struct process* next = get_next_ready_process();
     
     if (prev == next) {
-        spin_unlock(&sched_lock);
-        irq_restore(irq_flags);
+        spin_unlock_irqrestore(&sched_lock, irq_flags);
         return; 
     }
 
@@ -178,11 +278,14 @@ void schedule(void) {
         hal_cpu_set_kernel_stack((uintptr_t)current_process->kernel_stack + 4096);
     }
 
-    spin_unlock(&sched_lock);
-    
+    spin_unlock_irqrestore(&sched_lock, irq_flags);
+
     context_switch(&prev->sp, current_process->sp);
 
-    irq_restore(irq_flags);
+    // Do not restore the old IF state after switching stacks.
+    // The previous context may have entered schedule() with IF=0 (e.g. syscall/ISR),
+    // and propagating that would prevent timer/keyboard IRQs from firing.
+    hal_cpu_enable_interrupts();
 }
 
 void process_sleep(uint32_t ticks) {
