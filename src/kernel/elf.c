@@ -7,6 +7,8 @@
 #include "utils.h"
 #include "vmm.h"
 
+#include "hal/cpu.h"
+
 #include <stdint.h>
 
 #if defined(__i386__)
@@ -53,7 +55,7 @@ static int elf32_validate(const elf32_ehdr_t* eh, size_t file_len) {
     return 0;
 }
 
-static int elf32_map_user_range(uintptr_t vaddr, size_t len, uint32_t flags) {
+static int elf32_map_user_range(uintptr_t as, uintptr_t vaddr, size_t len, uint32_t flags) {
     if (len == 0) return 0;
     if (vaddr == 0) return -1;
     if (vaddr >= X86_KERNEL_VIRT_BASE) return -1;
@@ -69,7 +71,7 @@ static int elf32_map_user_range(uintptr_t vaddr, size_t len, uint32_t flags) {
         void* phys = pmm_alloc_page_low_16mb();
         if (!phys) return -1;
 
-        vmm_map_page((uint64_t)(uintptr_t)phys, (uint64_t)va, flags | VMM_FLAG_PRESENT | VMM_FLAG_USER);
+        vmm_as_map_page(as, (uint64_t)(uintptr_t)phys, (uint64_t)va, flags | VMM_FLAG_PRESENT | VMM_FLAG_USER);
 
         if (va == end_page) break;
     }
@@ -77,9 +79,15 @@ static int elf32_map_user_range(uintptr_t vaddr, size_t len, uint32_t flags) {
     return 0;
 }
 
-int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uintptr_t* user_stack_top_out) {
-    if (!filename || !entry_out || !user_stack_top_out) return -1;
+int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uintptr_t* user_stack_top_out, uintptr_t* addr_space_out) {
+    if (!filename || !entry_out || !user_stack_top_out || !addr_space_out) return -1;
     if (!fs_root) return -1;
+
+    uintptr_t new_as = vmm_as_create_kernel_clone();
+    if (!new_as) return -1;
+
+    uintptr_t old_as = hal_cpu_get_address_space();
+    vmm_as_activate(new_as);
 
     fs_node_t* node = vfs_lookup(filename);
     if (!node) {
@@ -98,6 +106,8 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
     uint32_t rd = vfs_read(node, 0, file_len, file);
     if (rd != file_len) {
         kfree(file);
+        vmm_as_activate(old_as);
+        vmm_as_destroy(new_as);
         return -1;
     }
 
@@ -105,6 +115,8 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
     if (elf32_validate(eh, file_len) < 0) {
         uart_print("[ELF] invalid ELF header\n");
         kfree(file);
+        vmm_as_activate(old_as);
+        vmm_as_destroy(new_as);
         return -1;
     }
 
@@ -117,11 +129,15 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
         if (ph[i].p_vaddr == 0) {
             uart_print("[ELF] PT_LOAD with vaddr=0 rejected\n");
             kfree(file);
+            vmm_as_activate(old_as);
+            vmm_as_destroy(new_as);
             return -1;
         }
         if (ph[i].p_vaddr >= X86_KERNEL_VIRT_BASE) {
             uart_print("[ELF] PT_LOAD in kernel range rejected\n");
             kfree(file);
+            vmm_as_activate(old_as);
+            vmm_as_destroy(new_as);
             return -1;
         }
 
@@ -143,9 +159,11 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
 
         const uint32_t map_flags = VMM_FLAG_RW;
 
-        if (elf32_map_user_range((uintptr_t)ph[i].p_vaddr, (size_t)ph[i].p_memsz, map_flags) < 0) {
+        if (elf32_map_user_range(new_as, (uintptr_t)ph[i].p_vaddr, (size_t)ph[i].p_memsz, map_flags) < 0) {
             uart_print("[ELF] OOM mapping user segment\n");
             kfree(file);
+            vmm_as_activate(old_as);
+            vmm_as_destroy(new_as);
             return -1;
         }
 
@@ -166,23 +184,28 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
     const uintptr_t user_stack_base = 0x00800000U;
     const size_t user_stack_size = 0x1000;
 
-    if (elf32_map_user_range(user_stack_base, user_stack_size, VMM_FLAG_RW) < 0) {
+    if (elf32_map_user_range(new_as, user_stack_base, user_stack_size, VMM_FLAG_RW) < 0) {
         uart_print("[ELF] OOM mapping user stack\n");
         kfree(file);
+        vmm_as_activate(old_as);
+        vmm_as_destroy(new_as);
         return -1;
     }
 
     *entry_out = (uintptr_t)eh->e_entry;
     *user_stack_top_out = user_stack_base + user_stack_size;
+    *addr_space_out = new_as;
 
     kfree(file);
+    vmm_as_activate(old_as);
     return 0;
 }
 #else
-int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uintptr_t* user_stack_top_out) {
+int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uintptr_t* user_stack_top_out, uintptr_t* addr_space_out) {
     (void)filename;
     (void)entry_out;
     (void)user_stack_top_out;
+    (void)addr_space_out;
     return -1;
 }
 #endif

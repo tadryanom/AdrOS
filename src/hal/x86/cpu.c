@@ -24,6 +24,14 @@ uintptr_t hal_cpu_get_address_space(void) {
     return as;
 }
 
+void hal_cpu_set_address_space(uintptr_t as) {
+#if defined(__x86_64__)
+    __asm__ volatile("mov %0, %%cr3" : : "r"(as) : "memory");
+#else
+    __asm__ volatile("mov %0, %%cr3" : : "r"(as) : "memory");
+#endif
+}
+
 void hal_cpu_set_kernel_stack(uintptr_t sp_top) {
     tss_set_kernel_stack(sp_top);
 }
@@ -44,6 +52,10 @@ uintptr_t hal_cpu_get_stack_pointer(void) {
 
 uintptr_t hal_cpu_get_address_space(void) {
     return 0;
+}
+
+void hal_cpu_set_address_space(uintptr_t as) {
+    (void)as;
 }
 
 void hal_cpu_set_kernel_stack(uintptr_t sp_top) {

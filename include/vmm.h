@@ -22,6 +22,11 @@ void vmm_init(void);
  */
 void vmm_map_page(uint64_t phys, uint64_t virt, uint32_t flags);
 
+uintptr_t vmm_as_create_kernel_clone(void);
+void vmm_as_destroy(uintptr_t as);
+void vmm_as_activate(uintptr_t as);
+void vmm_as_map_page(uintptr_t as, uint64_t phys, uint64_t virt, uint32_t flags);
+
 /*
  * Update flags for an already-mapped virtual page.
  * Keeps the physical frame, only changes PRESENT/RW/USER bits.

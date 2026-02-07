@@ -15,6 +15,7 @@ struct process* ready_queue_tail = NULL;
 static uint32_t next_pid = 1;
 
 static spinlock_t sched_lock = {0};
+static uintptr_t kernel_as = 0;
 
 static struct process* process_find_locked(uint32_t pid) {
     if (!ready_queue_head) return NULL;
@@ -54,6 +55,11 @@ static void process_reap_locked(struct process* p) {
     if (p->kernel_stack) {
         kfree(p->kernel_stack);
         p->kernel_stack = NULL;
+    }
+
+    if (p->addr_space && p->addr_space != kernel_as) {
+        vmm_as_destroy(p->addr_space);
+        p->addr_space = 0;
     }
 
     kfree(p);
@@ -179,6 +185,7 @@ void process_init(void) {
     kernel_proc->state = PROCESS_RUNNING;
     kernel_proc->wake_at_tick = 0;
     kernel_proc->addr_space = hal_cpu_get_address_space();
+    kernel_as = kernel_proc->addr_space;
     kernel_proc->exit_status = 0;
     kernel_proc->waiting = 0;
     kernel_proc->wait_pid = -1;
@@ -221,7 +228,7 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
     proc->pid = next_pid++;
     proc->parent_pid = current_process ? current_process->pid : 0;
     proc->state = PROCESS_READY;
-    proc->addr_space = current_process->addr_space;
+    proc->addr_space = kernel_as ? kernel_as : (current_process ? current_process->addr_space : 0);
     proc->wake_at_tick = 0;
     proc->exit_status = 0;
     proc->waiting = 0;
@@ -313,6 +320,10 @@ void schedule(void) {
 
     current_process = next;
     current_process->state = PROCESS_RUNNING;
+
+    if (current_process->addr_space && current_process->addr_space != prev->addr_space) {
+        hal_cpu_set_address_space(current_process->addr_space);
+    }
 
     // For ring3->ring0 transitions, esp0 must point to the top of the kernel stack.
     if (current_process->kernel_stack) {
