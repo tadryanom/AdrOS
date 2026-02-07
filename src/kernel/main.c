@@ -11,7 +11,6 @@
 #include "shell.h"
 #include "heap.h"
 #include "timer.h"
-#include "multiboot2.h"
 #include "initrd.h"
 #include "fs.h"
  #include "elf.h"
@@ -19,15 +18,11 @@
 
 #include "kernel/boot_info.h"
 
-#include "gdt.h"
-
 #include "syscall.h"
 
 #include "hal/cpu.h"
-
-#if defined(__i386__)
-#include "arch/x86/usermode.h"
-#endif
+#include "hal/mm.h"
+#include "hal/usermode.h"
 
 #if defined(__i386__)
 extern void x86_usermode_test_start(void);
@@ -100,26 +95,13 @@ void kernel_main(const struct boot_info* bi) {
 
     // 9. Load InitRD (if available)
     if (bi && bi->initrd_start) {
-        const uintptr_t initrd_virt_base = 0xE0000000U;
-        uintptr_t phys_start = (uintptr_t)bi->initrd_start & ~(uintptr_t)0xFFF;
-        uintptr_t phys_end = (uintptr_t)bi->initrd_end;
-        if (phys_end < (uintptr_t)bi->initrd_start) {
-            phys_end = (uintptr_t)bi->initrd_start;
+        uintptr_t initrd_virt = 0;
+        if (hal_mm_map_physical_range((uintptr_t)bi->initrd_start, (uintptr_t)bi->initrd_end,
+                                      HAL_MM_MAP_RW, &initrd_virt) == 0) {
+            fs_root = initrd_init((uint32_t)initrd_virt);
+        } else {
+            uart_print("[INITRD] Failed to map initrd physical range.\n");
         }
-        phys_end = (phys_end + 0xFFF) & ~(uintptr_t)0xFFF;
-
-        uintptr_t size = phys_end - phys_start;
-        uintptr_t pages = size >> 12;
-        uintptr_t virt = initrd_virt_base;
-        uintptr_t phys = phys_start;
-        for (uintptr_t i = 0; i < pages; i++) {
-            vmm_map_page((uint64_t)phys, (uint64_t)virt, VMM_FLAG_PRESENT | VMM_FLAG_RW);
-            phys += 0x1000;
-            virt += 0x1000;
-        }
-
-        uintptr_t initrd_virt = initrd_virt_base + ((uintptr_t)bi->initrd_start - phys_start);
-        fs_root = initrd_init((uint32_t)initrd_virt);
     }
 
 #if defined(__i386__)
@@ -136,7 +118,9 @@ void kernel_main(const struct boot_info* bi) {
             uart_print("\n");
 
             hal_cpu_set_kernel_stack((uintptr_t)&ring0_trap_stack[sizeof(ring0_trap_stack)]);
-            x86_enter_usermode(entry, user_sp);
+            if (hal_usermode_enter(entry, user_sp) < 0) {
+                uart_print("[USER] usermode enter not supported on this architecture.\n");
+            }
         }
     }
 
