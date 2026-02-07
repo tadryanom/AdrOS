@@ -81,7 +81,7 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
     if (!filename || !entry_out || !user_stack_top_out) return -1;
     if (!fs_root) return -1;
 
-    fs_node_t* node = fs_root->finddir ? fs_root->finddir(fs_root, (char*)filename) : NULL;
+    fs_node_t* node = vfs_lookup(filename);
     if (!node) {
         uart_print("[ELF] file not found: ");
         uart_print(filename);

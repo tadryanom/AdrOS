@@ -29,6 +29,8 @@ uint32_t vfs_write(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buf
 void vfs_open(fs_node_t* node);
 void vfs_close(fs_node_t* node);
 
+fs_node_t* vfs_lookup(const char* path);
+
 // Global root of the filesystem
 extern fs_node_t* fs_root;
 

@@ -47,7 +47,16 @@ void execute_command(char* cmd) {
             uart_print("No filesystem mounted.\n");
         } else {
             char* fname = cmd + 4;
-            fs_node_t* file = fs_root->finddir(fs_root, fname);
+            fs_node_t* file = NULL;
+            if (fname[0] == '/') {
+                file = vfs_lookup(fname);
+            } else {
+                char abs[132];
+                abs[0] = '/';
+                abs[1] = 0;
+                strcpy(abs + 1, fname);
+                file = vfs_lookup(abs);
+            }
             if (file) {
                 uart_print("Reading "); uart_print(fname); uart_print("...\n");
                 uint8_t* buf = (uint8_t*)kmalloc(file->length + 1);
