@@ -16,6 +16,7 @@ clang-tidy.txt
 cppcheck.txt
 cppcheck2.txt
 cppcheck3.txt
+cppcheck_verify.txt
 scanbuild-out/
 gcc-analyzer.txt
 splint.txt
@@ -26,6 +27,8 @@ tools/mkinitrd
 # Temporary folders
 iso_root/
 isodir/
+
+supplementary-material
 
 # Editor/OS clutter
 .DS_Store

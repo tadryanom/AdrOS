@@ -22,7 +22,7 @@ AdrOS is a multi-architecture operating system developed for research and academ
   - Multiboot2 (via GRUB)
   - Higher-half kernel mapping (3GB+)
   - Early paging + VMM initialization
-  - W^X-oriented linker layout (separate RX/R/RW segments)
+  - W^X-oriented userspace layout (separate RX/R and RW segments)
   - Non-executable stack markers in assembly (`.note.GNU-stack`)
 - **Memory management**
   - Physical Memory Manager (PMM)
@@ -44,18 +44,31 @@ AdrOS is a multi-architecture operating system developed for research and academ
   - `SYSCALL_WRITE`, `SYSCALL_EXIT`, `SYSCALL_GETPID`
   - Centralized user-pointer access API (`user_range_ok`, `copy_from_user`, `copy_to_user`)
   - Ring3 stub test program with fault-injection for invalid pointers
+- **W^X (Option 1) for user ELFs (x86)**
+  - User segments are mapped RW during load, then write permissions are dropped for non-writable segments
+  - This provides "text is read-only" hardening without requiring NX/PAE
+
+## Running (x86)
+- `make ARCH=x86 iso`
+- `make ARCH=x86 run`
+- Logs:
+  - `serial.log`: kernel UART output
+  - `qemu.log`: QEMU debug output when enabled
+
+QEMU debug helpers:
+- `make ARCH=x86 run QEMU_DEBUG=1`
+- `make ARCH=x86 run QEMU_DEBUG=1 QEMU_INT=1`
 
 ## TODO
 - **Multi-architecture kernel bring-up**
   - Implement VMM/interrupts/scheduler for ARM/RISC-V/MIPS
   - Standardize arch entrypoint behavior (`arch_start`) across architectures
 - **Userspace**
-  - Real userspace loader (e.g., ELF)
-  - Process address spaces + page fault handling
-  - Safer syscall ABI expansion
+  - Process model (fork/exec/wait), per-process address spaces, and cleanup on `exit`
+  - Syscall ABI expansion (read/open/close, file descriptors, etc.)
 - **Virtual memory hardening**
-  - Reduce early identity mapping further (keep only what is required)
-  - Guard pages, user/kernel separation checks beyond current page-walk
+  - Option 2: PAE + NX enforcement (execute disable for data/stack)
+  - Guard pages, and tighter user/kernel separation checks
 - **Filesystem**
   - Persisted storage (ATA/AHCI/virtio-blk or similar)
   - Path resolution, directories, permissions

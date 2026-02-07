@@ -1,17 +1,17 @@
 # AdrOS - Build & Run Guide
 
-Este guia explica como compilar e rodar o AdrOS em sua máquina local (Linux/WSL).
+This guide explains how to build and run AdrOS on your local machine (Linux/WSL).
 
-## 1. Dependências
+## 1. Dependencies
 
-Você precisará de:
-- `make` e `gcc` (build system)
-- `qemu-system-*` (emuladores)
-- `xorriso` (para criar ISOs bootáveis)
-- `grub-pc-bin` e `grub-common` (bootloader x86)
-- Compiladores cruzados (Cross-compilers) para ARM/RISC-V
+You will need:
+- `make` and `gcc` (build system)
+- `qemu-system-*` (emulators)
+- `xorriso` (to create bootable ISOs)
+- `grub-pc-bin` and `grub-common` (x86 bootloader)
+- Cross-compilers for ARM/RISC-V
 
-### No Ubuntu/Debian:
+### On Ubuntu/Debian:
 ```bash
 sudo apt update
 sudo apt install build-essential bison flex libgmp3-dev libmpc-dev libmpfr-dev texinfo \
@@ -20,73 +20,82 @@ sudo apt install build-essential bison flex libgmp3-dev libmpc-dev libmpfr-dev t
     gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu
 ```
 
-## 2. Compilando e Rodando (x86)
+## 2. Building & Running (x86)
 
-Esta é a arquitetura principal (PC padrão).
+This is the primary target (standard PC).
 
-### Compilar
+### Build
 ```bash
 make ARCH=x86
 ```
-Isso gera o arquivo `adros-x86.bin`.
+This produces `adros-x86.bin`.
 
-### Criar ISO Bootável (GRUB)
-Para x86, o repositório já inclui uma árvore `iso/` com o GRUB configurado.
+### Create a bootable ISO (GRUB)
+For x86, the repository includes an `iso/` tree with GRUB already configured.
 
 ```bash
 make ARCH=x86 iso
 ```
 
-Isso gera `adros-x86.iso`.
+This produces `adros-x86.iso`.
 
-### Rodar no QEMU
+### Run on QEMU
 ```bash
 make ARCH=x86 run
 ```
 
-Saídas/artefatos gerados:
-- `serial.log`: log do UART (saída principal do kernel)
-- `qemu.log`: só é gerado quando o debug do QEMU está habilitado (veja abaixo)
+Generated outputs/artifacts:
+- `serial.log`: UART log (primary kernel output)
+- `qemu.log`: only generated when QEMU debug logging is enabled (see below)
 
-Para habilitar debug do QEMU (mais leve por padrão, para evitar travamentos por I/O excessivo):
+To enable QEMU debug logging (disabled by default to avoid excessive I/O):
 ```bash
 make ARCH=x86 run QEMU_DEBUG=1
 ```
 
-## 3. Compilando e Rodando (ARM64)
+To also log hardware interrupts:
+```bash
+make ARCH=x86 run QEMU_DEBUG=1 QEMU_INT=1
+```
 
-### Compilar
+Notes:
+- `QEMU_DEBUG=1` enables QEMU logging to `qemu.log` using `-d guest_errors,cpu_reset -D qemu.log`.
+- `QEMU_INT=1` appends `-d int` to QEMU debug flags.
+
+## 3. Building & Running (ARM64)
+
+### Build
 ```bash
 make ARCH=arm
 ```
-Isso gera `adros-arm.bin`.
+This produces `adros-arm.bin`.
 
-### Rodar no QEMU
-ARM não usa GRUB/ISO da mesma forma, carregamos o kernel direto na memória.
+### Run on QEMU
+ARM does not use GRUB/ISO in the same way. The kernel is loaded directly into memory.
 
 ```bash
 qemu-system-aarch64 -M virt -cpu cortex-a57 -m 128M -nographic \
     -kernel adros-arm.bin
 ```
-- Para sair do QEMU sem gráfico: `Ctrl+A` solte, depois `x`.
+- To quit QEMU when using `-nographic`: press `Ctrl+A`, release, then `x`.
 
-## 4. Compilando e Rodando (RISC-V)
+## 4. Building & Running (RISC-V)
 
-### Compilar
+### Build
 ```bash
 make ARCH=riscv
 ```
-Isso gera `adros-riscv.bin`.
+This produces `adros-riscv.bin`.
 
-### Rodar no QEMU
+### Run on QEMU
 ```bash
 qemu-system-riscv64 -machine virt -m 128M -nographic \
     -bios default -kernel adros-riscv.bin
 ```
-- Para sair: `Ctrl+A`, `x`.
+- To quit: `Ctrl+A`, then `x`.
 
-## 5. Troubleshooting Comum
+## 5. Common Troubleshooting
 
-- **"Multiboot header not found"**: Verifique se o `grub-file --is-x86-multiboot2 adros-x86.bin` retorna sucesso (0). Se falhar, a ordem das seções no `linker.ld` pode estar errada.
-- **"Triple Fault (Reset infinito)"**: Geralmente erro na tabela de paginação (VMM) ou IDT mal configurada. Rode `make ARCH=x86 run QEMU_DEBUG=1` e inspecione `qemu.log`.
-- **Tela preta (VGA)**: Se estiver rodando com `-nographic`, você não verá o VGA. Remova essa flag para ver a janela.
+- **"Multiboot header not found"**: Check whether `grub-file --is-x86-multiboot2 adros-x86.bin` returns success (0). If it fails, the section order in `linker.ld` may be wrong.
+- **"Triple Fault (infinite reset)"**: Usually caused by paging (VMM) issues or a misconfigured IDT. Run `make ARCH=x86 run QEMU_DEBUG=1` and inspect `qemu.log`.
+- **Black screen (VGA)**: If you are running with `-nographic`, you will not see the VGA output. Remove that flag to get a window.
