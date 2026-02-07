@@ -13,21 +13,15 @@
 #include "timer.h"
 #include "initrd.h"
 #include "fs.h"
- #include "elf.h"
- #include "uaccess.h"
 
 #include "kernel/boot_info.h"
 
 #include "syscall.h"
 
+#include "arch/arch_platform.h"
+
 #include "hal/cpu.h"
 #include "hal/mm.h"
-#include "hal/usermode.h"
-
-#if defined(__i386__)
-extern void x86_usermode_test_start(void);
-
-static uint8_t ring0_trap_stack[16384] __attribute__((aligned(16)));
 
 static int cmdline_has_token(const char* cmdline, const char* token) {
     if (!cmdline || !token) return 0;
@@ -48,7 +42,6 @@ static int cmdline_has_token(const char* cmdline, const char* token) {
 
     return 0;
 }
-#endif
 
 /* Check if the compiler thinks we are targeting the wrong operating system. */
 #if defined(__linux__)
@@ -68,21 +61,13 @@ void kernel_main(const struct boot_info* bi) {
     
     // 3. Initialize Virtual Memory Manager
     uart_print("[AdrOS] Initializing VMM...\n");
-#if defined(__i386__)
-    vmm_init(); 
+    if (arch_platform_setup(bi) < 0) {
+        uart_print("[WARN] VMM/IDT/Sched not implemented for this architecture yet.\n");
+        goto done;
+    }
 
-    // VGA console depends on higher-half mapping (VMM)
-    vga_init();
-    vga_set_color(0x0A, 0x00);
-    vga_print("[AdrOS] Kernel Initialized (VGA).\n");
-    
     // 4. Initialize Kernel Heap
     kheap_init();
-
-    syscall_init();
-    
-    // 6. Initialize Drivers
-    keyboard_init();
     
     // 7. Initialize Multitasking
     uart_print("[AdrOS] Initializing Scheduler...\n");
@@ -104,38 +89,16 @@ void kernel_main(const struct boot_info* bi) {
         }
     }
 
-#if defined(__i386__)
-    if (fs_root) {
-        uintptr_t entry = 0;
-        uintptr_t user_sp = 0;
-        if (elf32_load_user_from_initrd("init.elf", &entry, &user_sp) == 0) {
-            uart_print("[ELF] starting init.elf\n");
-
-            uart_print("[ELF] user_range_ok(entry)=");
-            uart_put_char(user_range_ok((const void*)entry, 1) ? '1' : '0');
-            uart_print(" user_range_ok(stack)=");
-            uart_put_char(user_range_ok((const void*)(user_sp - 16), 16) ? '1' : '0');
-            uart_print("\n");
-
-            hal_cpu_set_kernel_stack((uintptr_t)&ring0_trap_stack[sizeof(ring0_trap_stack)]);
-            if (hal_usermode_enter(entry, user_sp) < 0) {
-                uart_print("[USER] usermode enter not supported on this architecture.\n");
-            }
-        }
-    }
+    (void)arch_platform_start_userspace(bi);
 
     if (bi && cmdline_has_token(bi->cmdline, "ring3")) {
-        x86_usermode_test_start();
+        arch_platform_usermode_test_start();
     }
-#endif
     
     // Start Shell as the main interaction loop
     shell_init();
     
-#else
-    uart_print("[WARN] VMM/IDT/Sched not implemented for this architecture yet.\n");
-#endif
-
+done:
     uart_print("Welcome to AdrOS (x86/ARM/RISC-V/MIPS)!\n");
 
     // Infinite loop acting as Idle Task

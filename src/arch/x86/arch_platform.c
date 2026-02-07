@@ -1,0 +1,78 @@
+#include "arch/arch_platform.h"
+
+#include "elf.h"
+#include "fs.h"
+#include "keyboard.h"
+#include "syscall.h"
+#include "timer.h"
+#include "uart_console.h"
+#include "uaccess.h"
+#include "vga_console.h"
+#include "vmm.h"
+
+#include "hal/cpu.h"
+#include "hal/usermode.h"
+
+#if defined(__i386__)
+extern void x86_usermode_test_start(void);
+#endif
+
+#if defined(__i386__)
+static uint8_t ring0_trap_stack[16384] __attribute__((aligned(16)));
+#endif
+
+int arch_platform_setup(const struct boot_info* bi) {
+    (void)bi;
+#if defined(__i386__)
+    vmm_init();
+
+    vga_init();
+    vga_set_color(0x0A, 0x00);
+    vga_print("[AdrOS] Kernel Initialized (VGA).\n");
+
+    syscall_init();
+    keyboard_init();
+
+    return 0;
+#else
+    return -1;
+#endif
+}
+
+int arch_platform_start_userspace(const struct boot_info* bi) {
+    (void)bi;
+#if defined(__i386__)
+    if (!fs_root) return -1;
+
+    uintptr_t entry = 0;
+    uintptr_t user_sp = 0;
+    if (elf32_load_user_from_initrd("init.elf", &entry, &user_sp) != 0) {
+        return -1;
+    }
+
+    uart_print("[ELF] starting init.elf\n");
+
+    uart_print("[ELF] user_range_ok(entry)=");
+    uart_put_char(user_range_ok((const void*)entry, 1) ? '1' : '0');
+    uart_print(" user_range_ok(stack)=");
+    uart_put_char(user_range_ok((const void*)(user_sp - 16), 16) ? '1' : '0');
+    uart_print("\n");
+
+    hal_cpu_set_kernel_stack((uintptr_t)&ring0_trap_stack[sizeof(ring0_trap_stack)]);
+
+    if (hal_usermode_enter(entry, user_sp) < 0) {
+        uart_print("[USER] usermode enter not supported on this architecture.\n");
+        return -1;
+    }
+
+    return 0;
+#else
+    return -1;
+#endif
+}
+
+void arch_platform_usermode_test_start(void) {
+#if defined(__i386__)
+    x86_usermode_test_start();
+#endif
+}
