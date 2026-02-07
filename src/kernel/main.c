@@ -9,6 +9,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "console.h"
 #include "vga_console.h"
 #include "uart_console.h"
 #include "pmm.h"
@@ -43,16 +44,17 @@
  * Arguments are passed from boot.S (architecture specific)
  */
 void kernel_main(const struct boot_info* bi) {
-    
-    uart_print("[AdrOS] Initializing PMM...\n");
+    console_init();
+
+    kprintf("[AdrOS] Initializing PMM...\n");
     
     // 2. Initialize Physical Memory Manager
     pmm_init((void*)(bi ? bi->arch_boot_info : 0));
     
     // 3. Initialize Virtual Memory Manager
-    uart_print("[AdrOS] Initializing VMM...\n");
+    kprintf("[AdrOS] Initializing VMM...\n");
     if (arch_platform_setup(bi) < 0) {
-        uart_print("[WARN] VMM/IDT/Sched not implemented for this architecture yet.\n");
+        kprintf("[WARN] VMM/IDT/Sched not implemented for this architecture yet.\n");
         goto done;
     }
 
@@ -60,7 +62,7 @@ void kernel_main(const struct boot_info* bi) {
     kheap_init();
     
     // 7. Initialize Multitasking
-    uart_print("[AdrOS] Initializing Scheduler...\n");
+    kprintf("[AdrOS] Initializing Scheduler...\n");
     process_init();
     
     // 8. Start Timer (Preemption!) - 50Hz
@@ -76,7 +78,7 @@ void kernel_main(const struct boot_info* bi) {
     }
     
 done:
-    uart_print("Welcome to AdrOS (x86/ARM/RISC-V/MIPS)!\n");
+    kprintf("Welcome to AdrOS (x86/ARM/RISC-V/MIPS)!\n");
 
     // Infinite loop acting as Idle Task
     for(;;) {
