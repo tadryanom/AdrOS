@@ -9,6 +9,10 @@ enum {
     SYSCALL_WRITE = 1,
     SYSCALL_EXIT  = 2,
     SYSCALL_GETPID = 3,
+
+    SYSCALL_OPEN  = 4,
+    SYSCALL_READ  = 5,
+    SYSCALL_CLOSE = 6,
 };
 
 #endif

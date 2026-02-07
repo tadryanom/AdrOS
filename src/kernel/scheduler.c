@@ -48,6 +48,10 @@ void process_init(void) {
     kernel_proc->state = PROCESS_RUNNING;
     kernel_proc->wake_at_tick = 0;
     kernel_proc->addr_space = hal_cpu_get_address_space();
+
+    for (int i = 0; i < PROCESS_MAX_FILES; i++) {
+        kernel_proc->files[i] = NULL;
+    }
     
     current_process = kernel_proc;
     ready_queue_head = kernel_proc;
@@ -80,6 +84,10 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
     proc->state = PROCESS_READY;
     proc->addr_space = current_process->addr_space;
     proc->wake_at_tick = 0;
+
+    for (int i = 0; i < PROCESS_MAX_FILES; i++) {
+        proc->files[i] = NULL;
+    }
     
     void* stack_phys = pmm_alloc_page_low();
     if (!stack_phys) {

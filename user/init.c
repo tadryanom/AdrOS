@@ -3,6 +3,9 @@
 enum {
     SYSCALL_WRITE = 1,
     SYSCALL_EXIT  = 2,
+    SYSCALL_OPEN  = 4,
+    SYSCALL_READ  = 5,
+    SYSCALL_CLOSE = 6,
 };
 
 static int sys_write(int fd, const void* buf, uint32_t len) {
@@ -11,6 +14,39 @@ static int sys_write(int fd, const void* buf, uint32_t len) {
         "int $0x80"
         : "=a"(ret)
         : "a"(SYSCALL_WRITE), "b"(fd), "c"(buf), "d"(len)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_open(const char* path, uint32_t flags) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_OPEN), "b"(path), "c"(flags)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_read(int fd, void* buf, uint32_t len) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_READ), "b"(fd), "c"(buf), "d"(len)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_close(int fd) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_CLOSE), "b"(fd)
         : "memory"
     );
     return ret;
@@ -39,5 +75,25 @@ void _start(void) {
 
     static const char msg[] = "[init] hello from init.elf\n";
     (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+
+    static const char path[] = "/init.elf";
+    int fd = sys_open(path, 0);
+    if (fd < 0) {
+        static const char emsg[] = "[init] open(/init.elf) failed\n";
+        (void)sys_write(1, emsg, (uint32_t)(sizeof(emsg) - 1));
+        sys_exit(1);
+    }
+
+    uint8_t hdr[4];
+    int rd = sys_read(fd, hdr, (uint32_t)sizeof(hdr));
+    (void)sys_close(fd);
+
+    if (rd == 4 && hdr[0] == 0x7F && hdr[1] == 'E' && hdr[2] == 'L' && hdr[3] == 'F') {
+        static const char ok[] = "[init] open/read/close OK (ELF magic)\n";
+        (void)sys_write(1, ok, (uint32_t)(sizeof(ok) - 1));
+    } else {
+        static const char bad[] = "[init] read failed or bad header\n";
+        (void)sys_write(1, bad, (uint32_t)(sizeof(bad) - 1));
+    }
     sys_exit(0);
 }

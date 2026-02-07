@@ -12,6 +12,10 @@ typedef enum {
     PROCESS_ZOMBIE
 } process_state_t;
 
+struct file;
+
+#define PROCESS_MAX_FILES 16
+
 struct process {
     uint32_t pid;
     uintptr_t sp;
@@ -19,6 +23,7 @@ struct process {
     uint32_t* kernel_stack;
     process_state_t state;
     uint32_t wake_at_tick;      // New: When to wake up (global tick count)
+    struct file* files[PROCESS_MAX_FILES];
     struct process* next;
     struct process* prev;       // Doubly linked list helps here too! (Optional but good)
 };
