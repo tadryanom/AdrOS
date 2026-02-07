@@ -4,6 +4,7 @@
 
 #include "fs.h"
 #include "initrd.h"
+#include "tmpfs.h"
 #include "tty.h"
 #include "uart_console.h"
 
@@ -40,6 +41,13 @@ int init_start(const struct boot_info* bi) {
         } else {
             uart_print("[INITRD] Failed to map initrd physical range.\n");
         }
+    }
+
+    fs_node_t* tmp = tmpfs_create_root();
+    if (tmp) {
+        static const uint8_t hello[] = "hello from tmpfs\n";
+        (void)tmpfs_add_file(tmp, "hello.txt", hello, (uint32_t)(sizeof(hello) - 1));
+        (void)vfs_mount("/tmp", tmp);
     }
 
     tty_init();

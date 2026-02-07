@@ -31,6 +31,8 @@ void vfs_close(fs_node_t* node);
 
 fs_node_t* vfs_lookup(const char* path);
 
+int vfs_mount(const char* mountpoint, fs_node_t* root);
+
 // Global root of the filesystem
 extern fs_node_t* fs_root;
 
