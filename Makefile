@@ -134,6 +134,15 @@ cppcheck:
 	@cppcheck --quiet --enable=warning,performance,portability --error-exitcode=1 \
 		-I include $(SRC_DIR)
 
+scan-build:
+	@command -v scan-build >/dev/null
+	@scan-build --status-bugs $(MAKE) ARCH=$(ARCH) $(if $(CROSS),CROSS=$(CROSS),) all
+
+mkinitrd-asan: $(USER_ELF)
+	@mkdir -p build/host
+	@gcc -g -O1 -fno-omit-frame-pointer -fsanitize=address,undefined tools/mkinitrd.c -o build/host/mkinitrd-asan
+	@./build/host/mkinitrd-asan build/host/$(INITRD_IMG).asan $(USER_ELF):bin/init.elf
+
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(dir $@)
 	@echo "  CC      $<"
@@ -147,4 +156,4 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.S
 clean:
 	rm -rf build $(KERNEL_NAME)
 
-.PHONY: all clean iso run cppcheck
+.PHONY: all clean iso run cppcheck scan-build mkinitrd-asan
