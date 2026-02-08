@@ -17,7 +17,6 @@ enum {
     SYSCALL_READ  = 5,
     SYSCALL_CLOSE = 6,
     SYSCALL_WAITPID = 7,
-    SYSCALL_SPAWN = 8,
     SYSCALL_LSEEK = 9,
     SYSCALL_FSTAT = 10,
     SYSCALL_STAT = 11,
@@ -26,6 +25,7 @@ enum {
     SYSCALL_DUP2 = 13,
     SYSCALL_PIPE = 14,
     SYSCALL_EXECVE = 15,
+    SYSCALL_FORK = 16,
 };
 
 enum {
@@ -50,6 +50,17 @@ static int sys_write(int fd, const void* buf, uint32_t len) {
         "int $0x80"
         : "=a"(ret)
         : "a"(SYSCALL_WRITE), "b"(fd), "c"(buf), "d"(len)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_fork(void) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_FORK)
         : "memory"
     );
     return ret;
@@ -105,17 +116,6 @@ static int sys_waitpid(int pid, int* status, uint32_t options) {
         "int $0x80"
         : "=a"(ret)
         : "a"(SYSCALL_WAITPID), "b"(pid), "c"(status), "d"(options)
-        : "memory"
-    );
-    return ret;
-}
-
-static int sys_spawn(void) {
-    int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYSCALL_SPAWN)
         : "memory"
     );
     return ret;
@@ -576,12 +576,16 @@ void _start(void) {
     enum { NCHILD = 100 };
     int children[NCHILD];
     for (int i = 0; i < NCHILD; i++) {
-        children[i] = sys_spawn();
-        if (children[i] < 0) {
-            static const char smsg[] = "[init] spawn failed\n";
+        int pid = sys_fork();
+        if (pid < 0) {
+            static const char smsg[] = "[init] fork failed\n";
             (void)sys_write(1, smsg, (uint32_t)(sizeof(smsg) - 1));
             sys_exit(2);
         }
+        if (pid == 0) {
+            sys_exit(42);
+        }
+        children[i] = pid;
     }
 
     int ok = 1;
