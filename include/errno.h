@@ -4,6 +4,7 @@
 #define EPERM 1
 #define ENOENT 2
 #define EIO 5
+#define EINTR 4
 #define EBADF 9
 #define ECHILD 10
 #define EFAULT 14

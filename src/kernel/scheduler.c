@@ -91,13 +91,12 @@ static void process_close_all_files_locked(struct process* p) {
 }
 
 int process_kill(uint32_t pid, int sig) {
-    // Minimal: support SIGKILL only.
     const int SIG_KILL = 9;
     if (pid == 0) return -EINVAL;
-    if (sig != SIG_KILL) return -EINVAL;
 
-    // Killing self: just exit via existing path.
-    if (current_process && current_process->pid == pid) {
+    if (sig <= 0 || sig >= PROCESS_MAX_SIG) return -EINVAL;
+
+    if (current_process && current_process->pid == pid && sig == SIG_KILL) {
         process_exit_notify(128 + sig);
         hal_cpu_enable_interrupts();
         schedule();
@@ -116,18 +115,25 @@ int process_kill(uint32_t pid, int sig) {
         return 0;
     }
 
-    process_close_all_files_locked(p);
-    p->exit_status = 128 + sig;
-    p->state = PROCESS_ZOMBIE;
+    if (sig == SIG_KILL) {
+        process_close_all_files_locked(p);
+        p->exit_status = 128 + sig;
+        p->state = PROCESS_ZOMBIE;
 
-    if (p->pid != 0) {
-        struct process* parent = process_find_locked(p->parent_pid);
-        if (parent && parent->state == PROCESS_BLOCKED && parent->waiting) {
-            if (parent->wait_pid == -1 || parent->wait_pid == (int)p->pid) {
-                parent->wait_result_pid = (int)p->pid;
-                parent->wait_result_status = p->exit_status;
-                parent->state = PROCESS_READY;
+        if (p->pid != 0) {
+            struct process* parent = process_find_locked(p->parent_pid);
+            if (parent && parent->state == PROCESS_BLOCKED && parent->waiting) {
+                if (parent->wait_pid == -1 || parent->wait_pid == (int)p->pid) {
+                    parent->wait_result_pid = (int)p->pid;
+                    parent->wait_result_status = p->exit_status;
+                    parent->state = PROCESS_READY;
+                }
             }
+        }
+    } else {
+        p->sig_pending_mask |= (1U << (uint32_t)sig);
+        if (p->state == PROCESS_BLOCKED || p->state == PROCESS_SLEEPING) {
+            p->state = PROCESS_READY;
         }
     }
 

@@ -730,7 +730,6 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
 
     fs_node_t* node = vfs_lookup(path);
     if (!node) return -ENOENT;
-    if (node->flags != FS_FILE && node->flags != FS_CHARDEVICE) return -EINVAL;
 
     struct file* f = (struct file*)kmalloc(sizeof(*f));
     if (!f) return -ENOMEM;
@@ -781,7 +780,6 @@ static int syscall_read_impl(int fd, void* user_buf, uint32_t len) {
         return (int)total;
     }
 
-    if (f->node->flags != FS_FILE) return -ESPIPE;
     if (!f->node->read) return -ESPIPE;
 
     uint8_t kbuf[256];
@@ -817,8 +815,8 @@ static int syscall_write_impl(int fd, const void* user_buf, uint32_t len) {
 
     struct file* f = fd_get(fd);
     if (!f || !f->node) return -EBADF;
-    if (f->node->flags != FS_FILE && f->node->flags != FS_CHARDEVICE) return -ESPIPE;
     if (!f->node->write) return -ESPIPE;
+    if (((f->node->flags & FS_FILE) == 0) && f->node->flags != FS_CHARDEVICE) return -ESPIPE;
 
     uint8_t kbuf[256];
     uint32_t total = 0;
@@ -830,9 +828,9 @@ static int syscall_write_impl(int fd, const void* user_buf, uint32_t len) {
             return -EFAULT;
         }
 
-        uint32_t wr = vfs_write(f->node, (f->node->flags == FS_FILE) ? f->offset : 0, chunk, kbuf);
+        uint32_t wr = vfs_write(f->node, ((f->node->flags & FS_FILE) != 0) ? f->offset : 0, chunk, kbuf);
         if (wr == 0) break;
-        if (f->node->flags == FS_FILE) f->offset += wr;
+        if ((f->node->flags & FS_FILE) != 0) f->offset += wr;
         total += wr;
         if (wr < chunk) break;
     }
@@ -870,6 +868,44 @@ static int syscall_setpgid_impl(int pid, int pgid) {
 static int syscall_getpgrp_impl(void) {
     if (!current_process) return 0;
     return (int)current_process->pgrp_id;
+}
+
+static int syscall_sigaction_impl(int sig, uintptr_t handler, uintptr_t* old_out) {
+    if (!current_process) return -EINVAL;
+    if (sig <= 0 || sig >= PROCESS_MAX_SIG) return -EINVAL;
+
+    if (old_out) {
+        if (user_range_ok(old_out, sizeof(*old_out)) == 0) return -EFAULT;
+        uintptr_t oldh = current_process->sig_handlers[sig];
+        if (copy_to_user(old_out, &oldh, sizeof(oldh)) < 0) return -EFAULT;
+    }
+
+    current_process->sig_handlers[sig] = handler;
+    return 0;
+}
+
+static int syscall_sigprocmask_impl(uint32_t how, uint32_t mask, uint32_t* old_out) {
+    if (!current_process) return -EINVAL;
+
+    if (old_out) {
+        if (user_range_ok(old_out, sizeof(*old_out)) == 0) return -EFAULT;
+        uint32_t old = current_process->sig_blocked_mask;
+        if (copy_to_user(old_out, &old, sizeof(old)) < 0) return -EFAULT;
+    }
+
+    if (how == 0U) {
+        current_process->sig_blocked_mask = mask;
+        return 0;
+    }
+    if (how == 1U) {
+        current_process->sig_blocked_mask |= mask;
+        return 0;
+    }
+    if (how == 2U) {
+        current_process->sig_blocked_mask &= ~mask;
+        return 0;
+    }
+    return -EINVAL;
 }
 
 static void syscall_handler(struct registers* regs) {
@@ -1067,6 +1103,22 @@ static void syscall_handler(struct registers* regs) {
 
     if (syscall_no == SYSCALL_GETPGRP) {
         regs->eax = (uint32_t)syscall_getpgrp_impl();
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SIGACTION) {
+        int sig = (int)regs->ebx;
+        uintptr_t handler = (uintptr_t)regs->ecx;
+        uintptr_t* old_out = (uintptr_t*)regs->edx;
+        regs->eax = (uint32_t)syscall_sigaction_impl(sig, handler, old_out);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SIGPROCMASK) {
+        uint32_t how = regs->ebx;
+        uint32_t mask = regs->ecx;
+        uint32_t* old_out = (uint32_t*)regs->edx;
+        regs->eax = (uint32_t)syscall_sigprocmask_impl(how, mask, old_out);
         return;
     }
 

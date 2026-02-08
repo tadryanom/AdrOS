@@ -3,6 +3,7 @@
 #include "uart_console.h"
 #include "process.h"
 #include "spinlock.h"
+#include "uaccess.h"
 #include <stddef.h>
 
 #define IDT_ENTRIES 256
@@ -38,6 +39,59 @@ void idt_set_gate(uint8_t num, uint32_t base, uint16_t sel, uint8_t flags) {
     idt[num].sel     = sel;
     idt[num].always0 = 0;
     idt[num].flags   = flags; // Present(0x80) | DPL(00) | Type(0xE = 32bit Int Gate) -> 0x8E
+}
+
+static void deliver_signals_to_usermode(struct registers* regs) {
+    if (!regs) return;
+    if (!current_process) return;
+    if ((regs->cs & 3U) != 3U) return;
+
+    const uint32_t pending = current_process->sig_pending_mask;
+    const uint32_t blocked = current_process->sig_blocked_mask;
+    uint32_t ready = pending & ~blocked;
+    if (!ready) return;
+
+    int sig = -1;
+    for (int i = 1; i < PROCESS_MAX_SIG; i++) {
+        if ((ready & (1U << (uint32_t)i)) != 0U) {
+            sig = i;
+            break;
+        }
+    }
+    if (sig < 0) return;
+
+    current_process->sig_pending_mask &= ~(1U << (uint32_t)sig);
+
+    const uintptr_t h = current_process->sig_handlers[sig];
+    if (h == 1) {
+        return;
+    }
+
+    if (h == 0) {
+        if (sig == 11) {
+            process_exit_notify(128 + sig);
+            __asm__ volatile("sti");
+            schedule();
+            for (;;) __asm__ volatile("hlt");
+        }
+        return;
+    }
+
+    uint32_t frame[2];
+    frame[0] = regs->eip;
+    frame[1] = (uint32_t)sig;
+
+    const uint32_t new_esp = regs->useresp - (uint32_t)sizeof(frame);
+    if (copy_to_user((void*)(uintptr_t)new_esp, frame, sizeof(frame)) < 0) {
+        const int SIG_SEGV = 11;
+        process_exit_notify(128 + SIG_SEGV);
+        __asm__ volatile("sti");
+        schedule();
+        for (;;) __asm__ volatile("hlt");
+    }
+
+    regs->useresp = new_esp;
+    regs->eip = (uint32_t)h;
 }
 
 /* Reconfigure the PIC to remap IRQs from 0-15 to 32-47 */
@@ -223,4 +277,6 @@ void isr_handler(struct registers* regs) {
         }
         outb(0x20, 0x20); // Master EOI
     }
+
+    deliver_signals_to_usermode(regs);
 }

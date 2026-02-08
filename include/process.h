@@ -22,6 +22,8 @@ struct file {
 
 #define PROCESS_MAX_FILES 16
 
+#define PROCESS_MAX_SIG 32
+
 struct process {
     uint32_t pid;
     uint32_t parent_pid;
@@ -36,6 +38,14 @@ struct process {
 
     int has_user_regs;
     struct registers user_regs;
+
+    // Minimal signals: handler pointers, blocked mask and pending mask.
+    // handlers[i] == 0 => default
+    // handlers[i] == 1 => ignore
+    // handlers[i] >= 2 => user handler address
+    uintptr_t sig_handlers[PROCESS_MAX_SIG];
+    uint32_t sig_blocked_mask;
+    uint32_t sig_pending_mask;
 
     int waiting;
     int wait_pid;

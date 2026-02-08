@@ -28,6 +28,15 @@ static uint32_t waitq_tail = 0;
 
 static uint32_t tty_lflag = TTY_ICANON | TTY_ECHO;
 
+static uint32_t tty_session_id = 0;
+static uint32_t tty_fg_pgrp = 0;
+
+enum {
+    SIGTSTP = 20,
+    SIGTTIN = 21,
+    SIGTTOU = 22,
+};
+
 static int canon_empty(void) {
     return canon_head == canon_tail;
 }
@@ -38,6 +47,13 @@ static int waitq_push(struct process* p);
 int tty_write_kbuf(const void* kbuf, uint32_t len) {
     if (!kbuf) return -EFAULT;
     if (len > 1024 * 1024) return -EINVAL;
+
+    // Job control: background writes to controlling TTY generate SIGTTOU.
+    if (current_process && tty_session_id != 0 && current_process->session_id == tty_session_id &&
+        tty_fg_pgrp != 0 && current_process->pgrp_id != tty_fg_pgrp) {
+        (void)process_kill(current_process->pid, SIGTTOU);
+        return -EINTR;
+    }
 
     const char* p = (const char*)kbuf;
     for (uint32_t i = 0; i < len; i++) {
@@ -50,6 +66,13 @@ int tty_read_kbuf(void* kbuf, uint32_t len) {
     if (!kbuf) return -EFAULT;
     if (len > 1024 * 1024) return -EINVAL;
     if (!current_process) return -ECHILD;
+
+    // Job control: background reads from controlling TTY generate SIGTTIN.
+    if (tty_session_id != 0 && current_process->session_id == tty_session_id &&
+        tty_fg_pgrp != 0 && current_process->pgrp_id != tty_fg_pgrp) {
+        (void)process_kill(current_process->pid, SIGTTIN);
+        return -EINTR;
+    }
 
     while (1) {
         uintptr_t flags = spin_lock_irqsave(&tty_lock);
@@ -147,9 +170,14 @@ enum {
 int tty_ioctl(uint32_t cmd, void* user_arg) {
     if (!user_arg) return -EFAULT;
 
+    if (current_process && tty_session_id == 0 && current_process->session_id != 0) {
+        tty_session_id = current_process->session_id;
+        tty_fg_pgrp = current_process->pgrp_id;
+    }
+
     if (cmd == TTY_TIOCGPGRP) {
         if (user_range_ok(user_arg, sizeof(int)) == 0) return -EFAULT;
-        int fg = 0;
+        int fg = (int)tty_fg_pgrp;
         if (copy_to_user(user_arg, &fg, sizeof(fg)) < 0) return -EFAULT;
         return 0;
     }
@@ -158,7 +186,19 @@ int tty_ioctl(uint32_t cmd, void* user_arg) {
         if (user_range_ok(user_arg, sizeof(int)) == 0) return -EFAULT;
         int fg = 0;
         if (copy_from_user(&fg, user_arg, sizeof(fg)) < 0) return -EFAULT;
-        if (fg != 0) return -EINVAL;
+        if (!current_process) return -EINVAL;
+
+        // If there is no controlling session yet, only allow setting fg=0.
+        // This matches early-boot semantics used by userland smoke tests.
+        if (tty_session_id == 0) {
+            if (fg != 0) return -EPERM;
+            tty_fg_pgrp = 0;
+            return 0;
+        }
+
+        if (current_process->session_id != tty_session_id) return -EPERM;
+        if (fg < 0) return -EINVAL;
+        tty_fg_pgrp = (uint32_t)fg;
         return 0;
     }
 
@@ -250,6 +290,8 @@ void tty_init(void) {
     line_len = 0;
     canon_head = canon_tail = 0;
     waitq_head = waitq_tail = 0;
+    tty_session_id = 0;
+    tty_fg_pgrp = 0;
 
     keyboard_set_callback(tty_keyboard_cb);
 }
@@ -258,6 +300,13 @@ int tty_write(const void* user_buf, uint32_t len) {
     if (!user_buf) return -EFAULT;
     if (len > 1024 * 1024) return -EINVAL;
     if (user_range_ok(user_buf, (size_t)len) == 0) return -EFAULT;
+
+    // Job control: background writes to controlling TTY generate SIGTTOU.
+    if (current_process && tty_session_id != 0 && current_process->session_id == tty_session_id &&
+        tty_fg_pgrp != 0 && current_process->pgrp_id != tty_fg_pgrp) {
+        (void)process_kill(current_process->pid, SIGTTOU);
+        return -EINTR;
+    }
 
     char kbuf[256];
     uint32_t remaining = len;
@@ -285,6 +334,13 @@ int tty_read(void* user_buf, uint32_t len) {
     if (len > 1024 * 1024) return -EINVAL;
     if (user_range_ok(user_buf, (size_t)len) == 0) return -EFAULT;
     if (!current_process) return -ECHILD;
+
+    // Job control: background reads from controlling TTY generate SIGTTIN.
+    if (tty_session_id != 0 && current_process->session_id == tty_session_id &&
+        tty_fg_pgrp != 0 && current_process->pgrp_id != tty_fg_pgrp) {
+        (void)process_kill(current_process->pid, SIGTTIN);
+        return -EINTR;
+    }
 
     while (1) {
         uintptr_t flags = spin_lock_irqsave(&tty_lock);

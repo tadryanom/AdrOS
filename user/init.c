@@ -25,6 +25,9 @@ enum {
     SYSCALL_SETSID = 22,
     SYSCALL_SETPGID = 23,
     SYSCALL_GETPGRP = 24,
+
+    SYSCALL_SIGACTION = 25,
+    SYSCALL_SIGPROCMASK = 26,
 };
 
 enum {
@@ -56,7 +59,10 @@ enum {
 
 enum {
     SIGKILL = 9,
+    SIGUSR1 = 10,
     SIGSEGV = 11,
+    SIGTTIN = 21,
+    SIGTTOU = 22,
 };
 
 enum {
@@ -85,6 +91,62 @@ static int sys_write(int fd, const void* buf, uint32_t len) {
         "int $0x80"
         : "=a"(ret)
         : "a"(SYSCALL_WRITE), "b"(fd), "c"(buf), "d"(len)
+        : "memory"
+    );
+    return ret;
+}
+
+static void write_int_dec(int v) {
+    char buf[16];
+    int i = 0;
+    if (v == 0) {
+        buf[i++] = '0';
+    } else {
+        int neg = 0;
+        if (v < 0) {
+            neg = 1;
+            v = -v;
+        }
+        while (v > 0 && i < (int)sizeof(buf)) {
+            buf[i++] = (char)('0' + (v % 10));
+            v /= 10;
+        }
+        if (neg && i < (int)sizeof(buf)) {
+            buf[i++] = '-';
+        }
+        for (int j = 0; j < i / 2; j++) {
+            char t = buf[j];
+            buf[j] = buf[i - 1 - j];
+            buf[i - 1 - j] = t;
+        }
+    }
+    (void)sys_write(1, buf, (uint32_t)i);
+}
+
+static void write_hex8(uint8_t v) {
+    static const char hex[] = "0123456789ABCDEF";
+    char b[2];
+    b[0] = hex[(v >> 4) & 0xF];
+    b[1] = hex[v & 0xF];
+    (void)sys_write(1, b, 2);
+}
+
+static void write_hex32(uint32_t v) {
+    static const char hex[] = "0123456789ABCDEF";
+    char b[8];
+    for (int i = 0; i < 8; i++) {
+        uint32_t shift = (uint32_t)(28 - 4 * i);
+        b[i] = hex[(v >> shift) & 0xFU];
+    }
+    (void)sys_write(1, b, 8);
+}
+
+static int sys_sigaction(int sig, void (*handler)(int), uintptr_t* old_out) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_SIGACTION), "b"(sig), "c"(handler), "d"(old_out)
         : "memory"
     );
     return ret;
@@ -332,6 +394,27 @@ __attribute__((noreturn)) static void sys_exit(int code) {
     __builtin_unreachable();
 }
 
+static volatile int got_usr1 = 0;
+static volatile int got_ttin = 0;
+static volatile int got_ttou = 0;
+
+static void usr1_handler(int sig) {
+    (void)sig;
+    got_usr1 = 1;
+    sys_write(1, "[init] SIGUSR1 handler OK\n",
+              (uint32_t)(sizeof("[init] SIGUSR1 handler OK\n") - 1));
+}
+
+static void ttin_handler(int sig) {
+    (void)sig;
+    got_ttin = 1;
+}
+
+static void ttou_handler(int sig) {
+    (void)sig;
+    got_ttou = 1;
+}
+
 void _start(void) {
     __asm__ volatile(
         "mov $0x23, %ax\n"
@@ -345,25 +428,29 @@ void _start(void) {
     (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
 
     static const char path[] = "/bin/init.elf";
+
     int fd = sys_open(path, 0);
     if (fd < 0) {
-        sys_write(1, "[init] open failed\n", (uint32_t)(sizeof("[init] open failed\n") - 1));
+        sys_write(1, "[init] open failed fd=", (uint32_t)(sizeof("[init] open failed fd=") - 1));
+        write_int_dec(fd);
+        sys_write(1, "\n", 1);
         sys_exit(1);
     }
 
     uint8_t hdr[4];
-    int rd = sys_read(fd, hdr, (uint32_t)sizeof(hdr));
-    if (sys_close(fd) < 0) {
-        sys_write(1, "[init] close failed\n", (uint32_t)(sizeof("[init] close failed\n") - 1));
-        sys_exit(1);
-    }
-
+    int rd = sys_read(fd, hdr, 4);
+    (void)sys_close(fd);
     if (rd == 4 && hdr[0] == 0x7F && hdr[1] == 'E' && hdr[2] == 'L' && hdr[3] == 'F') {
         sys_write(1, "[init] open/read/close OK (ELF magic)\n",
                   (uint32_t)(sizeof("[init] open/read/close OK (ELF magic)\n") - 1));
     } else {
-        sys_write(1, "[init] read failed or bad header\n",
-                  (uint32_t)(sizeof("[init] read failed or bad header\n") - 1));
+        sys_write(1, "[init] read failed or bad header rd=", (uint32_t)(sizeof("[init] read failed or bad header rd=") - 1));
+        write_int_dec(rd);
+        sys_write(1, " hdr=", (uint32_t)(sizeof(" hdr=") - 1));
+        for (int i = 0; i < 4; i++) {
+            write_hex8(hdr[i]);
+        }
+        sys_write(1, "\n", 1);
         sys_exit(1);
     }
 
@@ -572,6 +659,8 @@ void _start(void) {
         }
         (void)sys_close(tfd);
 
+    }
+
     {
         int pid = sys_fork();
         if (pid < 0) {
@@ -748,6 +837,102 @@ void _start(void) {
                   (uint32_t)(sizeof("[init] ioctl(/dev/tty) OK\n") - 1));
     }
 
+    // A2: basic job control. A background pgrp read/write on controlling TTY should raise SIGTTIN/SIGTTOU.
+    {
+        int leader = sys_fork();
+        if (leader < 0) {
+            sys_write(1, "[init] fork(job control leader) failed\n",
+                      (uint32_t)(sizeof("[init] fork(job control leader) failed\n") - 1));
+            sys_exit(1);
+        }
+        if (leader == 0) {
+            int me = sys_getpid();
+            int sid = sys_setsid();
+            if (sid != me) {
+                sys_write(1, "[init] setsid(job control) failed\n",
+                          (uint32_t)(sizeof("[init] setsid(job control) failed\n") - 1));
+                sys_exit(1);
+            }
+
+            int tfd = sys_open("/dev/tty", 0);
+            if (tfd < 0) {
+                sys_write(1, "[init] open(/dev/tty) for job control failed\n",
+                          (uint32_t)(sizeof("[init] open(/dev/tty) for job control failed\n") - 1));
+                sys_exit(1);
+            }
+
+            // Touch ioctl to make kernel acquire controlling session/pgrp.
+            int fg = 0;
+            (void)sys_ioctl(tfd, TIOCGPGRP, &fg);
+
+            fg = me;
+            if (sys_ioctl(tfd, TIOCSPGRP, &fg) < 0) {
+                sys_write(1, "[init] ioctl TIOCSPGRP(job control) failed\n",
+                          (uint32_t)(sizeof("[init] ioctl TIOCSPGRP(job control) failed\n") - 1));
+                sys_exit(1);
+            }
+
+            int bg = sys_fork();
+            if (bg < 0) {
+                sys_write(1, "[init] fork(job control bg) failed\n",
+                          (uint32_t)(sizeof("[init] fork(job control bg) failed\n") - 1));
+                sys_exit(1);
+            }
+            if (bg == 0) {
+                (void)sys_setpgid(0, me + 1);
+
+                (void)sys_sigaction(SIGTTIN, ttin_handler, 0);
+                (void)sys_sigaction(SIGTTOU, ttou_handler, 0);
+
+                uint8_t b = 0;
+                (void)sys_read(tfd, &b, 1);
+                if (!got_ttin) {
+                    sys_write(1, "[init] SIGTTIN job control failed\n",
+                              (uint32_t)(sizeof("[init] SIGTTIN job control failed\n") - 1));
+                    sys_exit(1);
+                }
+
+                const char msg2[] = "x";
+                (void)sys_write(tfd, msg2, 1);
+                if (!got_ttou) {
+                    sys_write(1, "[init] SIGTTOU job control failed\n",
+                              (uint32_t)(sizeof("[init] SIGTTOU job control failed\n") - 1));
+                    sys_exit(1);
+                }
+
+                sys_exit(0);
+            }
+
+            int st2 = 0;
+            int wp2 = sys_waitpid(bg, &st2, 0);
+            if (wp2 != bg || st2 != 0) {
+                sys_write(1, "[init] waitpid(job control bg) failed wp=", (uint32_t)(sizeof("[init] waitpid(job control bg) failed wp=") - 1));
+                write_int_dec(wp2);
+                sys_write(1, " st=", (uint32_t)(sizeof(" st=") - 1));
+                write_int_dec(st2);
+                sys_write(1, "\n", 1);
+                sys_exit(1);
+            }
+
+            (void)sys_close(tfd);
+            sys_exit(0);
+        }
+
+        int stL = 0;
+        int wpL = sys_waitpid(leader, &stL, 0);
+        if (wpL != leader || stL != 0) {
+            sys_write(1, "[init] waitpid(job control leader) failed wp=", (uint32_t)(sizeof("[init] waitpid(job control leader) failed wp=") - 1));
+            write_int_dec(wpL);
+            sys_write(1, " st=", (uint32_t)(sizeof(" st=") - 1));
+            write_int_dec(stL);
+            sys_write(1, "\n", 1);
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] job control (SIGTTIN/SIGTTOU) OK\n",
+                  (uint32_t)(sizeof("[init] job control (SIGTTIN/SIGTTOU) OK\n") - 1));
+    }
+
     {
         int fd = sys_open("/dev/null", 0);
         if (fd < 0) {
@@ -810,6 +995,34 @@ void _start(void) {
         sys_write(1, "[init] setsid/setpgid/getpgrp OK\n",
                   (uint32_t)(sizeof("[init] setsid/setpgid/getpgrp OK\n") - 1));
     }
+
+    {
+        uintptr_t oldh = 0;
+        if (sys_sigaction(SIGUSR1, usr1_handler, &oldh) < 0) {
+            sys_write(1, "[init] sigaction failed\n",
+                      (uint32_t)(sizeof("[init] sigaction failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int me = sys_getpid();
+        if (sys_kill(me, SIGUSR1) < 0) {
+            sys_write(1, "[init] kill(SIGUSR1) failed\n",
+                      (uint32_t)(sizeof("[init] kill(SIGUSR1) failed\n") - 1));
+            sys_exit(1);
+        }
+
+        for (uint32_t i = 0; i < 2000000U; i++) {
+            if (got_usr1) break;
+        }
+
+        if (!got_usr1) {
+            sys_write(1, "[init] SIGUSR1 not delivered\n",
+                      (uint32_t)(sizeof("[init] SIGUSR1 not delivered\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] sigaction/kill(SIGUSR1) OK\n",
+                  (uint32_t)(sizeof("[init] sigaction/kill(SIGUSR1) OK\n") - 1));
     }
 
     fd = sys_open("/tmp/hello.txt", 0);
@@ -965,8 +1178,7 @@ void _start(void) {
             sys_exit(1);
         }
         static const char z[] = "discard me";
-        int wr = sys_write(fd, z, (uint32_t)(sizeof(z) - 1));
-        if (wr != (int)(sizeof(z) - 1)) {
+        if (sys_write(fd, z, (uint32_t)(sizeof(z) - 1)) != (int)(sizeof(z) - 1)) {
             sys_write(1, "[init] /dev/null write failed\n",
                       (uint32_t)(sizeof("[init] /dev/null write failed\n") - 1));
             sys_exit(1);
