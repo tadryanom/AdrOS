@@ -16,6 +16,7 @@
 #define ESRCH 3
 #define EMFILE 24
 #define ESPIPE 29
+#define ENOTTY 25
 #define ENOSYS 38
 
 #endif

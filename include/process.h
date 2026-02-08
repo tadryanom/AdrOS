@@ -25,6 +25,8 @@ struct file {
 struct process {
     uint32_t pid;
     uint32_t parent_pid;
+    uint32_t session_id;
+    uint32_t pgrp_id;
     uintptr_t sp;
     uintptr_t addr_space;
     uint32_t* kernel_stack;

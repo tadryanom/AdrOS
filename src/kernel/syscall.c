@@ -128,7 +128,12 @@ static int syscall_fork_impl(struct registers* regs) {
     if (!regs) return -EINVAL;
     if (!current_process) return -EINVAL;
 
-    uintptr_t child_as = vmm_as_clone_user(current_process->addr_space);
+    uintptr_t src_as = hal_cpu_get_address_space() & ~(uintptr_t)0xFFFU;
+    if (current_process->addr_space != src_as) {
+        current_process->addr_space = src_as;
+    }
+
+    uintptr_t child_as = vmm_as_clone_user(src_as);
     if (!child_as) return -ENOMEM;
 
     struct registers child_regs = *regs;
@@ -772,8 +777,12 @@ static int syscall_read_impl(int fd, void* user_buf, uint32_t len) {
             total += rd;
             if (rd < chunk) break;
         }
+
         return (int)total;
     }
+
+    if (f->node->flags != FS_FILE) return -ESPIPE;
+    if (!f->node->read) return -ESPIPE;
 
     uint8_t kbuf[256];
     uint32_t total = 0;
@@ -788,11 +797,8 @@ static int syscall_read_impl(int fd, void* user_buf, uint32_t len) {
             return -EFAULT;
         }
 
-        if (f->node->flags == FS_FILE) {
-            f->offset += rd;
-        }
+        f->offset += rd;
         total += rd;
-
         if (rd < chunk) break;
     }
 
@@ -830,8 +836,40 @@ static int syscall_write_impl(int fd, const void* user_buf, uint32_t len) {
         total += wr;
         if (wr < chunk) break;
     }
-
     return (int)total;
+}
+
+static int syscall_ioctl_impl(int fd, uint32_t cmd, void* user_arg) {
+    struct file* f = fd_get(fd);
+    if (!f || !f->node) return -EBADF;
+
+    fs_node_t* n = f->node;
+    if (n->flags != FS_CHARDEVICE) return -ENOTTY;
+    if (n->inode != 3) return -ENOTTY;
+
+    return tty_ioctl(cmd, user_arg);
+}
+
+static int syscall_setsid_impl(void) {
+    if (!current_process) return -EINVAL;
+    if (current_process->pid != 0 && current_process->pgrp_id == current_process->pid) return -EPERM;
+    current_process->session_id = current_process->pid;
+    current_process->pgrp_id = current_process->pid;
+    return (int)current_process->session_id;
+}
+
+static int syscall_setpgid_impl(int pid, int pgid) {
+    if (!current_process) return -EINVAL;
+    if (pid != 0 && pid != (int)current_process->pid) return -EINVAL;
+    if (pgid == 0) pgid = (int)current_process->pid;
+    if (pgid < 0) return -EINVAL;
+    current_process->pgrp_id = (uint32_t)pgid;
+    return 0;
+}
+
+static int syscall_getpgrp_impl(void) {
+    if (!current_process) return 0;
+    return (int)current_process->pgrp_id;
 }
 
 static void syscall_handler(struct registers* regs) {
@@ -1004,6 +1042,31 @@ static void syscall_handler(struct registers* regs) {
         uint64_t* exceptfds = (uint64_t*)regs->esi;
         int32_t timeout = (int32_t)regs->edi;
         regs->eax = (uint32_t)syscall_select_impl(nfds, readfds, writefds, exceptfds, timeout);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_IOCTL) {
+        int fd = (int)regs->ebx;
+        uint32_t cmd = (uint32_t)regs->ecx;
+        void* arg = (void*)regs->edx;
+        regs->eax = (uint32_t)syscall_ioctl_impl(fd, cmd, arg);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SETSID) {
+        regs->eax = (uint32_t)syscall_setsid_impl();
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SETPGID) {
+        int pid = (int)regs->ebx;
+        int pgid = (int)regs->ecx;
+        regs->eax = (uint32_t)syscall_setpgid_impl(pid, pgid);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_GETPGRP) {
+        regs->eax = (uint32_t)syscall_getpgrp_impl();
         return;
     }
 

@@ -21,6 +21,26 @@ enum {
     SYSCALL_POLL = 18,
     SYSCALL_KILL = 19,
     SYSCALL_SELECT = 20,
+    SYSCALL_IOCTL = 21,
+    SYSCALL_SETSID = 22,
+    SYSCALL_SETPGID = 23,
+    SYSCALL_GETPGRP = 24,
+};
+
+enum {
+    TCGETS = 0x5401,
+    TCSETS = 0x5402,
+    TIOCGPGRP = 0x540F,
+    TIOCSPGRP = 0x5410,
+};
+
+enum {
+    ICANON = 0x0001,
+    ECHO   = 0x0002,
+};
+
+struct termios {
+    uint32_t c_lflag;
 };
 
 struct pollfd {
@@ -81,6 +101,17 @@ static int sys_select(uint32_t nfds, uint64_t* readfds, uint64_t* writefds, uint
     return ret;
 }
 
+static int sys_ioctl(int fd, uint32_t cmd, void* arg) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_IOCTL), "b"(fd), "c"(cmd), "d"(arg)
+        : "memory"
+    );
+    return ret;
+}
+
 static int sys_kill(int pid, int sig) {
     int ret;
     __asm__ volatile(
@@ -98,6 +129,39 @@ static int sys_poll(struct pollfd* fds, uint32_t nfds, int32_t timeout) {
         "int $0x80"
         : "=a"(ret)
         : "a"(SYSCALL_POLL), "b"(fds), "c"(nfds), "d"(timeout)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_setsid(void) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_SETSID)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_setpgid(int pid, int pgid) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_SETPGID), "b"(pid), "c"(pgid)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_getpgrp(void) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_GETPGRP)
         : "memory"
     );
     return ret;
@@ -621,6 +685,70 @@ void _start(void) {
     }
 
     {
+        int fd = sys_open("/dev/tty", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] ioctl(/dev/tty) open failed\n",
+                      (uint32_t)(sizeof("[init] ioctl(/dev/tty) open failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int fg = -1;
+        if (sys_ioctl(fd, TIOCGPGRP, &fg) < 0 || fg != 0) {
+            sys_write(1, "[init] ioctl TIOCGPGRP failed\n",
+                      (uint32_t)(sizeof("[init] ioctl TIOCGPGRP failed\n") - 1));
+            sys_exit(1);
+        }
+
+        fg = 0;
+        if (sys_ioctl(fd, TIOCSPGRP, &fg) < 0) {
+            sys_write(1, "[init] ioctl TIOCSPGRP failed\n",
+                      (uint32_t)(sizeof("[init] ioctl TIOCSPGRP failed\n") - 1));
+            sys_exit(1);
+        }
+
+        fg = 1;
+        if (sys_ioctl(fd, TIOCSPGRP, &fg) >= 0) {
+            sys_write(1, "[init] ioctl TIOCSPGRP expected fail\n",
+                      (uint32_t)(sizeof("[init] ioctl TIOCSPGRP expected fail\n") - 1));
+            sys_exit(1);
+        }
+
+        struct termios oldt;
+        if (sys_ioctl(fd, TCGETS, &oldt) < 0) {
+            sys_write(1, "[init] ioctl TCGETS failed\n",
+                      (uint32_t)(sizeof("[init] ioctl TCGETS failed\n") - 1));
+            sys_exit(1);
+        }
+
+        struct termios t = oldt;
+        t.c_lflag &= ~(uint32_t)(ECHO | ICANON);
+        if (sys_ioctl(fd, TCSETS, &t) < 0) {
+            sys_write(1, "[init] ioctl TCSETS failed\n",
+                      (uint32_t)(sizeof("[init] ioctl TCSETS failed\n") - 1));
+            sys_exit(1);
+        }
+
+        struct termios chk;
+        if (sys_ioctl(fd, TCGETS, &chk) < 0) {
+            sys_write(1, "[init] ioctl TCGETS2 failed\n",
+                      (uint32_t)(sizeof("[init] ioctl TCGETS2 failed\n") - 1));
+            sys_exit(1);
+        }
+
+        if ((chk.c_lflag & (uint32_t)(ECHO | ICANON)) != 0) {
+            sys_write(1, "[init] ioctl verify failed\n",
+                      (uint32_t)(sizeof("[init] ioctl verify failed\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_ioctl(fd, TCSETS, &oldt);
+        (void)sys_close(fd);
+
+        sys_write(1, "[init] ioctl(/dev/tty) OK\n",
+                  (uint32_t)(sizeof("[init] ioctl(/dev/tty) OK\n") - 1));
+    }
+
+    {
         int fd = sys_open("/dev/null", 0);
         if (fd < 0) {
             sys_write(1, "[init] poll(/dev/null) open failed\n",
@@ -640,6 +768,47 @@ void _start(void) {
         (void)sys_close(fd);
         sys_write(1, "[init] poll(/dev/null) OK\n",
                   (uint32_t)(sizeof("[init] poll(/dev/null) OK\n") - 1));
+    }
+
+    {
+        sys_write(1, "[init] setsid test: before fork\n",
+                  (uint32_t)(sizeof("[init] setsid test: before fork\n") - 1));
+        int pid = sys_fork();
+        if (pid < 0) {
+            sys_write(1, "[init] setsid test fork failed\n",
+                      (uint32_t)(sizeof("[init] setsid test fork failed\n") - 1));
+            sys_exit(1);
+        }
+
+        if (pid == 0) {
+            sys_write(1, "[init] setsid test: child start\n",
+                      (uint32_t)(sizeof("[init] setsid test: child start\n") - 1));
+            int me = sys_getpid();
+            int sid = sys_setsid();
+            if (sid != me) sys_exit(2);
+
+            int pg = sys_getpgrp();
+            if (pg != me) sys_exit(3);
+
+            int newpg = me + 1;
+            if (sys_setpgid(0, newpg) < 0) sys_exit(4);
+            if (sys_getpgrp() != newpg) sys_exit(5);
+
+            sys_exit(0);
+        }
+
+        sys_write(1, "[init] setsid test: parent waitpid\n",
+                  (uint32_t)(sizeof("[init] setsid test: parent waitpid\n") - 1));
+        int st = 0;
+        int wp = sys_waitpid(pid, &st, 0);
+        if (wp != pid || st != 0) {
+            sys_write(1, "[init] setsid/setpgid/getpgrp failed\n",
+                      (uint32_t)(sizeof("[init] setsid/setpgid/getpgrp failed\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] setsid/setpgid/getpgrp OK\n",
+                  (uint32_t)(sizeof("[init] setsid/setpgid/getpgrp OK\n") - 1));
     }
     }
 

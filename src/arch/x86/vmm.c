@@ -111,6 +111,10 @@ uintptr_t vmm_as_create_kernel_clone(void) {
 uintptr_t vmm_as_clone_user(uintptr_t src_as) {
     if (!src_as) return 0;
 
+    // Temporary kernel-only mapping in the last user PDE (pdi=767). This avoids touching
+    // shared higher-half kernel page tables copied from boot_pd.
+    const uintptr_t TMP_MAP_VA = 0xBFF00000U;
+
     uintptr_t new_as = vmm_as_create_kernel_clone();
     if (!new_as) return 0;
 
@@ -121,15 +125,11 @@ uintptr_t vmm_as_clone_user(uintptr_t src_as) {
     }
 
     uint32_t* src_pd = (uint32_t*)P2V((uint32_t)src_as);
-    const uint32_t* const boot_pd_virt = boot_pd;
 
-    // Best-effort clone: copy present user mappings, ignore kernel half.
+    // Best-effort clone: copy present user mappings (USER PTEs), ignore kernel half.
     for (uint32_t pdi = 0; pdi < 768; pdi++) {
         uint32_t pde = src_pd[pdi];
         if (!(pde & X86_PTE_PRESENT)) continue;
-
-        // Skip if this PDE looks like a kernel mapping (shouldn't happen for pdi<768).
-        if (boot_pd_virt[pdi] == pde) continue;
 
         uint32_t src_pt_phys = pde & 0xFFFFF000;
         uint32_t* src_pt = (uint32_t*)P2V(src_pt_phys);
@@ -137,6 +137,7 @@ uintptr_t vmm_as_clone_user(uintptr_t src_as) {
         for (uint32_t pti = 0; pti < 1024; pti++) {
             uint32_t pte = src_pt[pti];
             if (!(pte & X86_PTE_PRESENT)) continue;
+            if ((pte & X86_PTE_USER) == 0) continue;
             const uint32_t x86_flags = pte & 0xFFF;
 
             // Derive VMM flags.
@@ -150,19 +151,24 @@ uintptr_t vmm_as_clone_user(uintptr_t src_as) {
                 return 0;
             }
 
+            uint32_t src_frame = pte & 0xFFFFF000;
+
             uintptr_t va = ((uintptr_t)pdi << 22) | ((uintptr_t)pti << 12);
             vmm_as_map_page(new_as, (uint64_t)(uintptr_t)dst_frame, (uint64_t)va, flags);
 
-            // Copy contents by temporarily switching address spaces.
+            // Copy contents by mapping frames into a temporary kernel VA under each address space.
             uintptr_t old_as = hal_cpu_get_address_space();
-
             vmm_as_activate(src_as);
-            memcpy(tmp, (const void*)va, 4096);
+            vmm_map_page((uint64_t)src_frame, (uint64_t)TMP_MAP_VA, VMM_FLAG_PRESENT | VMM_FLAG_RW);
+            memcpy(tmp, (const void*)TMP_MAP_VA, 4096);
+            vmm_unmap_page((uint64_t)TMP_MAP_VA);
 
             vmm_as_activate(new_as);
-            memcpy((void*)va, tmp, 4096);
-
+            vmm_map_page((uint64_t)(uintptr_t)dst_frame, (uint64_t)TMP_MAP_VA, VMM_FLAG_PRESENT | VMM_FLAG_RW);
+            memcpy((void*)TMP_MAP_VA, tmp, 4096);
+            vmm_unmap_page((uint64_t)TMP_MAP_VA);
             vmm_as_activate(old_as);
+
         }
     }
 

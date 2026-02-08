@@ -262,6 +262,8 @@ struct process* process_fork_create(uintptr_t child_as, const struct registers* 
 
     proc->pid = next_pid++;
     proc->parent_pid = current_process ? current_process->pid : 0;
+    proc->session_id = current_process ? current_process->session_id : proc->pid;
+    proc->pgrp_id = current_process ? current_process->pgrp_id : proc->pid;
     proc->state = PROCESS_READY;
     proc->addr_space = child_as;
     proc->wake_at_tick = 0;
@@ -322,6 +324,8 @@ void process_init(void) {
     
     kernel_proc->pid = 0;
     kernel_proc->parent_pid = 0;
+    kernel_proc->session_id = 0;
+    kernel_proc->pgrp_id = 0;
     kernel_proc->state = PROCESS_RUNNING;
     kernel_proc->wake_at_tick = 0;
     kernel_proc->addr_space = hal_cpu_get_address_space();
@@ -367,6 +371,8 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
 
     proc->pid = next_pid++;
     proc->parent_pid = current_process ? current_process->pid : 0;
+    proc->session_id = current_process ? current_process->session_id : proc->pid;
+    proc->pgrp_id = current_process ? current_process->pgrp_id : proc->pid;
     proc->state = PROCESS_READY;
     proc->addr_space = kernel_as ? kernel_as : (current_process ? current_process->addr_space : 0);
     proc->wake_at_tick = 0;

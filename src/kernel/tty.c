@@ -26,6 +26,8 @@ static struct process* waitq[TTY_WAITQ_MAX];
 static uint32_t waitq_head = 0;
 static uint32_t waitq_tail = 0;
 
+static uint32_t tty_lflag = TTY_ICANON | TTY_ECHO;
+
 static int canon_empty(void) {
     return canon_head == canon_tail;
 }
@@ -135,13 +137,75 @@ static void tty_wake_one(void) {
     }
 }
 
+enum {
+    TTY_TCGETS = 0x5401,
+    TTY_TCSETS = 0x5402,
+    TTY_TIOCGPGRP = 0x540F,
+    TTY_TIOCSPGRP = 0x5410,
+};
+
+int tty_ioctl(uint32_t cmd, void* user_arg) {
+    if (!user_arg) return -EFAULT;
+
+    if (cmd == TTY_TIOCGPGRP) {
+        if (user_range_ok(user_arg, sizeof(int)) == 0) return -EFAULT;
+        int fg = 0;
+        if (copy_to_user(user_arg, &fg, sizeof(fg)) < 0) return -EFAULT;
+        return 0;
+    }
+
+    if (cmd == TTY_TIOCSPGRP) {
+        if (user_range_ok(user_arg, sizeof(int)) == 0) return -EFAULT;
+        int fg = 0;
+        if (copy_from_user(&fg, user_arg, sizeof(fg)) < 0) return -EFAULT;
+        if (fg != 0) return -EINVAL;
+        return 0;
+    }
+
+    if (user_range_ok(user_arg, sizeof(struct termios)) == 0) return -EFAULT;
+
+    if (cmd == TTY_TCGETS) {
+        struct termios t;
+        uintptr_t flags = spin_lock_irqsave(&tty_lock);
+        t.c_lflag = tty_lflag;
+        spin_unlock_irqrestore(&tty_lock, flags);
+        if (copy_to_user(user_arg, &t, sizeof(t)) < 0) return -EFAULT;
+        return 0;
+    }
+
+    if (cmd == TTY_TCSETS) {
+        struct termios t;
+        if (copy_from_user(&t, user_arg, sizeof(t)) < 0) return -EFAULT;
+        uintptr_t flags = spin_lock_irqsave(&tty_lock);
+        tty_lflag = t.c_lflag & (TTY_ICANON | TTY_ECHO);
+        spin_unlock_irqrestore(&tty_lock, flags);
+        return 0;
+    }
+
+    return -EINVAL;
+}
+
 void tty_input_char(char c) {
     uintptr_t flags = spin_lock_irqsave(&tty_lock);
+    uint32_t lflag = tty_lflag;
+
+    if ((lflag & TTY_ICANON) == 0) {
+        if (c == '\r') c = '\n';
+        canon_push(c);
+        tty_wake_one();
+        if (lflag & TTY_ECHO) {
+            uart_put_char(c);
+        }
+        spin_unlock_irqrestore(&tty_lock, flags);
+        return;
+    }
 
     if (c == '\b') {
         if (line_len > 0) {
             line_len--;
-            uart_print("\b \b");
+            if (lflag & TTY_ECHO) {
+                uart_print("\b \b");
+            }
         }
         spin_unlock_irqrestore(&tty_lock, flags);
         return;
@@ -150,7 +214,9 @@ void tty_input_char(char c) {
     if (c == '\r') c = '\n';
 
     if (c == '\n') {
-        uart_put_char('\n');
+        if (lflag & TTY_ECHO) {
+            uart_put_char('\n');
+        }
 
         for (uint32_t i = 0; i < line_len; i++) {
             canon_push(line_buf[i]);
@@ -166,7 +232,9 @@ void tty_input_char(char c) {
     if (c >= ' ' && c <= '~') {
         if (line_len + 1 < sizeof(line_buf)) {
             line_buf[line_len++] = c;
-            uart_put_char(c);
+            if (lflag & TTY_ECHO) {
+                uart_put_char(c);
+            }
         }
     }
 

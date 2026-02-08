@@ -29,6 +29,10 @@ enum {
     SYSCALL_POLL = 18,
     SYSCALL_KILL = 19,
     SYSCALL_SELECT = 20,
+    SYSCALL_IOCTL = 21,
+    SYSCALL_SETSID = 22,
+    SYSCALL_SETPGID = 23,
+    SYSCALL_GETPGRP = 24,
 };
 
 #endif

@@ -56,7 +56,7 @@ static fs_node_t* overlay_copy_up_file(struct overlay_node* on) {
         if (!buf) return NULL;
         uint32_t rd = vfs_read(on->lower, 0, len, buf);
         if (rd != len) {
-            if (buf) kfree(buf);
+            kfree(buf);
             return NULL;
         }
     }
