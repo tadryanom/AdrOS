@@ -1,6 +1,7 @@
 #include "idt.h"
 #include "io.h"
 #include "uart_console.h"
+#include "process.h"
 #include "spinlock.h"
 #include <stddef.h>
 
@@ -171,6 +172,17 @@ void isr_handler(struct registers* regs) {
     } else {
         // If Exception (0-31), Panic
         if (regs->int_no < 32) {
+            if (regs->int_no == 14) {
+                // If page fault came from ring3, treat it as a SIGSEGV-like fatal event.
+                if ((regs->cs & 3U) == 3U) {
+                    const int SIG_SEGV = 11;
+                    process_exit_notify(128 + SIG_SEGV);
+                    __asm__ volatile("sti");
+                    schedule();
+                    for (;;) __asm__ volatile("hlt");
+                }
+            }
+
             __asm__ volatile("cli"); // Stop everything
             
             uart_print("\n\n!!! KERNEL PANIC !!!\n");

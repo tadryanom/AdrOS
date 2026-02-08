@@ -35,6 +35,7 @@ enum {
 
 enum {
     SIGKILL = 9,
+    SIGSEGV = 11,
 };
 
 enum {
@@ -820,6 +821,32 @@ void _start(void) {
         }
         if (wp == 0) {
             (void)sys_waitpid(pid, &st, 0);
+        }
+    }
+
+    {
+        int pid = sys_fork();
+        if (pid < 0) {
+            static const char msg[] = "[init] sigsegv test fork failed\n";
+            (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+            sys_exit(1);
+        }
+
+        if (pid == 0) {
+            volatile uint32_t* p = (volatile uint32_t*)0;
+            *p = 1;
+            sys_exit(1);
+        }
+
+        int st = 0;
+        int wp = sys_waitpid(pid, &st, 0);
+        if (wp == pid && st == (128 + SIGSEGV)) {
+            static const char msg[] = "[init] SIGSEGV OK\n";
+            (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+        } else {
+            static const char msg[] = "[init] SIGSEGV failed\n";
+            (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+            sys_exit(1);
         }
     }
 
