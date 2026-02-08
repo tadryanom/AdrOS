@@ -11,6 +11,11 @@ enum {
     SYSCALL_LSEEK = 9,
     SYSCALL_FSTAT = 10,
     SYSCALL_STAT = 11,
+
+    SYSCALL_DUP = 12,
+    SYSCALL_DUP2 = 13,
+    SYSCALL_PIPE = 14,
+    SYSCALL_EXECVE = 15,
 };
 
 enum {
@@ -35,6 +40,50 @@ static int sys_write(int fd, const void* buf, uint32_t len) {
         "int $0x80"
         : "=a"(ret)
         : "a"(SYSCALL_WRITE), "b"(fd), "c"(buf), "d"(len)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_execve(const char* path, const char* const* argv, const char* const* envp) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_EXECVE), "b"(path), "c"(argv), "d"(envp)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_pipe(int fds[2]) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_PIPE), "b"(fds)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_dup(int oldfd) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_DUP), "b"(oldfd)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_dup2(int oldfd, int newfd) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_DUP2), "b"(oldfd), "c"(newfd)
         : "memory"
     );
     return ret;
@@ -288,6 +337,94 @@ void _start(void) {
         sys_exit(1);
     }
 
+    if (sys_lseek(fd, 0, SEEK_END) < 0) {
+        sys_write(1, "[init] dup2 prep lseek failed\n",
+                  (uint32_t)(sizeof("[init] dup2 prep lseek failed\n") - 1));
+        sys_exit(1);
+    }
+
+    if (sys_dup2(fd, 1) != 1) {
+        sys_write(1, "[init] dup2 failed\n", (uint32_t)(sizeof("[init] dup2 failed\n") - 1));
+        sys_exit(1);
+    }
+
+    (void)sys_close(fd);
+
+    {
+        static const char m[] = "[init] dup2 stdout->file OK\n";
+        if (sys_write(1, m, (uint32_t)(sizeof(m) - 1)) != (int)(sizeof(m) - 1)) {
+            sys_exit(1);
+        }
+    }
+
+    (void)sys_close(1);
+    sys_write(1, "[init] dup2 restore tty OK\n",
+              (uint32_t)(sizeof("[init] dup2 restore tty OK\n") - 1));
+
+    {
+        int pfds[2];
+        if (sys_pipe(pfds) < 0) {
+            sys_write(1, "[init] pipe failed\n", (uint32_t)(sizeof("[init] pipe failed\n") - 1));
+            sys_exit(1);
+        }
+
+        static const char pmsg[] = "pipe-test";
+        if (sys_write(pfds[1], pmsg, (uint32_t)(sizeof(pmsg) - 1)) != (int)(sizeof(pmsg) - 1)) {
+            sys_write(1, "[init] pipe write failed\n",
+                      (uint32_t)(sizeof("[init] pipe write failed\n") - 1));
+            sys_exit(1);
+        }
+
+        char rbuf[16];
+        int prd = sys_read(pfds[0], rbuf, (uint32_t)(sizeof(pmsg) - 1));
+        if (prd != (int)(sizeof(pmsg) - 1)) {
+            sys_write(1, "[init] pipe read failed\n",
+                      (uint32_t)(sizeof("[init] pipe read failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int ok = 1;
+        for (uint32_t i = 0; i < (uint32_t)(sizeof(pmsg) - 1); i++) {
+            if ((uint8_t)rbuf[i] != (uint8_t)pmsg[i]) ok = 0;
+        }
+        if (!ok) {
+            sys_write(1, "[init] pipe mismatch\n",
+                      (uint32_t)(sizeof("[init] pipe mismatch\n") - 1));
+            sys_exit(1);
+        }
+
+        if (sys_dup2(pfds[1], 1) != 1) {
+            sys_write(1, "[init] pipe dup2 failed\n",
+                      (uint32_t)(sizeof("[init] pipe dup2 failed\n") - 1));
+            sys_exit(1);
+        }
+
+        static const char p2[] = "dup2-pipe";
+        if (sys_write(1, p2, (uint32_t)(sizeof(p2) - 1)) != (int)(sizeof(p2) - 1)) {
+            sys_exit(1);
+        }
+
+        int prd2 = sys_read(pfds[0], rbuf, (uint32_t)(sizeof(p2) - 1));
+        if (prd2 != (int)(sizeof(p2) - 1)) {
+            sys_write(1, "[init] pipe dup2 read failed\n",
+                      (uint32_t)(sizeof("[init] pipe dup2 read failed\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_close(1);
+        (void)sys_close(pfds[0]);
+        (void)sys_close(pfds[1]);
+
+        sys_write(1, "[init] pipe OK\n", (uint32_t)(sizeof("[init] pipe OK\n") - 1));
+    }
+
+    fd = sys_open("/tmp/hello.txt", 0);
+    if (fd < 0) {
+        sys_write(1, "[init] tmpfs open2 failed\n",
+                  (uint32_t)(sizeof("[init] tmpfs open2 failed\n") - 1));
+        sys_exit(1);
+    }
+
     if (sys_stat("/tmp/hello.txt", &st) < 0) {
         sys_write(1, "[init] tmpfs stat failed\n",
                   (uint32_t)(sizeof("[init] tmpfs stat failed\n") - 1));
@@ -454,5 +591,12 @@ void _start(void) {
         static const char wbad[] = "[init] waitpid failed (100 children, explicit)\n";
         (void)sys_write(1, wbad, (uint32_t)(sizeof(wbad) - 1));
     }
+
+    (void)sys_write(1, "[init] execve(/bin/echo.elf)\n",
+                    (uint32_t)(sizeof("[init] execve(/bin/echo.elf)\n") - 1));
+    (void)sys_execve("/bin/echo.elf", (const char* const*)0, (const char* const*)0);
+    (void)sys_write(1, "[init] execve returned (unexpected)\n",
+                    (uint32_t)(sizeof("[init] execve returned (unexpected)\n") - 1));
+    sys_exit(1);
     sys_exit(0);
 }

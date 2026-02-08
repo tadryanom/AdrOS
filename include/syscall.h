@@ -22,6 +22,11 @@ enum {
     SYSCALL_LSEEK = 9,
     SYSCALL_FSTAT = 10,
     SYSCALL_STAT = 11,
+
+    SYSCALL_DUP = 12,
+    SYSCALL_DUP2 = 13,
+    SYSCALL_PIPE = 14,
+    SYSCALL_EXECVE = 15,
 };
 
 #endif
