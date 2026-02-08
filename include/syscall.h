@@ -35,6 +35,7 @@ enum {
     SYSCALL_PIPE = 14,
     SYSCALL_EXECVE = 15,
     SYSCALL_FORK = 16,
+    SYSCALL_GETPPID = 17,
 };
 
 #endif
