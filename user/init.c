@@ -598,7 +598,9 @@ void _start(void) {
 
     (void)sys_write(1, "[init] execve(/bin/echo.elf)\n",
                     (uint32_t)(sizeof("[init] execve(/bin/echo.elf)\n") - 1));
-    (void)sys_execve("/bin/echo.elf", (const char* const*)0, (const char* const*)0);
+    static const char* const argv[] = {"echo.elf", "arg1", "arg2", 0};
+    static const char* const envp[] = {"FOO=bar", "HELLO=world", 0};
+    (void)sys_execve("/bin/echo.elf", argv, envp);
     (void)sys_write(1, "[init] execve returned (unexpected)\n",
                     (uint32_t)(sizeof("[init] execve returned (unexpected)\n") - 1));
     sys_exit(1);
