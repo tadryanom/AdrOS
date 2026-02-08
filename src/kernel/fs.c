@@ -1,6 +1,7 @@
 #include "fs.h"
 
 #include "utils.h"
+#include "errno.h"
 
 fs_node_t* fs_root = NULL;
 
@@ -49,8 +50,8 @@ static void normalize_mountpoint(const char* in, char* out, size_t out_sz) {
 }
 
 int vfs_mount(const char* mountpoint, fs_node_t* root) {
-    if (!root) return -1;
-    if (g_mount_count >= (int)(sizeof(g_mounts) / sizeof(g_mounts[0]))) return -1;
+    if (!root) return -EINVAL;
+    if (g_mount_count >= (int)(sizeof(g_mounts) / sizeof(g_mounts[0]))) return -ENOSPC;
 
     char mp[128];
     normalize_mountpoint(mountpoint, mp, sizeof(mp));

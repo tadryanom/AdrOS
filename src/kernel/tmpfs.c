@@ -1,5 +1,6 @@
 #include "tmpfs.h"
 
+#include "errno.h"
 #include "heap.h"
 #include "utils.h"
 
@@ -161,14 +162,14 @@ fs_node_t* tmpfs_create_root(void) {
 }
 
 int tmpfs_add_file(fs_node_t* root_dir, const char* name, const uint8_t* data, uint32_t len) {
-    if (!root_dir || root_dir->flags != FS_DIRECTORY) return -1;
-    if (!name || name[0] == 0) return -1;
+    if (!root_dir || root_dir->flags != FS_DIRECTORY) return -ENOTDIR;
+    if (!name || name[0] == 0) return -EINVAL;
 
     struct tmpfs_node* dir = (struct tmpfs_node*)root_dir;
-    if (tmpfs_child_find(dir, name)) return -1;
+    if (tmpfs_child_find(dir, name)) return -EEXIST;
 
     struct tmpfs_node* f = tmpfs_node_alloc(name, FS_FILE);
-    if (!f) return -1;
+    if (!f) return -ENOMEM;
 
     f->vfs.read = &tmpfs_read_impl;
     f->vfs.write = &tmpfs_write_impl;
@@ -180,7 +181,7 @@ int tmpfs_add_file(fs_node_t* root_dir, const char* name, const uint8_t* data, u
         f->data = (uint8_t*)kmalloc(len);
         if (!f->data) {
             kfree(f);
-            return -1;
+            return -ENOMEM;
         }
         memcpy(f->data, data, len);
         f->cap = len;
@@ -192,8 +193,8 @@ int tmpfs_add_file(fs_node_t* root_dir, const char* name, const uint8_t* data, u
 }
 
 int tmpfs_mkdir_p(fs_node_t* root_dir, const char* path) {
-    if (!root_dir || root_dir->flags != FS_DIRECTORY) return -1;
-    if (!path) return -1;
+    if (!root_dir || root_dir->flags != FS_DIRECTORY) return -ENOTDIR;
+    if (!path) return -EINVAL;
 
     struct tmpfs_node* cur = (struct tmpfs_node*)root_dir;
     const char* p = path;
@@ -201,7 +202,7 @@ int tmpfs_mkdir_p(fs_node_t* root_dir, const char* path) {
 
     while (tmpfs_split_next(&p, part, sizeof(part))) {
         struct tmpfs_node* next = tmpfs_child_ensure_dir(cur, part);
-        if (!next) return -1;
+        if (!next) return -ENOMEM;
         cur = next;
     }
 

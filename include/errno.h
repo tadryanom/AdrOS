@@ -7,8 +7,11 @@
 #define EBADF 9
 #define ECHILD 10
 #define EFAULT 14
+#define EEXIST 17
 #define ENOMEM 12
+#define ENOTDIR 20
 #define EINVAL 22
+#define ENOSPC 28
 #define EPIPE 32
 #define EMFILE 24
 #define ESPIPE 29

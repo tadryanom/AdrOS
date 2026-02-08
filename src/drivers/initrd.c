@@ -2,6 +2,7 @@
 #include "utils.h"
 #include "heap.h"
 #include "uart_console.h"
+#include "errno.h"
 
 #define TAR_BLOCK 512
 
@@ -75,7 +76,7 @@ static int entry_alloc(void) {
         int new_cap = (entry_cap == 0) ? 32 : entry_cap * 2;
         initrd_entry_t* new_entries = (initrd_entry_t*)kmalloc(sizeof(initrd_entry_t) * (size_t)new_cap);
         fs_node_t* new_nodes = (fs_node_t*)kmalloc(sizeof(fs_node_t) * (size_t)new_cap);
-        if (!new_entries || !new_nodes) return -1;
+        if (!new_entries || !new_nodes) return -ENOMEM;
 
         if (entries) {
             memcpy(new_entries, entries, sizeof(initrd_entry_t) * (size_t)entry_count);
@@ -111,7 +112,7 @@ static int entry_find_child(int parent, const char* name) {
 
 static int entry_add_child(int parent, const char* name, uint32_t flags) {
     int idx = entry_alloc();
-    if (idx < 0) return -1;
+    if (idx < 0) return idx;
 
     strcpy(entries[idx].name, name);
     entries[idx].flags = flags;
@@ -133,6 +134,8 @@ static int ensure_path_dirs(int root_idx, const char* path, char* leaf_out, size
     int cur = root_idx;
     const char* p = path;
 
+    if (!path || !leaf_out || leaf_out_sz == 0) return -EINVAL;
+
     while (*p == '/') p++;
 
     char part[128];
@@ -153,10 +156,10 @@ static int ensure_path_dirs(int root_idx, const char* path, char* leaf_out, size
         }
 
         cur = ensure_dir(cur, part);
-        if (cur < 0) return -1;
+        if (cur < 0) return cur;
     }
 
-    return -1;
+    return -EINVAL;
 }
 
 static uint32_t initrd_read_impl(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
