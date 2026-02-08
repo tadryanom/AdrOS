@@ -21,7 +21,7 @@ struct overlay_node {
     char path[256];
 };
 
-static struct fs_node* overlay_finddir_impl(struct fs_node* node, char* name);
+static struct fs_node* overlay_finddir_impl(struct fs_node* node, const char* name);
 
 static void overlay_str_copy_n(char* dst, size_t dst_sz, const char* src, size_t src_n) {
     if (!dst || dst_sz == 0) return;
@@ -71,7 +71,7 @@ static fs_node_t* overlay_copy_up_file(struct overlay_node* on) {
     return created;
 }
 
-static uint32_t overlay_write_impl(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
+static uint32_t overlay_write_impl(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer) {
     if (!node) return 0;
     struct overlay_node* on = (struct overlay_node*)node;
 
@@ -142,7 +142,7 @@ static fs_node_t* overlay_wrap_child(struct overlay_node* parent, const char* na
     return &c->vfs;
 }
 
-static struct fs_node* overlay_finddir_impl(struct fs_node* node, char* name) {
+static struct fs_node* overlay_finddir_impl(struct fs_node* node, const char* name) {
     if (!node || !name) return 0;
     if (node->flags != FS_DIRECTORY) return 0;
 

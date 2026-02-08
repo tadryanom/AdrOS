@@ -75,7 +75,7 @@ uint32_t vfs_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buff
     return 0;
 }
 
-uint32_t vfs_write(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
+uint32_t vfs_write(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer) {
     if (node->write)
         return node->write(node, offset, size, buffer);
     return 0;

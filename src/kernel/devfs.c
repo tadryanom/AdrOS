@@ -21,7 +21,7 @@ static uint32_t dev_null_read(fs_node_t* node, uint32_t offset, uint32_t size, u
     return 0;
 }
 
-static uint32_t dev_null_write(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
+static uint32_t dev_null_write(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer) {
     (void)node;
     (void)offset;
     (void)buffer;
@@ -36,15 +36,15 @@ static uint32_t dev_tty_read(fs_node_t* node, uint32_t offset, uint32_t size, ui
     return (uint32_t)rc;
 }
 
-static uint32_t dev_tty_write(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
+static uint32_t dev_tty_write(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer) {
     (void)node;
     (void)offset;
-    int rc = tty_write_kbuf(buffer, size);
+    int rc = tty_write_kbuf((const uint8_t*)buffer, size);
     if (rc < 0) return 0;
     return (uint32_t)rc;
 }
 
-static struct fs_node* devfs_finddir_impl(struct fs_node* node, char* name) {
+static struct fs_node* devfs_finddir_impl(struct fs_node* node, const char* name) {
     (void)node;
     if (!name || name[0] == 0) return 0;
 

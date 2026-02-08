@@ -17,15 +17,15 @@ typedef struct fs_node {
     
     // Function pointers for operations (Polymorphism in C)
     uint32_t (*read)(struct fs_node* node, uint32_t offset, uint32_t size, uint8_t* buffer);
-    uint32_t (*write)(struct fs_node* node, uint32_t offset, uint32_t size, uint8_t* buffer);
+    uint32_t (*write)(struct fs_node* node, uint32_t offset, uint32_t size, const uint8_t* buffer);
     void (*open)(struct fs_node* node);
     void (*close)(struct fs_node* node);
-    struct fs_node* (*finddir)(struct fs_node* node, char* name);
+    struct fs_node* (*finddir)(struct fs_node* node, const char* name);
 } fs_node_t;
 
 // Standard VFS functions
 uint32_t vfs_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer);
-uint32_t vfs_write(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer);
+uint32_t vfs_write(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer);
 void vfs_open(fs_node_t* node);
 void vfs_close(fs_node_t* node);
 

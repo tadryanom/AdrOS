@@ -285,7 +285,7 @@ static uint32_t pipe_read(fs_node_t* n, uint32_t offset, uint32_t size, uint8_t*
     return to_read;
 }
 
-static uint32_t pipe_write(fs_node_t* n, uint32_t offset, uint32_t size, uint8_t* buffer) {
+static uint32_t pipe_write(fs_node_t* n, uint32_t offset, uint32_t size, const uint8_t* buffer) {
     (void)offset;
     struct pipe_node* pn = (struct pipe_node*)n;
     if (!pn || !pn->ps || !buffer) return 0;

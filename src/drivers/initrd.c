@@ -178,7 +178,7 @@ static uint32_t initrd_read_impl(fs_node_t* node, uint32_t offset, uint32_t size
     return size;
 }
 
-static struct fs_node* initrd_finddir(struct fs_node* node, char* name) {
+static struct fs_node* initrd_finddir(struct fs_node* node, const char* name) {
     if (!node || !name) return 0;
     int parent = (int)node->inode;
     if (parent < 0 || parent >= entry_count) return 0;

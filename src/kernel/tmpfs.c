@@ -16,8 +16,8 @@ struct tmpfs_node {
 
 static uint32_t g_tmpfs_next_inode = 1;
 
-static struct fs_node* tmpfs_finddir_impl(struct fs_node* node, char* name);
-static uint32_t tmpfs_write_impl(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer);
+static struct fs_node* tmpfs_finddir_impl(struct fs_node* node, const char* name);
+static uint32_t tmpfs_write_impl(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer);
 
 static struct tmpfs_node* tmpfs_node_alloc(const char* name, uint32_t flags) {
     struct tmpfs_node* n = (struct tmpfs_node*)kmalloc(sizeof(*n));
@@ -108,7 +108,7 @@ static uint32_t tmpfs_read_impl(fs_node_t* node, uint32_t offset, uint32_t size,
     return size;
 }
 
-static uint32_t tmpfs_write_impl(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
+static uint32_t tmpfs_write_impl(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer) {
     if (!node || !buffer) return 0;
     if (node->flags != FS_FILE) return 0;
 
@@ -138,7 +138,7 @@ static uint32_t tmpfs_write_impl(fs_node_t* node, uint32_t offset, uint32_t size
     return size;
 }
 
-static struct fs_node* tmpfs_finddir_impl(struct fs_node* node, char* name) {
+static struct fs_node* tmpfs_finddir_impl(struct fs_node* node, const char* name) {
     if (!node || !name) return 0;
     if (node->flags != FS_DIRECTORY) return 0;
 
