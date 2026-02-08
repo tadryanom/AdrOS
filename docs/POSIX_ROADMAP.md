@@ -54,6 +54,9 @@ Notes:
 - [x] `fork()`
 - [~] `execve()` (loads ELF from InitRD; minimal argv/envp)
 - [x] `getppid()`
+- [x] `select()` / `poll()` (minimal)
+- [~] Basic signals (`sigaction`, `sigprocmask`, `kill`) (delivery model is minimal)
+- [x] `setsid()` / `setpgid()` / `getpgrp()` (minimal)
 
 ### FD layer
 - [x] Per-process fd table (fd allocation starts at 3)
@@ -67,8 +70,13 @@ Notes:
 - [x] Echo + backspace handling
 - [x] Blocking reads (process `BLOCKED`) + wait queue (multiple waiters)
 - [x] `fd=0` wired to `tty_read`, `fd=1/2` wired to `tty_write`
-- [ ] Termios-like configuration
+- [~] Termios-like configuration (minimal: `TCGETS`/`TCSETS`)
+- [~] Sessions / process groups / controlling terminal (minimal: `TIOCGPGRP`/`TIOCSPGRP` + job control checks)
 - [ ] PTY
+
+### Persistence (x86 / QEMU)
+- [x] ATA PIO driver (primary master IDE)
+- [x] Minimal on-disk persistence filesystem mounted at `/persist`
 
 ---
 
@@ -172,20 +180,33 @@ Goal: get a writable filesystem (even if volatile) and a real VFS layout.
 
 ---
 
-## 5) Later milestones (not started)
+## 5) Later milestones (in progress)
 
 ### Process / POSIX expansion
 - [x] `fork()`
 - [~] `execve()`
 - [x] `getppid()`
-- [ ] Signals + basic job control
+- [~] Signals + basic job control (`SIGTTIN`/`SIGTTOU` for background TTY I/O)
 
 ### Pipes + IO multiplexing
 - [x] `pipe()`
 - [x] `dup/dup2`
-- [ ] `select/poll`
+- [x] `select/poll`
 
 ### TTY advanced
 - [ ] termios flags (canonical/raw/echo)
-- [ ] controlling terminal, sessions, pgrp
+- [~] controlling terminal, sessions, pgrp (minimal)
 - [ ] PTY for userland shells
+
+---
+
+## 6) Milestone D1 — Persistent storage (minimal on-disk)
+
+Goal: have at least one end-to-end persisted storage path for smoke tests and future filesystems.
+
+### Block device
+- [x] ATA PIO (primary master IDE)
+
+### Filesystem
+- [x] Minimal persisted filesystem mounted at `/persist`
+- [ ] General-purpose on-disk FS (directories, allocation, metadata)
