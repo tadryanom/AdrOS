@@ -38,9 +38,16 @@ static uint32_t vmm_flags_to_x86(uint32_t flags) {
     return x86_flags;
 }
 
-static uint32_t* vmm_active_pd_virt(void) {
-    uintptr_t as = hal_cpu_get_address_space();
-    return (uint32_t*)P2V((uint32_t)as);
+static volatile uint32_t* x86_pd_recursive(void) {
+    return (volatile uint32_t*)0xFFFFF000U;
+}
+
+static volatile uint32_t* x86_pt_recursive(uint32_t pd_index) {
+    return (volatile uint32_t*)0xFFC00000U + ((uintptr_t)pd_index << 10);
+}
+
+static const volatile uint32_t* vmm_active_pd_virt(void) {
+    return x86_pd_recursive();
 }
 
 static void* pmm_alloc_page_low(void) {
@@ -57,54 +64,60 @@ static void* pmm_alloc_page_low(void) {
     return 0;
 }
 
-static void vmm_map_page_in_pd(uint32_t* pd_virt, uint64_t phys, uint64_t virt, uint32_t flags) {
-    uint32_t pd_index = virt >> 22;
-    uint32_t pt_index = (virt >> 12) & 0x03FF;
+void vmm_map_page(uint64_t phys, uint64_t virt, uint32_t flags) {
+    uint32_t pd_index = (uint32_t)(virt >> 22);
+    uint32_t pt_index = (uint32_t)((virt >> 12) & 0x03FF);
 
-    if (!(pd_virt[pd_index] & X86_PTE_PRESENT)) {
+    volatile uint32_t* pd = x86_pd_recursive();
+    if ((pd[pd_index] & X86_PTE_PRESENT) == 0) {
         uint32_t pt_phys = (uint32_t)pmm_alloc_page_low();
         if (!pt_phys) {
             uart_print("[VMM] OOM allocating page table.\n");
             return;
         }
 
-        uint32_t* pt_virt = (uint32_t*)P2V(pt_phys);
-        for (int i = 0; i < 1024; i++) pt_virt[i] = 0;
-
         uint32_t pde_flags = X86_PTE_PRESENT | X86_PTE_RW;
         if (flags & VMM_FLAG_USER) pde_flags |= X86_PTE_USER;
-        pd_virt[pd_index] = pt_phys | pde_flags;
+        pd[pd_index] = pt_phys | pde_flags;
+
+        // Make sure the page-table window reflects the new PDE before touching it.
+        invlpg((uintptr_t)x86_pt_recursive(pd_index));
+
+        volatile uint32_t* pt = x86_pt_recursive(pd_index);
+        for (int i = 0; i < 1024; i++) pt[i] = 0;
     }
 
-    if ((flags & VMM_FLAG_USER) && !(pd_virt[pd_index] & X86_PTE_USER)) {
-        pd_virt[pd_index] |= X86_PTE_USER;
+    if ((flags & VMM_FLAG_USER) && ((pd[pd_index] & X86_PTE_USER) == 0)) {
+        pd[pd_index] |= X86_PTE_USER;
     }
 
-    uint32_t pt_phys = pd_virt[pd_index] & 0xFFFFF000;
-    uint32_t* pt = (uint32_t*)P2V(pt_phys);
+    volatile uint32_t* pt = x86_pt_recursive(pd_index);
     pt[pt_index] = ((uint32_t)phys) | vmm_flags_to_x86(flags);
     invlpg((uintptr_t)virt);
-}
-
-void vmm_map_page(uint64_t phys, uint64_t virt, uint32_t flags) {
-    vmm_map_page_in_pd(vmm_active_pd_virt(), phys, virt, flags);
 }
 
 uintptr_t vmm_as_create_kernel_clone(void) {
     uint32_t pd_phys = (uint32_t)pmm_alloc_page_low();
     if (!pd_phys) return 0;
 
-    uint32_t* pd_virt = (uint32_t*)P2V(pd_phys);
-    for (int i = 0; i < 1024; i++) pd_virt[i] = 0;
+    // Initialize the new page directory by temporarily mapping it into the current address
+    // space. We avoid assuming any global phys->virt linear mapping exists.
+    const uint64_t TMP_PD_VA = 0xBFFFE000ULL;
+    vmm_map_page((uint64_t)pd_phys, TMP_PD_VA, VMM_FLAG_PRESENT | VMM_FLAG_RW);
+    uint32_t* pd_tmp = (uint32_t*)(uintptr_t)TMP_PD_VA;
+    for (int i = 0; i < 1024; i++) pd_tmp[i] = 0;
 
-    // Copy kernel mappings (higher-half PDEs)
+    // Copy current kernel mappings (higher-half PDEs). This must include dynamic mappings
+    // created after boot (e.g. initrd physical range mapping).
+    const volatile uint32_t* active_pd = vmm_active_pd_virt();
     for (int i = 768; i < 1024; i++) {
-        pd_virt[i] = boot_pd[i];
+        pd_tmp[i] = (uint32_t)active_pd[i];
     }
 
-    // Fix recursive mapping: PDE[1023] must point to this PD, not boot_pd.
-    pd_virt[1023] = pd_phys | X86_PTE_PRESENT | X86_PTE_RW;
+    // Fix recursive mapping: PDE[1023] must point to this PD.
+    pd_tmp[1023] = pd_phys | X86_PTE_PRESENT | X86_PTE_RW;
 
+    vmm_unmap_page(TMP_PD_VA);
     return (uintptr_t)pd_phys;
 }
 
@@ -124,18 +137,19 @@ uintptr_t vmm_as_clone_user(uintptr_t src_as) {
         return 0;
     }
 
-    const uint32_t* src_pd = (const uint32_t*)P2V((uint32_t)src_as);
-
     // Best-effort clone: copy present user mappings (USER PTEs), ignore kernel half.
-    for (uint32_t pdi = 0; pdi < 768; pdi++) {
-        uint32_t pde = src_pd[pdi];
-        if (!(pde & X86_PTE_PRESENT)) continue;
+    uintptr_t old_as = hal_cpu_get_address_space();
+    vmm_as_activate(src_as);
+    const volatile uint32_t* src_pd = x86_pd_recursive();
 
-        uint32_t src_pt_phys = pde & 0xFFFFF000;
-        const uint32_t* src_pt = (const uint32_t*)P2V(src_pt_phys);
+    for (uint32_t pdi = 0; pdi < 768; pdi++) {
+        uint32_t pde = (uint32_t)src_pd[pdi];
+        if ((pde & X86_PTE_PRESENT) == 0) continue;
+
+        const volatile uint32_t* src_pt = x86_pt_recursive(pdi);
 
         for (uint32_t pti = 0; pti < 1024; pti++) {
-            uint32_t pte = src_pt[pti];
+            uint32_t pte = (uint32_t)src_pt[pti];
             if (!(pte & X86_PTE_PRESENT)) continue;
             if ((pte & X86_PTE_USER) == 0) continue;
             const uint32_t x86_flags = pte & 0xFFF;
@@ -157,8 +171,7 @@ uintptr_t vmm_as_clone_user(uintptr_t src_as) {
             vmm_as_map_page(new_as, (uint64_t)(uintptr_t)dst_frame, (uint64_t)va, flags);
 
             // Copy contents by mapping frames into a temporary kernel VA under each address space.
-            uintptr_t old_as = hal_cpu_get_address_space();
-            vmm_as_activate(src_as);
+            // src_as is active here
             vmm_map_page((uint64_t)src_frame, (uint64_t)TMP_MAP_VA, VMM_FLAG_PRESENT | VMM_FLAG_RW);
             memcpy(tmp, (const void*)TMP_MAP_VA, 4096);
             vmm_unmap_page((uint64_t)TMP_MAP_VA);
@@ -167,10 +180,13 @@ uintptr_t vmm_as_clone_user(uintptr_t src_as) {
             vmm_map_page((uint64_t)(uintptr_t)dst_frame, (uint64_t)TMP_MAP_VA, VMM_FLAG_PRESENT | VMM_FLAG_RW);
             memcpy((void*)TMP_MAP_VA, tmp, 4096);
             vmm_unmap_page((uint64_t)TMP_MAP_VA);
-            vmm_as_activate(old_as);
+
+            vmm_as_activate(src_as);
 
         }
     }
+
+    vmm_as_activate(old_as);
 
     kfree(tmp);
     return new_as;
@@ -183,27 +199,35 @@ void vmm_as_activate(uintptr_t as) {
 
 void vmm_as_map_page(uintptr_t as, uint64_t phys, uint64_t virt, uint32_t flags) {
     if (!as) return;
-    uint32_t* pd_virt = (uint32_t*)P2V((uint32_t)as);
-    vmm_map_page_in_pd(pd_virt, phys, virt, flags);
+    uintptr_t old_as = hal_cpu_get_address_space();
+    if ((old_as & ~(uintptr_t)0xFFFU) != (as & ~(uintptr_t)0xFFFU)) {
+        vmm_as_activate(as);
+        vmm_map_page(phys, virt, flags);
+        vmm_as_activate(old_as);
+    } else {
+        vmm_map_page(phys, virt, flags);
+    }
 }
 
 void vmm_as_destroy(uintptr_t as) {
     if (!as) return;
     if (as == g_kernel_as) return;
 
-    uint32_t* pd = (uint32_t*)P2V((uint32_t)as);
+    uintptr_t old_as = hal_cpu_get_address_space();
+    vmm_as_activate(as);
+    volatile uint32_t* pd = x86_pd_recursive();
 
     // Free user page tables + frames for user space.
     for (int pdi = 0; pdi < 768; pdi++) {
-        uint32_t pde = pd[pdi];
-        if (!(pde & X86_PTE_PRESENT)) continue;
+        uint32_t pde = (uint32_t)pd[pdi];
+        if ((pde & X86_PTE_PRESENT) == 0) continue;
 
         uint32_t pt_phys = pde & 0xFFFFF000;
-        uint32_t* pt = (uint32_t*)P2V(pt_phys);
+        volatile uint32_t* pt = x86_pt_recursive((uint32_t)pdi);
 
         for (int pti = 0; pti < 1024; pti++) {
-            uint32_t pte = pt[pti];
-            if (!(pte & X86_PTE_PRESENT)) continue;
+            uint32_t pte = (uint32_t)pt[pti];
+            if ((pte & X86_PTE_PRESENT) == 0) continue;
             uint32_t frame = pte & 0xFFFFF000;
             pmm_free_page((void*)(uintptr_t)frame);
             pt[pti] = 0;
@@ -213,6 +237,7 @@ void vmm_as_destroy(uintptr_t as) {
         pd[pdi] = 0;
     }
 
+    vmm_as_activate(old_as);
     pmm_free_page((void*)(uintptr_t)as);
 }
 
@@ -220,15 +245,10 @@ void vmm_set_page_flags(uint64_t virt, uint32_t flags) {
     uint32_t pd_index = virt >> 22;
     uint32_t pt_index = (virt >> 12) & 0x03FF;
 
-    const uint32_t* pd = vmm_active_pd_virt();
+    volatile uint32_t* pd = x86_pd_recursive();
+    if ((pd[pd_index] & X86_PTE_PRESENT) == 0) return;
 
-    if (!(pd[pd_index] & X86_PTE_PRESENT)) {
-        return;
-    }
-
-    uint32_t pt_phys = pd[pd_index] & 0xFFFFF000;
-    uint32_t* pt = (uint32_t*)P2V(pt_phys);
-
+    volatile uint32_t* pt = x86_pt_recursive(pd_index);
     uint32_t pte = pt[pt_index];
     if (!(pte & X86_PTE_PRESENT)) {
         return;
@@ -254,14 +274,11 @@ void vmm_unmap_page(uint64_t virt) {
     uint32_t pd_index = virt >> 22;
     uint32_t pt_index = (virt >> 12) & 0x03FF;
 
-    const uint32_t* pd = vmm_active_pd_virt();
-    if (pd[pd_index] & X86_PTE_PRESENT) {
-        uint32_t pt_phys = pd[pd_index] & 0xFFFFF000;
-        uint32_t* pt = (uint32_t*)P2V(pt_phys);
-        
-        pt[pt_index] = 0;
-        invlpg(virt);
-    }
+    volatile uint32_t* pd = x86_pd_recursive();
+    if ((pd[pd_index] & X86_PTE_PRESENT) == 0) return;
+    volatile uint32_t* pt = x86_pt_recursive(pd_index);
+    pt[pt_index] = 0;
+    invlpg((uintptr_t)virt);
 }
 
 void vmm_init(void) {

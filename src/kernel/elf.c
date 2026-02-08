@@ -69,14 +69,36 @@ static int elf32_map_user_range(uintptr_t as, uintptr_t vaddr, size_t len, uint3
     uintptr_t start_page = vaddr & ~(uintptr_t)0xFFF;
     uintptr_t end_page = end & ~(uintptr_t)0xFFF;
 
-    for (uintptr_t va = start_page;; va += 0x1000) {
-        void* phys = pmm_alloc_page_low_16mb();
-        if (!phys) return -ENOMEM;
+    uintptr_t old_as = hal_cpu_get_address_space();
+    vmm_as_activate(as);
 
-        vmm_as_map_page(as, (uint64_t)(uintptr_t)phys, (uint64_t)va, flags | VMM_FLAG_PRESENT | VMM_FLAG_USER);
+    for (uintptr_t va = start_page;; va += 0x1000) {
+        const uint32_t pdi = (uint32_t)(va >> 22);
+        const uint32_t pti = (uint32_t)((va >> 12) & 0x03FF);
+
+        volatile uint32_t* pd = (volatile uint32_t*)0xFFFFF000U;
+        int already_mapped = 0;
+        if ((pd[pdi] & 1U) != 0U) {
+            volatile uint32_t* pt = (volatile uint32_t*)0xFFC00000U + ((uintptr_t)pdi << 10);
+            if ((pt[pti] & 1U) != 0U) {
+                already_mapped = 1;
+            }
+        }
+
+        if (!already_mapped) {
+            void* phys = pmm_alloc_page_low_16mb();
+            if (!phys) {
+                vmm_as_activate(old_as);
+                return -ENOMEM;
+            }
+
+            vmm_map_page((uint64_t)(uintptr_t)phys, (uint64_t)va, flags | VMM_FLAG_PRESENT | VMM_FLAG_USER);
+        }
 
         if (va == end_page) break;
     }
+
+    vmm_as_activate(old_as);
 
     return 0;
 }
@@ -89,14 +111,12 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
     if (!new_as) return -ENOMEM;
 
     uintptr_t old_as = hal_cpu_get_address_space();
-    vmm_as_activate(new_as);
 
     fs_node_t* node = vfs_lookup(filename);
     if (!node) {
         uart_print("[ELF] file not found: ");
         uart_print(filename);
         uart_print("\n");
-        vmm_as_activate(old_as);
         vmm_as_destroy(new_as);
         return -ENOENT;
     }
@@ -110,7 +130,6 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
 
     uint8_t* file = (uint8_t*)kmalloc(file_len);
     if (!file) {
-        vmm_as_activate(old_as);
         vmm_as_destroy(new_as);
         return -ENOMEM;
     }
@@ -118,10 +137,12 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
     uint32_t rd = vfs_read(node, 0, file_len, file);
     if (rd != file_len) {
         kfree(file);
-        vmm_as_activate(old_as);
         vmm_as_destroy(new_as);
         return -EIO;
     }
+
+    // Switch into the new address space only after the ELF image is fully buffered.
+    vmm_as_activate(new_as);
 
     const elf32_ehdr_t* eh = (const elf32_ehdr_t*)file;
     int vrc = elf32_validate(eh, file_len);
@@ -193,11 +214,6 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
 
         if (ph[i].p_memsz > ph[i].p_filesz) {
             memset((void*)(uintptr_t)(ph[i].p_vaddr + ph[i].p_filesz), 0, ph[i].p_memsz - ph[i].p_filesz);
-        }
-
-        if ((ph[i].p_flags & PF_W) == 0) {
-            vmm_protect_range((uint64_t)(uintptr_t)ph[i].p_vaddr, (uint64_t)ph[i].p_memsz,
-                              VMM_FLAG_USER);
         }
     }
 
