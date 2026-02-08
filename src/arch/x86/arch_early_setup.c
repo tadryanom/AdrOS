@@ -61,13 +61,13 @@ static uint32_t multiboot_copy_size;
              tag->type != MULTIBOOT_TAG_TYPE_END;
              tag = (struct multiboot_tag*)((uint8_t*)tag + ((tag->size + 7) & ~7))) {
             if (tag->type == MULTIBOOT_TAG_TYPE_MODULE) {
-                struct multiboot_tag_module* mod = (struct multiboot_tag_module*)tag;
+                const struct multiboot_tag_module* mod = (const struct multiboot_tag_module*)tag;
                 bi.initrd_start = mod->mod_start;
                 bi.initrd_end = mod->mod_end;
                 break;
             }
             if (tag->type == MULTIBOOT_TAG_TYPE_CMDLINE) {
-                struct multiboot_tag_string* s = (struct multiboot_tag_string*)tag;
+                const struct multiboot_tag_string* s = (const struct multiboot_tag_string*)tag;
                 bi.cmdline = s->string;
             }
         }

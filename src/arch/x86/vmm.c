@@ -124,7 +124,7 @@ uintptr_t vmm_as_clone_user(uintptr_t src_as) {
         return 0;
     }
 
-    uint32_t* src_pd = (uint32_t*)P2V((uint32_t)src_as);
+    const uint32_t* src_pd = (const uint32_t*)P2V((uint32_t)src_as);
 
     // Best-effort clone: copy present user mappings (USER PTEs), ignore kernel half.
     for (uint32_t pdi = 0; pdi < 768; pdi++) {
@@ -132,7 +132,7 @@ uintptr_t vmm_as_clone_user(uintptr_t src_as) {
         if (!(pde & X86_PTE_PRESENT)) continue;
 
         uint32_t src_pt_phys = pde & 0xFFFFF000;
-        uint32_t* src_pt = (uint32_t*)P2V(src_pt_phys);
+        const uint32_t* src_pt = (const uint32_t*)P2V(src_pt_phys);
 
         for (uint32_t pti = 0; pti < 1024; pti++) {
             uint32_t pte = src_pt[pti];
@@ -220,7 +220,7 @@ void vmm_set_page_flags(uint64_t virt, uint32_t flags) {
     uint32_t pd_index = virt >> 22;
     uint32_t pt_index = (virt >> 12) & 0x03FF;
 
-    uint32_t* pd = vmm_active_pd_virt();
+    const uint32_t* pd = vmm_active_pd_virt();
 
     if (!(pd[pd_index] & X86_PTE_PRESENT)) {
         return;
@@ -254,7 +254,7 @@ void vmm_unmap_page(uint64_t virt) {
     uint32_t pd_index = virt >> 22;
     uint32_t pt_index = (virt >> 12) & 0x03FF;
 
-    uint32_t* pd = vmm_active_pd_virt();
+    const uint32_t* pd = vmm_active_pd_virt();
     if (pd[pd_index] & X86_PTE_PRESENT) {
         uint32_t pt_phys = pd[pd_index] & 0xFFFFF000;
         uint32_t* pt = (uint32_t*)P2V(pt_phys);

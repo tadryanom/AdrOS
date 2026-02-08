@@ -88,7 +88,7 @@ int arch_platform_setup(const struct boot_info* bi) {
 int arch_platform_start_userspace(const struct boot_info* bi) {
     (void)bi;
 #if defined(__i386__)
-    struct process* p = process_create_kernel(userspace_init_thread);
+    const struct process* p = process_create_kernel(userspace_init_thread);
     if (!p) return -1;
     return 0;
 #else

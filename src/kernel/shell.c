@@ -46,7 +46,7 @@ void execute_command(char* cmd) {
         if (!fs_root) {
             uart_print("No filesystem mounted.\n");
         } else {
-            char* fname = cmd + 4;
+            const char* fname = cmd + 4;
             fs_node_t* file = NULL;
             if (fname[0] == '/') {
                 file = vfs_lookup(fname);

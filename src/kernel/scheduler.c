@@ -27,7 +27,7 @@ static struct process* process_find_locked(uint32_t pid) {
     if (!ready_queue_head) return NULL;
 
     struct process* it = ready_queue_head;
-    struct process* start = it;
+    const struct process* const start = it;
     do {
         if (it->pid == pid) return it;
         it = it->next;
