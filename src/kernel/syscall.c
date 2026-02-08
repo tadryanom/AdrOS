@@ -20,6 +20,28 @@
 static int fd_alloc(struct file* f);
 static int fd_close(int fd);
 
+static int execve_copy_user_str(char* out, size_t out_sz, const char* user_s) {
+    if (!out || out_sz == 0 || !user_s) return -EFAULT;
+    for (size_t i = 0; i < out_sz; i++) {
+        if (copy_from_user(&out[i], &user_s[i], 1) < 0) return -EFAULT;
+        if (out[i] == 0) return 0;
+    }
+    out[out_sz - 1] = 0;
+    return 0;
+}
+
+static int execve_copy_user_ptr(const void* const* user_p, uintptr_t* out) {
+    if (!out) return -EFAULT;
+    if (!user_p) {
+        *out = 0;
+        return 0;
+    }
+    uintptr_t tmp = 0;
+    if (copy_from_user(&tmp, user_p, sizeof(tmp)) < 0) return -EFAULT;
+    *out = tmp;
+    return 0;
+}
+
 static int syscall_fork_impl(struct registers* regs) {
     if (!regs) return -EINVAL;
     if (!current_process) return -EINVAL;
@@ -306,9 +328,13 @@ static int syscall_dup_impl(int oldfd) {
 }
 
 static int syscall_execve_impl(struct registers* regs, const char* user_path, const char* const* user_argv, const char* const* user_envp) {
-    (void)user_argv;
-    (void)user_envp;
     if (!regs || !user_path) return -EFAULT;
+
+    enum {
+        EXECVE_MAX_ARGC = 32,
+        EXECVE_MAX_ENVC = 32,
+        EXECVE_MAX_STR  = 128,
+    };
 
     char path[128];
     for (size_t i = 0; i < sizeof(path); i++) {
@@ -322,11 +348,45 @@ static int syscall_execve_impl(struct registers* regs, const char* user_path, co
         }
     }
 
+    // Snapshot argv/envp into kernel buffers (before switching addr_space).
+    char kargv[EXECVE_MAX_ARGC][EXECVE_MAX_STR];
+    char kenvp[EXECVE_MAX_ENVC][EXECVE_MAX_STR];
+    int argc = 0;
+    int envc = 0;
+
+    if (user_argv) {
+        for (int i = 0; i < EXECVE_MAX_ARGC; i++) {
+            uintptr_t up = 0;
+            int rc = execve_copy_user_ptr((const void* const*)&user_argv[i], &up);
+            if (rc < 0) return rc;
+            if (up == 0) break;
+            rc = execve_copy_user_str(kargv[i], sizeof(kargv[i]), (const char*)up);
+            if (rc < 0) return rc;
+            argc++;
+        }
+    }
+
+    if (user_envp) {
+        for (int i = 0; i < EXECVE_MAX_ENVC; i++) {
+            uintptr_t up = 0;
+            int rc = execve_copy_user_ptr((const void* const*)&user_envp[i], &up);
+            if (rc < 0) return rc;
+            if (up == 0) break;
+            rc = execve_copy_user_str(kenvp[i], sizeof(kenvp[i]), (const char*)up);
+            if (rc < 0) return rc;
+            envc++;
+        }
+    }
+
+    // Distinguish ENOENT early.
+    fs_node_t* node = vfs_lookup(path);
+    if (!node) return -ENOENT;
+
     uintptr_t entry = 0;
     uintptr_t user_sp = 0;
     uintptr_t new_as = 0;
     if (elf32_load_user_from_initrd(path, &entry, &user_sp, &new_as) != 0) {
-        return -ENOENT;
+        return -EINVAL;
     }
 
     uintptr_t old_as = current_process ? current_process->addr_space : 0;
@@ -338,12 +398,55 @@ static int syscall_execve_impl(struct registers* regs, const char* user_path, co
     current_process->addr_space = new_as;
     vmm_as_activate(new_as);
 
+    // Build a minimal initial user stack: argc, argv pointers, envp pointers, strings.
+    // The loader returns a fresh stack top (user_sp). We'll pack strings below it.
+    uintptr_t sp = user_sp;
+    sp &= ~(uintptr_t)0xF;
+
+    uintptr_t argv_ptrs_va[EXECVE_MAX_ARGC + 1];
+    uintptr_t envp_ptrs_va[EXECVE_MAX_ENVC + 1];
+
+    for (int i = envc - 1; i >= 0; i--) {
+        size_t len = strlen(kenvp[i]) + 1;
+        sp -= len;
+        memcpy((void*)sp, kenvp[i], len);
+        envp_ptrs_va[i] = sp;
+    }
+    envp_ptrs_va[envc] = 0;
+
+    for (int i = argc - 1; i >= 0; i--) {
+        size_t len = strlen(kargv[i]) + 1;
+        sp -= len;
+        memcpy((void*)sp, kargv[i], len);
+        argv_ptrs_va[i] = sp;
+    }
+    argv_ptrs_va[argc] = 0;
+
+    sp &= ~(uintptr_t)0xF;
+
+    // Push envp[] pointers
+    sp -= (uintptr_t)(sizeof(uintptr_t) * (envc + 1));
+    memcpy((void*)sp, envp_ptrs_va, sizeof(uintptr_t) * (envc + 1));
+    uintptr_t envp_va = sp;
+
+    // Push argv[] pointers
+    sp -= (uintptr_t)(sizeof(uintptr_t) * (argc + 1));
+    memcpy((void*)sp, argv_ptrs_va, sizeof(uintptr_t) * (argc + 1));
+    uintptr_t argv_va = sp;
+
+    // Push argc
+    sp -= sizeof(uint32_t);
+    *(uint32_t*)sp = (uint32_t)argc;
+
+    (void)argv_va;
+    (void)envp_va;
+
     if (old_as && old_as != new_as) {
         vmm_as_destroy(old_as);
     }
 
     regs->eip = (uint32_t)entry;
-    regs->useresp = (uint32_t)user_sp;
+    regs->useresp = (uint32_t)sp;
     regs->eax = 0;
     return 0;
 }
