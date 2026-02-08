@@ -129,7 +129,9 @@ $(INITRD_IMG): $(MKINITRD) $(USER_ELF) $(ECHO_ELF)
 
 run: iso
 	@rm -f serial.log qemu.log
+	@test -f disk.img || dd if=/dev/zero of=disk.img bs=1M count=4 2>/dev/null
 	@qemu-system-i386 -boot d -cdrom adros-$(ARCH).iso -m 128M -display none \
+		-drive file=disk.img,if=ide,format=raw \
 		-serial file:serial.log -monitor none -no-reboot -no-shutdown \
 		$(QEMU_DFLAGS)
 

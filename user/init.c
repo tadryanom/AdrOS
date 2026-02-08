@@ -1187,6 +1187,46 @@ void _start(void) {
         sys_write(1, "[init] /dev/null OK\n", (uint32_t)(sizeof("[init] /dev/null OK\n") - 1));
     }
 
+    // B1: persistent storage smoke. Value should increment across reboots (disk.img).
+    {
+        int fd = sys_open("/persist/counter", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] /persist/counter open failed\n",
+                      (uint32_t)(sizeof("[init] /persist/counter open failed\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_lseek(fd, 0, SEEK_SET);
+        uint8_t b[4] = {0, 0, 0, 0};
+        int rd = sys_read(fd, b, 4);
+        if (rd != 4) {
+            sys_write(1, "[init] /persist/counter read failed\n",
+                      (uint32_t)(sizeof("[init] /persist/counter read failed\n") - 1));
+            sys_exit(1);
+        }
+
+        uint32_t v = (uint32_t)b[0] | ((uint32_t)b[1] << 8) | ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24);
+        v++;
+        b[0] = (uint8_t)(v & 0xFF);
+        b[1] = (uint8_t)((v >> 8) & 0xFF);
+        b[2] = (uint8_t)((v >> 16) & 0xFF);
+        b[3] = (uint8_t)((v >> 24) & 0xFF);
+
+        (void)sys_lseek(fd, 0, SEEK_SET);
+        int wr = sys_write(fd, b, 4);
+        if (wr != 4) {
+            sys_write(1, "[init] /persist/counter write failed\n",
+                      (uint32_t)(sizeof("[init] /persist/counter write failed\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_close(fd);
+
+        sys_write(1, "[init] /persist/counter=", (uint32_t)(sizeof("[init] /persist/counter=") - 1));
+        write_int_dec((int)v);
+        sys_write(1, "\n", 1);
+    }
+
     {
         int fd = sys_open("/dev/tty", 0);
         if (fd < 0) {

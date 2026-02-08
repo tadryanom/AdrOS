@@ -10,6 +10,7 @@
 #define EFAULT 14
 #define EEXIST 17
 #define ENOMEM 12
+#define ENODEV 19
 #define ENOTDIR 20
 #define EINVAL 22
 #define ENOSPC 28
