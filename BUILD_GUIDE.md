@@ -58,6 +58,10 @@ Generated outputs/artifacts:
 - `serial.log`: UART log (primary kernel output)
 - `qemu.log`: only generated when QEMU debug logging is enabled (see below)
 
+Syscall return convention note:
+- The kernel follows a Linux-style convention: syscalls return `0`/positive values on success, and `-errno` (negative) on failure.
+- A libc-style `errno` variable (per-thread) is not implemented yet.
+
 Static analysis helper:
 ```bash
 make ARCH=x86 cppcheck
