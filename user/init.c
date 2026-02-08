@@ -591,6 +591,41 @@ void _start(void) {
 
     sys_write(1, "[init] tmpfs/mount OK\n", (uint32_t)(sizeof("[init] tmpfs/mount OK\n") - 1));
 
+    {
+        int fd = sys_open("/dev/null", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] /dev/null open failed\n",
+                      (uint32_t)(sizeof("[init] /dev/null open failed\n") - 1));
+            sys_exit(1);
+        }
+        static const char z[] = "discard me";
+        int wr = sys_write(fd, z, (uint32_t)(sizeof(z) - 1));
+        if (wr != (int)(sizeof(z) - 1)) {
+            sys_write(1, "[init] /dev/null write failed\n",
+                      (uint32_t)(sizeof("[init] /dev/null write failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+        sys_write(1, "[init] /dev/null OK\n", (uint32_t)(sizeof("[init] /dev/null OK\n") - 1));
+    }
+
+    {
+        int fd = sys_open("/dev/tty", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] /dev/tty open failed\n",
+                      (uint32_t)(sizeof("[init] /dev/tty open failed\n") - 1));
+            sys_exit(1);
+        }
+        static const char m[] = "[init] /dev/tty write OK\n";
+        int wr = sys_write(fd, m, (uint32_t)(sizeof(m) - 1));
+        if (wr != (int)(sizeof(m) - 1)) {
+            sys_write(1, "[init] /dev/tty write failed\n",
+                      (uint32_t)(sizeof("[init] /dev/tty write failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+    }
+
     enum { NCHILD = 100 };
     int children[NCHILD];
     for (int i = 0; i < NCHILD; i++) {

@@ -30,6 +30,60 @@ static int canon_empty(void) {
     return canon_head == canon_tail;
 }
 
+static uint32_t canon_count(void);
+static int waitq_push(struct process* p);
+
+int tty_write_kbuf(const void* kbuf, uint32_t len) {
+    if (!kbuf) return -EFAULT;
+    if (len > 1024 * 1024) return -EINVAL;
+
+    const char* p = (const char*)kbuf;
+    for (uint32_t i = 0; i < len; i++) {
+        uart_put_char(p[i]);
+    }
+    return (int)len;
+}
+
+int tty_read_kbuf(void* kbuf, uint32_t len) {
+    if (!kbuf) return -EFAULT;
+    if (len > 1024 * 1024) return -EINVAL;
+    if (!current_process) return -ECHILD;
+
+    while (1) {
+        uintptr_t flags = spin_lock_irqsave(&tty_lock);
+
+        if (!canon_empty()) {
+            uint32_t avail = canon_count();
+            uint32_t to_read = len;
+            if (to_read > avail) to_read = avail;
+
+            uint32_t total = 0;
+            while (total < to_read) {
+                uint32_t chunk = to_read - total;
+                if (chunk > 256U) chunk = 256U;
+
+                for (uint32_t i = 0; i < chunk; i++) {
+                    ((char*)kbuf)[total + i] = canon_buf[canon_tail];
+                    canon_tail = (canon_tail + 1U) % TTY_CANON_BUF;
+                }
+                total += chunk;
+            }
+
+            spin_unlock_irqrestore(&tty_lock, flags);
+            return (int)to_read;
+        }
+
+        if (waitq_push(current_process) == 0) {
+            current_process->state = PROCESS_BLOCKED;
+        }
+
+        spin_unlock_irqrestore(&tty_lock, flags);
+
+        hal_cpu_enable_interrupts();
+        schedule();
+    }
+}
+
 static uint32_t canon_count(void) {
     if (canon_head >= canon_tail) return canon_head - canon_tail;
     return (TTY_CANON_BUF - canon_tail) + canon_head;

@@ -580,6 +580,26 @@ static int syscall_read_impl(int fd, void* user_buf, uint32_t len) {
     struct file* f = fd_get(fd);
     if (!f || !f->node) return -EBADF;
 
+    if (f->node->flags == FS_CHARDEVICE) {
+        uint8_t kbuf[256];
+        uint32_t total = 0;
+        while (total < len) {
+            uint32_t chunk = len - total;
+            if (chunk > sizeof(kbuf)) chunk = (uint32_t)sizeof(kbuf);
+
+            uint32_t rd = vfs_read(f->node, 0, chunk, kbuf);
+            if (rd == 0) break;
+
+            if (copy_to_user((uint8_t*)user_buf + total, kbuf, rd) < 0) {
+                return -EFAULT;
+            }
+
+            total += rd;
+            if (rd < chunk) break;
+        }
+        return (int)total;
+    }
+
     uint8_t kbuf[256];
     uint32_t total = 0;
     while (total < len) {
@@ -593,7 +613,9 @@ static int syscall_read_impl(int fd, void* user_buf, uint32_t len) {
             return -EFAULT;
         }
 
-        f->offset += rd;
+        if (f->node->flags == FS_FILE) {
+            f->offset += rd;
+        }
         total += rd;
 
         if (rd < chunk) break;
@@ -614,7 +636,7 @@ static int syscall_write_impl(int fd, const void* user_buf, uint32_t len) {
 
     struct file* f = fd_get(fd);
     if (!f || !f->node) return -EBADF;
-    if (f->node->flags != FS_FILE) return -ESPIPE;
+    if (f->node->flags != FS_FILE && f->node->flags != FS_CHARDEVICE) return -ESPIPE;
     if (!f->node->write) return -ESPIPE;
 
     uint8_t kbuf[256];
@@ -627,9 +649,9 @@ static int syscall_write_impl(int fd, const void* user_buf, uint32_t len) {
             return -EFAULT;
         }
 
-        uint32_t wr = vfs_write(f->node, f->offset, chunk, kbuf);
+        uint32_t wr = vfs_write(f->node, (f->node->flags == FS_FILE) ? f->offset : 0, chunk, kbuf);
         if (wr == 0) break;
-        f->offset += wr;
+        if (f->node->flags == FS_FILE) f->offset += wr;
         total += wr;
         if (wr < chunk) break;
     }
