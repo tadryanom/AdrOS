@@ -17,6 +17,7 @@
 #include "tmpfs.h"
 #include "devfs.h"
 #include "tty.h"
+#include "persistfs.h"
 #include "uart_console.h"
 
 #include "hal/mm.h"
@@ -76,6 +77,11 @@ int init_start(const struct boot_info* bi) {
     fs_node_t* dev = devfs_create_root();
     if (dev) {
         (void)vfs_mount("/dev", dev);
+    }
+
+    fs_node_t* persist = persistfs_create_root();
+    if (persist) {
+        (void)vfs_mount("/persist", persist);
     }
 
     int user_ret = arch_platform_start_userspace(bi);
