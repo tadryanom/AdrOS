@@ -3,6 +3,7 @@
 enum {
     SYSCALL_WRITE = 1,
     SYSCALL_EXIT  = 2,
+    SYSCALL_GETPID = 3,
     SYSCALL_OPEN  = 4,
     SYSCALL_READ  = 5,
     SYSCALL_CLOSE = 6,
@@ -16,6 +17,7 @@ enum {
     SYSCALL_PIPE = 14,
     SYSCALL_EXECVE = 15,
     SYSCALL_FORK = 16,
+    SYSCALL_GETPPID = 17,
 };
 
 enum {
@@ -44,6 +46,28 @@ static int sys_write(int fd, const void* buf, uint32_t len) {
         "int $0x80"
         : "=a"(ret)
         : "a"(SYSCALL_WRITE), "b"(fd), "c"(buf), "d"(len)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_getpid(void) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_GETPID)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_getppid(void) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_GETPPID)
         : "memory"
     );
     return ret;
@@ -580,6 +604,24 @@ void _start(void) {
             sys_exit(42);
         }
         children[i] = pid;
+    }
+
+    {
+        int parent_pid = sys_getpid();
+        int pid = sys_fork();
+        if (pid == 0) {
+            int ppid = sys_getppid();
+            if (ppid == parent_pid) {
+                static const char msg[] = "[init] getppid OK\n";
+                (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+                sys_exit(0);
+            }
+            static const char msg[] = "[init] getppid failed\n";
+            (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+            sys_exit(1);
+        }
+        int st = 0;
+        (void)sys_waitpid(pid, &st, 0);
     }
 
     {

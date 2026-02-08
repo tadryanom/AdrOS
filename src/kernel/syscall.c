@@ -654,6 +654,11 @@ static void syscall_handler(struct registers* regs) {
         return;
     }
 
+    if (syscall_no == SYSCALL_GETPPID) {
+        regs->eax = current_process ? current_process->parent_pid : 0;
+        return;
+    }
+
     if (syscall_no == SYSCALL_OPEN) {
         const char* path = (const char*)regs->ebx;
         uint32_t flags = regs->ecx;
