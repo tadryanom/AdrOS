@@ -44,19 +44,24 @@ AdrOS is a multi-architecture operating system developed for research and academ
   - Mount table support (`vfs_mount`) + `tmpfs` and `overlayfs`
 - **File descriptors + syscalls (x86)**
   - `int 0x80` syscall gate
-  - `SYSCALL_WRITE`, `SYSCALL_EXIT`, `SYSCALL_GETPID`, `SYSCALL_OPEN`, `SYSCALL_READ`, `SYSCALL_CLOSE`
+  - `SYSCALL_WRITE`, `SYSCALL_EXIT`, `SYSCALL_GETPID`, `SYSCALL_GETPPID`, `SYSCALL_OPEN`, `SYSCALL_READ`, `SYSCALL_CLOSE`
   - `SYSCALL_LSEEK`, `SYSCALL_STAT`, `SYSCALL_FSTAT`
   - `SYSCALL_DUP`, `SYSCALL_DUP2`, `SYSCALL_PIPE`
   - `SYSCALL_FORK`, `SYSCALL_EXECVE` (with minimal argv/envp stack setup)
   - Per-process fd table (starting at fd=3)
   - Centralized user-pointer access API (`user_range_ok`, `copy_from_user`, `copy_to_user`)
   - Ring3 init program (`/bin/init.elf`) exercising IO + process + exec smoke tests
+  - Error returns use negative errno codes (Linux-style)
 - **TTY (canonical line discipline)**
   - Keyboard -> TTY input path
   - Canonical mode input (line-buffered until `\n`)
   - Echo + backspace handling
   - Blocking reads with a simple wait queue (multiple waiters)
   - `fd=0` wired to `tty_read`, `fd=1/2` wired to `tty_write`
+- **Devices (devfs)**
+  - `/dev` mount
+  - `/dev/null`
+  - `/dev/tty`
 - **W^X (Option 1) for user ELFs (x86)**
   - User segments are mapped RW during load, then write permissions are dropped for non-writable segments
   - This provides "text is read-only" hardening without requiring NX/PAE
@@ -77,11 +82,11 @@ QEMU debug helpers:
   - Implement VMM/interrupts/scheduler for ARM/RISC-V/MIPS
   - Standardize arch entrypoint behavior (`arch_early_setup`) across architectures
 - **Userspace / POSIX process model**
-  - `getppid`, `brk`/`sbrk`
+  - `brk`/`sbrk`
   - Signals (at least `SIGKILL`/`SIGSEGV` basics)
 - **Syscalls / ABI**
   - `ioctl` (TTY), `getcwd`, `chdir`
-  - Error reporting via `errno` conventions
+  - Userspace `errno` variable + libc-style wrappers (`-1` return + `errno` set)
 - **Virtual memory hardening**
   - Option 2: PAE + NX enforcement (execute disable for data/stack)
   - Guard pages, and tighter user/kernel separation checks
@@ -89,7 +94,7 @@ QEMU debug helpers:
   - Real persisted storage (ATA/AHCI/virtio-blk or similar)
   - Persisted storage (ATA/AHCI/virtio-blk or similar)
   - Permissions/ownership (`uid/gid`, mode bits) and `umask`
-  - Special files: char devices, block devices, `/dev`, `/proc`
+  - Special files: block devices, `/proc`
   - Real on-disk fs (ext2/fat)
 - **TTY / PTY**
   - Termios-like mode flags (canonical/raw, echo, erase, intr)

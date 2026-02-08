@@ -46,12 +46,14 @@ Notes:
 - [x] `read()` (files + stdin)
 - [x] `close()`
 - [x] `waitpid()`
+- [x] `waitpid(..., WNOHANG)`
 - [x] `lseek()`
 - [x] `stat()` / `fstat()`
 - [x] `dup()` / `dup2()`
 - [x] `pipe()`
 - [x] `fork()`
 - [~] `execve()` (loads ELF from InitRD; minimal argv/envp)
+- [x] `getppid()`
 
 ### FD layer
 - [x] Per-process fd table (fd allocation starts at 3)
@@ -89,7 +91,7 @@ Goal: make process termination and waiting work reliably; unblock shells and ser
 - [x] Add syscall number + userland wrapper
 - [x] `waitpid(-1, ...)` wait for any child
 - [x] `waitpid(pid, ...)` wait for specific child
-- [ ] Non-blocking mode (optional early): `WNOHANG`
+- [x] Non-blocking mode (optional early): `WNOHANG`
 - [~] Return semantics consistent with POSIX (pid on success, -1 on error)
 
 ### Tests
@@ -109,7 +111,8 @@ Goal: move from a shared address space to per-process virtual memory, required f
 - [~] User/kernel separation rules enforced (uaccess checks + no user mappings in kernel range)
 
 ### Syscall/uaccess hardening
-- [ ] Ensure `user_range_ok` is robust across per-process mappings
+- [~] Ensure `user_range_ok` is robust across per-process mappings
+- [x] `copy_to_user` requires writable user mappings (x86)
 - [ ] Page-fault handling for invalid user pointers (deliver `SIGSEGV` later)
 
 ### Userspace loader
@@ -136,7 +139,8 @@ Goal: unlock standard libc-style IO patterns.
 - [x] Map InitRD node metadata to `stat`
 
 ### Error model
-- [ ] Start introducing `errno`-style error returns (strategy decision: negative errno vs -1 + errno)
+- [x] Negative errno returns in kernel/syscalls (`-errno`)
+- [ ] Userspace `errno` + libc-style wrappers (`-1` + `errno`)
 
 ### Tests
 - [x] Userspace test: open -> fstat -> read -> lseek -> read
@@ -159,9 +163,9 @@ Goal: get a writable filesystem (even if volatile) and a real VFS layout.
 - [x] Directories
 
 ### Devices (minimum Unix feel)
-- [ ] `/dev` mount
-- [ ] `/dev/tty`
-- [ ] `/dev/null`
+- [x] `/dev` mount
+- [x] `/dev/tty`
+- [x] `/dev/null`
 
 ### Tests
 - [x] Userspace test: create file in tmpfs, write, read back
@@ -173,7 +177,7 @@ Goal: get a writable filesystem (even if volatile) and a real VFS layout.
 ### Process / POSIX expansion
 - [x] `fork()`
 - [~] `execve()`
-- [ ] `getppid()`
+- [x] `getppid()`
 - [ ] Signals + basic job control
 
 ### Pipes + IO multiplexing
