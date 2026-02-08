@@ -7,6 +7,9 @@
 #include "spinlock.h"
 #include "utils.h"
 #include "hal/cpu.h"
+#if defined(__i386__)
+#include "arch/x86/usermode.h"
+#endif
 #include <stddef.h>
 
 struct process* current_process = NULL;
@@ -16,6 +19,8 @@ static uint32_t next_pid = 1;
 
 static spinlock_t sched_lock = {0};
 static uintptr_t kernel_as = 0;
+
+void thread_wrapper(void (*fn)(void));
 
 static struct process* process_find_locked(uint32_t pid) {
     if (!ready_queue_head) return NULL;
@@ -150,18 +155,81 @@ void process_exit_notify(int status) {
 
     spin_unlock_irqrestore(&sched_lock, flags);
 }
-static void spawn_test_child_entry(void) {
-    process_exit_notify(42);
-    schedule();
-    for(;;) {
-        hal_cpu_idle();
+
+static void fork_child_trampoline(void) {
+#if defined(__i386__)
+    if (!current_process || !current_process->has_user_regs) {
+        process_exit_notify(1);
+        schedule();
+        for (;;) hal_cpu_idle();
     }
+
+    if (current_process->addr_space) {
+        vmm_as_activate(current_process->addr_space);
+    }
+
+    x86_enter_usermode_regs(&current_process->user_regs);
+#else
+    process_exit_notify(1);
+    schedule();
+    for (;;) hal_cpu_idle();
+#endif
 }
 
-int process_spawn_test_child(void) {
-    struct process* p = process_create_kernel(spawn_test_child_entry);
-    if (!p) return -1;
-    return (int)p->pid;
+struct process* process_fork_create(uintptr_t child_as, const struct registers* child_regs) {
+    if (!child_as || !child_regs) return NULL;
+
+    uintptr_t flags = spin_lock_irqsave(&sched_lock);
+
+    struct process* proc = (struct process*)kmalloc(sizeof(*proc));
+    if (!proc) {
+        spin_unlock_irqrestore(&sched_lock, flags);
+        return NULL;
+    }
+    memset(proc, 0, sizeof(*proc));
+
+    proc->pid = next_pid++;
+    proc->parent_pid = current_process ? current_process->pid : 0;
+    proc->state = PROCESS_READY;
+    proc->addr_space = child_as;
+    proc->wake_at_tick = 0;
+    proc->exit_status = 0;
+
+    proc->waiting = 0;
+    proc->wait_pid = -1;
+    proc->wait_result_pid = -1;
+    proc->wait_result_status = 0;
+
+    proc->has_user_regs = 1;
+    proc->user_regs = *child_regs;
+
+    for (int i = 0; i < PROCESS_MAX_FILES; i++) {
+        proc->files[i] = NULL;
+    }
+
+    void* stack = kmalloc(4096);
+    if (!stack) {
+        kfree(proc);
+        spin_unlock_irqrestore(&sched_lock, flags);
+        return NULL;
+    }
+    proc->kernel_stack = (uint32_t*)stack;
+
+    uint32_t* sp = (uint32_t*)((uint8_t*)stack + 4096);
+    *--sp = (uint32_t)fork_child_trampoline;
+    *--sp = 0;
+    *--sp = (uint32_t)thread_wrapper;
+    *--sp = 0; *--sp = 0; *--sp = 0; *--sp = 0;
+    proc->sp = (uintptr_t)sp;
+
+    proc->next = ready_queue_head;
+    proc->prev = ready_queue_tail;
+    ready_queue_tail->next = proc;
+    ready_queue_head->prev = proc;
+    ready_queue_tail = proc;
+
+    spin_unlock_irqrestore(&sched_lock, flags);
+    return proc;
 }
 
 void process_init(void) {

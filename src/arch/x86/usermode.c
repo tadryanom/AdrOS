@@ -6,6 +6,7 @@
 #include "uart_console.h"
 #include "utils.h"
  #include "arch/x86/usermode.h"
+#include "idt.h"
 
 #if defined(__i386__)
 
@@ -91,6 +92,49 @@ __attribute__((noreturn)) void x86_enter_usermode(uintptr_t user_eip, uintptr_t 
         :
         : [eip] "r"(user_eip), [esp] "r"(user_esp)
         : "memory"
+    );
+
+    __builtin_unreachable();
+}
+
+__attribute__((noreturn)) void x86_enter_usermode_regs(const struct registers* regs) {
+    if (!regs) {
+        for (;;) {
+            __asm__ volatile("cli; hlt");
+        }
+    }
+
+    // Layout follows include/arch/x86/idt.h struct registers.
+    const uint32_t eflags = (regs->eflags | 0x200U);
+
+    __asm__ volatile(
+        "cli\n"
+        "mov %[r], %%ebp\n"
+
+        "mov $0x23, %%ax\n"
+        "mov %%ax, %%ds\n"
+        "mov %%ax, %%es\n"
+        "mov %%ax, %%fs\n"
+        "mov %%ax, %%gs\n"
+
+        "pushl $0x23\n"           /* ss */
+        "pushl 56(%%ebp)\n"       /* useresp */
+        "pushl %[efl]\n"          /* eflags */
+        "pushl $0x1B\n"           /* cs */
+        "pushl 44(%%ebp)\n"       /* eip */
+
+        "mov 4(%%ebp), %%edi\n"   /* edi */
+        "mov 8(%%ebp), %%esi\n"   /* esi */
+        "mov 20(%%ebp), %%ebx\n"  /* ebx */
+        "mov 24(%%ebp), %%edx\n"  /* edx */
+        "mov 28(%%ebp), %%ecx\n"  /* ecx */
+        "mov 32(%%ebp), %%eax\n"  /* eax */
+        "mov 12(%%ebp), %%ebp\n"  /* ebp */
+        "iret\n"
+        :
+        : [r] "r"(regs),
+          [efl] "r"(eflags)
+        : "memory", "cc", "ax", "ebp"
     );
 
     __builtin_unreachable();

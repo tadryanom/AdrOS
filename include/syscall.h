@@ -16,9 +16,6 @@ enum {
 
     SYSCALL_WAITPID = 7,
 
-    // Temporary: spawn a kernel-thread child for waitpid testing.
-    SYSCALL_SPAWN = 8,
-
     SYSCALL_LSEEK = 9,
     SYSCALL_FSTAT = 10,
     SYSCALL_STAT = 11,
@@ -27,6 +24,7 @@ enum {
     SYSCALL_DUP2 = 13,
     SYSCALL_PIPE = 14,
     SYSCALL_EXECVE = 15,
+    SYSCALL_FORK = 16,
 };
 
 #endif

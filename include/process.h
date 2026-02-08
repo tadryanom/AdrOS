@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "idt.h" // For struct registers
+#include "fs.h"
 
 typedef enum {
     PROCESS_READY,
@@ -12,7 +13,12 @@ typedef enum {
     PROCESS_ZOMBIE
 } process_state_t;
 
-struct file;
+struct file {
+    fs_node_t* node;
+    uint32_t offset;
+    uint32_t flags;
+    uint32_t refcount;
+};
 
 #define PROCESS_MAX_FILES 16
 
@@ -25,6 +31,9 @@ struct process {
     process_state_t state;
     uint32_t wake_at_tick;      // New: When to wake up (global tick count)
     int exit_status;
+
+    int has_user_regs;
+    struct registers user_regs;
 
     int waiting;
     int wait_pid;
@@ -64,7 +73,7 @@ int process_waitpid(int pid, int* status_out);
 // Mark current process as exiting and notify/wake a waiter (if any).
 void process_exit_notify(int status);
 
-// Temporary: spawn a kernel-thread child that sleeps briefly and exits.
-int process_spawn_test_child(void);
+// Create a child process that will resume in usermode from a saved register frame.
+struct process* process_fork_create(uintptr_t child_as, const struct registers* child_regs);
 
 #endif

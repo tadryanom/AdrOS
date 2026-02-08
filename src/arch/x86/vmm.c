@@ -1,6 +1,7 @@
 #include "vmm.h"
 #include "pmm.h"
 #include "uart_console.h"
+#include "utils.h"
 #include "hal/cpu.h"
 #include <stddef.h>
 
@@ -104,6 +105,62 @@ uintptr_t vmm_as_create_kernel_clone(void) {
     pd_virt[1023] = pd_phys | X86_PTE_PRESENT | X86_PTE_RW;
 
     return (uintptr_t)pd_phys;
+}
+
+uintptr_t vmm_as_clone_user(uintptr_t src_as) {
+    if (!src_as) return 0;
+
+    uintptr_t new_as = vmm_as_create_kernel_clone();
+    if (!new_as) return 0;
+
+    uint32_t* src_pd = (uint32_t*)P2V((uint32_t)src_as);
+    const uint32_t* const boot_pd_virt = boot_pd;
+
+    // Best-effort clone: copy present user mappings, ignore kernel half.
+    for (uint32_t pdi = 0; pdi < 768; pdi++) {
+        uint32_t pde = src_pd[pdi];
+        if (!(pde & X86_PTE_PRESENT)) continue;
+
+        // Skip if this PDE looks like a kernel mapping (shouldn't happen for pdi<768).
+        if (boot_pd_virt[pdi] == pde) continue;
+
+        uint32_t src_pt_phys = pde & 0xFFFFF000;
+        uint32_t* src_pt = (uint32_t*)P2V(src_pt_phys);
+
+        for (uint32_t pti = 0; pti < 1024; pti++) {
+            uint32_t pte = src_pt[pti];
+            if (!(pte & X86_PTE_PRESENT)) continue;
+            const uint32_t x86_flags = pte & 0xFFF;
+
+            // Derive VMM flags.
+            uint32_t flags = VMM_FLAG_PRESENT;
+            if (x86_flags & X86_PTE_RW) flags |= VMM_FLAG_RW;
+            if (x86_flags & X86_PTE_USER) flags |= VMM_FLAG_USER;
+
+            void* dst_frame = pmm_alloc_page_low();
+            if (!dst_frame) {
+                vmm_as_destroy(new_as);
+                return 0;
+            }
+
+            uintptr_t va = ((uintptr_t)pdi << 22) | ((uintptr_t)pti << 12);
+            vmm_as_map_page(new_as, (uint64_t)(uintptr_t)dst_frame, (uint64_t)va, flags);
+
+            // Copy contents by temporarily switching address spaces.
+            uintptr_t old_as = hal_cpu_get_address_space();
+            uint8_t tmp[4096];
+
+            vmm_as_activate(src_as);
+            memcpy(tmp, (const void*)va, sizeof(tmp));
+
+            vmm_as_activate(new_as);
+            memcpy((void*)va, tmp, sizeof(tmp));
+
+            vmm_as_activate(old_as);
+        }
+    }
+
+    return new_as;
 }
 
 void vmm_as_activate(uintptr_t as) {

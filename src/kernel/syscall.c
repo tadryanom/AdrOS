@@ -17,15 +17,34 @@
 
 #include <stddef.h>
 
-struct file {
-    fs_node_t* node;
-    uint32_t offset;
-    uint32_t flags;
-    uint32_t refcount;
-};
-
 static int fd_alloc(struct file* f);
 static int fd_close(int fd);
+
+static int syscall_fork_impl(struct registers* regs) {
+    if (!regs) return -EINVAL;
+    if (!current_process) return -EINVAL;
+
+    uintptr_t child_as = vmm_as_clone_user(current_process->addr_space);
+    if (!child_as) return -ENOMEM;
+
+    struct registers child_regs = *regs;
+    child_regs.eax = 0;
+
+    struct process* child = process_fork_create(child_as, &child_regs);
+    if (!child) {
+        vmm_as_destroy(child_as);
+        return -ENOMEM;
+    }
+
+    for (int fd = 0; fd < PROCESS_MAX_FILES; fd++) {
+        struct file* f = current_process->files[fd];
+        if (!f) continue;
+        f->refcount++;
+        child->files[fd] = f;
+    }
+
+    return (int)child->pid;
+}
 
 struct pipe_state {
     uint8_t* buf;
@@ -600,12 +619,6 @@ static void syscall_handler(struct registers* regs) {
         return;
     }
 
-    if (syscall_no == SYSCALL_SPAWN) {
-        int pid = process_spawn_test_child();
-        regs->eax = (pid < 0) ? (uint32_t)-1 : (uint32_t)pid;
-        return;
-    }
-
     if (syscall_no == SYSCALL_LSEEK) {
         int fd = (int)regs->ebx;
         int32_t off = (int32_t)regs->ecx;
@@ -652,6 +665,11 @@ static void syscall_handler(struct registers* regs) {
         const char* const* argv = (const char* const*)regs->ecx;
         const char* const* envp = (const char* const*)regs->edx;
         regs->eax = (uint32_t)syscall_execve_impl(regs, path, argv, envp);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_FORK) {
+        regs->eax = (uint32_t)syscall_fork_impl(regs);
         return;
     }
 
