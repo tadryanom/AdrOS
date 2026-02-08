@@ -12,6 +12,9 @@ int tty_write(const void* user_buf, uint32_t len);
 int tty_read_kbuf(void* kbuf, uint32_t len);
 int tty_write_kbuf(const void* kbuf, uint32_t len);
 
+int tty_can_read(void);
+int tty_can_write(void);
+
 void tty_input_char(char c);
 
 #endif

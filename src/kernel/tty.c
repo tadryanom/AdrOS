@@ -89,6 +89,17 @@ static uint32_t canon_count(void) {
     return (TTY_CANON_BUF - canon_tail) + canon_head;
 }
 
+int tty_can_read(void) {
+    uintptr_t flags = spin_lock_irqsave(&tty_lock);
+    int ready = canon_empty() ? 0 : 1;
+    spin_unlock_irqrestore(&tty_lock, flags);
+    return ready;
+}
+
+int tty_can_write(void) {
+    return 1;
+}
+
 static void canon_push(char c) {
     uint32_t next = (canon_head + 1U) % TTY_CANON_BUF;
     if (next == canon_tail) {

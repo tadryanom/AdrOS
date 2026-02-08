@@ -18,6 +18,18 @@ enum {
     SYSCALL_EXECVE = 15,
     SYSCALL_FORK = 16,
     SYSCALL_GETPPID = 17,
+    SYSCALL_POLL = 18,
+};
+
+struct pollfd {
+    int fd;
+    int16_t events;
+    int16_t revents;
+};
+
+enum {
+    POLLIN = 0x0001,
+    POLLOUT = 0x0004,
 };
 
 enum {
@@ -46,6 +58,17 @@ static int sys_write(int fd, const void* buf, uint32_t len) {
         "int $0x80"
         : "=a"(ret)
         : "a"(SYSCALL_WRITE), "b"(fd), "c"(buf), "d"(len)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_poll(struct pollfd* fds, uint32_t nfds, int32_t timeout) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_POLL), "b"(fds), "c"(nfds), "d"(timeout)
         : "memory"
     );
     return ret;
@@ -444,6 +467,67 @@ void _start(void) {
         (void)sys_close(pfds[1]);
 
         sys_write(1, "[init] pipe OK\n", (uint32_t)(sizeof("[init] pipe OK\n") - 1));
+
+    {
+        int fds[2];
+        if (sys_pipe(fds) < 0) {
+            sys_write(1, "[init] poll pipe setup failed\n",
+                      (uint32_t)(sizeof("[init] poll pipe setup failed\n") - 1));
+            sys_exit(1);
+        }
+
+        struct pollfd p;
+        p.fd = fds[0];
+        p.events = POLLIN;
+        p.revents = 0;
+        int rc = sys_poll(&p, 1, 0);
+        if (rc != 0) {
+            sys_write(1, "[init] poll(pipe) expected 0\n",
+                      (uint32_t)(sizeof("[init] poll(pipe) expected 0\n") - 1));
+            sys_exit(1);
+        }
+
+        static const char a = 'A';
+        if (sys_write(fds[1], &a, 1) != 1) {
+            sys_write(1, "[init] poll pipe write failed\n",
+                      (uint32_t)(sizeof("[init] poll pipe write failed\n") - 1));
+            sys_exit(1);
+        }
+
+        p.revents = 0;
+        rc = sys_poll(&p, 1, 0);
+        if (rc != 1 || (p.revents & POLLIN) == 0) {
+            sys_write(1, "[init] poll(pipe) expected POLLIN\n",
+                      (uint32_t)(sizeof("[init] poll(pipe) expected POLLIN\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_close(fds[0]);
+        (void)sys_close(fds[1]);
+        sys_write(1, "[init] poll(pipe) OK\n", (uint32_t)(sizeof("[init] poll(pipe) OK\n") - 1));
+    }
+
+    {
+        int fd = sys_open("/dev/null", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] poll(/dev/null) open failed\n",
+                      (uint32_t)(sizeof("[init] poll(/dev/null) open failed\n") - 1));
+            sys_exit(1);
+        }
+        struct pollfd p;
+        p.fd = fd;
+        p.events = POLLOUT;
+        p.revents = 0;
+        int rc = sys_poll(&p, 1, 0);
+        if (rc != 1 || (p.revents & POLLOUT) == 0) {
+            sys_write(1, "[init] poll(/dev/null) expected POLLOUT\n",
+                      (uint32_t)(sizeof("[init] poll(/dev/null) expected POLLOUT\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+        sys_write(1, "[init] poll(/dev/null) OK\n",
+                  (uint32_t)(sizeof("[init] poll(/dev/null) OK\n") - 1));
+    }
     }
 
     fd = sys_open("/tmp/hello.txt", 0);

@@ -19,6 +19,20 @@
 
 static int fd_alloc(struct file* f);
 static int fd_close(int fd);
+static struct file* fd_get(int fd);
+
+struct pollfd {
+    int fd;
+    int16_t events;
+    int16_t revents;
+};
+
+enum {
+    POLLIN = 0x0001,
+    POLLOUT = 0x0004,
+    POLLERR = 0x0008,
+    POLLHUP = 0x0010,
+};
 
 static int execve_copy_user_str(char* out, size_t out_sz, const char* user_s) {
     if (!out || out_sz == 0 || !user_s) return -EFAULT;
@@ -83,6 +97,91 @@ struct pipe_node {
     struct pipe_state* ps;
     uint32_t is_read_end;
 };
+
+static int syscall_poll_impl(struct pollfd* user_fds, uint32_t nfds, int32_t timeout) {
+    if (!user_fds) return -EFAULT;
+    if (nfds > 64U) return -EINVAL;
+    if (user_range_ok(user_fds, sizeof(struct pollfd) * (size_t)nfds) == 0) return -EFAULT;
+
+    // timeout semantics (minimal):
+    //  - timeout == 0 : non-blocking
+    //  - timeout  < 0 : block forever
+    //  - timeout  > 0 : treated as "ticks" (best-effort)
+    extern uint32_t get_tick_count(void);
+    uint32_t start_tick = get_tick_count();
+
+    struct pollfd kfds[64];
+
+    for (;;) {
+        if (copy_from_user(kfds, user_fds, sizeof(struct pollfd) * (size_t)nfds) < 0) return -EFAULT;
+
+        int ready = 0;
+        for (uint32_t i = 0; i < nfds; i++) {
+            kfds[i].revents = 0;
+            int fd = kfds[i].fd;
+            if (fd < 0) continue;
+
+            struct file* f = fd_get(fd);
+            if (!f || !f->node) {
+                kfds[i].revents |= POLLERR;
+                continue;
+            }
+
+            fs_node_t* n = f->node;
+
+            // Pipes (identified by node name prefix).
+            if (n->name[0] == 'p' && n->name[1] == 'i' && n->name[2] == 'p' && n->name[3] == 'e' && n->name[4] == ':') {
+                struct pipe_node* pn = (struct pipe_node*)n;
+                struct pipe_state* ps = pn->ps;
+                if (!ps) {
+                    kfds[i].revents |= POLLERR;
+                } else if (pn->is_read_end) {
+                    if ((kfds[i].events & POLLIN) && (ps->count > 0 || ps->writers == 0)) {
+                        kfds[i].revents |= POLLIN;
+                        if (ps->writers == 0) kfds[i].revents |= POLLHUP;
+                    }
+                } else {
+                    if (ps->readers == 0) {
+                        if (kfds[i].events & POLLOUT) kfds[i].revents |= POLLERR;
+                    } else {
+                        uint32_t free = ps->cap - ps->count;
+                        if ((kfds[i].events & POLLOUT) && free > 0) {
+                            kfds[i].revents |= POLLOUT;
+                        }
+                    }
+                }
+            } else if (n->flags == FS_CHARDEVICE) {
+                // devfs devices: inode 2=/dev/null, 3=/dev/tty
+                if (n->inode == 2) {
+                    if (kfds[i].events & POLLIN) kfds[i].revents |= POLLIN | POLLHUP;
+                    if (kfds[i].events & POLLOUT) kfds[i].revents |= POLLOUT;
+                } else if (n->inode == 3) {
+                    if ((kfds[i].events & POLLIN) && tty_can_read()) kfds[i].revents |= POLLIN;
+                    if ((kfds[i].events & POLLOUT) && tty_can_write()) kfds[i].revents |= POLLOUT;
+                }
+            } else {
+                // Regular files are always readable/writable (best-effort).
+                if (kfds[i].events & POLLIN) kfds[i].revents |= POLLIN;
+                if (kfds[i].events & POLLOUT) kfds[i].revents |= POLLOUT;
+            }
+
+            if (kfds[i].revents) ready++;
+        }
+
+        if (copy_to_user(user_fds, kfds, sizeof(struct pollfd) * (size_t)nfds) < 0) return -EFAULT;
+
+        if (ready) return ready;
+        if (timeout == 0) return 0;
+
+        if (timeout > 0) {
+            uint32_t now = get_tick_count();
+            uint32_t elapsed = now - start_tick;
+            if (elapsed >= (uint32_t)timeout) return 0;
+        }
+
+        process_sleep(1);
+    }
+}
 
 static uint32_t pipe_read(fs_node_t* n, uint32_t offset, uint32_t size, uint8_t* buffer) {
     (void)offset;
@@ -804,6 +903,14 @@ static void syscall_handler(struct registers* regs) {
 
     if (syscall_no == SYSCALL_FORK) {
         regs->eax = (uint32_t)syscall_fork_impl(regs);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_POLL) {
+        struct pollfd* fds = (struct pollfd*)regs->ebx;
+        uint32_t nfds = regs->ecx;
+        int32_t timeout = (int32_t)regs->edx;
+        regs->eax = (uint32_t)syscall_poll_impl(fds, nfds, timeout);
         return;
     }
 
