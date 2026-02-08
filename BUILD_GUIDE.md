@@ -30,6 +30,11 @@ make ARCH=x86
 ```
 This produces `adros-x86.bin`.
 
+If you have an `i686-elf-*` cross toolchain installed, you can build using it via:
+```bash
+make ARCH=x86 CROSS=1
+```
+
 ### Create a bootable ISO (GRUB)
 For x86, the repository includes an `iso/` tree with GRUB already configured.
 
@@ -56,6 +61,12 @@ Generated outputs/artifacts:
 Static analysis helper:
 ```bash
 make ARCH=x86 cppcheck
+```
+
+Additional analysis helpers:
+```bash
+make ARCH=x86 scan-build
+make ARCH=x86 mkinitrd-asan
 ```
 
 To enable QEMU debug logging (disabled by default to avoid excessive I/O):

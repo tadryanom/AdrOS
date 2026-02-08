@@ -29,26 +29,36 @@ Notes:
 - [x] InitRD directory tree support
 - [x] `fs_node_t` abstraction with `read/finddir` for InitRD nodes
 - [x] `vfs_lookup()` absolute path resolver
-- [~] VFS is currently “single-root tree” (no mounts, no multiple fs)
-- [ ] Writable filesystem support
+- [x] VFS mount table support (`vfs_mount`)
+- [x] Writable filesystem support (`tmpfs`)
+- [x] `overlayfs` (copy-up overlay for root)
 
 ### Userspace bring-up
 - [x] ELF32 userspace loader from VFS (`/bin/init.elf`)
-- [~] Process model is minimal (no fork/exec/wait lifecycle)
+- [~] Process model is minimal, but Unix-like primitives exist (fork/exec/wait)
 - [x] `int 0x80` syscall entry (x86)
 
 ### Syscalls (current)
 - [x] `write(fd=1/2)`
-- [x] `exit()` (currently halts in kernel)
-- [x] `getpid()` (placeholder)
+- [x] `exit()` (closes FDs, marks zombie, notifies parent)
+- [~] `getpid()` (minimal)
 - [x] `open()` (read-only)
 - [x] `read()` (files + stdin)
 - [x] `close()`
+- [x] `waitpid()`
+- [x] `lseek()`
+- [x] `stat()` / `fstat()`
+- [x] `dup()` / `dup2()`
+- [x] `pipe()`
+- [x] `fork()`
+- [~] `execve()` (loads ELF from InitRD; minimal argv/envp)
 
 ### FD layer
 - [x] Per-process fd table (fd allocation starts at 3)
 - [x] File read offset tracking
-- [~] No `dup/dup2`, no `pipe`, no `lseek`
+- [x] `dup/dup2` with refcounted file objects
+- [x] `pipe()` with in-kernel ring buffer endpoints
+- [x] `lseek()`
 
 ### TTY
 - [x] TTY canonical input (line-buffered until `\n`)
@@ -65,25 +75,25 @@ Notes:
 Goal: make process termination and waiting work reliably; unblock shells and service managers.
 
 ### Kernel process lifecycle
-- [ ] Introduce parent/child relationship tracking
-- [ ] Track exit status per process
-- [ ] Transition to `PROCESS_ZOMBIE` on exit
-- [ ] Reap zombie processes and free resources
+- [x] Introduce parent/child relationship tracking
+- [x] Track exit status per process
+- [x] Transition to `PROCESS_ZOMBIE` on exit
+- [x] Reap zombie processes and free resources
 
 ### `exit()` cleanup
-- [ ] Close all open file descriptors for the process
-- [ ] Release process memory resources (as applicable in current model)
-- [ ] Remove process from run queues safely
+- [x] Close all open file descriptors for the process
+- [x] Release process memory resources (kernel stack + user addr_space when reaped)
+- [~] Remove process from run queues safely (best-effort; continues improving)
 
 ### `waitpid()` syscall
-- [ ] Add syscall number + userland wrapper
-- [ ] `waitpid(-1, ...)` wait for any child
-- [ ] `waitpid(pid, ...)` wait for specific child
+- [x] Add syscall number + userland wrapper
+- [x] `waitpid(-1, ...)` wait for any child
+- [x] `waitpid(pid, ...)` wait for specific child
 - [ ] Non-blocking mode (optional early): `WNOHANG`
-- [ ] Return semantics consistent with POSIX (pid on success, -1 on error)
+- [~] Return semantics consistent with POSIX (pid on success, -1 on error)
 
 ### Tests
-- [ ] Userspace test: parent spawns child, child exits, parent waits, validates status
+- [x] Userspace test: parent forks children, children exit, parent waits, validates status
 - [ ] Regression: ensure keyboard/TTY still works
 
 ---
@@ -93,21 +103,21 @@ Goal: make process termination and waiting work reliably; unblock shells and ser
 Goal: move from a shared address space to per-process virtual memory, required for real isolation and POSIX process semantics.
 
 ### Core VM changes
-- [ ] Per-process page directory / page tables
-- [ ] Context switch also switches address space
-- [ ] Kernel mapped in all address spaces
-- [ ] User/kernel separation rules enforced
+- [x] Per-process page directory / page tables
+- [x] Context switch also switches address space
+- [x] Kernel mapped in all address spaces
+- [~] User/kernel separation rules enforced (uaccess checks + no user mappings in kernel range)
 
 ### Syscall/uaccess hardening
 - [ ] Ensure `user_range_ok` is robust across per-process mappings
 - [ ] Page-fault handling for invalid user pointers (deliver `SIGSEGV` later)
 
 ### Userspace loader
-- [ ] ELF loader targets the new process address space
-- [ ] User stack per process
+- [x] ELF loader targets the new process address space
+- [x] User stack per process
 
 ### Tests
-- [ ] Smoke: boot + run `/bin/init.elf`
+- [x] Smoke: boot + run `/bin/init.elf`
 - [ ] Two-process test: verify isolation (write to memory in one does not affect other)
 
 ---
@@ -117,19 +127,19 @@ Goal: move from a shared address space to per-process virtual memory, required f
 Goal: unlock standard libc-style IO patterns.
 
 ### Syscalls
-- [ ] `lseek(fd, off, whence)`
-- [ ] `stat(path, struct stat*)`
-- [ ] `fstat(fd, struct stat*)`
+- [x] `lseek(fd, off, whence)`
+- [x] `stat(path, struct stat*)`
+- [x] `fstat(fd, struct stat*)`
 
 ### Kernel data model
-- [ ] Define minimal `struct stat` ABI (mode/type/size/inode)
-- [ ] Map InitRD node metadata to `stat`
+- [x] Define minimal `struct stat` ABI (mode/type/size/inode)
+- [x] Map InitRD node metadata to `stat`
 
 ### Error model
 - [ ] Start introducing `errno`-style error returns (strategy decision: negative errno vs -1 + errno)
 
 ### Tests
-- [ ] Userspace test: open -> fstat -> read -> lseek -> read
+- [x] Userspace test: open -> fstat -> read -> lseek -> read
 
 ---
 
@@ -138,15 +148,15 @@ Goal: unlock standard libc-style IO patterns.
 Goal: get a writable filesystem (even if volatile) and a real VFS layout.
 
 ### VFS mounts
-- [ ] Mount table support
-- [ ] `vfs_lookup` resolves across mounts
+- [x] Mount table support
+- [x] `vfs_lookup` resolves across mounts
 - [ ] Mount InitRD at `/` or at `/initrd` (decision)
 
 ### `tmpfs`
-- [ ] In-memory inode/dentry model
-- [ ] Create/unlink
-- [ ] Read/write
-- [ ] Directories
+- [x] In-memory inode/dentry model
+- [~] Create/unlink (limited)
+- [x] Read/write
+- [x] Directories
 
 ### Devices (minimum Unix feel)
 - [ ] `/dev` mount
@@ -154,21 +164,21 @@ Goal: get a writable filesystem (even if volatile) and a real VFS layout.
 - [ ] `/dev/null`
 
 ### Tests
-- [ ] Userspace test: create file in tmpfs, write, read back
+- [x] Userspace test: create file in tmpfs, write, read back
 
 ---
 
 ## 5) Later milestones (not started)
 
 ### Process / POSIX expansion
-- [ ] `fork()`
-- [ ] `execve()`
+- [x] `fork()`
+- [~] `execve()`
 - [ ] `getppid()`
 - [ ] Signals + basic job control
 
 ### Pipes + IO multiplexing
-- [ ] `pipe()`
-- [ ] `dup/dup2`
+- [x] `pipe()`
+- [x] `dup/dup2`
 - [ ] `select/poll`
 
 ### TTY advanced
