@@ -48,6 +48,9 @@ AdrOS is a multi-architecture operating system developed for research and academ
   - `SYSCALL_LSEEK`, `SYSCALL_STAT`, `SYSCALL_FSTAT`
   - `SYSCALL_DUP`, `SYSCALL_DUP2`, `SYSCALL_PIPE`
   - `SYSCALL_FORK`, `SYSCALL_EXECVE` (with minimal argv/envp stack setup)
+  - `SYSCALL_SELECT`, `SYSCALL_POLL`
+  - `SYSCALL_SIGACTION`, `SYSCALL_SIGPROCMASK`, `SYSCALL_KILL`
+  - `SYSCALL_SETSID`, `SYSCALL_SETPGID`, `SYSCALL_GETPGRP`
   - Per-process fd table (starting at fd=3)
   - Centralized user-pointer access API (`user_range_ok`, `copy_from_user`, `copy_to_user`)
   - Ring3 init program (`/bin/init.elf`) exercising IO + process + exec smoke tests
@@ -58,10 +61,15 @@ AdrOS is a multi-architecture operating system developed for research and academ
   - Echo + backspace handling
   - Blocking reads with a simple wait queue (multiple waiters)
   - `fd=0` wired to `tty_read`, `fd=1/2` wired to `tty_write`
+  - Minimal termios/ioctl support (`TCGETS`, `TCSETS`, `TIOCGPGRP`, `TIOCSPGRP`)
+  - Basic job control enforcement (`SIGTTIN`/`SIGTTOU` when background pgrp touches the controlling TTY)
 - **Devices (devfs)**
   - `/dev` mount
   - `/dev/null`
   - `/dev/tty`
+- **Persistent storage (x86 / QEMU)**
+  - ATA PIO driver (primary master IDE)
+  - Minimal on-disk persistence filesystem mounted at `/persist` (single `counter` file used by smoke tests)
 - **W^X (Option 1) for user ELFs (x86)**
   - User segments are mapped RW during load, then write permissions are dropped for non-writable segments
   - This provides "text is read-only" hardening without requiring NX/PAE
@@ -83,16 +91,15 @@ QEMU debug helpers:
   - Standardize arch entrypoint behavior (`arch_early_setup`) across architectures
 - **Userspace / POSIX process model**
   - `brk`/`sbrk`
-  - Signals (at least `SIGKILL`/`SIGSEGV` basics)
+  - Signal return ABI (`sigreturn`) and default actions for more signals (current support is minimal)
 - **Syscalls / ABI**
-  - `ioctl` (TTY), `getcwd`, `chdir`
+  - `getcwd`, `chdir`
   - Userspace `errno` variable + libc-style wrappers (`-1` return + `errno` set)
 - **Virtual memory hardening**
   - Option 2: PAE + NX enforcement (execute disable for data/stack)
   - Guard pages, and tighter user/kernel separation checks
 - **Filesystem**
-  - Real persisted storage (ATA/AHCI/virtio-blk or similar)
-  - Persisted storage (ATA/AHCI/virtio-blk or similar)
+  - Expand persisted storage beyond the current minimal `/persist` filesystem
   - Permissions/ownership (`uid/gid`, mode bits) and `umask`
   - Special files: block devices, `/proc`
   - Real on-disk fs (ext2/fat)
