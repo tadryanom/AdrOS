@@ -3,6 +3,7 @@
 #include "pmm.h"
 #include "vmm.h"
 #include "spinlock.h"
+#include "utils.h"
 #include "hal/cpu.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -93,6 +94,15 @@ void* kmalloc(size_t size) {
         if (current->magic != HEAP_MAGIC) {
             spin_unlock_irqrestore(&heap_lock, flags);
             uart_print("[HEAP] Corruption Detected in kmalloc scan!\n");
+            char a[11];
+            char m[11];
+            itoa_hex((uint32_t)(uintptr_t)current, a);
+            itoa_hex((uint32_t)current->magic, m);
+            uart_print("[HEAP] header=");
+            uart_print(a);
+            uart_print(" magic=");
+            uart_print(m);
+            uart_print("\n");
             for(;;) hal_cpu_idle();
         }
 
@@ -144,11 +154,29 @@ void kfree(void* ptr) {
         for(;;) hal_cpu_idle();
     }
 
+    if (header->is_free) {
+        spin_unlock_irqrestore(&heap_lock, flags);
+        uart_print("[HEAP] Double free detected!\n");
+        char a[11];
+        itoa_hex((uint32_t)(uintptr_t)header, a);
+        uart_print("[HEAP] header=");
+        uart_print(a);
+        uart_print("\n");
+        for(;;) hal_cpu_idle();
+    }
+
     header->is_free = 1;
     
     // 1. Coalesce Right (Forward)
     if (header->next && header->next->is_free) {
         heap_header_t* next_block = header->next;
+
+        // Only coalesce if physically adjacent.
+        heap_header_t* expected_next = (heap_header_t*)((uint8_t*)header + sizeof(heap_header_t) + header->size);
+        if (next_block != expected_next) {
+            spin_unlock_irqrestore(&heap_lock, flags);
+            return;
+        }
         
         header->size += sizeof(heap_header_t) + next_block->size;
         header->next = next_block->next;
@@ -163,6 +191,13 @@ void kfree(void* ptr) {
     // 2. Coalesce Left (Backward) - The Power of Double Links!
     if (header->prev && header->prev->is_free) {
         heap_header_t* prev_block = header->prev;
+
+        // Only coalesce if physically adjacent.
+        heap_header_t* expected_hdr = (heap_header_t*)((uint8_t*)prev_block + sizeof(heap_header_t) + prev_block->size);
+        if (expected_hdr != header) {
+            spin_unlock_irqrestore(&heap_lock, flags);
+            return;
+        }
         
         prev_block->size += sizeof(heap_header_t) + header->size;
         prev_block->next = header->next;

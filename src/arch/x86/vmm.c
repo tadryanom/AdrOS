@@ -1,5 +1,6 @@
 #include "vmm.h"
 #include "pmm.h"
+#include "heap.h"
 #include "uart_console.h"
 #include "utils.h"
 #include "hal/cpu.h"
@@ -113,6 +114,12 @@ uintptr_t vmm_as_clone_user(uintptr_t src_as) {
     uintptr_t new_as = vmm_as_create_kernel_clone();
     if (!new_as) return 0;
 
+    uint8_t* tmp = (uint8_t*)kmalloc(4096);
+    if (!tmp) {
+        vmm_as_destroy(new_as);
+        return 0;
+    }
+
     uint32_t* src_pd = (uint32_t*)P2V((uint32_t)src_as);
     const uint32_t* const boot_pd_virt = boot_pd;
 
@@ -148,18 +155,18 @@ uintptr_t vmm_as_clone_user(uintptr_t src_as) {
 
             // Copy contents by temporarily switching address spaces.
             uintptr_t old_as = hal_cpu_get_address_space();
-            uint8_t tmp[4096];
 
             vmm_as_activate(src_as);
-            memcpy(tmp, (const void*)va, sizeof(tmp));
+            memcpy(tmp, (const void*)va, 4096);
 
             vmm_as_activate(new_as);
-            memcpy((void*)va, tmp, sizeof(tmp));
+            memcpy((void*)va, tmp, 4096);
 
             vmm_as_activate(old_as);
         }
     }
 
+    kfree(tmp);
     return new_as;
 }
 
