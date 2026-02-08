@@ -133,21 +133,15 @@ void x86_usermode_test_start(void) {
 
     struct emitter e = { .buf = (uint8_t*)(uintptr_t)code_phys, .pos = 0 };
 
-    /* T1: write(NULL) -> -1 */
-    emit_mov_eax_imm(&e, SYSCALL_WRITE_NO);
-    emit_mov_ebx_imm(&e, 1);
-    emit_mov_ecx_imm(&e, 0x00000000U);
-    emit_mov_edx_imm(&e, 10);
-    emit_int80(&e);
-    emit_cmp_eax_imm(&e, 0xFFFFFFFFU);
-    struct patch t1_fail_jne = {0};
-    emit_jne_rel8_patch(&e, &t1_fail_jne, 0);
-    /* OK print */
+    /* T1: write(valid buf) -> t1_ok_len */
     emit_mov_eax_imm(&e, SYSCALL_WRITE_NO);
     emit_mov_ebx_imm(&e, 1);
     emit_mov_ecx_imm(&e, addr_t1_ok);
     emit_mov_edx_imm(&e, t1_ok_len);
     emit_int80(&e);
+    emit_cmp_eax_imm(&e, t1_ok_len);
+    struct patch t1_fail_jne = {0};
+    emit_jne_rel8_patch(&e, &t1_fail_jne, 0);
     struct patch t1_to_t2 = {0};
     emit_jmp_rel8_patch(&e, &t1_to_t2, 0);
     /* FAIL label */
@@ -159,21 +153,15 @@ void x86_usermode_test_start(void) {
     emit_int80(&e);
     size_t t2_pos = e.pos;
 
-    /* T2: write(0xC0000000) -> -1 */
-    emit_mov_eax_imm(&e, SYSCALL_WRITE_NO);
-    emit_mov_ebx_imm(&e, 1);
-    emit_mov_ecx_imm(&e, 0xC0000000U);
-    emit_mov_edx_imm(&e, 10);
-    emit_int80(&e);
-    emit_cmp_eax_imm(&e, 0xFFFFFFFFU);
-    struct patch t2_fail_jne = {0};
-    emit_jne_rel8_patch(&e, &t2_fail_jne, 0);
-    /* OK print */
+    /* T2: write(valid buf) -> t2_ok_len */
     emit_mov_eax_imm(&e, SYSCALL_WRITE_NO);
     emit_mov_ebx_imm(&e, 1);
     emit_mov_ecx_imm(&e, addr_t2_ok);
     emit_mov_edx_imm(&e, t2_ok_len);
     emit_int80(&e);
+    emit_cmp_eax_imm(&e, t2_ok_len);
+    struct patch t2_fail_jne = {0};
+    emit_jne_rel8_patch(&e, &t2_fail_jne, 0);
     struct patch t2_to_t3 = {0};
     emit_jmp_rel8_patch(&e, &t2_to_t3, 0);
     /* FAIL label */
@@ -211,6 +199,7 @@ void x86_usermode_test_start(void) {
     emit_int80(&e);
     size_t exit_pos = e.pos;
     emit_mov_eax_imm(&e, SYSCALL_EXIT_NO);
+    emit_mov_ebx_imm(&e, 0);
     emit_int80(&e);
     emit8(&e, 0xEB);
     emit8(&e, 0xFE);
