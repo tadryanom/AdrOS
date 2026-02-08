@@ -35,17 +35,22 @@ AdrOS is a multi-architecture operating system developed for research and academ
   - PIT timer + periodic tick
 - **Kernel services**
   - Simple scheduler / multitasking (kernel threads)
+  - Minimal process lifecycle: parent/child tracking, zombies, `waitpid`
   - Basic shell with built-in commands (fallback when userspace fails)
-- **InitRD + VFS (read-only)**
+- **InitRD + VFS + mounts**
   - InitRD image in TAR/USTAR format (with directory support)
   - InitRD-backed filesystem node tree (`fs_node_t` + `finddir`)
   - Absolute path lookup (`vfs_lookup("/bin/init.elf")`)
+  - Mount table support (`vfs_mount`) + `tmpfs` and `overlayfs`
 - **File descriptors + syscalls (x86)**
   - `int 0x80` syscall gate
   - `SYSCALL_WRITE`, `SYSCALL_EXIT`, `SYSCALL_GETPID`, `SYSCALL_OPEN`, `SYSCALL_READ`, `SYSCALL_CLOSE`
+  - `SYSCALL_LSEEK`, `SYSCALL_STAT`, `SYSCALL_FSTAT`
+  - `SYSCALL_DUP`, `SYSCALL_DUP2`, `SYSCALL_PIPE`
+  - `SYSCALL_FORK`, `SYSCALL_EXECVE` (with minimal argv/envp stack setup)
   - Per-process fd table (starting at fd=3)
   - Centralized user-pointer access API (`user_range_ok`, `copy_from_user`, `copy_to_user`)
-  - Ring3 init program (`/bin/init.elf`) exercising open/read/close
+  - Ring3 init program (`/bin/init.elf`) exercising IO + process + exec smoke tests
 - **TTY (canonical line discipline)**
   - Keyboard -> TTY input path
   - Canonical mode input (line-buffered until `\n`)
@@ -72,22 +77,20 @@ QEMU debug helpers:
   - Implement VMM/interrupts/scheduler for ARM/RISC-V/MIPS
   - Standardize arch entrypoint behavior (`arch_early_setup`) across architectures
 - **Userspace / POSIX process model**
-  - Per-process address spaces (currently a single shared address space)
-  - `fork`, `execve`, `waitpid`, `getppid`, `brk`/`sbrk`
-  - Proper process lifecycle: `exit` cleanup, zombies, reaping
+  - `getppid`, `brk`/`sbrk`
   - Signals (at least `SIGKILL`/`SIGSEGV` basics)
 - **Syscalls / ABI**
-  - `dup`, `dup2`, `pipe`, `ioctl` (TTY), `stat`, `fstat`, `lseek`, `getcwd`, `chdir`
+  - `ioctl` (TTY), `getcwd`, `chdir`
   - Error reporting via `errno` conventions
 - **Virtual memory hardening**
   - Option 2: PAE + NX enforcement (execute disable for data/stack)
   - Guard pages, and tighter user/kernel separation checks
 - **Filesystem**
-  - VFS mount table (multiple filesystems)
+  - Real persisted storage (ATA/AHCI/virtio-blk or similar)
   - Persisted storage (ATA/AHCI/virtio-blk or similar)
   - Permissions/ownership (`uid/gid`, mode bits) and `umask`
   - Special files: char devices, block devices, `/dev`, `/proc`
-  - Writable fs (tmpfs) and a real on-disk fs (ext2/fat)
+  - Real on-disk fs (ext2/fat)
 - **TTY / PTY**
   - Termios-like mode flags (canonical/raw, echo, erase, intr)
   - Sessions / process groups / controlling terminal
@@ -95,6 +98,7 @@ QEMU debug helpers:
 - **Observability & tooling**
   - Better memory stats (`mem` shell command)
   - Debug facilities (panic backtraces, symbolization, structured logs)
+  - CI-ish targets: `cppcheck`, `scan-build`, `mkinitrd-asan`
 
 ## Directory Structure
 - `src/kernel/` - Architecture-independent kernel code
