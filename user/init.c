@@ -19,6 +19,10 @@ enum {
 };
 
 enum {
+    WNOHANG = 1,
+};
+
+enum {
     SEEK_SET = 0,
     SEEK_CUR = 1,
     SEEK_END = 2,
@@ -576,6 +580,27 @@ void _start(void) {
             sys_exit(42);
         }
         children[i] = pid;
+    }
+
+    {
+        int pid = sys_fork();
+        if (pid == 0) {
+            volatile uint32_t x = 0;
+            for (uint32_t i = 0; i < 2000000U; i++) x += i;
+            sys_exit(7);
+        }
+        int st = 0;
+        int wp = sys_waitpid(pid, &st, WNOHANG);
+        if (wp == 0 || wp == pid) {
+            static const char msg[] = "[init] waitpid WNOHANG OK\n";
+            (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+        } else {
+            static const char msg[] = "[init] waitpid WNOHANG failed\n";
+            (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+        }
+        if (wp == 0) {
+            (void)sys_waitpid(pid, &st, 0);
+        }
     }
 
     int ok = 1;

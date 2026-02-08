@@ -70,8 +70,10 @@ static void process_reap_locked(struct process* p) {
     kfree(p);
 }
 
-int process_waitpid(int pid, int* status_out) {
+int process_waitpid(int pid, int* status_out, uint32_t options) {
     if (!current_process) return -1;
+
+    const uint32_t WNOHANG = 1U;
 
     while (1) {
         uintptr_t flags = spin_lock_irqsave(&sched_lock);
@@ -102,6 +104,11 @@ int process_waitpid(int pid, int* status_out) {
         if (!found_child) {
             spin_unlock_irqrestore(&sched_lock, flags);
             return -1;
+        }
+
+        if ((options & WNOHANG) != 0) {
+            spin_unlock_irqrestore(&sched_lock, flags);
+            return 0;
         }
 
         current_process->waiting = 1;

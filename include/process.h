@@ -67,8 +67,8 @@ extern void context_switch(uintptr_t* old_sp_ptr, uintptr_t new_sp);
 // Yield the CPU to the next process voluntarily
 void schedule(void);
 
-// Wait for a child to exit. Returns child's pid on success, -1 on error.
-int process_waitpid(int pid, int* status_out);
+// Wait for a child to exit. Returns child's pid on success, 0 on WNOHANG no-status, -1 on error.
+int process_waitpid(int pid, int* status_out, uint32_t options);
 
 // Mark current process as exiting and notify/wake a waiter (if any).
 void process_exit_notify(int status);

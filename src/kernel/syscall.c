@@ -697,7 +697,6 @@ static void syscall_handler(struct registers* regs) {
         int pid = (int)regs->ebx;
         int* user_status = (int*)regs->ecx;
         uint32_t options = regs->edx;
-        (void)options;
 
         if (user_status && user_range_ok(user_status, sizeof(int)) == 0) {
             regs->eax = (uint32_t)-1;
@@ -705,9 +704,14 @@ static void syscall_handler(struct registers* regs) {
         }
 
         int status = 0;
-        int retpid = process_waitpid(pid, &status);
+        int retpid = process_waitpid(pid, &status, options);
         if (retpid < 0) {
             regs->eax = (uint32_t)-1;
+            return;
+        }
+
+        if (retpid == 0) {
+            regs->eax = 0;
             return;
         }
 
