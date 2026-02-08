@@ -296,11 +296,11 @@ static struct file* fd_get(int fd) {
 }
 
 static int fd_close(int fd) {
-    if (!current_process) return -1;
-    if (fd < 0 || fd >= PROCESS_MAX_FILES) return -1;
+    if (!current_process) return -EBADF;
+    if (fd < 0 || fd >= PROCESS_MAX_FILES) return -EBADF;
 
     struct file* f = current_process->files[fd];
-    if (!f) return -1;
+    if (!f) return -EBADF;
     current_process->files[fd] = NULL;
 
     if (f->refcount > 0) {
@@ -534,12 +534,12 @@ static int syscall_lseek_impl(int fd, int32_t offset, int whence) {
 
 static int syscall_open_impl(const char* user_path, uint32_t flags) {
     (void)flags;
-    if (!user_path) return -1;
+    if (!user_path) return -EFAULT;
 
     char path[128];
     for (size_t i = 0; i < sizeof(path); i++) {
         if (copy_from_user(&path[i], &user_path[i], 1) < 0) {
-            return -1;
+            return -EFAULT;
         }
         if (path[i] == 0) break;
         if (i + 1 == sizeof(path)) {
@@ -549,11 +549,11 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
     }
 
     fs_node_t* node = vfs_lookup(path);
-    if (!node) return -1;
-    if (node->flags != FS_FILE) return -1;
+    if (!node) return -ENOENT;
+    if (node->flags != FS_FILE && node->flags != FS_CHARDEVICE) return -EINVAL;
 
     struct file* f = (struct file*)kmalloc(sizeof(*f));
-    if (!f) return -1;
+    if (!f) return -ENOMEM;
     f->node = node;
     f->offset = 0;
     f->flags = 0;
@@ -562,23 +562,23 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
     int fd = fd_alloc(f);
     if (fd < 0) {
         kfree(f);
-        return -1;
+        return -EMFILE;
     }
     return fd;
 }
 
 static int syscall_read_impl(int fd, void* user_buf, uint32_t len) {
-    if (len > 1024 * 1024) return -1;
-    if (user_range_ok(user_buf, (size_t)len) == 0) return -1;
+    if (len > 1024 * 1024) return -EINVAL;
+    if (user_range_ok(user_buf, (size_t)len) == 0) return -EFAULT;
 
     if (fd == 0 && (!current_process || !current_process->files[0])) {
         return tty_read(user_buf, len);
     }
 
-    if ((fd == 1 || fd == 2) && (!current_process || !current_process->files[fd])) return -1;
+    if ((fd == 1 || fd == 2) && (!current_process || !current_process->files[fd])) return -EBADF;
 
     struct file* f = fd_get(fd);
-    if (!f || !f->node) return -1;
+    if (!f || !f->node) return -EBADF;
 
     uint8_t kbuf[256];
     uint32_t total = 0;
@@ -590,7 +590,7 @@ static int syscall_read_impl(int fd, void* user_buf, uint32_t len) {
         if (rd == 0) break;
 
         if (copy_to_user((uint8_t*)user_buf + total, kbuf, rd) < 0) {
-            return -1;
+            return -EFAULT;
         }
 
         f->offset += rd;
@@ -704,14 +704,14 @@ static void syscall_handler(struct registers* regs) {
         uint32_t options = regs->edx;
 
         if (user_status && user_range_ok(user_status, sizeof(int)) == 0) {
-            regs->eax = (uint32_t)-1;
+            regs->eax = (uint32_t)-EFAULT;
             return;
         }
 
         int status = 0;
         int retpid = process_waitpid(pid, &status, options);
         if (retpid < 0) {
-            regs->eax = (uint32_t)-1;
+            regs->eax = (uint32_t)retpid;
             return;
         }
 
@@ -722,7 +722,7 @@ static void syscall_handler(struct registers* regs) {
 
         if (user_status) {
             if (copy_to_user(user_status, &status, sizeof(status)) < 0) {
-                regs->eax = (uint32_t)-1;
+                regs->eax = (uint32_t)-EFAULT;
                 return;
             }
         }
@@ -785,7 +785,7 @@ static void syscall_handler(struct registers* regs) {
         return;
     }
 
-    regs->eax = (uint32_t)-1;
+    regs->eax = (uint32_t)-ENOSYS;
 }
 
 void syscall_init(void) {

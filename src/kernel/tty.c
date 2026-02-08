@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "uart_console.h"
 #include "uaccess.h"
+#include "errno.h"
 
 #include "hal/cpu.h"
 
@@ -121,9 +122,9 @@ void tty_init(void) {
 }
 
 int tty_write(const void* user_buf, uint32_t len) {
-    if (!user_buf) return -1;
-    if (len > 1024 * 1024) return -1;
-    if (user_range_ok(user_buf, (size_t)len) == 0) return -1;
+    if (!user_buf) return -EFAULT;
+    if (len > 1024 * 1024) return -EINVAL;
+    if (user_range_ok(user_buf, (size_t)len) == 0) return -EFAULT;
 
     char kbuf[256];
     uint32_t remaining = len;
@@ -133,7 +134,7 @@ int tty_write(const void* user_buf, uint32_t len) {
         uint32_t chunk = remaining;
         if (chunk > sizeof(kbuf)) chunk = (uint32_t)sizeof(kbuf);
 
-        if (copy_from_user(kbuf, (const void*)up, (size_t)chunk) < 0) return -1;
+        if (copy_from_user(kbuf, (const void*)up, (size_t)chunk) < 0) return -EFAULT;
 
         for (uint32_t i = 0; i < chunk; i++) {
             uart_put_char(kbuf[i]);
@@ -147,10 +148,10 @@ int tty_write(const void* user_buf, uint32_t len) {
 }
 
 int tty_read(void* user_buf, uint32_t len) {
-    if (!user_buf) return -1;
-    if (len > 1024 * 1024) return -1;
-    if (user_range_ok(user_buf, (size_t)len) == 0) return -1;
-    if (!current_process) return -1;
+    if (!user_buf) return -EFAULT;
+    if (len > 1024 * 1024) return -EINVAL;
+    if (user_range_ok(user_buf, (size_t)len) == 0) return -EFAULT;
+    if (!current_process) return -ECHILD;
 
     while (1) {
         uintptr_t flags = spin_lock_irqsave(&tty_lock);
@@ -173,7 +174,7 @@ int tty_read(void* user_buf, uint32_t len) {
 
                 spin_unlock_irqrestore(&tty_lock, flags);
 
-                if (copy_to_user((uint8_t*)user_buf + total, kbuf, (size_t)chunk) < 0) return -1;
+                if (copy_to_user((uint8_t*)user_buf + total, kbuf, (size_t)chunk) < 0) return -EFAULT;
 
                 total += chunk;
                 flags = spin_lock_irqsave(&tty_lock);

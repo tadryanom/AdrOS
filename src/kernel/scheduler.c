@@ -6,6 +6,7 @@
 #include "timer.h" // Need access to current tick usually, but we pass it in wake_check
 #include "spinlock.h"
 #include "utils.h"
+#include "errno.h"
 #include "hal/cpu.h"
 #if defined(__i386__)
 #include "arch/x86/usermode.h"
@@ -71,7 +72,7 @@ static void process_reap_locked(struct process* p) {
 }
 
 int process_waitpid(int pid, int* status_out, uint32_t options) {
-    if (!current_process) return -1;
+    if (!current_process) return -ECHILD;
 
     const uint32_t WNOHANG = 1U;
 
@@ -103,7 +104,7 @@ int process_waitpid(int pid, int* status_out, uint32_t options) {
 
         if (!found_child) {
             spin_unlock_irqrestore(&sched_lock, flags);
-            return -1;
+            return -ECHILD;
         }
 
         if ((options & WNOHANG) != 0) {
