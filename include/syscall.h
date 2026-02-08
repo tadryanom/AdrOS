@@ -28,6 +28,7 @@ enum {
     SYSCALL_GETPPID = 17,
     SYSCALL_POLL = 18,
     SYSCALL_KILL = 19,
+    SYSCALL_SELECT = 20,
 };
 
 #endif

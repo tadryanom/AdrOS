@@ -20,6 +20,7 @@ enum {
     SYSCALL_GETPPID = 17,
     SYSCALL_POLL = 18,
     SYSCALL_KILL = 19,
+    SYSCALL_SELECT = 20,
 };
 
 struct pollfd {
@@ -64,6 +65,17 @@ static int sys_write(int fd, const void* buf, uint32_t len) {
         "int $0x80"
         : "=a"(ret)
         : "a"(SYSCALL_WRITE), "b"(fd), "c"(buf), "d"(len)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_select(uint32_t nfds, uint64_t* readfds, uint64_t* writefds, uint64_t* exceptfds, int32_t timeout) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_SELECT), "b"(nfds), "c"(readfds), "d"(writefds), "S"(exceptfds), "D"(timeout)
         : "memory"
     );
     return ret;
@@ -565,6 +577,47 @@ void _start(void) {
         (void)sys_close(fds[0]);
         (void)sys_close(fds[1]);
         sys_write(1, "[init] poll(pipe) OK\n", (uint32_t)(sizeof("[init] poll(pipe) OK\n") - 1));
+    }
+
+    {
+        int fds[2];
+        if (sys_pipe(fds) < 0) {
+            sys_write(1, "[init] select pipe setup failed\n",
+                      (uint32_t)(sizeof("[init] select pipe setup failed\n") - 1));
+            sys_exit(1);
+        }
+
+        uint64_t r = 0;
+        uint64_t w = 0;
+        r |= (1ULL << (uint32_t)fds[0]);
+        int rc = sys_select((uint32_t)(fds[0] + 1), &r, &w, 0, 0);
+        if (rc != 0) {
+            sys_write(1, "[init] select(pipe) expected 0\n",
+                      (uint32_t)(sizeof("[init] select(pipe) expected 0\n") - 1));
+            sys_exit(1);
+        }
+
+        static const char a = 'B';
+        if (sys_write(fds[1], &a, 1) != 1) {
+            sys_write(1, "[init] select pipe write failed\n",
+                      (uint32_t)(sizeof("[init] select pipe write failed\n") - 1));
+            sys_exit(1);
+        }
+
+        r = 0;
+        w = 0;
+        r |= (1ULL << (uint32_t)fds[0]);
+        rc = sys_select((uint32_t)(fds[0] + 1), &r, &w, 0, 0);
+        if (rc != 1 || ((r >> (uint32_t)fds[0]) & 1ULL) == 0) {
+            sys_write(1, "[init] select(pipe) expected readable\n",
+                      (uint32_t)(sizeof("[init] select(pipe) expected readable\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_close(fds[0]);
+        (void)sys_close(fds[1]);
+        sys_write(1, "[init] select(pipe) OK\n",
+                  (uint32_t)(sizeof("[init] select(pipe) OK\n") - 1));
     }
 
     {

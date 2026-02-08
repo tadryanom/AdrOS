@@ -34,6 +34,74 @@ enum {
     POLLHUP = 0x0010,
 };
 
+static int poll_wait_kfds(struct pollfd* kfds, uint32_t nfds, int32_t timeout);
+
+static int syscall_select_impl(uint32_t nfds,
+                               uint64_t* user_readfds,
+                               uint64_t* user_writefds,
+                               uint64_t* user_exceptfds,
+                               int32_t timeout) {
+    if (nfds > 64U) return -EINVAL;
+    if (user_exceptfds) return -EINVAL;
+
+    uint64_t rmask = 0;
+    uint64_t wmask = 0;
+    if (user_readfds) {
+        if (user_range_ok(user_readfds, sizeof(*user_readfds)) == 0) return -EFAULT;
+        if (copy_from_user(&rmask, user_readfds, sizeof(rmask)) < 0) return -EFAULT;
+    }
+    if (user_writefds) {
+        if (user_range_ok(user_writefds, sizeof(*user_writefds)) == 0) return -EFAULT;
+        if (copy_from_user(&wmask, user_writefds, sizeof(wmask)) < 0) return -EFAULT;
+    }
+
+    struct pollfd kfds[64];
+    uint32_t cnt = 0;
+    for (uint32_t fd = 0; fd < nfds; fd++) {
+        int16_t events = 0;
+        if ((rmask >> fd) & 1U) events |= POLLIN;
+        if ((wmask >> fd) & 1U) events |= POLLOUT;
+        if (!events) continue;
+
+        kfds[cnt].fd = (int)fd;
+        kfds[cnt].events = events;
+        kfds[cnt].revents = 0;
+        cnt++;
+    }
+
+    if (cnt == 0) {
+        if (user_readfds && copy_to_user(user_readfds, &rmask, sizeof(rmask)) < 0) return -EFAULT;
+        if (user_writefds && copy_to_user(user_writefds, &wmask, sizeof(wmask)) < 0) return -EFAULT;
+        return 0;
+    }
+
+    int rc = poll_wait_kfds(kfds, cnt, timeout);
+    if (rc < 0) return rc;
+
+    uint64_t r_out = 0;
+    uint64_t w_out = 0;
+    int ready = 0;
+
+    for (uint32_t i = 0; i < cnt; i++) {
+        uint32_t fd = (uint32_t)kfds[i].fd;
+        if ((kfds[i].revents & POLLIN) && ((rmask >> fd) & 1U)) {
+            r_out |= (1ULL << fd);
+        }
+        if ((kfds[i].revents & POLLOUT) && ((wmask >> fd) & 1U)) {
+            w_out |= (1ULL << fd);
+        }
+    }
+
+    uint64_t any = r_out | w_out;
+    for (uint32_t fd = 0; fd < nfds; fd++) {
+        if ((any >> fd) & 1ULL) ready++;
+    }
+
+    if (user_readfds && copy_to_user(user_readfds, &r_out, sizeof(r_out)) < 0) return -EFAULT;
+    if (user_writefds && copy_to_user(user_writefds, &w_out, sizeof(w_out)) < 0) return -EFAULT;
+    return ready;
+}
+
 static int execve_copy_user_str(char* out, size_t out_sz, const char* user_s) {
     if (!out || out_sz == 0 || !user_s) return -EFAULT;
     for (size_t i = 0; i < out_sz; i++) {
@@ -98,10 +166,9 @@ struct pipe_node {
     uint32_t is_read_end;
 };
 
-static int syscall_poll_impl(struct pollfd* user_fds, uint32_t nfds, int32_t timeout) {
-    if (!user_fds) return -EFAULT;
+static int poll_wait_kfds(struct pollfd* kfds, uint32_t nfds, int32_t timeout) {
+    if (!kfds) return -EINVAL;
     if (nfds > 64U) return -EINVAL;
-    if (user_range_ok(user_fds, sizeof(struct pollfd) * (size_t)nfds) == 0) return -EFAULT;
 
     // timeout semantics (minimal):
     //  - timeout == 0 : non-blocking
@@ -110,11 +177,7 @@ static int syscall_poll_impl(struct pollfd* user_fds, uint32_t nfds, int32_t tim
     extern uint32_t get_tick_count(void);
     uint32_t start_tick = get_tick_count();
 
-    struct pollfd kfds[64];
-
     for (;;) {
-        if (copy_from_user(kfds, user_fds, sizeof(struct pollfd) * (size_t)nfds) < 0) return -EFAULT;
-
         int ready = 0;
         for (uint32_t i = 0; i < nfds; i++) {
             kfds[i].revents = 0;
@@ -168,8 +231,6 @@ static int syscall_poll_impl(struct pollfd* user_fds, uint32_t nfds, int32_t tim
             if (kfds[i].revents) ready++;
         }
 
-        if (copy_to_user(user_fds, kfds, sizeof(struct pollfd) * (size_t)nfds) < 0) return -EFAULT;
-
         if (ready) return ready;
         if (timeout == 0) return 0;
 
@@ -181,6 +242,21 @@ static int syscall_poll_impl(struct pollfd* user_fds, uint32_t nfds, int32_t tim
 
         process_sleep(1);
     }
+}
+
+static int syscall_poll_impl(struct pollfd* user_fds, uint32_t nfds, int32_t timeout) {
+    if (!user_fds) return -EFAULT;
+    if (nfds > 64U) return -EINVAL;
+    if (user_range_ok(user_fds, sizeof(struct pollfd) * (size_t)nfds) == 0) return -EFAULT;
+
+    struct pollfd kfds[64];
+    if (copy_from_user(kfds, user_fds, sizeof(struct pollfd) * (size_t)nfds) < 0) return -EFAULT;
+
+    int rc = poll_wait_kfds(kfds, nfds, timeout);
+    if (rc < 0) return rc;
+
+    if (copy_to_user(user_fds, kfds, sizeof(struct pollfd) * (size_t)nfds) < 0) return -EFAULT;
+    return rc;
 }
 
 static uint32_t pipe_read(fs_node_t* n, uint32_t offset, uint32_t size, uint8_t* buffer) {
@@ -918,6 +994,16 @@ static void syscall_handler(struct registers* regs) {
         uint32_t pid = regs->ebx;
         int sig = (int)regs->ecx;
         regs->eax = (uint32_t)process_kill(pid, sig);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SELECT) {
+        uint32_t nfds = regs->ebx;
+        uint64_t* readfds = (uint64_t*)regs->ecx;
+        uint64_t* writefds = (uint64_t*)regs->edx;
+        uint64_t* exceptfds = (uint64_t*)regs->esi;
+        int32_t timeout = (int32_t)regs->edi;
+        regs->eax = (uint32_t)syscall_select_impl(nfds, readfds, writefds, exceptfds, timeout);
         return;
     }
 
