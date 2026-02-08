@@ -49,6 +49,10 @@ This produces `adros-x86.iso`.
 make ARCH=x86 run
 ```
 
+Persistent storage note:
+- The x86 QEMU run target attaches a `disk.img` file as an IDE drive (primary master).
+- `/persist` is mounted from this disk and is used by userspace smoke tests (e.g. `/persist/counter`).
+
 If you are iterating on kernel changes and want to avoid hanging runs, you can wrap it with a timeout:
 ```bash
 timeout 60s make ARCH=x86 run || true
