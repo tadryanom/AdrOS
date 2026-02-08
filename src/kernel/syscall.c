@@ -151,9 +151,9 @@ static void pipe_close(fs_node_t* n) {
 }
 
 static int pipe_node_create(struct pipe_state* ps, int is_read_end, fs_node_t** out_node) {
-    if (!ps || !out_node) return -1;
+    if (!ps || !out_node) return -EINVAL;
     struct pipe_node* pn = (struct pipe_node*)kmalloc(sizeof(*pn));
-    if (!pn) return -1;
+    if (!pn) return -ENOMEM;
     memset(pn, 0, sizeof(*pn));
 
     pn->ps = ps;
@@ -264,9 +264,9 @@ static int stat_from_node(const fs_node_t* node, struct stat* st) {
 }
 
 static int fd_alloc_from(int start_fd, struct file* f) {
-    if (!current_process || !f) return -1;
+    if (!current_process || !f) return -EINVAL;
     if (start_fd < 0) start_fd = 0;
-    if (start_fd >= PROCESS_MAX_FILES) return -1;
+    if (start_fd >= PROCESS_MAX_FILES) return -EINVAL;
 
     for (int fd = start_fd; fd < PROCESS_MAX_FILES; fd++) {
         if (current_process->files[fd] == NULL) {
@@ -274,11 +274,11 @@ static int fd_alloc_from(int start_fd, struct file* f) {
             return fd;
         }
     }
-    return -1;
+    return -EMFILE;
 }
 
 static int fd_alloc(struct file* f) {
-    if (!current_process || !f) return -1;
+    if (!current_process || !f) return -EINVAL;
 
     for (int fd = 3; fd < PROCESS_MAX_FILES; fd++) {
         if (current_process->files[fd] == NULL) {
@@ -286,7 +286,7 @@ static int fd_alloc(struct file* f) {
             return fd;
         }
     }
-    return -1;
+    return -EMFILE;
 }
 
 static struct file* fd_get(int fd) {
