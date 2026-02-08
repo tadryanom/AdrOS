@@ -71,6 +71,70 @@ static void process_reap_locked(struct process* p) {
     kfree(p);
 }
 
+static void process_close_all_files_locked(struct process* p) {
+    if (!p) return;
+    for (int fd = 0; fd < PROCESS_MAX_FILES; fd++) {
+        struct file* f = p->files[fd];
+        if (!f) continue;
+        p->files[fd] = NULL;
+
+        if (f->refcount > 0) {
+            f->refcount--;
+        }
+        if (f->refcount == 0) {
+            if (f->node) {
+                vfs_close(f->node);
+            }
+            kfree(f);
+        }
+    }
+}
+
+int process_kill(uint32_t pid, int sig) {
+    // Minimal: support SIGKILL only.
+    const int SIG_KILL = 9;
+    if (pid == 0) return -EINVAL;
+    if (sig != SIG_KILL) return -EINVAL;
+
+    // Killing self: just exit via existing path.
+    if (current_process && current_process->pid == pid) {
+        process_exit_notify(128 + sig);
+        hal_cpu_enable_interrupts();
+        schedule();
+        for (;;) hal_cpu_idle();
+    }
+
+    uintptr_t flags = spin_lock_irqsave(&sched_lock);
+    struct process* p = process_find_locked(pid);
+    if (!p || p->pid == 0) {
+        spin_unlock_irqrestore(&sched_lock, flags);
+        return -ESRCH;
+    }
+
+    if (p->state == PROCESS_ZOMBIE) {
+        spin_unlock_irqrestore(&sched_lock, flags);
+        return 0;
+    }
+
+    process_close_all_files_locked(p);
+    p->exit_status = 128 + sig;
+    p->state = PROCESS_ZOMBIE;
+
+    if (p->pid != 0) {
+        struct process* parent = process_find_locked(p->parent_pid);
+        if (parent && parent->state == PROCESS_BLOCKED && parent->waiting) {
+            if (parent->wait_pid == -1 || parent->wait_pid == (int)p->pid) {
+                parent->wait_result_pid = (int)p->pid;
+                parent->wait_result_status = p->exit_status;
+                parent->state = PROCESS_READY;
+            }
+        }
+    }
+
+    spin_unlock_irqrestore(&sched_lock, flags);
+    return 0;
+}
+
 int process_waitpid(int pid, int* status_out, uint32_t options) {
     if (!current_process) return -ECHILD;
 
@@ -345,16 +409,17 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
 
 // Find next READY process
 struct process* get_next_ready_process(void) {
+    if (!current_process) return NULL;
+    if (!current_process->next) return current_process;
+
     struct process* iterator = current_process->next;
-    
-    // Safety Break to prevent infinite loop if list broken
-    int count = 0;
-    while (iterator != current_process && count < 100) {
+
+    // Scan the full circular list for a READY process.
+    while (iterator && iterator != current_process) {
         if (iterator->state == PROCESS_READY) {
             return iterator;
         }
         iterator = iterator->next;
-        count++;
     }
     
     // If current is ready/running, return it.
@@ -365,11 +430,11 @@ struct process* get_next_ready_process(void) {
     // Assuming PID 0 is always in the list.
     // Search specifically for PID 0
     iterator = current_process->next;
-    while (iterator->pid != 0) {
+    while (iterator && iterator->pid != 0) {
         iterator = iterator->next;
         if (iterator == current_process) break; // Should not happen
     }
-    return iterator; // Return idle task
+    return iterator ? iterator : current_process;
 }
 
 void schedule(void) {

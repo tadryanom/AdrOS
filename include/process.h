@@ -73,6 +73,9 @@ int process_waitpid(int pid, int* status_out, uint32_t options);
 // Mark current process as exiting and notify/wake a waiter (if any).
 void process_exit_notify(int status);
 
+// Kill a process (minimal signals). Returns 0 on success or -errno.
+int process_kill(uint32_t pid, int sig);
+
 // Create a child process that will resume in usermode from a saved register frame.
 struct process* process_fork_create(uintptr_t child_as, const struct registers* child_regs);
 

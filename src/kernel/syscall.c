@@ -914,6 +914,13 @@ static void syscall_handler(struct registers* regs) {
         return;
     }
 
+    if (syscall_no == SYSCALL_KILL) {
+        uint32_t pid = regs->ebx;
+        int sig = (int)regs->ecx;
+        regs->eax = (uint32_t)process_kill(pid, sig);
+        return;
+    }
+
     regs->eax = (uint32_t)-ENOSYS;
 }
 

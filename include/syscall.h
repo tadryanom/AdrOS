@@ -27,6 +27,7 @@ enum {
     SYSCALL_FORK = 16,
     SYSCALL_GETPPID = 17,
     SYSCALL_POLL = 18,
+    SYSCALL_KILL = 19,
 };
 
 #endif

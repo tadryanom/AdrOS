@@ -19,6 +19,7 @@ enum {
     SYSCALL_FORK = 16,
     SYSCALL_GETPPID = 17,
     SYSCALL_POLL = 18,
+    SYSCALL_KILL = 19,
 };
 
 struct pollfd {
@@ -30,6 +31,10 @@ struct pollfd {
 enum {
     POLLIN = 0x0001,
     POLLOUT = 0x0004,
+};
+
+enum {
+    SIGKILL = 9,
 };
 
 enum {
@@ -58,6 +63,17 @@ static int sys_write(int fd, const void* buf, uint32_t len) {
         "int $0x80"
         : "=a"(ret)
         : "a"(SYSCALL_WRITE), "b"(fd), "c"(buf), "d"(len)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_kill(int pid, int sig) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_KILL), "b"(pid), "c"(sig)
         : "memory"
     );
     return ret;
@@ -461,12 +477,55 @@ void _start(void) {
                       (uint32_t)(sizeof("[init] pipe dup2 read failed\n") - 1));
             sys_exit(1);
         }
+        sys_write(1, "[init] pipe OK\n", (uint32_t)(sizeof("[init] pipe OK\n") - 1));
 
-        (void)sys_close(1);
         (void)sys_close(pfds[0]);
         (void)sys_close(pfds[1]);
 
-        sys_write(1, "[init] pipe OK\n", (uint32_t)(sizeof("[init] pipe OK\n") - 1));
+        int tfd = sys_open("/dev/tty", 0);
+        if (tfd < 0) {
+            sys_write(1, "[init] /dev/tty open failed\n",
+                      (uint32_t)(sizeof("[init] /dev/tty open failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_dup2(tfd, 1) != 1) {
+            sys_write(1, "[init] dup2 restore tty failed\n",
+                      (uint32_t)(sizeof("[init] dup2 restore tty failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(tfd);
+
+    {
+        int pid = sys_fork();
+        if (pid < 0) {
+            sys_write(1, "[init] kill test fork failed\n",
+                      (uint32_t)(sizeof("[init] kill test fork failed\n") - 1));
+            sys_exit(1);
+        }
+
+        if (pid == 0) {
+            for (;;) {
+                __asm__ volatile("nop");
+            }
+        }
+
+        if (sys_kill(pid, SIGKILL) < 0) {
+            sys_write(1, "[init] kill(SIGKILL) failed\n",
+                      (uint32_t)(sizeof("[init] kill(SIGKILL) failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int st = 0;
+        int rp = sys_waitpid(pid, &st, 0);
+        if (rp != pid || st != (128 + SIGKILL)) {
+            sys_write(1, "[init] kill test waitpid mismatch\n",
+                      (uint32_t)(sizeof("[init] kill test waitpid mismatch\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] kill(SIGKILL) OK\n",
+                  (uint32_t)(sizeof("[init] kill(SIGKILL) OK\n") - 1));
+    }
 
     {
         int fds[2];

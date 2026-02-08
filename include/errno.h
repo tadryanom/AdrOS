@@ -13,6 +13,7 @@
 #define EINVAL 22
 #define ENOSPC 28
 #define EPIPE 32
+#define ESRCH 3
 #define EMFILE 24
 #define ESPIPE 29
 #define ENOSYS 38
