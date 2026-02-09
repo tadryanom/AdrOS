@@ -423,7 +423,9 @@ __attribute__((noreturn)) static void sys_exit(int code) {
         : "a"(SYSCALL_EXIT), "b"(code)
         : "memory"
     );
-    __builtin_unreachable();
+    for (;;) {
+        __asm__ volatile("hlt");
+    }
 }
 
 static volatile int got_usr1 = 0;
@@ -451,6 +453,13 @@ static void ttin_handler(int sig) {
 static void ttou_handler(int sig) {
     (void)sig;
     got_ttou = 1;
+}
+
+static void sigsegv_exit_handler(int sig) {
+    (void)sig;
+    static const char msg[] = "[init] SIGSEGV handler invoked\n";
+    (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+    sys_exit(0);
 }
 
 void _start(void) {
@@ -998,11 +1007,10 @@ void _start(void) {
                   (uint32_t)(sizeof("[init] setsid test: before fork\n") - 1));
         int pid = sys_fork();
         if (pid < 0) {
-            sys_write(1, "[init] setsid test fork failed\n",
-                      (uint32_t)(sizeof("[init] setsid test fork failed\n") - 1));
-            sys_exit(1);
+            static const char smsg[] = "[init] fork failed\n";
+            (void)sys_write(1, smsg, (uint32_t)(sizeof(smsg) - 1));
+            sys_exit(2);
         }
-
         if (pid == 0) {
             sys_write(1, "[init] setsid test: child start\n",
                       (uint32_t)(sizeof("[init] setsid test: child start\n") - 1));
@@ -1377,14 +1385,19 @@ void _start(void) {
         }
 
         if (pid == 0) {
-            volatile uint32_t* p = (volatile uint32_t*)0;
-            *p = 1;
-            sys_exit(1);
+            if (sys_sigaction(SIGSEGV, sigsegv_exit_handler, 0) < 0) {
+                static const char msg[] = "[init] sigaction(SIGSEGV) failed\n";
+                (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+                sys_exit(1);
+            }
+
+            *(volatile uint32_t*)0x0 = 123;
+            sys_exit(2);
         }
 
         int st = 0;
         int wp = sys_waitpid(pid, &st, 0);
-        if (wp == pid && st == (128 + SIGSEGV)) {
+        if (wp == pid && st == 0) {
             static const char msg[] = "[init] SIGSEGV OK\n";
             (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
         } else {

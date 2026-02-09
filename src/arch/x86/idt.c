@@ -284,13 +284,16 @@ void isr_handler(struct registers* regs) {
         // If Exception (0-31), Panic
         if (regs->int_no < 32) {
             if (regs->int_no == 14) {
-                // If page fault came from ring3, treat it as a SIGSEGV-like fatal event.
+                // If page fault came from ring3, convert it into a SIGSEGV delivery.
+                // Default action for SIGSEGV will terminate the process, but a user
+                // handler installed via sigaction() must be respected.
                 if ((regs->cs & 3U) == 3U) {
                     const int SIG_SEGV = 11;
-                    process_exit_notify(128 + SIG_SEGV);
-                    __asm__ volatile("sti");
-                    schedule();
-                    for (;;) __asm__ volatile("hlt");
+                    if (current_process) {
+                        current_process->sig_pending_mask |= (1U << (uint32_t)SIG_SEGV);
+                    }
+                    deliver_signals_to_usermode(regs);
+                    return;
                 }
             }
 
