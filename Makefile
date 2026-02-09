@@ -119,10 +119,10 @@ $(MKINITRD): tools/mkinitrd.c
 	@gcc tools/mkinitrd.c -o $(MKINITRD)
 
 $(USER_ELF): user/init.c user/linker.ld
-	@i686-elf-gcc -m32 -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(USER_ELF) user/init.c
+	@i686-elf-gcc -m32 -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(USER_ELF) user/init.c user/errno.c
 
 $(ECHO_ELF): user/echo.c user/linker.ld
-	@i686-elf-gcc -m32 -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(ECHO_ELF) user/echo.c
+	@i686-elf-gcc -m32 -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(ECHO_ELF) user/echo.c user/errno.c
 
 $(INITRD_IMG): $(MKINITRD) $(USER_ELF) $(ECHO_ELF)
 	@./$(MKINITRD) $(INITRD_IMG) $(USER_ELF):bin/init.elf $(ECHO_ELF):bin/echo.elf

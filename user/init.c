@@ -29,6 +29,8 @@
 #undef SEEK_END
 #endif
 
+#include "user_errno.h"
+
 enum {
     SYSCALL_WRITE = 1,
     SYSCALL_EXIT  = 2,
@@ -123,7 +125,7 @@ static int sys_write(int fd, const void* buf, uint32_t len) {
         : "a"(SYSCALL_WRITE), "b"(fd), "c"(buf), "d"(len)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 static void write_int_dec(int v) {
@@ -179,7 +181,7 @@ static int sys_sigaction(int sig, void (*handler)(int), uintptr_t* old_out) {
         : "a"(SYSCALL_SIGACTION), "b"(sig), "c"(handler), "d"(old_out)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 static int sys_select(uint32_t nfds, uint64_t* readfds, uint64_t* writefds, uint64_t* exceptfds, int32_t timeout) {
@@ -190,7 +192,7 @@ static int sys_select(uint32_t nfds, uint64_t* readfds, uint64_t* writefds, uint
         : "a"(SYSCALL_SELECT), "b"(nfds), "c"(readfds), "d"(writefds), "S"(exceptfds), "D"(timeout)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 static int sys_ioctl(int fd, uint32_t cmd, void* arg) {
@@ -201,7 +203,7 @@ static int sys_ioctl(int fd, uint32_t cmd, void* arg) {
         : "a"(SYSCALL_IOCTL), "b"(fd), "c"(cmd), "d"(arg)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 static int sys_kill(int pid, int sig) {
@@ -212,7 +214,7 @@ static int sys_kill(int pid, int sig) {
         : "a"(SYSCALL_KILL), "b"(pid), "c"(sig)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 static int sys_poll(struct pollfd* fds, uint32_t nfds, int32_t timeout) {
@@ -223,7 +225,7 @@ static int sys_poll(struct pollfd* fds, uint32_t nfds, int32_t timeout) {
         : "a"(SYSCALL_POLL), "b"(fds), "c"(nfds), "d"(timeout)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 static int sys_setsid(void) {
@@ -234,7 +236,7 @@ static int sys_setsid(void) {
         : "a"(SYSCALL_SETSID)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 static int sys_setpgid(int pid, int pgid) {
@@ -245,7 +247,7 @@ static int sys_setpgid(int pid, int pgid) {
         : "a"(SYSCALL_SETPGID), "b"(pid), "c"(pgid)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 static int sys_getpgrp(void) {
@@ -256,7 +258,7 @@ static int sys_getpgrp(void) {
         : "a"(SYSCALL_GETPGRP)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 static int sys_getpid(void) {
@@ -267,7 +269,7 @@ static int sys_getpid(void) {
         : "a"(SYSCALL_GETPID)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 static int sys_getppid(void) {
@@ -278,7 +280,7 @@ static int sys_getppid(void) {
         : "a"(SYSCALL_GETPPID)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 static int sys_fork(void) {
@@ -289,7 +291,7 @@ static int sys_fork(void) {
         : "a"(SYSCALL_FORK)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 static int sys_execve(const char* path, const char* const* argv, const char* const* envp) {
@@ -300,7 +302,7 @@ static int sys_execve(const char* path, const char* const* argv, const char* con
         : "a"(SYSCALL_EXECVE), "b"(path), "c"(argv), "d"(envp)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 static int sys_pipe(int fds[2]) {
@@ -311,7 +313,7 @@ static int sys_pipe(int fds[2]) {
         : "a"(SYSCALL_PIPE), "b"(fds)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 static int sys_dup(int oldfd) {
@@ -322,7 +324,7 @@ static int sys_dup(int oldfd) {
         : "a"(SYSCALL_DUP), "b"(oldfd)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 static int sys_dup2(int oldfd, int newfd) {
@@ -333,7 +335,7 @@ static int sys_dup2(int oldfd, int newfd) {
         : "a"(SYSCALL_DUP2), "b"(oldfd), "c"(newfd)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 static int sys_waitpid(int pid, int* status, uint32_t options) {
@@ -344,7 +346,7 @@ static int sys_waitpid(int pid, int* status, uint32_t options) {
         : "a"(SYSCALL_WAITPID), "b"(pid), "c"(status), "d"(options)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 static int sys_open(const char* path, uint32_t flags) {
@@ -355,7 +357,7 @@ static int sys_open(const char* path, uint32_t flags) {
         : "a"(SYSCALL_OPEN), "b"(path), "c"(flags)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 static int sys_read(int fd, void* buf, uint32_t len) {
@@ -366,7 +368,7 @@ static int sys_read(int fd, void* buf, uint32_t len) {
         : "a"(SYSCALL_READ), "b"(fd), "c"(buf), "d"(len)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 static int sys_close(int fd) {
@@ -377,7 +379,7 @@ static int sys_close(int fd) {
         : "a"(SYSCALL_CLOSE), "b"(fd)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 static int sys_lseek(int fd, int32_t offset, int whence) {
@@ -388,7 +390,7 @@ static int sys_lseek(int fd, int32_t offset, int whence) {
         : "a"(SYSCALL_LSEEK), "b"(fd), "c"(offset), "d"(whence)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 static int sys_fstat(int fd, struct stat* st) {
@@ -399,7 +401,7 @@ static int sys_fstat(int fd, struct stat* st) {
         : "a"(SYSCALL_FSTAT), "b"(fd), "c"(st)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 static int sys_stat(const char* path, struct stat* st) {
@@ -410,7 +412,7 @@ static int sys_stat(const char* path, struct stat* st) {
         : "a"(SYSCALL_STAT), "b"(path), "c"(st)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 __attribute__((noreturn)) static void sys_exit(int code) {
