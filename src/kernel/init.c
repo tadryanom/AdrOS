@@ -8,6 +8,7 @@
 #include "tmpfs.h"
 #include "devfs.h"
 #include "tty.h"
+#include "pty.h"
 #include "persistfs.h"
 #include "uart_console.h"
 
@@ -64,6 +65,7 @@ int init_start(const struct boot_info* bi) {
     }
 
     tty_init();
+    pty_init();
 
     fs_node_t* dev = devfs_create_root();
     if (dev) {

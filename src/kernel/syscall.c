@@ -9,6 +9,7 @@
 
 #include "heap.h"
 #include "tty.h"
+#include "pty.h"
 
 #include "errno.h"
 #include "elf.h"
@@ -236,6 +237,12 @@ static int poll_wait_kfds(struct pollfd* kfds, uint32_t nfds, int32_t timeout) {
                 } else if (n->inode == 3) {
                     if ((kfds[i].events & POLLIN) && tty_can_read()) kfds[i].revents |= POLLIN;
                     if ((kfds[i].events & POLLOUT) && tty_can_write()) kfds[i].revents |= POLLOUT;
+                } else if (n->inode == 4) {
+                    if ((kfds[i].events & POLLIN) && pty_master_can_read()) kfds[i].revents |= POLLIN;
+                    if ((kfds[i].events & POLLOUT) && pty_master_can_write()) kfds[i].revents |= POLLOUT;
+                } else if (n->inode == 6) {
+                    if ((kfds[i].events & POLLIN) && pty_slave_can_read()) kfds[i].revents |= POLLIN;
+                    if ((kfds[i].events & POLLOUT) && pty_slave_can_write()) kfds[i].revents |= POLLOUT;
                 }
             } else {
                 // Regular files are always readable/writable (best-effort).
@@ -870,9 +877,9 @@ static int syscall_ioctl_impl(int fd, uint32_t cmd, void* user_arg) {
 
     fs_node_t* n = f->node;
     if (n->flags != FS_CHARDEVICE) return -ENOTTY;
-    if (n->inode != 3) return -ENOTTY;
-
-    return tty_ioctl(cmd, user_arg);
+    if (n->inode == 3) return tty_ioctl(cmd, user_arg);
+    if (n->inode == 6) return pty_slave_ioctl(cmd, user_arg);
+    return -ENOTTY;
 }
 
 static int syscall_setsid_impl(void) {

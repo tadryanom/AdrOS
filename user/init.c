@@ -175,6 +175,15 @@ static void write_hex32(uint32_t v) {
     (void)sys_write(1, b, 8);
 }
 
+static int memeq(const void* a, const void* b, uint32_t n) {
+    const uint8_t* pa = (const uint8_t*)a;
+    const uint8_t* pb = (const uint8_t*)b;
+    for (uint32_t i = 0; i < n; i++) {
+        if (pa[i] != pb[i]) return 0;
+    }
+    return 1;
+}
+
 static int sys_sigaction2(int sig, const struct sigaction* act, struct sigaction* oldact) {
     int ret;
     __asm__ volatile(
@@ -1031,6 +1040,70 @@ void _start(void) {
         (void)sys_close(fd);
         sys_write(1, "[init] poll(/dev/null) OK\n",
                   (uint32_t)(sizeof("[init] poll(/dev/null) OK\n") - 1));
+    }
+
+    {
+        int mfd = sys_open("/dev/ptmx", 0);
+        int sfd = sys_open("/dev/pts/0", 0);
+        if (mfd < 0 || sfd < 0) {
+            sys_write(1, "[init] pty open failed\n",
+                      (uint32_t)(sizeof("[init] pty open failed\n") - 1));
+            sys_exit(1);
+        }
+
+        static const char m2s[] = "m2s";
+        if (sys_write(mfd, m2s, (uint32_t)(sizeof(m2s) - 1)) != (int)(sizeof(m2s) - 1)) {
+            sys_write(1, "[init] pty write master failed\n",
+                      (uint32_t)(sizeof("[init] pty write master failed\n") - 1));
+            sys_exit(1);
+        }
+
+        struct pollfd p;
+        p.fd = sfd;
+        p.events = POLLIN;
+        p.revents = 0;
+        int rc = sys_poll(&p, 1, 50);
+        if (rc != 1 || (p.revents & POLLIN) == 0) {
+            sys_write(1, "[init] pty poll slave failed\n",
+                      (uint32_t)(sizeof("[init] pty poll slave failed\n") - 1));
+            sys_exit(1);
+        }
+
+        char buf[8];
+        int rd = sys_read(sfd, buf, (uint32_t)(sizeof(m2s) - 1));
+        if (rd != (int)(sizeof(m2s) - 1) || !memeq(buf, m2s, (uint32_t)(sizeof(m2s) - 1))) {
+            sys_write(1, "[init] pty read slave failed\n",
+                      (uint32_t)(sizeof("[init] pty read slave failed\n") - 1));
+            sys_exit(1);
+        }
+
+        static const char s2m[] = "s2m";
+        if (sys_write(sfd, s2m, (uint32_t)(sizeof(s2m) - 1)) != (int)(sizeof(s2m) - 1)) {
+            sys_write(1, "[init] pty write slave failed\n",
+                      (uint32_t)(sizeof("[init] pty write slave failed\n") - 1));
+            sys_exit(1);
+        }
+
+        p.fd = mfd;
+        p.events = POLLIN;
+        p.revents = 0;
+        rc = sys_poll(&p, 1, 50);
+        if (rc != 1 || (p.revents & POLLIN) == 0) {
+            sys_write(1, "[init] pty poll master failed\n",
+                      (uint32_t)(sizeof("[init] pty poll master failed\n") - 1));
+            sys_exit(1);
+        }
+
+        rd = sys_read(mfd, buf, (uint32_t)(sizeof(s2m) - 1));
+        if (rd != (int)(sizeof(s2m) - 1) || !memeq(buf, s2m, (uint32_t)(sizeof(s2m) - 1))) {
+            sys_write(1, "[init] pty read master failed\n",
+                      (uint32_t)(sizeof("[init] pty read master failed\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_close(mfd);
+        (void)sys_close(sfd);
+        sys_write(1, "[init] pty OK\n", (uint32_t)(sizeof("[init] pty OK\n") - 1));
     }
 
     {
