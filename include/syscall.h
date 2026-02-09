@@ -46,6 +46,7 @@ enum {
 
     SYSCALL_SIGACTION = 25,
     SYSCALL_SIGPROCMASK = 26,
+    SYSCALL_SIGRETURN = 27,
 };
 
 #endif
