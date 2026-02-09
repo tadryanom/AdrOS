@@ -9,6 +9,8 @@
 
 #include <stdint.h>
 
+#include "user_errno.h"
+
 enum {
     SYSCALL_WRITE = 1,
     SYSCALL_EXIT  = 2,
@@ -22,7 +24,7 @@ static int sys_write(int fd, const void* buf, uint32_t len) {
         : "a"(SYSCALL_WRITE), "b"(fd), "c"(buf), "d"(len)
         : "memory"
     );
-    return ret;
+    return __syscall_fix(ret);
 }
 
 static uint32_t ustrlen(const char* s) {
