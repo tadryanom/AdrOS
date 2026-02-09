@@ -4,9 +4,17 @@
 #include "process.h"
 #include "spinlock.h"
 #include "uaccess.h"
+#include "syscall.h"
 #include <stddef.h>
 
 #define IDT_ENTRIES 256
+
+static const uint32_t SIGFRAME_MAGIC = 0x53494746U; // 'SIGF'
+
+struct sigframe {
+    uint32_t magic;
+    struct registers saved;
+};
 
 struct idt_entry idt[IDT_ENTRIES];
 struct idt_ptr idtp;
@@ -77,12 +85,50 @@ static void deliver_signals_to_usermode(struct registers* regs) {
         return;
     }
 
-    uint32_t frame[2];
-    frame[0] = regs->eip;
-    frame[1] = (uint32_t)sig;
+    // Build a sigframe + a tiny user trampoline that calls SYSCALL_SIGRETURN.
+    // Stack layout at handler entry (regs->useresp):
+    //   [esp+0] return address -> trampoline
+    //   [esp+4] int sig
+    // Below that: trampoline code bytes, below that: sigframe.
 
-    const uint32_t new_esp = regs->useresp - (uint32_t)sizeof(frame);
-    if (copy_to_user((void*)(uintptr_t)new_esp, frame, sizeof(frame)) < 0) {
+    struct sigframe f;
+    f.magic = SIGFRAME_MAGIC;
+    f.saved = *regs;
+
+    const uint32_t tramp_size = 14U;
+    const uint32_t base = regs->useresp - (8U + tramp_size + (uint32_t)sizeof(f));
+    const uint32_t retaddr_slot = base;
+    const uint32_t tramp_addr = base + 8U;
+    const uint32_t sigframe_addr = tramp_addr + tramp_size;
+
+    // Trampoline bytes:
+    //   mov eax, SYSCALL_SIGRETURN
+    //   mov ebx, <sigframe_addr>
+    //   int 0x80
+    //   jmp .
+    uint8_t tramp[14];
+    tramp[0] = 0xB8;
+    {
+        const uint32_t no = (uint32_t)SYSCALL_SIGRETURN;
+        tramp[1] = (uint8_t)(no & 0xFFU);
+        tramp[2] = (uint8_t)((no >> 8) & 0xFFU);
+        tramp[3] = (uint8_t)((no >> 16) & 0xFFU);
+        tramp[4] = (uint8_t)((no >> 24) & 0xFFU);
+    }
+    tramp[5] = 0xBB;
+    // tramp[6..9] patched with sigframe address below
+    tramp[10] = 0xCD;
+    tramp[11] = 0x80;
+    tramp[12] = 0xEB;
+    tramp[13] = 0xFE;
+
+    tramp[6] = (uint8_t)(sigframe_addr & 0xFFU);
+    tramp[7] = (uint8_t)((sigframe_addr >> 8) & 0xFFU);
+    tramp[8] = (uint8_t)((sigframe_addr >> 16) & 0xFFU);
+    tramp[9] = (uint8_t)((sigframe_addr >> 24) & 0xFFU);
+
+    if (copy_to_user((void*)(uintptr_t)sigframe_addr, &f, sizeof(f)) < 0 ||
+        copy_to_user((void*)(uintptr_t)tramp_addr, tramp, sizeof(tramp)) < 0) {
         const int SIG_SEGV = 11;
         process_exit_notify(128 + SIG_SEGV);
         __asm__ volatile("sti");
@@ -90,7 +136,18 @@ static void deliver_signals_to_usermode(struct registers* regs) {
         for (;;) __asm__ volatile("hlt");
     }
 
-    regs->useresp = new_esp;
+    uint32_t callframe[2];
+    callframe[0] = tramp_addr;
+    callframe[1] = (uint32_t)sig;
+    if (copy_to_user((void*)(uintptr_t)retaddr_slot, callframe, sizeof(callframe)) < 0) {
+        const int SIG_SEGV = 11;
+        process_exit_notify(128 + SIG_SEGV);
+        __asm__ volatile("sti");
+        schedule();
+        for (;;) __asm__ volatile("hlt");
+    }
+
+    regs->useresp = retaddr_slot;
     regs->eip = (uint32_t)h;
 }
 

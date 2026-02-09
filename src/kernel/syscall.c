@@ -1,12 +1,14 @@
 #include "syscall.h"
 #include "idt.h"
 #include "fs.h"
+#include "process.h"
+#include "spinlock.h"
+#include "uaccess.h"
+#include "uart_console.h"
+#include "utils.h"
+
 #include "heap.h"
 #include "tty.h"
-#include "process.h"
-#include "uart_console.h"
-#include "uaccess.h"
-#include "utils.h"
 
 #include "errno.h"
 #include "elf.h"
@@ -16,6 +18,14 @@
 #include "hal/cpu.h"
 
 #include <stddef.h>
+
+#if defined(__i386__)
+static const uint32_t SIGFRAME_MAGIC = 0x53494746U; // 'SIGF'
+struct sigframe {
+    uint32_t magic;
+    struct registers saved;
+};
+#endif
 
 static int fd_alloc(struct file* f);
 static int fd_close(int fd);
@@ -529,19 +539,25 @@ static int syscall_execve_impl(struct registers* regs, const char* user_path, co
     }
 
     // Snapshot argv/envp into kernel buffers (before switching addr_space).
-    char kargv[EXECVE_MAX_ARGC][EXECVE_MAX_STR];
-    char kenvp[EXECVE_MAX_ENVC][EXECVE_MAX_STR];
+    char (*kargv)[EXECVE_MAX_STR] = (char(*)[EXECVE_MAX_STR])kmalloc((size_t)EXECVE_MAX_ARGC * (size_t)EXECVE_MAX_STR);
+    char (*kenvp)[EXECVE_MAX_STR] = (char(*)[EXECVE_MAX_STR])kmalloc((size_t)EXECVE_MAX_ENVC * (size_t)EXECVE_MAX_STR);
     int argc = 0;
     int envc = 0;
+    int ret = 0;
+
+    if (!kargv || !kenvp) {
+        ret = -ENOMEM;
+        goto out;
+    }
 
     if (user_argv) {
         for (int i = 0; i < EXECVE_MAX_ARGC; i++) {
             uintptr_t up = 0;
             int rc = execve_copy_user_ptr((const void* const*)&user_argv[i], &up);
-            if (rc < 0) return rc;
+            if (rc < 0) { ret = rc; goto out; }
             if (up == 0) break;
             rc = execve_copy_user_str(kargv[i], sizeof(kargv[i]), (const char*)up);
-            if (rc < 0) return rc;
+            if (rc < 0) { ret = rc; goto out; }
             argc++;
         }
     }
@@ -550,29 +566,34 @@ static int syscall_execve_impl(struct registers* regs, const char* user_path, co
         for (int i = 0; i < EXECVE_MAX_ENVC; i++) {
             uintptr_t up = 0;
             int rc = execve_copy_user_ptr((const void* const*)&user_envp[i], &up);
-            if (rc < 0) return rc;
+            if (rc < 0) { ret = rc; goto out; }
             if (up == 0) break;
             rc = execve_copy_user_str(kenvp[i], sizeof(kenvp[i]), (const char*)up);
-            if (rc < 0) return rc;
+            if (rc < 0) { ret = rc; goto out; }
             envc++;
         }
     }
 
     // Distinguish ENOENT early.
     fs_node_t* node = vfs_lookup(path);
-    if (!node) return -ENOENT;
+    if (!node) { ret = -ENOENT; goto out; }
 
     uintptr_t entry = 0;
     uintptr_t user_sp = 0;
     uintptr_t new_as = 0;
     if (elf32_load_user_from_initrd(path, &entry, &user_sp, &new_as) != 0) {
-        return -EINVAL;
+        ret = -EINVAL;
+        goto out;
     }
+    const size_t user_stack_size = 0x1000U;
+
+    if ((size_t)((argc + 1) + (envc + 1)) * sizeof(uintptr_t) + (size_t)argc * EXECVE_MAX_STR + (size_t)envc * EXECVE_MAX_STR + 64U > user_stack_size) { vmm_as_destroy(new_as); ret = -E2BIG; goto out; }
 
     uintptr_t old_as = current_process ? current_process->addr_space : 0;
     if (!current_process) {
         vmm_as_destroy(new_as);
-        return -EINVAL;
+        ret = -EINVAL;
+        goto out;
     }
 
     current_process->addr_space = new_as;
@@ -628,7 +649,13 @@ static int syscall_execve_impl(struct registers* regs, const char* user_path, co
     regs->eip = (uint32_t)entry;
     regs->useresp = (uint32_t)sp;
     regs->eax = 0;
-    return 0;
+    ret = 0;
+    goto out;
+
+out:
+    if (kargv) kfree(kargv);
+    if (kenvp) kfree(kenvp);
+    return ret;
 }
 
 static int syscall_dup2_impl(int oldfd, int newfd) {
@@ -908,6 +935,26 @@ static int syscall_sigprocmask_impl(uint32_t how, uint32_t mask, uint32_t* old_o
     return -EINVAL;
 }
 
+static int syscall_sigreturn_impl(struct registers* regs, const struct sigframe* user_frame) {
+    if (!regs) return -EINVAL;
+    if (!current_process) return -EINVAL;
+    if ((regs->cs & 3U) != 3U) return -EPERM;
+    if (!user_frame) return -EFAULT;
+
+    if (user_range_ok(user_frame, sizeof(*user_frame)) == 0) { return -EFAULT; }
+
+    struct sigframe f;
+    if (copy_from_user(&f, user_frame, sizeof(f)) < 0) return -EFAULT;
+    if (f.magic != SIGFRAME_MAGIC) { return -EINVAL; }
+
+    if ((f.saved.cs & 3U) != 3U) return -EPERM;
+    if ((f.saved.ss & 3U) != 3U) return -EPERM;
+
+    // Restore the full saved trapframe. The interrupt stub will pop these regs and iret.
+    *regs = f.saved;
+    return 0;
+}
+
 static void syscall_handler(struct registers* regs) {
     uint32_t syscall_no = regs->eax;
 
@@ -1119,6 +1166,12 @@ static void syscall_handler(struct registers* regs) {
         uint32_t mask = regs->ecx;
         uint32_t* old_out = (uint32_t*)regs->edx;
         regs->eax = (uint32_t)syscall_sigprocmask_impl(how, mask, old_out);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SIGRETURN) {
+        const struct sigframe* user_frame = (const struct sigframe*)regs->ebx;
+        regs->eax = (uint32_t)syscall_sigreturn_impl(regs, user_frame);
         return;
     }
 

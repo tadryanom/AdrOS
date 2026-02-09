@@ -28,6 +28,7 @@ enum {
 
     SYSCALL_SIGACTION = 25,
     SYSCALL_SIGPROCMASK = 26,
+    SYSCALL_SIGRETURN = 27,
 };
 
 enum {
@@ -395,6 +396,7 @@ __attribute__((noreturn)) static void sys_exit(int code) {
 }
 
 static volatile int got_usr1 = 0;
+static volatile int got_usr1_ret = 0;
 static volatile int got_ttin = 0;
 static volatile int got_ttou = 0;
 
@@ -403,6 +405,11 @@ static void usr1_handler(int sig) {
     got_usr1 = 1;
     sys_write(1, "[init] SIGUSR1 handler OK\n",
               (uint32_t)(sizeof("[init] SIGUSR1 handler OK\n") - 1));
+}
+
+static void usr1_ret_handler(int sig) {
+    (void)sig;
+    got_usr1_ret = 1;
 }
 
 static void ttin_handler(int sig) {
@@ -1023,6 +1030,38 @@ void _start(void) {
 
         sys_write(1, "[init] sigaction/kill(SIGUSR1) OK\n",
                   (uint32_t)(sizeof("[init] sigaction/kill(SIGUSR1) OK\n") - 1));
+    }
+
+    // Verify that returning from a signal handler does not corrupt the user stack.
+    {
+        if (sys_sigaction(SIGUSR1, usr1_ret_handler, 0) < 0) {
+            sys_write(1, "[init] sigaction (sigreturn test) failed\n",
+                      (uint32_t)(sizeof("[init] sigaction (sigreturn test) failed\n") - 1));
+            sys_exit(1);
+        }
+
+        volatile uint32_t canary = 0x11223344U;
+        int me = sys_getpid();
+        if (sys_kill(me, SIGUSR1) < 0) {
+            sys_write(1, "[init] kill(SIGUSR1) (sigreturn test) failed\n",
+                      (uint32_t)(sizeof("[init] kill(SIGUSR1) (sigreturn test) failed\n") - 1));
+            sys_exit(1);
+        }
+
+        if (!got_usr1_ret) {
+            sys_write(1, "[init] SIGUSR1 not delivered (sigreturn test)\n",
+                      (uint32_t)(sizeof("[init] SIGUSR1 not delivered (sigreturn test)\n") - 1));
+            sys_exit(1);
+        }
+
+        if (canary != 0x11223344U) {
+            sys_write(1, "[init] sigreturn test stack corruption\n",
+                      (uint32_t)(sizeof("[init] sigreturn test stack corruption\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] sigreturn OK\n",
+                  (uint32_t)(sizeof("[init] sigreturn OK\n") - 1));
     }
 
     fd = sys_open("/tmp/hello.txt", 0);
