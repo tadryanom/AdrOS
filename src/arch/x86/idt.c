@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "uaccess.h"
 #include "syscall.h"
+#include "signal.h"
 #include <stddef.h>
 
 #define IDT_ENTRIES 256
@@ -70,7 +71,8 @@ static void deliver_signals_to_usermode(struct registers* regs) {
 
     current_process->sig_pending_mask &= ~(1U << (uint32_t)sig);
 
-    const uintptr_t h = current_process->sig_handlers[sig];
+    const struct sigaction act = current_process->sigactions[sig];
+    const uintptr_t h = (act.sa_flags & SA_SIGINFO) ? act.sa_sigaction : act.sa_handler;
     if (h == 1) {
         return;
     }
@@ -87,19 +89,37 @@ static void deliver_signals_to_usermode(struct registers* regs) {
 
     // Build a sigframe + a tiny user trampoline that calls SYSCALL_SIGRETURN.
     // Stack layout at handler entry (regs->useresp):
-    //   [esp+0] return address -> trampoline
-    //   [esp+4] int sig
-    // Below that: trampoline code bytes, below that: sigframe.
+    //   non-SA_SIGINFO:
+    //     [esp+0] return address -> trampoline
+    //     [esp+4] int sig
+    //   SA_SIGINFO:
+    //     [esp+0] return address -> trampoline
+    //     [esp+4] int sig
+    //     [esp+8] siginfo_t*
+    //     [esp+12] ucontext_t*
+    // Below that: trampoline code bytes, below that: siginfo + ucontext + sigframe.
 
     struct sigframe f;
     f.magic = SIGFRAME_MAGIC;
     f.saved = *regs;
 
     const uint32_t tramp_size = 14U;
-    const uint32_t base = regs->useresp - (8U + tramp_size + (uint32_t)sizeof(f));
+    const uint32_t callframe_size = (act.sa_flags & SA_SIGINFO) ? 16U : 8U;
+
+    struct siginfo info;
+    info.si_signo = sig;
+    info.si_code = 1;
+    info.si_addr = (sig == 11) ? (void*)current_process->last_fault_addr : NULL;
+
+    struct ucontext uctx;
+    uctx.reserved = 0;
+
+    const uint32_t base = regs->useresp - (callframe_size + tramp_size + (uint32_t)sizeof(info) + (uint32_t)sizeof(uctx) + (uint32_t)sizeof(f));
     const uint32_t retaddr_slot = base;
-    const uint32_t tramp_addr = base + 8U;
-    const uint32_t sigframe_addr = tramp_addr + tramp_size;
+    const uint32_t tramp_addr = base + callframe_size;
+    const uint32_t siginfo_addr = tramp_addr + tramp_size;
+    const uint32_t uctx_addr = siginfo_addr + (uint32_t)sizeof(info);
+    const uint32_t sigframe_addr = uctx_addr + (uint32_t)sizeof(uctx);
 
     // Trampoline bytes:
     //   mov eax, SYSCALL_SIGRETURN
@@ -128,6 +148,8 @@ static void deliver_signals_to_usermode(struct registers* regs) {
     tramp[9] = (uint8_t)((sigframe_addr >> 24) & 0xFFU);
 
     if (copy_to_user((void*)(uintptr_t)sigframe_addr, &f, sizeof(f)) < 0 ||
+        copy_to_user((void*)(uintptr_t)siginfo_addr, &info, sizeof(info)) < 0 ||
+        copy_to_user((void*)(uintptr_t)uctx_addr, &uctx, sizeof(uctx)) < 0 ||
         copy_to_user((void*)(uintptr_t)tramp_addr, tramp, sizeof(tramp)) < 0) {
         const int SIG_SEGV = 11;
         process_exit_notify(128 + SIG_SEGV);
@@ -136,15 +158,30 @@ static void deliver_signals_to_usermode(struct registers* regs) {
         for (;;) __asm__ volatile("hlt");
     }
 
-    uint32_t callframe[2];
-    callframe[0] = tramp_addr;
-    callframe[1] = (uint32_t)sig;
-    if (copy_to_user((void*)(uintptr_t)retaddr_slot, callframe, sizeof(callframe)) < 0) {
-        const int SIG_SEGV = 11;
-        process_exit_notify(128 + SIG_SEGV);
-        __asm__ volatile("sti");
-        schedule();
-        for (;;) __asm__ volatile("hlt");
+    if ((act.sa_flags & SA_SIGINFO) == 0) {
+        uint32_t callframe[2];
+        callframe[0] = tramp_addr;
+        callframe[1] = (uint32_t)sig;
+        if (copy_to_user((void*)(uintptr_t)retaddr_slot, callframe, sizeof(callframe)) < 0) {
+            const int SIG_SEGV = 11;
+            process_exit_notify(128 + SIG_SEGV);
+            __asm__ volatile("sti");
+            schedule();
+            for (;;) __asm__ volatile("hlt");
+        }
+    } else {
+        uint32_t callframe[4];
+        callframe[0] = tramp_addr;
+        callframe[1] = (uint32_t)sig;
+        callframe[2] = siginfo_addr;
+        callframe[3] = uctx_addr;
+        if (copy_to_user((void*)(uintptr_t)retaddr_slot, callframe, sizeof(callframe)) < 0) {
+            const int SIG_SEGV = 11;
+            process_exit_notify(128 + SIG_SEGV);
+            __asm__ volatile("sti");
+            schedule();
+            for (;;) __asm__ volatile("hlt");
+        }
     }
 
     regs->useresp = retaddr_slot;
@@ -290,6 +327,9 @@ void isr_handler(struct registers* regs) {
                 if ((regs->cs & 3U) == 3U) {
                     const int SIG_SEGV = 11;
                     if (current_process) {
+                        uint32_t cr2;
+                        __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
+                        current_process->last_fault_addr = (uintptr_t)cr2;
                         current_process->sig_pending_mask |= (1U << (uint32_t)SIG_SEGV);
                     }
                     deliver_signals_to_usermode(regs);

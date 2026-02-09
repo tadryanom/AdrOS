@@ -897,17 +897,24 @@ static int syscall_getpgrp_impl(void) {
     return (int)current_process->pgrp_id;
 }
 
-static int syscall_sigaction_impl(int sig, uintptr_t handler, uintptr_t* old_out) {
+static int syscall_sigaction_impl(int sig, const struct sigaction* user_act, struct sigaction* user_oldact) {
     if (!current_process) return -EINVAL;
     if (sig <= 0 || sig >= PROCESS_MAX_SIG) return -EINVAL;
 
-    if (old_out) {
-        if (user_range_ok(old_out, sizeof(*old_out)) == 0) return -EFAULT;
-        uintptr_t oldh = current_process->sig_handlers[sig];
-        if (copy_to_user(old_out, &oldh, sizeof(oldh)) < 0) return -EFAULT;
+    if (user_oldact) {
+        if (user_range_ok(user_oldact, sizeof(*user_oldact)) == 0) return -EFAULT;
+        struct sigaction old = current_process->sigactions[sig];
+        if (copy_to_user(user_oldact, &old, sizeof(old)) < 0) return -EFAULT;
     }
 
-    current_process->sig_handlers[sig] = handler;
+    if (!user_act) {
+        return 0;
+    }
+
+    if (user_range_ok(user_act, sizeof(*user_act)) == 0) return -EFAULT;
+    struct sigaction act;
+    if (copy_from_user(&act, user_act, sizeof(act)) < 0) return -EFAULT;
+    current_process->sigactions[sig] = act;
     return 0;
 }
 
@@ -1155,9 +1162,9 @@ static void syscall_handler(struct registers* regs) {
 
     if (syscall_no == SYSCALL_SIGACTION) {
         int sig = (int)regs->ebx;
-        uintptr_t handler = (uintptr_t)regs->ecx;
-        uintptr_t* old_out = (uintptr_t*)regs->edx;
-        regs->eax = (uint32_t)syscall_sigaction_impl(sig, handler, old_out);
+        const struct sigaction* act = (const struct sigaction*)regs->ecx;
+        struct sigaction* oldact = (struct sigaction*)regs->edx;
+        regs->eax = (uint32_t)syscall_sigaction_impl(sig, act, oldact);
         return;
     }
 

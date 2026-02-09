@@ -31,6 +31,8 @@
 
 #include "user_errno.h"
 
+#include "signal.h"
+
 enum {
     SYSCALL_WRITE = 1,
     SYSCALL_EXIT  = 2,
@@ -173,15 +175,33 @@ static void write_hex32(uint32_t v) {
     (void)sys_write(1, b, 8);
 }
 
-static int sys_sigaction(int sig, void (*handler)(int), uintptr_t* old_out) {
+static int sys_sigaction2(int sig, const struct sigaction* act, struct sigaction* oldact) {
     int ret;
     __asm__ volatile(
         "int $0x80"
         : "=a"(ret)
-        : "a"(SYSCALL_SIGACTION), "b"(sig), "c"(handler), "d"(old_out)
+        : "a"(SYSCALL_SIGACTION), "b"(sig), "c"(act), "d"(oldact)
         : "memory"
     );
     return __syscall_fix(ret);
+}
+
+static int sys_sigaction(int sig, void (*handler)(int), uintptr_t* old_out) {
+    struct sigaction act;
+    act.sa_handler = (uintptr_t)handler;
+    act.sa_sigaction = 0;
+    act.sa_mask = 0;
+    act.sa_flags = 0;
+
+    struct sigaction oldact;
+    struct sigaction* oldp = old_out ? &oldact : 0;
+
+    int r = sys_sigaction2(sig, &act, oldp);
+    if (r < 0) return r;
+    if (old_out) {
+        *old_out = oldact.sa_handler;
+    }
+    return 0;
 }
 
 static int sys_select(uint32_t nfds, uint64_t* readfds, uint64_t* writefds, uint64_t* exceptfds, int32_t timeout) {
@@ -460,6 +480,17 @@ static void sigsegv_exit_handler(int sig) {
     static const char msg[] = "[init] SIGSEGV handler invoked\n";
     (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
     sys_exit(0);
+}
+
+static void sigsegv_info_handler(int sig, siginfo_t* info, void* uctx) {
+    (void)uctx;
+    static const char msg[] = "[init] SIGSEGV siginfo handler invoked\n";
+    (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+    const uintptr_t expected = 0x12345000U;
+    if (sig == SIGSEGV && info && (uintptr_t)info->si_addr == expected) {
+        sys_exit(0);
+    }
+    sys_exit(1);
 }
 
 void _start(void) {
@@ -1385,13 +1416,19 @@ void _start(void) {
         }
 
         if (pid == 0) {
-            if (sys_sigaction(SIGSEGV, sigsegv_exit_handler, 0) < 0) {
+            struct sigaction act;
+            act.sa_handler = 0;
+            act.sa_sigaction = (uintptr_t)sigsegv_info_handler;
+            act.sa_mask = 0;
+            act.sa_flags = SA_SIGINFO;
+
+            if (sys_sigaction2(SIGSEGV, &act, 0) < 0) {
                 static const char msg[] = "[init] sigaction(SIGSEGV) failed\n";
                 (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
                 sys_exit(1);
             }
 
-            *(volatile uint32_t*)0x0 = 123;
+            *(volatile uint32_t*)0x12345000U = 123;
             sys_exit(2);
         }
 

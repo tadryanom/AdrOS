@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include "idt.h" // For struct registers
 #include "fs.h"
+#include "signal.h"
 
 typedef enum {
     PROCESS_READY,
@@ -39,13 +40,16 @@ struct process {
     int has_user_regs;
     struct registers user_regs;
 
-    // Minimal signals: handler pointers, blocked mask and pending mask.
-    // handlers[i] == 0 => default
-    // handlers[i] == 1 => ignore
-    // handlers[i] >= 2 => user handler address
-    uintptr_t sig_handlers[PROCESS_MAX_SIG];
+    // Minimal signals: per-signal action, blocked mask and pending mask.
+    // sa_handler == 0 => default
+    // sa_handler == 1 => ignore
+    // sa_handler >= 2 => user handler address
+    struct sigaction sigactions[PROCESS_MAX_SIG];
     uint32_t sig_blocked_mask;
     uint32_t sig_pending_mask;
+
+    // For SIGSEGV: last page fault address (CR2) captured in ring3.
+    uintptr_t last_fault_addr;
 
     int waiting;
     int wait_pid;
