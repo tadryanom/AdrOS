@@ -56,6 +56,7 @@ Notes:
 - [x] `getppid()`
 - [x] `select()` / `poll()` (minimal)
 - [~] Basic signals (`sigaction`, `sigprocmask`, `kill`) (delivery model is minimal)
+- [x] `sigreturn()` trampoline (userspace return path for signal handlers)
 - [x] `setsid()` / `setpgid()` / `getpgrp()` (minimal)
 
 ### FD layer
@@ -187,6 +188,10 @@ Goal: get a writable filesystem (even if volatile) and a real VFS layout.
 - [~] `execve()`
 - [x] `getppid()`
 - [~] Signals + basic job control (`SIGTTIN`/`SIGTTOU` for background TTY I/O)
+
+#### Signals (details)
+- [x] `sigreturn()` syscall + userspace trampoline return path
+- [x] Userspace smoke test: signal handler returns correctly (see `user/init.c`)
 
 ### Pipes + IO multiplexing
 - [x] `pipe()`
