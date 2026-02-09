@@ -1,5 +1,34 @@
 #include <stdint.h>
 
+#ifdef SIGKILL
+#undef SIGKILL
+#endif
+#ifdef SIGUSR1
+#undef SIGUSR1
+#endif
+#ifdef SIGSEGV
+#undef SIGSEGV
+#endif
+#ifdef SIGTTIN
+#undef SIGTTIN
+#endif
+#ifdef SIGTTOU
+#undef SIGTTOU
+#endif
+
+#ifdef WNOHANG
+#undef WNOHANG
+#endif
+#ifdef SEEK_SET
+#undef SEEK_SET
+#endif
+#ifdef SEEK_CUR
+#undef SEEK_CUR
+#endif
+#ifdef SEEK_END
+#undef SEEK_END
+#endif
+
 enum {
     SYSCALL_WRITE = 1,
     SYSCALL_EXIT  = 2,
