@@ -1671,7 +1671,8 @@ static void syscall_handler(struct registers* regs) {
         hal_cpu_enable_interrupts();
         schedule();
         for(;;) {
-            __asm__ volatile("cli; hlt");
+            hal_cpu_disable_interrupts();
+            hal_cpu_idle();
         }
     }
 

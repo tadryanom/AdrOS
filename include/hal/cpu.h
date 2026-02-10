@@ -10,6 +10,7 @@ void hal_cpu_set_address_space(uintptr_t as);
 void hal_cpu_set_kernel_stack(uintptr_t sp_top);
 
 void hal_cpu_enable_interrupts(void);
+void hal_cpu_disable_interrupts(void);
 void hal_cpu_idle(void);
 
 #endif
