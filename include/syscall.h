@@ -49,6 +49,8 @@ enum {
 
     SYSCALL_MKDIR = 28,
     SYSCALL_UNLINK = 29,
+
+    SYSCALL_GETDENTS = 30,
 };
 
 #endif
