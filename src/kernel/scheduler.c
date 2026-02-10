@@ -38,9 +38,7 @@ static struct runqueue* rq_active  = &rq_active_store;
 static struct runqueue* rq_expired = &rq_expired_store;
 
 static inline uint32_t bsf32(uint32_t v) {
-    uint32_t r;
-    __asm__ volatile("bsf %1, %0" : "=r"(r) : "rm"(v) : "cc");
-    return r;
+    return (uint32_t)__builtin_ctz(v);
 }
 
 static void rq_enqueue(struct runqueue* rq, struct process* p) {
