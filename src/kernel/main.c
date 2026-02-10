@@ -22,6 +22,7 @@
 
 #include "hal/cpu.h"
 #include "hal/cpu_features.h"
+#include "shm.h"
 
 
 /* Check if the compiler thinks we are targeting the wrong operating system. */
@@ -53,6 +54,9 @@ void kernel_main(const struct boot_info* bi) {
 
     // 4. Initialize Kernel Heap
     kheap_init();
+
+    // 5. Initialize Shared Memory IPC
+    shm_init();
     
     // 7. Initialize Multitasking
     kprintf("[AdrOS] Initializing Scheduler...\n");
