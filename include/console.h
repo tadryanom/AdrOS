@@ -15,4 +15,6 @@ int ksnprintf(char* out, size_t out_size, const char* fmt, ...);
 
 void kprintf(const char* fmt, ...);
 
+size_t klog_read(char* out, size_t out_size);
+
 #endif

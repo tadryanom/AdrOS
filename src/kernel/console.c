@@ -12,6 +12,24 @@ static spinlock_t g_console_lock = {0};
 static int g_console_uart_enabled = 1;
 static int g_console_vga_enabled = 0;
 
+/* ---- Kernel log ring buffer (like Linux __log_buf) ---- */
+#define KLOG_BUF_SIZE 16384
+static char klog_buf[KLOG_BUF_SIZE];
+static size_t klog_head = 0;   // next write position
+static size_t klog_count = 0;  // total bytes stored (capped at KLOG_BUF_SIZE)
+static spinlock_t klog_lock = {0};
+
+static void klog_append(const char* s, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        klog_buf[klog_head] = s[i];
+        klog_head = (klog_head + 1) % KLOG_BUF_SIZE;
+    }
+    klog_count += len;
+    if (klog_count > KLOG_BUF_SIZE) {
+        klog_count = KLOG_BUF_SIZE;
+    }
+}
+
 void console_init(void) {
     spinlock_init(&g_console_lock);
     g_console_uart_enabled = 1;
@@ -185,8 +203,45 @@ void kprintf(const char* fmt, ...) {
 
     va_list ap;
     va_start(ap, fmt);
-    (void)kvsnprintf(buf, sizeof(buf), fmt, ap);
+    int len = kvsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
 
+    if (len > 0) {
+        size_t slen = (size_t)len;
+        if (slen >= sizeof(buf)) slen = sizeof(buf) - 1;
+
+        uintptr_t lf = spin_lock_irqsave(&klog_lock);
+        klog_append(buf, slen);
+        spin_unlock_irqrestore(&klog_lock, lf);
+    }
+
     console_write(buf);
+}
+
+size_t klog_read(char* out, size_t out_size) {
+    if (!out || out_size == 0) return 0;
+
+    uintptr_t flags = spin_lock_irqsave(&klog_lock);
+
+    size_t avail = klog_count;
+    if (avail > out_size - 1) avail = out_size - 1;
+
+    size_t start;
+    if (klog_count >= KLOG_BUF_SIZE) {
+        start = klog_head; // oldest byte is right after head
+    } else {
+        start = (klog_head + KLOG_BUF_SIZE - klog_count) % KLOG_BUF_SIZE;
+    }
+
+    // skip oldest bytes if avail < klog_count
+    size_t skip = klog_count - avail;
+    start = (start + skip) % KLOG_BUF_SIZE;
+
+    for (size_t i = 0; i < avail; i++) {
+        out[i] = klog_buf[(start + i) % KLOG_BUF_SIZE];
+    }
+    out[avail] = '\0';
+
+    spin_unlock_irqrestore(&klog_lock, flags);
+    return avail;
 }
