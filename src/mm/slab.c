@@ -1,5 +1,6 @@
 #include "slab.h"
 #include "pmm.h"
+#include "hal/mm.h"
 #include "uart_console.h"
 
 #include <stddef.h>
@@ -35,8 +36,7 @@ static int slab_grow(slab_cache_t* cache) {
      * For now, slab pages come from pmm_alloc_page which returns
      * physical addresses. We need to convert to virtual. */
 
-    /* Use kernel virtual = phys + 0xC0000000 for higher-half */
-    uint8_t* vbase = base + 0xC0000000U;
+    uint8_t* vbase = (uint8_t*)hal_mm_phys_to_virt((uintptr_t)base);
 
     for (uint32_t i = 0; i < cache->objs_per_slab; i++) {
         struct slab_free_node* node = (struct slab_free_node*)(vbase + i * cache->obj_size);
