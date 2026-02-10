@@ -1,7 +1,17 @@
 #include "ata_pio.h"
+#include "ata_dma.h"
 
 #include "errno.h"
 #include "io.h"
+#include "arch/x86/idt.h"
+#include "uart_console.h"
+
+/* Basic IRQ 14 handler: read ATA status to deassert INTRQ.
+ * Registered early so PIO IDENTIFY doesn't cause an IRQ storm. */
+static void ata_pio_irq14_handler(struct registers* regs) {
+    (void)regs;
+    (void)inb((uint16_t)(0x1F0 + 0x07));  /* Read ATA status */
+}
 
 // Primary ATA bus I/O ports
 #define ATA_IO_BASE 0x1F0
@@ -59,6 +69,9 @@ uint32_t ata_pio_sector_size(void) {
 }
 
 int ata_pio_init_primary_master(void) {
+    // Register IRQ 14 handler early to prevent INTRQ storm
+    register_interrupt_handler(46, ata_pio_irq14_handler);
+
     // Select drive: 0xA0 = master, CHS mode bits set, LBA bit cleared
     outb((uint16_t)(ATA_IO_BASE + ATA_REG_HDDEVSEL), 0xA0);
     io_wait_400ns();
@@ -82,12 +95,24 @@ int ata_pio_init_primary_master(void) {
         (void)inw((uint16_t)(ATA_IO_BASE + ATA_REG_DATA));
     }
 
+    // Try to upgrade to DMA mode
+    if (ata_dma_init() == 0) {
+        uart_print("[ATA] Using DMA mode.\n");
+    } else {
+        uart_print("[ATA] Using PIO mode (DMA unavailable).\n");
+    }
+
     return 0;
 }
 
 int ata_pio_read28(uint32_t lba, uint8_t* buf512) {
     if (!buf512) return -EFAULT;
     if (lba & 0xF0000000U) return -EINVAL;
+
+    // Use DMA if available
+    if (ata_dma_available()) {
+        return ata_dma_read28(lba, buf512);
+    }
 
     if (ata_wait_not_busy() < 0) return -EIO;
 
@@ -114,6 +139,11 @@ int ata_pio_read28(uint32_t lba, uint8_t* buf512) {
 int ata_pio_write28(uint32_t lba, const uint8_t* buf512) {
     if (!buf512) return -EFAULT;
     if (lba & 0xF0000000U) return -EINVAL;
+
+    // Use DMA if available
+    if (ata_dma_available()) {
+        return ata_dma_write28(lba, buf512);
+    }
 
     if (ata_wait_not_busy() < 0) return -EIO;
 
