@@ -3,6 +3,7 @@
 #include "utils.h"
 #include "uart_console.h"
 #include "hal/cpu.h"
+#include "hal/mm.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -241,9 +242,10 @@ void pmm_init(void* boot_info) {
     uint64_t phys_start = (uint64_t)virt_start_ptr;
     uint64_t phys_end = (uint64_t)virt_end_ptr;
 
-    if (virt_start_ptr >= 0xC0000000U) {
-        phys_start -= 0xC0000000;
-        phys_end -= 0xC0000000;
+    uintptr_t kvbase = hal_mm_kernel_virt_base();
+    if (kvbase && virt_start_ptr >= kvbase) {
+        phys_start -= kvbase;
+        phys_end -= kvbase;
         uart_print("[PMM] Detected Higher Half Kernel. Adjusting protection range.\n");
     }
 
@@ -292,7 +294,7 @@ void pmm_init(void* boot_info) {
 
         // 4. Protect Multiboot info (if x86)
         uintptr_t bi_ptr = (uintptr_t)boot_info;
-        if (bi_ptr < 0xC0000000U) {
+        if (!kvbase || bi_ptr < kvbase) {
             pmm_mark_region((uint64_t)bi_ptr, 4096, 1); // Protect at least 1 page
         }
     }
