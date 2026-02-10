@@ -13,13 +13,23 @@ int uaccess_try_recover(uintptr_t fault_addr, struct registers* regs) {
     return 0;
 }
 
+/* Conservative kernel/user boundary for the weak default.
+ * Architecture-specific overrides (e.g. x86 uaccess.c) refine this
+ * with page-table walks. The weak default MUST reject kernel addresses
+ * to prevent privilege escalation via syscall arguments. */
+#ifndef USER_ADDR_LIMIT
+#define USER_ADDR_LIMIT 0xC0000000U
+#endif
+
 __attribute__((weak))
 int user_range_ok(const void* user_ptr, size_t len) {
     uintptr_t uaddr = (uintptr_t)user_ptr;
     if (len == 0) return 1;
     if (uaddr == 0) return 0;
     uintptr_t end = uaddr + len - 1;
-    if (end < uaddr) return 0;
+    if (end < uaddr) return 0;              /* overflow */
+    if (uaddr >= USER_ADDR_LIMIT) return 0; /* kernel address */
+    if (end >= USER_ADDR_LIMIT) return 0;   /* spans into kernel */
     return 1;
 }
 

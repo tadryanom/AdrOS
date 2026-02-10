@@ -144,10 +144,7 @@ static void process_close_all_files_locked(struct process* p) {
         if (!f) continue;
         p->files[fd] = NULL;
 
-        if (f->refcount > 0) {
-            f->refcount--;
-        }
-        if (f->refcount == 0) {
+        if (__sync_sub_and_fetch(&f->refcount, 1) == 0) {
             if (f->node) {
                 vfs_close(f->node);
             }

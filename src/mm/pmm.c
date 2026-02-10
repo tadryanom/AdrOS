@@ -3,6 +3,7 @@
 #include "uart_console.h"
 #include "hal/cpu.h"
 #include "hal/mm.h"
+#include "spinlock.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -23,6 +24,7 @@ static uint64_t total_memory = 0;
 static uint64_t used_memory = 0;
 static uint64_t max_frames = 0;
 static uint64_t last_alloc_frame = 1;
+static spinlock_t pmm_lock = {0};
 
 static uint64_t align_down(uint64_t value, uint64_t align) {
     return value & ~(align - 1);
@@ -48,6 +50,7 @@ void pmm_mark_region(uint64_t base, uint64_t size, int used) {
     uint64_t start_frame = base / PAGE_SIZE;
     uint64_t frames_count = size / PAGE_SIZE;
 
+    uintptr_t flags = spin_lock_irqsave(&pmm_lock);
     for (uint64_t i = 0; i < frames_count; i++) {
         if (start_frame + i >= max_frames) break;
 
@@ -66,6 +69,7 @@ void pmm_mark_region(uint64_t base, uint64_t size, int used) {
             }
         }
     }
+    spin_unlock_irqrestore(&pmm_lock, flags);
 }
 
 void pmm_set_limits(uint64_t total_mem, uint64_t max_fr) {
@@ -126,6 +130,8 @@ void pmm_init(void* boot_info) {
 }
 
 void* pmm_alloc_page(void) {
+    uintptr_t flags = spin_lock_irqsave(&pmm_lock);
+
     // Start from frame 1 so we never return physical address 0.
     if (last_alloc_frame < 1) last_alloc_frame = 1;
     if (last_alloc_frame >= max_frames) last_alloc_frame = 1;
@@ -142,9 +148,12 @@ void* pmm_alloc_page(void) {
             used_memory += PAGE_SIZE;
             last_alloc_frame = i + 1;
             if (last_alloc_frame >= max_frames) last_alloc_frame = 1;
+            spin_unlock_irqrestore(&pmm_lock, flags);
             return (void*)(uintptr_t)(i * PAGE_SIZE);
         }
     }
+
+    spin_unlock_irqrestore(&pmm_lock, flags);
     return NULL; // OOM
 }
 
@@ -153,36 +162,48 @@ void pmm_free_page(void* ptr) {
     uint64_t frame = addr / PAGE_SIZE;
     if (frame == 0 || frame >= max_frames) return;
 
+    uintptr_t flags = spin_lock_irqsave(&pmm_lock);
+
     uint16_t rc = frame_refcount[frame];
     if (rc > 1) {
-        __sync_sub_and_fetch(&frame_refcount[frame], 1);
+        frame_refcount[frame]--;
+        spin_unlock_irqrestore(&pmm_lock, flags);
         return;
     }
 
     frame_refcount[frame] = 0;
     bitmap_unset(frame);
     used_memory -= PAGE_SIZE;
+
+    spin_unlock_irqrestore(&pmm_lock, flags);
 }
 
 void pmm_incref(uintptr_t paddr) {
     uint64_t frame = paddr / PAGE_SIZE;
     if (frame == 0 || frame >= max_frames) return;
-    __sync_fetch_and_add(&frame_refcount[frame], 1);
+    uintptr_t flags = spin_lock_irqsave(&pmm_lock);
+    frame_refcount[frame]++;
+    spin_unlock_irqrestore(&pmm_lock, flags);
 }
 
 uint16_t pmm_decref(uintptr_t paddr) {
     uint64_t frame = paddr / PAGE_SIZE;
     if (frame == 0 || frame >= max_frames) return 0;
-    uint16_t new_val = __sync_sub_and_fetch(&frame_refcount[frame], 1);
+    uintptr_t flags = spin_lock_irqsave(&pmm_lock);
+    uint16_t new_val = --frame_refcount[frame];
     if (new_val == 0) {
         bitmap_unset(frame);
         used_memory -= PAGE_SIZE;
     }
+    spin_unlock_irqrestore(&pmm_lock, flags);
     return new_val;
 }
 
 uint16_t pmm_get_refcount(uintptr_t paddr) {
     uint64_t frame = paddr / PAGE_SIZE;
     if (frame >= max_frames) return 0;
-    return frame_refcount[frame];
+    uintptr_t flags = spin_lock_irqsave(&pmm_lock);
+    uint16_t rc = frame_refcount[frame];
+    spin_unlock_irqrestore(&pmm_lock, flags);
+    return rc;
 }

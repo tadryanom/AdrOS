@@ -194,7 +194,7 @@ static int syscall_fork_impl(struct registers* regs) {
     for (int fd = 0; fd < PROCESS_MAX_FILES; fd++) {
         struct file* f = current_process->files[fd];
         if (!f) continue;
-        f->refcount++;
+        __sync_fetch_and_add(&f->refcount, 1);
         child->files[fd] = f;
         child->fd_flags[fd] = current_process->fd_flags[fd];
     }
@@ -574,10 +574,7 @@ static int fd_close(int fd) {
     if (!f) return -EBADF;
     current_process->files[fd] = NULL;
 
-    if (f->refcount > 0) {
-        f->refcount--;
-    }
-    if (f->refcount == 0) {
+    if (__sync_sub_and_fetch(&f->refcount, 1) == 0) {
         if (f->node) {
             vfs_close(f->node);
         }
@@ -589,10 +586,10 @@ static int fd_close(int fd) {
 static int syscall_dup_impl(int oldfd) {
     struct file* f = fd_get(oldfd);
     if (!f) return -EBADF;
-    f->refcount++;
+    __sync_fetch_and_add(&f->refcount, 1);
     int newfd = fd_alloc_from(0, f);
     if (newfd < 0) {
-        f->refcount--;
+        __sync_sub_and_fetch(&f->refcount, 1);
         return -EMFILE;
     }
     return newfd;
@@ -759,7 +756,7 @@ static int syscall_dup2_impl(int oldfd, int newfd) {
         (void)fd_close(newfd);
     }
 
-    f->refcount++;
+    __sync_fetch_and_add(&f->refcount, 1);
     current_process->files[newfd] = f;
     return newfd;
 }
@@ -776,7 +773,7 @@ static int syscall_dup3_impl(int oldfd, int newfd, uint32_t flags) {
         (void)fd_close(newfd);
     }
 
-    f->refcount++;
+    __sync_fetch_and_add(&f->refcount, 1);
     current_process->files[newfd] = f;
     return newfd;
 }
@@ -1391,6 +1388,10 @@ static int syscall_sigreturn_impl(struct registers* regs, const struct sigframe*
 
     if ((f.saved.cs & 3U) != 3U) return -EPERM;
     if ((f.saved.ss & 3U) != 3U) return -EPERM;
+
+    // Sanitize eflags: clear IOPL (bits 12-13) to prevent privilege escalation,
+    // ensure IF (bit 9) is set so interrupts remain enabled in usermode.
+    f.saved.eflags = (f.saved.eflags & ~0x3000U) | 0x200U;
 
     // Restore the full saved trapframe. The interrupt stub will pop these regs and iret.
     *regs = f.saved;
