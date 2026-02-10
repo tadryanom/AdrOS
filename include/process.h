@@ -61,6 +61,8 @@ struct process {
     // For SIGSEGV: last page fault address (CR2) captured in ring3.
     uintptr_t last_fault_addr;
 
+    char cwd[128];
+
     int waiting;
     int wait_pid;
     int wait_result_pid;
