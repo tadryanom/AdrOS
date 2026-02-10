@@ -15,72 +15,85 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **Build System:** Make + Cross-Compilers
 
 ## Features
-- **Multi-arch build system**
-  - `make ARCH=x86|arm|riscv|mips`
-  - x86 is the primary, working target
-- **x86 (i386) boot & memory layout**
-  - Multiboot2 (via GRUB)
-  - Higher-half kernel mapping (3GB+)
-  - Early paging + VMM initialization
-  - W^X-oriented userspace layout (separate RX/R and RW segments)
-  - Non-executable stack markers in assembly (`.note.GNU-stack`)
-- **Memory management**
-  - Physical Memory Manager (PMM)
-  - Virtual Memory Manager (x86)
-  - Kernel heap allocator (`kmalloc`/`kfree`)
-- **Basic drivers & console**
-  - UART serial console logging
-  - VGA text console (x86)
-  - Keyboard driver + input callback
-  - PIT timer + periodic tick
-- **Kernel services**
-  - Simple scheduler / multitasking (kernel threads)
-  - Minimal process lifecycle: parent/child tracking, zombies, `waitpid`
-  - Basic shell with built-in commands (fallback when userspace fails)
-- **InitRD + VFS + mounts**
-  - InitRD image in TAR/USTAR format (with directory support)
-  - InitRD-backed filesystem node tree (`fs_node_t` + `finddir`)
-  - Absolute path lookup (`vfs_lookup("/bin/init.elf")`)
-  - Mount table support (`vfs_mount`) + `tmpfs` and `overlayfs`
-- **Syscalls (x86, `int 0x80`)**
-  - **File I/O:** `open`, `openat`, `read`, `write`, `close`, `lseek`, `stat`, `fstat`, `fstatat`, `dup`, `dup2`, `dup3`, `pipe`, `pipe2`, `select`, `poll`, `ioctl`, `fcntl`
-  - **Directory ops:** `mkdir`, `rmdir`, `unlink`, `unlinkat`, `rename`, `getdents`, `chdir`, `getcwd`
-  - **Process:** `fork`, `execve`, `exit`, `waitpid` (incl. `WNOHANG`), `getpid`, `getppid`, `setsid`, `setpgid`, `getpgrp`
-  - **Signals:** `sigaction`, `sigprocmask`, `kill`, `sigreturn` (trampoline-based return path)
-  - **Modern POSIX:** `openat`/`fstatat`/`unlinkat` (`AT_FDCWD`), `dup3`, `pipe2` (with `O_NONBLOCK` flags)
-  - Per-process fd table with refcounted file objects
-  - Per-process current working directory (`cwd`) with relative path resolution
-  - Non-blocking I/O (`O_NONBLOCK`) on pipes, TTY, and PTY via `fcntl`
-  - Centralized user-pointer access API (`user_range_ok`, `copy_from_user`, `copy_to_user`)
-  - Ring3 init program (`/bin/init.elf`) with comprehensive smoke tests
-  - Error returns use negative errno codes (Linux-style)
-- **TTY (canonical line discipline)**
-  - Keyboard -> TTY input path
-  - Canonical mode input (line-buffered until `\n`)
-  - Echo + backspace handling
-  - Blocking reads with a simple wait queue (multiple waiters)
-  - `fd=0` wired to `tty_read`, `fd=1/2` wired to `tty_write`
-  - Minimal termios/ioctl support (`TCGETS`, `TCSETS`, `TIOCGPGRP`, `TIOCSPGRP`)
-  - Basic job control enforcement (`SIGTTIN`/`SIGTTOU` when background pgrp touches the controlling TTY)
-- **Devices (devfs)**
-  - `/dev` mount with `readdir` support
-  - `/dev/null`, `/dev/tty`
-  - `/dev/ptmx` + `/dev/pts/0` (pseudo-terminal)
-- **PTY subsystem**
-  - PTY master/slave pair (`/dev/ptmx` + `/dev/pts/0`)
-  - Non-blocking I/O support
-  - Used by userland smoke tests
-- **On-disk filesystem (diskfs)**
-  - ATA PIO driver (primary master IDE)
-  - Hierarchical inode-based filesystem mounted at `/disk`
-  - Supports: `open` (create/truncate), `read`, `write`, `stat`, `mkdir`, `unlink`, `rmdir`, `rename`, `getdents`
-  - Persistence filesystem mounted at `/persist` (smoke tests)
-- **Generic `readdir`/`getdents` across all VFS**
-  - Works on diskfs, tmpfs, devfs, and overlayfs
-  - Unified `struct vfs_dirent` format
-- **W^X (Option 1) for user ELFs (x86)**
-  - User segments are mapped RW during load, then write permissions are dropped for non-writable segments
-  - This provides "text is read-only" hardening without requiring NX/PAE
+
+### Boot & Architecture
+- **Multi-arch build system** — `make ARCH=x86|arm|riscv|mips` (x86 is the primary, working target)
+- **Multiboot2** (via GRUB), higher-half kernel mapping (3GB+)
+- **CPUID feature detection** — leaf 0/1/7/extended; SMEP/SMAP detection
+- **SYSENTER fast syscall path** — MSR setup + handler
+
+### Memory Management
+- **PMM** — bitmap allocator with spinlock protection and frame reference counting
+- **VMM** — recursive page directory, per-process address spaces, TLB flush
+- **Copy-on-Write (CoW) fork** — PTE bit 9 as CoW marker + page fault handler
+- **Kernel heap** — doubly-linked free list with coalescing, dynamic growth up to 64MB
+- **Slab allocator** — `slab_cache_t` with free-list-in-place and spinlock
+- **Shared memory** — System V IPC style (`shmget`/`shmat`/`shmdt`/`shmctl`)
+- **SMEP** — Supervisor Mode Execution Prevention enabled in CR4
+- **W^X** — user `.text` segments marked read-only after ELF load
+
+### Process & Scheduling
+- **O(1) scheduler** — bitmap + active/expired arrays, 32 priority levels
+- **Process model** — `fork` (CoW), `execve`, `exit`, `waitpid` (`WNOHANG`), `getpid`, `getppid`
+- **Sessions & groups** — `setsid`, `setpgid`, `getpgrp`
+- **User heap** — `brk`/`sbrk` syscall
+- **Time** — `nanosleep`, `clock_gettime` (`CLOCK_REALTIME`, `CLOCK_MONOTONIC`)
+
+### Syscalls (x86, `int 0x80` + SYSENTER)
+- **File I/O:** `open`, `openat`, `read`, `write`, `close`, `lseek`, `stat`, `fstat`, `fstatat`, `dup`, `dup2`, `dup3`, `pipe`, `pipe2`, `select`, `poll`, `ioctl`, `fcntl`, `getdents`
+- **Directory ops:** `mkdir`, `rmdir`, `unlink`, `unlinkat`, `rename`, `chdir`, `getcwd`
+- **Signals:** `sigaction`, `sigprocmask`, `kill`, `sigreturn` (full trampoline with `SA_SIGINFO`)
+- **FD flags:** `O_NONBLOCK`, `O_CLOEXEC`, `FD_CLOEXEC` via `fcntl` (`F_GETFD`/`F_SETFD`/`F_GETFL`/`F_SETFL`)
+- **Shared memory:** `shmget`, `shmat`, `shmdt`, `shmctl`
+- Per-process fd table with atomic refcounted file objects
+- Centralized user-pointer access API (`user_range_ok`, `copy_from_user`, `copy_to_user`)
+- Error returns use negative errno codes (Linux-style)
+
+### TTY / PTY
+- **Canonical + raw mode** — `ICANON` clearable via `TCSETS`
+- **Signal characters** — Ctrl+C→SIGINT, Ctrl+Z→SIGTSTP, Ctrl+D→EOF, Ctrl+\\→SIGQUIT
+- **Job control** — `SIGTTIN`/`SIGTTOU` enforcement for background process groups
+- **PTY** — `/dev/ptmx` + `/dev/pts/0` with non-blocking I/O
+- **Window size** — `TIOCGWINSZ`/`TIOCSWINSZ`
+- **termios** — `TCGETS`, `TCSETS`, `TIOCGPGRP`, `TIOCSPGRP`
+
+### Filesystems (6 types)
+- **tmpfs** — in-memory filesystem
+- **devfs** — `/dev/null`, `/dev/tty`, `/dev/ptmx`, `/dev/pts/0`
+- **overlayfs** — copy-up semantics
+- **diskfs** — hierarchical inode-based on-disk filesystem at `/disk`
+- **persistfs** — minimal persistence at `/persist`
+- **procfs** — `/proc/meminfo`
+- Generic `readdir`/`getdents` across all VFS types
+
+### Drivers & Hardware
+- **PCI** — full bus/slot/func enumeration with BAR + IRQ
+- **ATA PIO + DMA** — Bus Master IDE with bounce buffer, PRDT, IRQ coordination
+- **LAPIC + IOAPIC** — replaces legacy PIC; ISA IRQ routing
+- **SMP** — 4 CPUs via INIT-SIPI-SIPI, per-CPU data via GS segment
+- **ACPI** — MADT parsing for CPU topology and IOAPIC discovery
+- **VBE framebuffer** — maps LFB, pixel drawing, font rendering
+- **UART**, **VGA text**, **PS/2 keyboard**, **PIT timer**, **LAPIC timer**
+
+### Userland
+- **ulibc** — `printf`, `malloc`/`free`/`calloc`/`realloc`, `string.h`, `unistd.h`, `errno.h`
+- **ELF32 loader** — secure with W^X enforcement, rejects kernel-range vaddrs
+- `/bin/init.elf` — comprehensive smoke test suite
+- `/bin/echo.elf` — argv/envp test
+
+### Security
+- **SMEP** enabled (prevents kernel executing user-mapped pages)
+- **user_range_ok** hardened (rejects kernel addresses)
+- **sigreturn eflags** sanitized (clears IOPL, ensures IF)
+- **Atomic file refcounts** (`__sync_*` builtins)
+- **PMM spinlock** for SMP safety
+
+### Testing
+- **47 host-side unit tests** — `test_utils.c` (28) + `test_security.c` (19)
+- **19 QEMU smoke tests** — 4-CPU, expect-based
+- **Static analysis** — cppcheck, sparse, gcc -fanalyzer
+- **GDB scripted checks** — heap/PMM/VGA integrity
+- `make test-all` runs everything
 
 ## Running (x86)
 - `make ARCH=x86 iso`
@@ -97,40 +110,34 @@ QEMU debug helpers:
 
 See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for a detailed checklist.
 
-- **Syscalls / POSIX gaps**
-  - `brk`/`sbrk` (heap management)
-  - `mmap`/`munmap` (memory-mapped I/O)
-  - `access`, `chmod`, `chown`, `umask` (permissions)
-  - `link`, `symlink`, `readlink` (hard/symbolic links)
-  - `truncate`/`ftruncate`
-  - `socket`/`bind`/`listen`/`accept`/`connect`/`send`/`recv` (networking)
-  - Userspace `errno` variable + libc-style wrappers
-- **Filesystem**
-  - Permissions/ownership (`uid/gid`, mode bits)
-  - `/proc` filesystem
-  - Real on-disk FS (ext2/FAT) as alternative to diskfs
-- **TTY / terminal**
-  - Full termios flags (raw mode, VMIN/VTIME, signal chars)
-  - Multiple PTY pairs
-- **Virtual memory hardening**
-  - PAE + NX enforcement (execute disable for data/stack)
-  - Guard pages, ASLR
-- **Multi-architecture kernel bring-up**
-  - Implement VMM/interrupts/scheduler for ARM/RISC-V/MIPS
-- **Userland**
-  - Minimal libc (`printf`, `malloc`, `string.h`, etc.)
-  - Shell (sh-compatible)
-  - Core utilities (`ls`, `cat`, `cp`, `mv`, `rm`, `echo`, `mkdir`)
-- **Observability & tooling**
-  - Panic backtraces, symbolization
-  - CI pipeline with `cppcheck`, `scan-build`
+### Near-term (unlock interactive use)
+- **Shell** (`sh`-compatible) — all required syscalls are implemented
+- **Core utilities** — `ls`, `cat`, `echo`, `mkdir`, `rm`
+- **`/dev/zero`**, **`/dev/random`** — simple device nodes
+- **Multiple PTY pairs** — currently only 1
+
+### Medium-term (POSIX compliance)
+- **`mmap`/`munmap`** — memory-mapped files
+- **Permissions** — `uid`/`gid`/mode, `chmod`, `chown`, `access`, `umask`
+- **`/proc` per-process** — `/proc/[pid]/status`, `/proc/[pid]/maps`
+- **Hard/symbolic links** — `link`, `symlink`, `readlink`
+- **VMIN/VTIME** — termios non-canonical timing
+
+### Long-term (full Unix experience)
+- **Networking** — socket API, TCP/IP stack
+- **Threads** — `clone`/`pthread`
+- **PAE + NX bit** — hardware W^X
+- **Dynamic linking** — `ld.so`
+- **ext2/FAT** filesystem support
 
 ## Directory Structure
-- `src/kernel/` - Architecture-independent kernel code (VFS, syscalls, scheduler, tmpfs, diskfs, devfs, overlayfs, PTY, TTY)
-- `src/arch/` - Architecture-specific code (boot, context switch, interrupts, VMM)
-- `src/hal/` - Hardware abstraction layer (CPU, keyboard, timer, UART, video)
-- `src/drivers/` - Device drivers (ATA, initrd, keyboard, timer, UART, VGA)
-- `src/mm/` - Memory management (PMM, heap)
-- `include/` - Header files
-- `user/` - Userland programs (`init.c`, `echo.c`)
-- `docs/` - Documentation (POSIX roadmap)
+- `src/kernel/` — Architecture-independent kernel (VFS, syscalls, scheduler, tmpfs, diskfs, devfs, overlayfs, PTY, TTY, shm, signals)
+- `src/arch/x86/` — x86-specific (boot, VMM, IDT, LAPIC, IOAPIC, SMP, ACPI, CPUID, SYSENTER)
+- `src/hal/x86/` — HAL x86 (CPU, keyboard, timer, UART, PCI, ATA PIO/DMA)
+- `src/drivers/` — Device drivers (VBE, initrd, VGA)
+- `src/mm/` — Memory management (PMM, heap, slab)
+- `include/` — Header files
+- `user/` — Userland programs (`init.c`, `echo.c`)
+- `user/ulibc/` — Minimal C library (`printf`, `malloc`, `string.h`, `errno.h`)
+- `tests/` — Host unit tests, smoke tests, GDB scripted checks
+- `docs/` — Documentation (POSIX roadmap, audit report, supplementary analysis, testing plan)
