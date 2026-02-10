@@ -18,6 +18,7 @@
 #include "vmm.h"
 #include "pmm.h"
 #include "timer.h"
+#include "hal/mm.h"
 
 #include "hal/cpu.h"
 
@@ -1497,7 +1498,7 @@ static uintptr_t syscall_mmap_impl(uintptr_t addr, uint32_t length, uint32_t pro
     uintptr_t base;
     if (flags & MAP_FIXED) {
         if (addr == 0 || (addr & 0xFFF)) return (uintptr_t)-EINVAL;
-        if (addr >= 0xC0000000U) return (uintptr_t)-EINVAL;
+        if (hal_mm_kernel_virt_base() && addr >= hal_mm_kernel_virt_base()) return (uintptr_t)-EINVAL;
         base = addr;
     } else {
         base = mmap_find_free(aligned_len);
@@ -1559,12 +1560,12 @@ static uintptr_t syscall_brk_impl(uintptr_t addr) {
         return current_process->heap_break;
     }
 
-    const uintptr_t X86_KERN_BASE = 0xC0000000U;
+    const uintptr_t KERN_BASE = hal_mm_kernel_virt_base();
     const uintptr_t USER_STACK_BASE = 0x00800000U;
 
     if (addr < current_process->heap_start) return current_process->heap_break;
     if (addr >= USER_STACK_BASE) return current_process->heap_break;
-    if (addr >= X86_KERN_BASE) return current_process->heap_break;
+    if (KERN_BASE && addr >= KERN_BASE) return current_process->heap_break;
 
     uintptr_t old_brk = current_process->heap_break;
     uintptr_t new_brk = (addr + 0xFFFU) & ~(uintptr_t)0xFFFU;
