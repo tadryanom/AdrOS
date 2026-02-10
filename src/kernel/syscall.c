@@ -8,7 +8,7 @@
  */
 
 #include "syscall.h"
-#include "idt.h"
+#include "interrupts.h"
 #include "fs.h"
 #include "process.h"
 #include "spinlock.h"

@@ -7,7 +7,7 @@
  * Source: https://github.com/tadryanom/AdrOS
  */
 
-#include "gdt.h"
+#include "arch/x86/gdt.h"
 
 #include "uart_console.h"
  #include "utils.h"
