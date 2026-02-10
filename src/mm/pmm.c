@@ -1,5 +1,7 @@
 #include "pmm.h"
+#if defined(__i386__) || defined(__x86_64__)
 #include "multiboot2.h"
+#endif
 #include "utils.h"
 #include "uart_console.h"
 #include "hal/cpu.h"
