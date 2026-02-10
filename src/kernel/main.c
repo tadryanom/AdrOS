@@ -21,6 +21,7 @@
 #include "arch/arch_platform.h"
 
 #include "hal/cpu.h"
+#include "hal/cpu_features.h"
 
 
 /* Check if the compiler thinks we are targeting the wrong operating system. */
@@ -34,6 +35,9 @@
  */
 void kernel_main(const struct boot_info* bi) {
     console_init();
+
+    hal_cpu_detect_features();
+    hal_cpu_print_features();
 
     kprintf("[AdrOS] Initializing PMM...\n");
     
