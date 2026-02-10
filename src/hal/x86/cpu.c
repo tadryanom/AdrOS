@@ -49,6 +49,10 @@ void hal_cpu_enable_interrupts(void) {
     __asm__ volatile("sti");
 }
 
+void hal_cpu_disable_interrupts(void) {
+    __asm__ volatile("cli");
+}
+
 void hal_cpu_idle(void) {
     __asm__ volatile("hlt");
 }
@@ -72,6 +76,9 @@ void hal_cpu_set_kernel_stack(uintptr_t sp_top) {
 }
 
 void hal_cpu_enable_interrupts(void) {
+}
+
+void hal_cpu_disable_interrupts(void) {
 }
 
 void hal_cpu_idle(void) {
