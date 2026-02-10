@@ -14,6 +14,18 @@ static uint8_t term_color = 0x0F; // White on Black
 
 static spinlock_t vga_lock = {0};
 
+static void vga_scroll(void) {
+    for (int y = 1; y < VGA_HEIGHT; y++) {
+        for (int x = 0; x < VGA_WIDTH; x++) {
+            VGA_BUFFER[(y - 1) * VGA_WIDTH + x] = VGA_BUFFER[y * VGA_WIDTH + x];
+        }
+    }
+    for (int x = 0; x < VGA_WIDTH; x++) {
+        VGA_BUFFER[(VGA_HEIGHT - 1) * VGA_WIDTH + x] = (uint16_t)' ' | (uint16_t)term_color << 8;
+    }
+    term_row = VGA_HEIGHT - 1;
+}
+
 void vga_init(void) {
     VGA_BUFFER = (volatile uint16_t*)hal_video_text_buffer();
     term_col = 0;
@@ -60,8 +72,7 @@ void vga_put_char(char c) {
     }
 
     if (term_row >= VGA_HEIGHT) {
-        // TODO: Implement scrolling
-        term_row = 0;
+        vga_scroll();
     }
 
     spin_unlock_irqrestore(&vga_lock, flags);
@@ -92,7 +103,7 @@ void vga_print(const char* str) {
         }
 
         if (term_row >= VGA_HEIGHT) {
-            term_row = 0;
+            vga_scroll();
         }
     }
 
