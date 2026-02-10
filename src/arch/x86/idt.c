@@ -324,15 +324,21 @@ void isr_handler(struct registers* regs) {
                 // If page fault came from ring3, convert it into a SIGSEGV delivery.
                 // Default action for SIGSEGV will terminate the process, but a user
                 // handler installed via sigaction() must be respected.
+                uint32_t cr2;
+                __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
+
                 if ((regs->cs & 3U) == 3U) {
                     const int SIG_SEGV = 11;
                     if (current_process) {
-                        uint32_t cr2;
-                        __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
                         current_process->last_fault_addr = (uintptr_t)cr2;
                         current_process->sig_pending_mask |= (1U << (uint32_t)SIG_SEGV);
                     }
                     deliver_signals_to_usermode(regs);
+                    return;
+                }
+
+                // Kernel-mode page faults during copy_{to,from}_user should not panic.
+                if (uaccess_try_recover((uintptr_t)cr2, regs)) {
                     return;
                 }
             }

@@ -1,6 +1,7 @@
 #include "uaccess.h"
 
 #include "errno.h"
+#include "idt.h"
 
 #include <stdint.h>
 
@@ -15,6 +16,29 @@ static int x86_user_range_basic_ok(uintptr_t uaddr, size_t len) {
     if (end < uaddr) return 0;
     if (end >= X86_KERNEL_VIRT_BASE) return 0;
     return 1;
+}
+
+static volatile int g_uaccess_active = 0;
+static volatile int g_uaccess_faulted = 0;
+static volatile uintptr_t g_uaccess_recover_eip = 0;
+
+int uaccess_try_recover(uintptr_t fault_addr, struct registers* regs) {
+    (void)fault_addr;
+    if (!regs) return 0;
+
+#if defined(__i386__)
+    if (g_uaccess_active == 0) return 0;
+    if (g_uaccess_recover_eip == 0) return 0;
+
+    // Only recover faults on user addresses; kernel faults should still panic.
+    if (fault_addr >= X86_KERNEL_VIRT_BASE) return 0;
+
+    g_uaccess_faulted = 1;
+    regs->eip = (uint32_t)g_uaccess_recover_eip;
+    return 1;
+#else
+    return 0;
+#endif
 }
 
 static int x86_user_page_writable_user(uintptr_t vaddr) {
@@ -94,11 +118,25 @@ int copy_from_user(void* dst, const void* src_user, size_t len) {
     if (len == 0) return 0;
     if (!user_range_ok(src_user, len)) return -EFAULT;
 
+    g_uaccess_faulted = 0;
+    g_uaccess_recover_eip = (uintptr_t)&&uaccess_fault;
+    g_uaccess_active = 1;
+
     uintptr_t up = (uintptr_t)src_user;
     for (size_t i = 0; i < len; i++) {
         ((uint8_t*)dst)[i] = ((const volatile uint8_t*)up)[i];
     }
+
+    g_uaccess_active = 0;
+    g_uaccess_recover_eip = 0;
+    if (g_uaccess_faulted) return -EFAULT;
     return 0;
+
+uaccess_fault:
+    g_uaccess_active = 0;
+    g_uaccess_faulted = 0;
+    g_uaccess_recover_eip = 0;
+    return -EFAULT;
 }
 
 int copy_to_user(void* dst_user, const void* src, size_t len) {
@@ -110,9 +148,23 @@ int copy_to_user(void* dst_user, const void* src, size_t len) {
     if (!user_range_ok(dst_user, len)) return -EFAULT;
 #endif
 
+    g_uaccess_faulted = 0;
+    g_uaccess_recover_eip = (uintptr_t)&&uaccess_fault2;
+    g_uaccess_active = 1;
+
     uintptr_t up = (uintptr_t)dst_user;
     for (size_t i = 0; i < len; i++) {
         ((volatile uint8_t*)up)[i] = ((const uint8_t*)src)[i];
     }
+
+    g_uaccess_active = 0;
+    g_uaccess_recover_eip = 0;
+    if (g_uaccess_faulted) return -EFAULT;
     return 0;
+
+uaccess_fault2:
+    g_uaccess_active = 0;
+    g_uaccess_faulted = 0;
+    g_uaccess_recover_eip = 0;
+    return -EFAULT;
 }
