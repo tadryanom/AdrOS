@@ -7,6 +7,7 @@
 #include "spinlock.h"
 #include "uart_console.h"
 #include "vga_console.h"
+#include "keyboard.h"
 
 static spinlock_t g_console_lock = {0};
 static int g_console_uart_enabled = 1;
@@ -216,6 +217,13 @@ void kprintf(const char* fmt, ...) {
     }
 
     console_write(buf);
+}
+
+int kgetc(void) {
+    char c = 0;
+    int rd = keyboard_read_blocking(&c, 1);
+    if (rd <= 0) return -1;
+    return (int)(unsigned char)c;
 }
 
 size_t klog_read(char* out, size_t out_size) {
