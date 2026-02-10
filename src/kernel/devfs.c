@@ -20,7 +20,6 @@ static fs_node_t g_dev_console;
 static fs_node_t g_dev_tty;
 static fs_node_t g_dev_ptmx;
 static fs_node_t g_dev_pts_dir;
-static fs_node_t g_dev_pts0;
 static uint32_t g_devfs_inited = 0;
 
 static uint32_t prng_state = 0x12345678;
@@ -124,33 +123,19 @@ static uint32_t dev_tty_write(fs_node_t* node, uint32_t offset, uint32_t size, c
 }
 
 static uint32_t dev_ptmx_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
-    (void)node;
     (void)offset;
-    int rc = pty_master_read_kbuf(buffer, size);
+    int idx = pty_ino_to_idx(node->inode);
+    if (idx < 0) idx = 0;
+    int rc = pty_master_read_idx(idx, buffer, size);
     if (rc < 0) return 0;
     return (uint32_t)rc;
 }
 
 static uint32_t dev_ptmx_write(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer) {
-    (void)node;
     (void)offset;
-    int rc = pty_master_write_kbuf(buffer, size);
-    if (rc < 0) return 0;
-    return (uint32_t)rc;
-}
-
-static uint32_t dev_pts0_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
-    (void)node;
-    (void)offset;
-    int rc = pty_slave_read_kbuf(buffer, size);
-    if (rc < 0) return 0;
-    return (uint32_t)rc;
-}
-
-static uint32_t dev_pts0_write(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer) {
-    (void)node;
-    (void)offset;
-    int rc = pty_slave_write_kbuf(buffer, size);
+    int idx = pty_ino_to_idx(node->inode);
+    if (idx < 0) idx = 0;
+    int rc = pty_master_write_idx(idx, buffer, size);
     if (rc < 0) return 0;
     return (uint32_t)rc;
 }
@@ -173,7 +158,15 @@ static struct fs_node* devfs_finddir_impl(struct fs_node* node, const char* name
 static struct fs_node* devfs_pts_finddir_impl(struct fs_node* node, const char* name) {
     (void)node;
     if (!name || name[0] == 0) return 0;
-    if (strcmp(name, "0") == 0) return &g_dev_pts0;
+    int count = pty_pair_count();
+    for (int i = 0; i < count; i++) {
+        char num[4];
+        num[0] = '0' + (char)i;
+        num[1] = '\0';
+        if (strcmp(name, num) == 0) {
+            return pty_get_slave_node(i);
+        }
+    }
     return 0;
 }
 
@@ -230,6 +223,7 @@ static int devfs_pts_readdir_impl(struct fs_node* node, uint32_t* inout_index, v
     if (!inout_index || !buf) return -1;
     if (buf_len < sizeof(struct vfs_dirent)) return -1;
 
+    int count = pty_pair_count();
     uint32_t idx = *inout_index;
     uint32_t cap = buf_len / (uint32_t)sizeof(struct vfs_dirent);
     struct vfs_dirent* ents = (struct vfs_dirent*)buf;
@@ -243,10 +237,13 @@ static int devfs_pts_readdir_impl(struct fs_node* node, uint32_t* inout_index, v
             e.d_ino = 5; e.d_type = FS_DIRECTORY; strcpy(e.d_name, ".");
         } else if (idx == 1) {
             e.d_ino = 1; e.d_type = FS_DIRECTORY; strcpy(e.d_name, "..");
-        } else if (idx == 2) {
-            e.d_ino = 6; e.d_type = FS_CHARDEVICE; strcpy(e.d_name, "0");
         } else {
-            break;
+            int pi = (int)(idx - 2);
+            if (pi >= count) break;
+            e.d_ino = PTY_SLAVE_INO_BASE + (uint32_t)pi;
+            e.d_type = FS_CHARDEVICE;
+            e.d_name[0] = '0' + (char)pi;
+            e.d_name[1] = '\0';
         }
 
         e.d_reclen = (uint16_t)sizeof(e);
@@ -328,13 +325,9 @@ static void devfs_init_once(void) {
     memset(&g_dev_ptmx, 0, sizeof(g_dev_ptmx));
     strcpy(g_dev_ptmx.name, "ptmx");
     g_dev_ptmx.flags = FS_CHARDEVICE;
-    g_dev_ptmx.inode = 4;
-    g_dev_ptmx.length = 0;
+    g_dev_ptmx.inode = PTY_MASTER_INO_BASE;
     g_dev_ptmx.read = &dev_ptmx_read;
     g_dev_ptmx.write = &dev_ptmx_write;
-    g_dev_ptmx.open = 0;
-    g_dev_ptmx.close = 0;
-    g_dev_ptmx.finddir = 0;
 
     memset(&g_dev_pts_dir, 0, sizeof(g_dev_pts_dir));
     strcpy(g_dev_pts_dir.name, "pts");
@@ -348,16 +341,6 @@ static void devfs_init_once(void) {
     g_dev_pts_dir.finddir = &devfs_pts_finddir_impl;
     g_dev_pts_dir.readdir = &devfs_pts_readdir_impl;
 
-    memset(&g_dev_pts0, 0, sizeof(g_dev_pts0));
-    strcpy(g_dev_pts0.name, "0");
-    g_dev_pts0.flags = FS_CHARDEVICE;
-    g_dev_pts0.inode = 6;
-    g_dev_pts0.length = 0;
-    g_dev_pts0.read = &dev_pts0_read;
-    g_dev_pts0.write = &dev_pts0_write;
-    g_dev_pts0.open = 0;
-    g_dev_pts0.close = 0;
-    g_dev_pts0.finddir = 0;
 }
 
 fs_node_t* devfs_create_root(void) {
