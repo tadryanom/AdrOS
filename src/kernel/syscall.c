@@ -406,11 +406,13 @@ static int pipe_create_kfds(int kfds[2]) {
 
     fs_node_t* rnode = NULL;
     fs_node_t* wnode = NULL;
-    if (pipe_node_create(ps, 1, &rnode) < 0 || pipe_node_create(ps, 0, &wnode) < 0) {
-        if (rnode) vfs_close(rnode);
-        if (wnode) vfs_close(wnode);
-        if (ps->buf) kfree(ps->buf);
+    if (pipe_node_create(ps, 1, &rnode) < 0) {
+        kfree(ps->buf);
         kfree(ps);
+        return -ENOMEM;
+    }
+    if (pipe_node_create(ps, 0, &wnode) < 0) {
+        vfs_close(rnode);
         return -ENOMEM;
     }
 
@@ -878,33 +880,72 @@ static int path_is_absolute(const char* p) {
 
 static void path_normalize_inplace(char* s) {
     if (!s) return;
-    // Collapse duplicate slashes and remove trailing slash (except for root).
-    char tmp[128];
-    size_t w = 0;
-    size_t r = 0;
     if (s[0] == 0) {
         strcpy(s, "/");
         return;
     }
 
-    while (s[r] != 0 && w + 1 < sizeof(tmp)) {
-        char c = s[r++];
-        if (c == '/') {
-            if (w == 0 || tmp[w - 1] != '/') {
-                tmp[w++] = '/';
+    // Phase 1: split into components, resolve '.' and '..'
+    char tmp[128];
+    // Stack of component start offsets within tmp
+    size_t comp_start[32];
+    int depth = 0;
+    size_t w = 0;
+
+    const char* p = s;
+    int absolute = (*p == '/');
+    if (absolute) {
+        tmp[w++] = '/';
+        while (*p == '/') p++;
+    }
+
+    while (*p != 0) {
+        // Extract next component
+        const char* seg = p;
+        while (*p != 0 && *p != '/') p++;
+        size_t seg_len = (size_t)(p - seg);
+        while (*p == '/') p++;
+
+        if (seg_len == 1 && seg[0] == '.') {
+            continue; // skip '.'
+        }
+
+        if (seg_len == 2 && seg[0] == '.' && seg[1] == '.') {
+            // Go up one level
+            if (depth > 0) {
+                depth--;
+                w = comp_start[depth];
             }
-        } else {
-            tmp[w++] = c;
+            continue;
+        }
+
+        // Record start of this component
+        if (depth < 32) {
+            comp_start[depth++] = w;
+        }
+
+        // Append separator if needed
+        if (w > 1 || (w == 1 && tmp[0] != '/')) {
+            if (w + 1 < sizeof(tmp)) tmp[w++] = '/';
+        }
+
+        // Append component
+        for (size_t i = 0; i < seg_len && w + 1 < sizeof(tmp); i++) {
+            tmp[w++] = seg[i];
         }
     }
-    tmp[w] = 0;
 
-    size_t l = strlen(tmp);
-    while (l > 1 && tmp[l - 1] == '/') {
-        tmp[l - 1] = 0;
-        l--;
+    // Handle empty result
+    if (w == 0) {
+        tmp[w++] = '/';
     }
 
+    // Remove trailing slash (except root)
+    while (w > 1 && tmp[w - 1] == '/') {
+        w--;
+    }
+
+    tmp[w] = 0;
     strcpy(s, tmp);
 }
 

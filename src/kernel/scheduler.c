@@ -402,6 +402,7 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
     
     void* stack = kmalloc(4096);
     if (!stack) {
+        kfree(proc);
         spin_unlock_irqrestore(&sched_lock, flags);
         return NULL;
     }

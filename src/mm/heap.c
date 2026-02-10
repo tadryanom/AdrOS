@@ -173,18 +173,15 @@ void kfree(void* ptr) {
 
         // Only coalesce if physically adjacent.
         heap_header_t* expected_next = (heap_header_t*)((uint8_t*)header + sizeof(heap_header_t) + header->size);
-        if (next_block != expected_next) {
-            spin_unlock_irqrestore(&heap_lock, flags);
-            return;
-        }
-        
-        header->size += sizeof(heap_header_t) + next_block->size;
-        header->next = next_block->next;
-        
-        if (header->next) {
-            header->next->prev = header;
-        } else {
-            tail = header; // If next was tail, now current is tail
+        if (next_block == expected_next) {
+            header->size += sizeof(heap_header_t) + next_block->size;
+            header->next = next_block->next;
+
+            if (header->next) {
+                header->next->prev = header;
+            } else {
+                tail = header;
+            }
         }
     }
     
@@ -194,20 +191,16 @@ void kfree(void* ptr) {
 
         // Only coalesce if physically adjacent.
         heap_header_t* expected_hdr = (heap_header_t*)((uint8_t*)prev_block + sizeof(heap_header_t) + prev_block->size);
-        if (expected_hdr != header) {
-            spin_unlock_irqrestore(&heap_lock, flags);
-            return;
+        if (expected_hdr == header) {
+            prev_block->size += sizeof(heap_header_t) + header->size;
+            prev_block->next = header->next;
+
+            if (header->next) {
+                header->next->prev = prev_block;
+            } else {
+                tail = prev_block;
+            }
         }
-        
-        prev_block->size += sizeof(heap_header_t) + header->size;
-        prev_block->next = header->next;
-        
-        if (header->next) {
-            header->next->prev = prev_block;
-        } else {
-            tail = prev_block;
-        }
-        // No need to update 'header' anymore, prev_block is the merged one
     }
 
     spin_unlock_irqrestore(&heap_lock, flags);
