@@ -28,8 +28,11 @@ static uint32_t waitq_head = 0;
 static uint32_t waitq_tail = 0;
 
 static uint32_t tty_lflag = TTY_ICANON | TTY_ECHO | TTY_ISIG;
+static uint8_t tty_cc[NCCS] = {0, 0, 0, 0, 1, 0, 0, 0};
 
 static struct winsize tty_winsize = { 24, 80, 0, 0 };
+
+extern uint32_t get_tick_count(void);
 
 static uint32_t tty_session_id = 0;
 static uint32_t tty_fg_pgrp = 0;
@@ -65,48 +68,93 @@ int tty_write_kbuf(const void* kbuf, uint32_t len) {
     return (int)len;
 }
 
+static int tty_drain_locked(void* kbuf, uint32_t len) {
+    uint32_t avail = canon_count();
+    if (avail == 0) return 0;
+    uint32_t n = (len < avail) ? len : avail;
+    for (uint32_t i = 0; i < n; i++) {
+        ((char*)kbuf)[i] = canon_buf[canon_tail];
+        canon_tail = (canon_tail + 1U) % TTY_CANON_BUF;
+    }
+    return (int)n;
+}
+
 int tty_read_kbuf(void* kbuf, uint32_t len) {
     if (!kbuf) return -EFAULT;
     if (len > 1024 * 1024) return -EINVAL;
     if (!current_process) return -ECHILD;
 
-    // Job control: background reads from controlling TTY generate SIGTTIN.
     if (tty_session_id != 0 && current_process->session_id == tty_session_id &&
         tty_fg_pgrp != 0 && current_process->pgrp_id != tty_fg_pgrp) {
         (void)process_kill(current_process->pid, SIGTTIN);
         return -EINTR;
     }
 
+    uintptr_t fl = spin_lock_irqsave(&tty_lock);
+    int is_canon = (tty_lflag & TTY_ICANON) != 0;
+    uint32_t vmin  = tty_cc[VMIN];
+    uint32_t vtime = tty_cc[VTIME];
+    spin_unlock_irqrestore(&tty_lock, fl);
+
+    if (is_canon) {
+        while (1) {
+            uintptr_t flags = spin_lock_irqsave(&tty_lock);
+            if (!canon_empty()) {
+                int rc = tty_drain_locked(kbuf, len);
+                spin_unlock_irqrestore(&tty_lock, flags);
+                return rc;
+            }
+            if (waitq_push(current_process) == 0)
+                current_process->state = PROCESS_BLOCKED;
+            spin_unlock_irqrestore(&tty_lock, flags);
+            hal_cpu_enable_interrupts();
+            schedule();
+        }
+    }
+
+    /* Non-canonical: VMIN=0,VTIME=0 => poll */
+    if (vmin == 0 && vtime == 0) {
+        uintptr_t flags = spin_lock_irqsave(&tty_lock);
+        int rc = tty_drain_locked(kbuf, len);
+        spin_unlock_irqrestore(&tty_lock, flags);
+        return rc;
+    }
+
+    uint32_t target = vmin;
+    if (target > len) target = len;
+    if (target == 0) target = 1;
+
+    /* VTIME in tenths-of-second => ticks at 50 Hz */
+    uint32_t timeout_ticks = 0;
+    if (vtime > 0) {
+        timeout_ticks = (vtime * 5U);
+        if (timeout_ticks == 0) timeout_ticks = 1;
+    }
+
+    uint32_t start = get_tick_count();
+
     while (1) {
         uintptr_t flags = spin_lock_irqsave(&tty_lock);
+        uint32_t avail = canon_count();
 
-        if (!canon_empty()) {
-            uint32_t avail = canon_count();
-            uint32_t to_read = len;
-            if (to_read > avail) to_read = avail;
-
-            uint32_t total = 0;
-            while (total < to_read) {
-                uint32_t chunk = to_read - total;
-                if (chunk > 256U) chunk = 256U;
-
-                for (uint32_t i = 0; i < chunk; i++) {
-                    ((char*)kbuf)[total + i] = canon_buf[canon_tail];
-                    canon_tail = (canon_tail + 1U) % TTY_CANON_BUF;
-                }
-                total += chunk;
-            }
-
+        if (avail >= target) {
+            int rc = tty_drain_locked(kbuf, len);
             spin_unlock_irqrestore(&tty_lock, flags);
-            return (int)to_read;
+            return rc;
         }
 
-        if (waitq_push(current_process) == 0) {
+        if (vtime > 0) {
+            uint32_t elapsed = get_tick_count() - start;
+            if (elapsed >= timeout_ticks) {
+                int rc = tty_drain_locked(kbuf, len);
+                spin_unlock_irqrestore(&tty_lock, flags);
+                return rc;
+            }
+        }
+
+        if (waitq_push(current_process) == 0)
             current_process->state = PROCESS_BLOCKED;
-        }
-
         spin_unlock_irqrestore(&tty_lock, flags);
-
         hal_cpu_enable_interrupts();
         schedule();
     }
@@ -215,6 +263,7 @@ int tty_ioctl(uint32_t cmd, void* user_arg) {
         memset(&t, 0, sizeof(t));
         uintptr_t flags = spin_lock_irqsave(&tty_lock);
         t.c_lflag = tty_lflag;
+        for (int i = 0; i < NCCS; i++) t.c_cc[i] = tty_cc[i];
         spin_unlock_irqrestore(&tty_lock, flags);
         if (copy_to_user(user_arg, &t, sizeof(t)) < 0) return -EFAULT;
         return 0;
@@ -225,6 +274,7 @@ int tty_ioctl(uint32_t cmd, void* user_arg) {
         if (copy_from_user(&t, user_arg, sizeof(t)) < 0) return -EFAULT;
         uintptr_t flags = spin_lock_irqsave(&tty_lock);
         tty_lflag = t.c_lflag & (TTY_ICANON | TTY_ECHO | TTY_ISIG);
+        for (int i = 0; i < NCCS; i++) tty_cc[i] = t.c_cc[i];
         spin_unlock_irqrestore(&tty_lock, flags);
         return 0;
     }
@@ -402,53 +452,22 @@ int tty_read(void* user_buf, uint32_t len) {
     if (!user_buf) return -EFAULT;
     if (len > 1024 * 1024) return -EINVAL;
     if (user_range_ok(user_buf, (size_t)len) == 0) return -EFAULT;
-    if (!current_process) return -ECHILD;
 
-    // Job control: background reads from controlling TTY generate SIGTTIN.
-    if (tty_session_id != 0 && current_process->session_id == tty_session_id &&
-        tty_fg_pgrp != 0 && current_process->pgrp_id != tty_fg_pgrp) {
-        (void)process_kill(current_process->pid, SIGTTIN);
-        return -EINTR;
+    char kbuf[256];
+    uint32_t total = 0;
+    while (total < len) {
+        uint32_t chunk = len - total;
+        if (chunk > sizeof(kbuf)) chunk = (uint32_t)sizeof(kbuf);
+
+        int rc = tty_read_kbuf(kbuf, chunk);
+        if (rc < 0) return (total > 0) ? (int)total : rc;
+        if (rc == 0) break;
+
+        if (copy_to_user((uint8_t*)user_buf + total, kbuf, (size_t)rc) < 0)
+            return -EFAULT;
+
+        total += (uint32_t)rc;
+        if ((uint32_t)rc < chunk) break;
     }
-
-    while (1) {
-        uintptr_t flags = spin_lock_irqsave(&tty_lock);
-
-        if (!canon_empty()) {
-            uint32_t avail = canon_count();
-            uint32_t to_read = len;
-            if (to_read > avail) to_read = avail;
-
-            char kbuf[256];
-            uint32_t total = 0;
-            while (total < to_read) {
-                uint32_t chunk = to_read - total;
-                if (chunk > sizeof(kbuf)) chunk = (uint32_t)sizeof(kbuf);
-
-                for (uint32_t i = 0; i < chunk; i++) {
-                    kbuf[i] = canon_buf[canon_tail];
-                    canon_tail = (canon_tail + 1U) % TTY_CANON_BUF;
-                }
-
-                spin_unlock_irqrestore(&tty_lock, flags);
-
-                if (copy_to_user((uint8_t*)user_buf + total, kbuf, (size_t)chunk) < 0) return -EFAULT;
-
-                total += chunk;
-                flags = spin_lock_irqsave(&tty_lock);
-            }
-
-            spin_unlock_irqrestore(&tty_lock, flags);
-            return (int)to_read;
-        }
-
-        if (waitq_push(current_process) == 0) {
-            current_process->state = PROCESS_BLOCKED;
-        }
-
-        spin_unlock_irqrestore(&tty_lock, flags);
-
-        hal_cpu_enable_interrupts();
-        schedule();
-    }
+    return (int)total;
 }
