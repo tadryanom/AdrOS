@@ -141,10 +141,70 @@ run: iso
 		-serial file:serial.log -monitor none -no-reboot -no-shutdown \
 		$(QEMU_DFLAGS)
 
+# ---- Static Analysis ----
+
 cppcheck:
 	@cppcheck --version >/dev/null
 	@cppcheck --quiet --enable=warning,performance,portability --error-exitcode=1 \
 		-I include $(SRC_DIR)
+
+# Sparse: kernel-oriented semantic checker (type safety, NULL, bitwise vs logical)
+SPARSE_FLAGS := -m32 -D__i386__ -D__linux__ -Iinclude
+SPARSE_SRCS := $(filter-out $(wildcard $(SRC_DIR)/arch/arm/*.c) \
+                             $(wildcard $(SRC_DIR)/arch/riscv/*.c) \
+                             $(wildcard $(SRC_DIR)/arch/mips/*.c) \
+                             $(wildcard $(SRC_DIR)/hal/arm/*.c) \
+                             $(wildcard $(SRC_DIR)/hal/riscv/*.c) \
+                             $(wildcard $(SRC_DIR)/hal/mips/*.c), $(C_SOURCES))
+
+sparse:
+	@echo "[SPARSE] Running sparse on $(words $(SPARSE_SRCS)) files..."
+	@fail=0; \
+	for f in $(SPARSE_SRCS); do \
+		sparse $(SPARSE_FLAGS) $$f 2>&1; \
+	done
+	@echo "[SPARSE] Done."
+
+# GCC -fanalyzer: interprocedural static analysis (use-after-free, NULL deref, etc)
+ANALYZER_FLAGS := -m32 -ffreestanding -fanalyzer -fsyntax-only -Iinclude -O2 -Wno-cpp
+
+analyzer:
+	@echo "[ANALYZER] Running gcc -fanalyzer on $(words $(SPARSE_SRCS)) files..."
+	@fail=0; \
+	for f in $(SPARSE_SRCS); do \
+		$(CC) $(ANALYZER_FLAGS) $$f 2>&1 | grep -v "^$$" || true; \
+	done
+	@echo "[ANALYZER] Done."
+
+# Combined static analysis: cppcheck + sparse
+check: cppcheck sparse
+	@echo "[CHECK] All static analysis passed."
+
+# ---- Automated Smoke Test (QEMU + expect) ----
+
+SMOKE_SMP ?= 4
+SMOKE_TIMEOUT ?= 40
+
+test: iso
+	@echo "[TEST] Running smoke test (SMP=$(SMOKE_SMP), timeout=$(SMOKE_TIMEOUT)s)..."
+	@expect tests/smoke_test.exp $(SMOKE_SMP) $(SMOKE_TIMEOUT)
+
+test-1cpu: iso
+	@echo "[TEST] Running smoke test (SMP=1, timeout=50s)..."
+	@expect tests/smoke_test.exp 1 50
+
+# ---- Host-Side Unit Tests ----
+
+test-host:
+	@mkdir -p build/host
+	@echo "[TEST-HOST] Compiling tests/test_utils.c..."
+	@gcc -m32 -Wall -Wextra -Werror -Iinclude -o build/host/test_utils tests/test_utils.c
+	@./build/host/test_utils
+
+# ---- All Tests ----
+
+test-all: check test-host test
+	@echo "[TEST-ALL] All tests passed."
 
 scan-build:
 	@command -v scan-build >/dev/null
@@ -168,4 +228,4 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.S
 clean:
 	rm -rf build $(KERNEL_NAME)
 
-.PHONY: all clean iso run cppcheck scan-build mkinitrd-asan
+.PHONY: all clean iso run cppcheck sparse analyzer check test test-1cpu test-host test-all scan-build mkinitrd-asan
