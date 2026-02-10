@@ -16,7 +16,6 @@
 #include "vmm.h"
 #include "process.h"
 #include "keyboard.h"
-#include "shell.h"
 #include "kconsole.h"
 #include "heap.h"
 #include "timer.h"
