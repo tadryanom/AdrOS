@@ -200,6 +200,23 @@ test-host:
 	@echo "[TEST-HOST] Compiling tests/test_utils.c..."
 	@gcc -m32 -Wall -Wextra -Werror -Iinclude -o build/host/test_utils tests/test_utils.c
 	@./build/host/test_utils
+	@echo "[TEST-HOST] Compiling tests/test_security.c..."
+	@gcc -m32 -Wall -Wextra -Werror -Iinclude -o build/host/test_security tests/test_security.c
+	@./build/host/test_security
+
+# ---- GDB Scripted Checks (requires QEMU + GDB) ----
+
+test-gdb: $(KERNEL_NAME) iso
+	@echo "[TEST-GDB] Starting QEMU with GDB stub..."
+	@rm -f serial.log
+	@test -f disk.img || dd if=/dev/zero of=disk.img bs=1M count=4 2>/dev/null
+	@qemu-system-i386 -smp 4 -boot d -cdrom adros-$(ARCH).iso -m 128M -display none \
+		-drive file=disk.img,if=ide,format=raw \
+		-serial file:serial.log -monitor none -no-reboot -no-shutdown \
+		-s -S &
+	@sleep 1
+	@gdb -batch -nx -x tests/gdb_checks.py adros-$(ARCH).bin || true
+	@-pkill -f "qemu-system-i386.*-s -S" 2>/dev/null || true
 
 # ---- All Tests ----
 
@@ -228,4 +245,4 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.S
 clean:
 	rm -rf build $(KERNEL_NAME)
 
-.PHONY: all clean iso run cppcheck sparse analyzer check test test-1cpu test-host test-all scan-build mkinitrd-asan
+.PHONY: all clean iso run cppcheck sparse analyzer check test test-1cpu test-host test-gdb test-all scan-build mkinitrd-asan
