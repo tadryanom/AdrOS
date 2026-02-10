@@ -273,12 +273,14 @@ static int poll_wait_kfds(struct pollfd* kfds, uint32_t nfds, int32_t timeout) {
                 } else if (n->inode == 3) {
                     if ((kfds[i].events & POLLIN) && tty_can_read()) kfds[i].revents |= POLLIN;
                     if ((kfds[i].events & POLLOUT) && tty_can_write()) kfds[i].revents |= POLLOUT;
-                } else if (n->inode == 4) {
-                    if ((kfds[i].events & POLLIN) && pty_master_can_read()) kfds[i].revents |= POLLIN;
-                    if ((kfds[i].events & POLLOUT) && pty_master_can_write()) kfds[i].revents |= POLLOUT;
-                } else if (n->inode == 6) {
-                    if ((kfds[i].events & POLLIN) && pty_slave_can_read()) kfds[i].revents |= POLLIN;
-                    if ((kfds[i].events & POLLOUT) && pty_slave_can_write()) kfds[i].revents |= POLLOUT;
+                } else if (pty_is_master_ino(n->inode)) {
+                    int pi = pty_ino_to_idx(n->inode);
+                    if ((kfds[i].events & POLLIN) && pty_master_can_read_idx(pi)) kfds[i].revents |= POLLIN;
+                    if ((kfds[i].events & POLLOUT) && pty_master_can_write_idx(pi)) kfds[i].revents |= POLLOUT;
+                } else if (pty_is_slave_ino(n->inode)) {
+                    int pi = pty_ino_to_idx(n->inode);
+                    if ((kfds[i].events & POLLIN) && pty_slave_can_read_idx(pi)) kfds[i].revents |= POLLIN;
+                    if ((kfds[i].events & POLLOUT) && pty_slave_can_write_idx(pi)) kfds[i].revents |= POLLOUT;
                 }
             } else {
                 // Regular files are always readable/writable (best-effort).
@@ -1197,10 +1199,10 @@ static int syscall_read_impl(int fd, void* user_buf, uint32_t len) {
         if (f->node->flags == FS_CHARDEVICE) {
             if (f->node->inode == 3) {
                 if (!tty_can_read()) return -EAGAIN;
-            } else if (f->node->inode == 4) {
-                if (!pty_master_can_read()) return -EAGAIN;
-            } else if (f->node->inode == 6) {
-                if (!pty_slave_can_read()) return -EAGAIN;
+            } else if (pty_is_master_ino(f->node->inode)) {
+                if (!pty_master_can_read_idx(pty_ino_to_idx(f->node->inode))) return -EAGAIN;
+            } else if (pty_is_slave_ino(f->node->inode)) {
+                if (!pty_slave_can_read_idx(pty_ino_to_idx(f->node->inode))) return -EAGAIN;
             }
         }
     }
@@ -1306,7 +1308,8 @@ static int syscall_ioctl_impl(int fd, uint32_t cmd, void* user_arg) {
     fs_node_t* n = f->node;
     if (n->flags != FS_CHARDEVICE) return -ENOTTY;
     if (n->inode == 3) return tty_ioctl(cmd, user_arg);
-    if (n->inode == 6) return pty_slave_ioctl(cmd, user_arg);
+    if (pty_is_slave_ino(n->inode)) return pty_slave_ioctl_idx(pty_ino_to_idx(n->inode), cmd, user_arg);
+    if (pty_is_master_ino(n->inode)) return -ENOTTY;
     return -ENOTTY;
 }
 
