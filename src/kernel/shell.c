@@ -1,6 +1,7 @@
 #include "shell.h"
 #include "keyboard.h"
 #include "uart_console.h"
+#include "console.h"
 #include "utils.h"
 #include "pmm.h"
 #include "vga_console.h"
@@ -33,6 +34,7 @@ void execute_command(char* cmd) {
         uart_print("  ring3       - Run x86 ring3 syscall test\n");
         uart_print("  reboot      - Restart system\n");
         uart_print("  sleep <num> - Sleep for N ticks\n");
+        uart_print("  dmesg       - Show kernel log buffer\n");
     } 
     else if (strcmp(cmd, "ls") == 0) {
         if (!fs_root) {
@@ -106,6 +108,15 @@ void execute_command(char* cmd) {
 #else
         uart_print("ring3 test only available on x86.\n");
 #endif
+    }
+    else if (strcmp(cmd, "dmesg") == 0) {
+        char dmesg_buf[4096];
+        size_t n = klog_read(dmesg_buf, sizeof(dmesg_buf));
+        if (n > 0) {
+            uart_print(dmesg_buf);
+        } else {
+            uart_print("(empty)\n");
+        }
     }
     else if (strcmp(cmd, "reboot") == 0) {
         hal_system_reboot();
