@@ -8,29 +8,38 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Very small on-disk FS (flat namespace) stored starting at LBA2.
+// Very small on-disk FS stored starting at LBA2.
 // - LBA0 reserved
-// - LBA1 used by persistfs counter (legacy)
-// - LBA2 superblock + directory entries
-// - data blocks allocated linearly from LBA3 upward
+// - LBA1 used by legacy persist counter storage
+// - LBA2..LBA3 superblock (2 sectors)
+// - data blocks allocated linearly from DISKFS_LBA_DATA_START upward
 //
-// Not a full POSIX FS; goal is persistent files with read/write + create/trunc.
+// Not a full POSIX FS; goal is persistent files with minimal directory hierarchy.
 
 #define DISKFS_LBA_SUPER 2U
 #define DISKFS_LBA_SUPER2 3U
 #define DISKFS_LBA_DATA_START 4U
 
 #define DISKFS_MAGIC 0x44465331U /* 'DFS1' */
-#define DISKFS_VERSION 2U
+#define DISKFS_VERSION 3U
 
-#define DISKFS_MAX_FILES 12
-#define DISKFS_NAME_MAX 32
+#define DISKFS_MAX_INODES 24
+#define DISKFS_NAME_MAX 24
 
 #define DISKFS_SECTOR 512U
 
 #define DISKFS_DEFAULT_CAP_SECTORS 8U /* 4KB */
 
-struct diskfs_dirent {
+enum {
+    DISKFS_INODE_FREE = 0,
+    DISKFS_INODE_FILE = 1,
+    DISKFS_INODE_DIR = 2,
+};
+
+struct diskfs_inode {
+    uint8_t type;
+    uint8_t reserved0;
+    uint16_t parent;
     char name[DISKFS_NAME_MAX];
     uint32_t start_lba;
     uint32_t size_bytes;
@@ -40,18 +49,46 @@ struct diskfs_dirent {
 struct diskfs_super {
     uint32_t magic;
     uint32_t version;
+    uint32_t next_free_lba;
+    struct diskfs_inode inodes[DISKFS_MAX_INODES];
+};
+
+// v2 on-disk format (flat dirents) for migration.
+struct diskfs_super_v2 {
+    uint32_t magic;
+    uint32_t version;
     uint32_t file_count;
     uint32_t next_free_lba;
-    struct diskfs_dirent files[DISKFS_MAX_FILES];
+    struct {
+        char name[32];
+        uint32_t start_lba;
+        uint32_t size_bytes;
+        uint32_t cap_sectors;
+    } files[12];
 };
 
 struct diskfs_node {
     fs_node_t vfs;
-    uint32_t idx;
+    uint16_t ino;
 };
 
 static fs_node_t g_root;
 static uint32_t g_ready = 0;
+
+static int diskfs_super_store(const struct diskfs_super* sb);
+
+static void diskfs_strlcpy(char* dst, const char* src, size_t dst_sz) {
+    if (!dst || dst_sz == 0) return;
+    if (!src) {
+        dst[0] = 0;
+        return;
+    }
+    size_t i = 0;
+    for (; src[i] != 0 && i + 1 < dst_sz; i++) {
+        dst[i] = src[i];
+    }
+    dst[i] = 0;
+}
 
 static void diskfs_close_impl(fs_node_t* node) {
     if (!node) return;
@@ -72,26 +109,79 @@ static int diskfs_super_load(struct diskfs_super* sb) {
         memcpy(((uint8_t*)sb) + DISKFS_SECTOR, sec1, sizeof(*sb) - DISKFS_SECTOR);
     }
 
-    if (sb->magic != DISKFS_MAGIC || sb->version != DISKFS_VERSION) {
+    if (sb->magic != DISKFS_MAGIC) {
         memset(sb, 0, sizeof(*sb));
         sb->magic = DISKFS_MAGIC;
         sb->version = DISKFS_VERSION;
-        sb->file_count = 0;
         sb->next_free_lba = DISKFS_LBA_DATA_START;
 
-        memset(sec0, 0, sizeof(sec0));
-        memset(sec1, 0, sizeof(sec1));
-        memcpy(sec0, sb, DISKFS_SECTOR);
-        if (sizeof(*sb) > DISKFS_SECTOR) {
-            memcpy(sec1, ((const uint8_t*)sb) + DISKFS_SECTOR, sizeof(*sb) - DISKFS_SECTOR);
-        }
-        if (ata_pio_write28(DISKFS_LBA_SUPER, sec0) < 0) return -EIO;
-        if (ata_pio_write28(DISKFS_LBA_SUPER2, sec1) < 0) return -EIO;
+        // Root inode
+        sb->inodes[0].type = DISKFS_INODE_DIR;
+        sb->inodes[0].parent = 0;
+        sb->inodes[0].name[0] = 0;
+
+        return diskfs_super_store(sb);
     }
 
-    if (sb->file_count > DISKFS_MAX_FILES) sb->file_count = DISKFS_MAX_FILES;
-    if (sb->next_free_lba < DISKFS_LBA_DATA_START) sb->next_free_lba = DISKFS_LBA_DATA_START;
-    return 0;
+    if (sb->version == DISKFS_VERSION) {
+        if (sb->next_free_lba < DISKFS_LBA_DATA_START) sb->next_free_lba = DISKFS_LBA_DATA_START;
+        if (sb->inodes[0].type != DISKFS_INODE_DIR) {
+            sb->inodes[0].type = DISKFS_INODE_DIR;
+            sb->inodes[0].parent = 0;
+            sb->inodes[0].name[0] = 0;
+            (void)diskfs_super_store(sb);
+        }
+        return 0;
+    }
+
+    // Migration path: v2 -> v3
+    if (sb->version == 2U) {
+        struct diskfs_super_v2 old;
+        memset(&old, 0, sizeof(old));
+        if (sizeof(old) > (size_t)(DISKFS_SECTOR * 2U)) return -EIO;
+        memcpy(&old, sec0, DISKFS_SECTOR);
+        if (sizeof(old) > DISKFS_SECTOR) {
+            memcpy(((uint8_t*)&old) + DISKFS_SECTOR, sec1, sizeof(old) - DISKFS_SECTOR);
+        }
+
+        if (old.magic != DISKFS_MAGIC || old.version != 2U) return -EIO;
+
+        memset(sb, 0, sizeof(*sb));
+        sb->magic = DISKFS_MAGIC;
+        sb->version = DISKFS_VERSION;
+        sb->next_free_lba = old.next_free_lba;
+        if (sb->next_free_lba < DISKFS_LBA_DATA_START) sb->next_free_lba = DISKFS_LBA_DATA_START;
+
+        sb->inodes[0].type = DISKFS_INODE_DIR;
+        sb->inodes[0].parent = 0;
+        sb->inodes[0].name[0] = 0;
+
+        uint32_t n = old.file_count;
+        if (n > 12U) n = 12U;
+        uint16_t ino = 1;
+        for (uint32_t i = 0; i < n && ino < DISKFS_MAX_INODES; i++) {
+            if (old.files[i].name[0] == 0) continue;
+            sb->inodes[ino].type = DISKFS_INODE_FILE;
+            sb->inodes[ino].parent = 0;
+            diskfs_strlcpy(sb->inodes[ino].name, old.files[i].name, sizeof(sb->inodes[ino].name));
+            sb->inodes[ino].start_lba = old.files[i].start_lba;
+            sb->inodes[ino].size_bytes = old.files[i].size_bytes;
+            sb->inodes[ino].cap_sectors = old.files[i].cap_sectors;
+            ino++;
+        }
+
+        return diskfs_super_store(sb);
+    }
+
+    // Unknown version -> re-init (best-effort)
+    memset(sb, 0, sizeof(*sb));
+    sb->magic = DISKFS_MAGIC;
+    sb->version = DISKFS_VERSION;
+    sb->next_free_lba = DISKFS_LBA_DATA_START;
+    sb->inodes[0].type = DISKFS_INODE_DIR;
+    sb->inodes[0].parent = 0;
+    sb->inodes[0].name[0] = 0;
+    return diskfs_super_store(sb);
 }
 
 static int diskfs_super_store(const struct diskfs_super* sb) {
@@ -112,48 +202,107 @@ static int diskfs_super_store(const struct diskfs_super* sb) {
     return 0;
 }
 
-static int diskfs_name_valid(const char* name) {
+static int diskfs_segment_valid(const char* name) {
     if (!name || name[0] == 0) return 0;
     for (uint32_t i = 0; name[i] != 0; i++) {
-        if (name[i] == '/') return 0;
         if (i + 1 >= DISKFS_NAME_MAX) return 0;
     }
     return 1;
 }
 
-static int diskfs_find(const struct diskfs_super* sb, const char* name) {
+static int diskfs_find_child(const struct diskfs_super* sb, uint16_t parent, const char* name) {
     if (!sb || !name) return -1;
-    for (uint32_t i = 0; i < sb->file_count && i < DISKFS_MAX_FILES; i++) {
-        if (sb->files[i].name[0] != 0 && strcmp(sb->files[i].name, name) == 0) {
-            return (int)i;
-        }
+    for (uint16_t i = 0; i < DISKFS_MAX_INODES; i++) {
+        if (sb->inodes[i].type == DISKFS_INODE_FREE) continue;
+        if (sb->inodes[i].parent != parent) continue;
+        if (sb->inodes[i].name[0] == 0) continue;
+        if (strcmp(sb->inodes[i].name, name) == 0) return (int)i;
     }
     return -1;
 }
 
-static int diskfs_alloc_file(struct diskfs_super* sb, const char* name, uint32_t cap_sectors, uint32_t* out_idx) {
-    if (!sb || !name || !out_idx) return -EINVAL;
-    if (sb->file_count >= DISKFS_MAX_FILES) return -ENOSPC;
+static int diskfs_alloc_inode_file(struct diskfs_super* sb, uint16_t parent, const char* name, uint32_t cap_sectors, uint16_t* out_ino) {
+    if (!sb || !name || !out_ino) return -EINVAL;
+    if (!diskfs_segment_valid(name)) return -EINVAL;
 
-    uint32_t idx = sb->file_count;
-    sb->file_count++;
+    for (uint16_t i = 1; i < DISKFS_MAX_INODES; i++) {
+        if (sb->inodes[i].type != DISKFS_INODE_FREE) continue;
+        sb->inodes[i].type = DISKFS_INODE_FILE;
+        sb->inodes[i].parent = parent;
+        memset(sb->inodes[i].name, 0, sizeof(sb->inodes[i].name));
+        strcpy(sb->inodes[i].name, name);
+        sb->inodes[i].start_lba = sb->next_free_lba;
+        sb->inodes[i].size_bytes = 0;
+        sb->inodes[i].cap_sectors = cap_sectors ? cap_sectors : DISKFS_DEFAULT_CAP_SECTORS;
 
-    memset(&sb->files[idx], 0, sizeof(sb->files[idx]));
-    strcpy(sb->files[idx].name, name);
-    sb->files[idx].start_lba = sb->next_free_lba;
-    sb->files[idx].size_bytes = 0;
-    sb->files[idx].cap_sectors = cap_sectors ? cap_sectors : DISKFS_DEFAULT_CAP_SECTORS;
+        sb->next_free_lba += sb->inodes[i].cap_sectors;
 
-    sb->next_free_lba += sb->files[idx].cap_sectors;
+        uint8_t zero[DISKFS_SECTOR];
+        memset(zero, 0, sizeof(zero));
+        for (uint32_t s = 0; s < sb->inodes[i].cap_sectors; s++) {
+            (void)ata_pio_write28(sb->inodes[i].start_lba + s, zero);
+        }
 
-    // Zero-init allocated sectors.
-    uint8_t zero[DISKFS_SECTOR];
-    memset(zero, 0, sizeof(zero));
-    for (uint32_t s = 0; s < sb->files[idx].cap_sectors; s++) {
-        (void)ata_pio_write28(sb->files[idx].start_lba + s, zero);
+        *out_ino = i;
+        return 0;
     }
 
-    *out_idx = idx;
+    return -ENOSPC;
+}
+
+static int diskfs_split_next(const char** p_inout, char* out, size_t out_sz) {
+    if (!p_inout || !*p_inout || !out || out_sz == 0) return 0;
+    const char* p = *p_inout;
+    while (*p == '/') p++;
+    if (*p == 0) {
+        *p_inout = p;
+        out[0] = 0;
+        return 0;
+    }
+
+    size_t i = 0;
+    while (*p != 0 && *p != '/') {
+        if (i + 1 < out_sz) out[i++] = *p;
+        p++;
+    }
+    out[i] = 0;
+    while (*p == '/') p++;
+    *p_inout = p;
+    return out[0] != 0;
+}
+
+static int diskfs_lookup_path(struct diskfs_super* sb, const char* path, uint16_t* out_ino, uint16_t* out_parent, char* out_last, size_t out_last_sz) {
+    if (!sb || !path || !out_ino) return -EINVAL;
+    const char* p = path;
+    uint16_t cur = 0;
+    uint16_t parent = 0;
+    char part[DISKFS_NAME_MAX];
+    char last[DISKFS_NAME_MAX];
+    last[0] = 0;
+
+    while (diskfs_split_next(&p, part, sizeof(part))) {
+        if (!diskfs_segment_valid(part)) return -EINVAL;
+        parent = cur;
+        strcpy(last, part);
+        int c = diskfs_find_child(sb, cur, part);
+        if (c < 0) {
+            if (out_parent) *out_parent = parent;
+            if (out_last && out_last_sz) {
+                diskfs_strlcpy(out_last, last, out_last_sz);
+            }
+            return -ENOENT;
+        }
+        cur = (uint16_t)c;
+        if (sb->inodes[cur].type != DISKFS_INODE_DIR && *p != 0) {
+            if (out_parent) *out_parent = parent;
+            if (out_last && out_last_sz) diskfs_strlcpy(out_last, last, out_last_sz);
+            return -ENOTDIR;
+        }
+    }
+
+    if (out_parent) *out_parent = parent;
+    if (out_last && out_last_sz) diskfs_strlcpy(out_last, last, out_last_sz);
+    *out_ino = cur;
     return 0;
 }
 
@@ -165,9 +314,10 @@ static uint32_t diskfs_read_impl(fs_node_t* node, uint32_t offset, uint32_t size
     struct diskfs_node* dn = (struct diskfs_node*)node;
     struct diskfs_super sb;
     if (diskfs_super_load(&sb) < 0) return 0;
-    if (dn->idx >= sb.file_count || dn->idx >= DISKFS_MAX_FILES) return 0;
+    if (dn->ino >= DISKFS_MAX_INODES) return 0;
+    if (sb.inodes[dn->ino].type != DISKFS_INODE_FILE) return 0;
 
-    struct diskfs_dirent* de = &sb.files[dn->idx];
+    struct diskfs_inode* de = &sb.inodes[dn->ino];
     if (offset >= de->size_bytes) return 0;
     if (offset + size > de->size_bytes) size = de->size_bytes - offset;
     if (size == 0) return 0;
@@ -198,9 +348,10 @@ static uint32_t diskfs_write_impl(fs_node_t* node, uint32_t offset, uint32_t siz
     struct diskfs_node* dn = (struct diskfs_node*)node;
     struct diskfs_super sb;
     if (diskfs_super_load(&sb) < 0) return 0;
-    if (dn->idx >= sb.file_count || dn->idx >= DISKFS_MAX_FILES) return 0;
+    if (dn->ino >= DISKFS_MAX_INODES) return 0;
+    if (sb.inodes[dn->ino].type != DISKFS_INODE_FILE) return 0;
 
-    struct diskfs_dirent* de = &sb.files[dn->idx];
+    struct diskfs_inode* de = &sb.inodes[dn->ino];
 
     uint64_t end = (uint64_t)offset + (uint64_t)size;
     if (end > 0xFFFFFFFFULL) return 0;
@@ -266,31 +417,48 @@ static uint32_t diskfs_write_impl(fs_node_t* node, uint32_t offset, uint32_t siz
 }
 
 static struct fs_node* diskfs_root_finddir(struct fs_node* node, const char* name) {
-    (void)node;
+    struct diskfs_node* parent = (struct diskfs_node*)node;
     if (!g_ready) return 0;
     if (!name || name[0] == 0) return 0;
-    if (!diskfs_name_valid(name)) return 0;
+    if (!diskfs_segment_valid(name)) return 0;
+
+    uint16_t parent_ino = 0;
+    if (parent) {
+        parent_ino = parent->ino;
+    }
 
     struct diskfs_super sb;
     if (diskfs_super_load(&sb) < 0) return 0;
+    if (parent_ino >= DISKFS_MAX_INODES) return 0;
+    if (sb.inodes[parent_ino].type != DISKFS_INODE_DIR) return 0;
 
-    int idx = diskfs_find(&sb, name);
-    if (idx < 0) return 0;
+    int child = diskfs_find_child(&sb, parent_ino, name);
+    if (child < 0) return 0;
+    uint16_t cino = (uint16_t)child;
 
     struct diskfs_node* dn = (struct diskfs_node*)kmalloc(sizeof(*dn));
     if (!dn) return 0;
     memset(dn, 0, sizeof(*dn));
 
     strcpy(dn->vfs.name, name);
-    dn->vfs.flags = FS_FILE;
-    dn->vfs.inode = 100 + (uint32_t)idx;
-    dn->vfs.length = sb.files[idx].size_bytes;
-    dn->vfs.read = &diskfs_read_impl;
-    dn->vfs.write = &diskfs_write_impl;
+    dn->vfs.inode = 100 + (uint32_t)cino;
     dn->vfs.open = 0;
     dn->vfs.close = &diskfs_close_impl;
-    dn->vfs.finddir = 0;
-    dn->idx = (uint32_t)idx;
+    dn->ino = cino;
+
+    if (sb.inodes[cino].type == DISKFS_INODE_DIR) {
+        dn->vfs.flags = FS_DIRECTORY;
+        dn->vfs.length = 0;
+        dn->vfs.read = 0;
+        dn->vfs.write = 0;
+        dn->vfs.finddir = &diskfs_root_finddir;
+    } else {
+        dn->vfs.flags = FS_FILE;
+        dn->vfs.length = sb.inodes[cino].size_bytes;
+        dn->vfs.read = &diskfs_read_impl;
+        dn->vfs.write = &diskfs_write_impl;
+        dn->vfs.finddir = 0;
+    }
 
     return &dn->vfs;
 }
@@ -299,33 +467,58 @@ int diskfs_open_file(const char* rel_path, uint32_t flags, fs_node_t** out_node)
     if (!out_node) return -EINVAL;
     *out_node = 0;
     if (!g_ready) return -ENODEV;
-    if (!diskfs_name_valid(rel_path)) return -EINVAL;
+    if (!rel_path || rel_path[0] == 0) return -EINVAL;
 
     struct diskfs_super sb;
     if (diskfs_super_load(&sb) < 0) return -EIO;
 
-    int idx = diskfs_find(&sb, rel_path);
-    if (idx < 0) {
-        if ((flags & 0x40U) == 0U) { // O_CREAT
-            return -ENOENT;
-        }
-        uint32_t new_idx = 0;
-        int rc = diskfs_alloc_file(&sb, rel_path, DISKFS_DEFAULT_CAP_SECTORS, &new_idx);
+    uint16_t ino = 0;
+    uint16_t parent = 0;
+    char last[DISKFS_NAME_MAX];
+    last[0] = 0;
+    int rc = diskfs_lookup_path(&sb, rel_path, &ino, &parent, last, sizeof(last));
+    if (rc == -ENOENT) {
+        if ((flags & 0x40U) == 0U) return -ENOENT; // O_CREAT
+        if (last[0] == 0) return -EINVAL;
+
+        // Ensure intermediate dirs exist: lookup again but stop before last segment.
+        // We already have parent inode from lookup_path failure.
+        if (parent >= DISKFS_MAX_INODES) return -EIO;
+        if (sb.inodes[parent].type != DISKFS_INODE_DIR) return -ENOTDIR;
+
+        uint16_t new_ino = 0;
+        rc = diskfs_alloc_inode_file(&sb, parent, last, DISKFS_DEFAULT_CAP_SECTORS, &new_ino);
         if (rc < 0) return rc;
         if (diskfs_super_store(&sb) < 0) return -EIO;
-        idx = (int)new_idx;
+        ino = new_ino;
+    } else if (rc < 0) {
+        return rc;
     }
 
-    if (idx < 0) return -ENOENT;
+    if (ino >= DISKFS_MAX_INODES) return -EIO;
+    if (sb.inodes[ino].type != DISKFS_INODE_FILE) return -EISDIR;
 
     if ((flags & 0x200U) != 0U) { // O_TRUNC
-        sb.files[idx].size_bytes = 0;
+        sb.inodes[ino].size_bytes = 0;
         if (diskfs_super_store(&sb) < 0) return -EIO;
     }
 
-    fs_node_t* n = diskfs_root_finddir(&g_root, rel_path);
-    if (!n) return -EIO;
-    *out_node = n;
+    // Build a transient vfs node for this inode.
+    struct diskfs_node* dn = (struct diskfs_node*)kmalloc(sizeof(*dn));
+    if (!dn) return -ENOMEM;
+    memset(dn, 0, sizeof(*dn));
+    diskfs_strlcpy(dn->vfs.name, last, sizeof(dn->vfs.name));
+    dn->vfs.flags = FS_FILE;
+    dn->vfs.inode = 100 + (uint32_t)ino;
+    dn->vfs.length = sb.inodes[ino].size_bytes;
+    dn->vfs.read = &diskfs_read_impl;
+    dn->vfs.write = &diskfs_write_impl;
+    dn->vfs.open = 0;
+    dn->vfs.close = &diskfs_close_impl;
+    dn->vfs.finddir = 0;
+    dn->ino = ino;
+
+    *out_node = &dn->vfs;
     return 0;
 }
 

@@ -15,6 +15,7 @@
 #define ENOTDIR 20
 #define EINVAL 22
 #define ENOSPC 28
+#define EISDIR 21
 #define EPIPE 32
 #define ESRCH 3
 #define EMFILE 24
