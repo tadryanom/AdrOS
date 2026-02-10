@@ -39,7 +39,7 @@ Notes:
 | `pread`/`pwrite` | [ ] | |
 | `readv`/`writev` | [ ] | |
 | `truncate`/`ftruncate` | [ ] | |
-| `fsync`/`fdatasync` | [ ] | |
+| `fsync`/`fdatasync` | [ ] | No-op acceptable for now |
 
 ## 2. Syscalls — Directory & Path Operations
 
@@ -63,8 +63,8 @@ Notes:
 
 | Syscall | Status | Notes |
 |---------|--------|-------|
-| `fork` | [x] | Full COW not implemented; copies address space |
-| `execve` | [~] | Loads ELF from VFS; minimal argv/envp; no `$PATH` search |
+| `fork` | [x] | Full COW implemented (`vmm_as_clone_user_cow` + `vmm_handle_cow_fault`) |
+| `execve` | [x] | Loads ELF from VFS; argv/envp; `O_CLOEXEC` FDs closed |
 | `exit` / `_exit` | [x] | Closes FDs, marks zombie, notifies parent |
 | `waitpid` | [x] | `-1` (any child), specific pid, `WNOHANG` |
 | `getpid` | [x] | |
@@ -74,10 +74,11 @@ Notes:
 | `getpgrp` | [x] | |
 | `getuid`/`getgid`/`geteuid`/`getegid` | [ ] | No user/group model yet |
 | `setuid`/`setgid` | [ ] | |
-| `brk`/`sbrk` | [ ] | Heap management |
+| `brk`/`sbrk` | [x] | `syscall_brk_impl()` — per-process heap break |
 | `mmap`/`munmap` | [ ] | Memory-mapped I/O |
 | `clone` | [ ] | Thread creation |
-| `nanosleep`/`sleep` | [ ] | |
+| `nanosleep`/`sleep` | [x] | `syscall_nanosleep_impl()` with tick-based sleep |
+| `clock_gettime` | [x] | `CLOCK_REALTIME` and `CLOCK_MONOTONIC` |
 | `alarm` | [ ] | |
 | `times`/`getrusage` | [ ] | |
 
@@ -94,7 +95,7 @@ Notes:
 | `sigsuspend` | [ ] | |
 | `sigqueue` | [ ] | |
 | `sigaltstack` | [ ] | Alternate signal stack |
-| Signal defaults | [~] | `SIGKILL`/`SIGSEGV`/`SIGUSR1` handled; many signals missing default actions |
+| Signal defaults | [x] | `SIGKILL`/`SIGSEGV`/`SIGUSR1`/`SIGINT`/`SIGTSTP`/`SIGTTOU`/`SIGTTIN` handled |
 
 ## 5. File Descriptor Layer
 
@@ -104,9 +105,9 @@ Notes:
 | Refcounted file objects | [x] | Shared across `dup`/`fork` |
 | File offset tracking | [x] | |
 | `O_NONBLOCK` | [x] | Pipes, TTY, PTY via `fcntl` or `pipe2` |
-| `O_CLOEXEC` | [ ] | Close-on-exec flag |
+| `O_CLOEXEC` | [x] | Close-on-exec via `pipe2`, `open` flags |
 | `O_APPEND` | [ ] | |
-| `FD_CLOEXEC` via `fcntl` | [ ] | |
+| `FD_CLOEXEC` via `fcntl` | [x] | `F_GETFD`/`F_SETFD` implemented; `execve` closes marked FDs |
 | File locking (`flock`/`fcntl`) | [ ] | |
 
 ## 6. Filesystem / VFS
@@ -122,10 +123,10 @@ Notes:
 | **devfs** | [x] | `/dev/null`, `/dev/tty`, `/dev/ptmx`, `/dev/pts/0`; `readdir` |
 | **diskfs** (on-disk) | [x] | Hierarchical inodes; `open`/`read`/`write`/`stat`/`mkdir`/`unlink`/`rmdir`/`rename`/`getdents` |
 | **persistfs** | [x] | Minimal persistence at `/persist` |
+| **procfs** | [~] | `/proc/meminfo` exists; no per-process `/proc/[pid]` |
 | Permissions (`uid`/`gid`/mode) | [ ] | No permission model |
 | Hard links | [ ] | |
 | Symbolic links | [ ] | |
-| `/proc` filesystem | [ ] | |
 | ext2 / FAT support | [ ] | |
 
 ## 7. TTY / PTY
@@ -141,24 +142,27 @@ Notes:
 | `isatty` (via `ioctl TCGETS`) | [x] | |
 | PTY master/slave | [x] | `/dev/ptmx` + `/dev/pts/0` |
 | Non-blocking PTY I/O | [x] | |
-| Raw mode (non-canonical) | [ ] | |
+| Raw mode (non-canonical) | [x] | Clear `ICANON` via `TCSETS` |
 | VMIN/VTIME | [ ] | |
-| Signal characters (Ctrl+C → `SIGINT`, etc.) | [ ] | |
+| Signal characters (Ctrl+C → `SIGINT`, etc.) | [x] | Ctrl+C→SIGINT, Ctrl+Z→SIGTSTP, Ctrl+D→EOF, Ctrl+\\→SIGQUIT |
 | Multiple PTY pairs | [ ] | Only 1 pair currently |
-| Window size (`TIOCGWINSZ`/`TIOCSWINSZ`) | [ ] | |
+| Window size (`TIOCGWINSZ`/`TIOCSWINSZ`) | [x] | Get/set `struct winsize` |
 
 ## 8. Memory Management
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| PMM (bitmap allocator) | [x] | |
-| VMM (x86 paging) | [x] | Higher-half kernel |
+| PMM (bitmap allocator) | [x] | Spinlock-protected, frame refcounting |
+| VMM (x86 paging) | [x] | Higher-half kernel, recursive page directory |
 | Per-process address spaces | [x] | Page directory per process |
-| Kernel heap (`kmalloc`/`kfree`) | [x] | 10MB heap |
+| Kernel heap (`kmalloc`/`kfree`) | [x] | Dynamic growth up to 64MB |
+| Slab allocator | [x] | `slab_cache_t` with free-list-in-place |
 | W^X for user ELFs | [x] | Text segments read-only after load |
-| `brk`/`sbrk` | [ ] | |
+| SMEP | [x] | Enabled in CR4 if CPU supports |
+| `brk`/`sbrk` | [x] | Per-process heap break |
 | `mmap`/`munmap` | [ ] | |
-| Copy-on-write (COW) fork | [ ] | Currently full-copy |
+| Shared memory (`shmget`/`shmat`/`shmdt`) | [x] | System V IPC style |
+| Copy-on-write (COW) fork | [x] | PTE bit 9 as CoW marker + page fault handler |
 | PAE + NX bit | [ ] | |
 | Guard pages | [ ] | |
 | ASLR | [ ] | |
@@ -171,10 +175,17 @@ Notes:
 | VGA text console (x86) | [x] | |
 | PS/2 keyboard | [x] | |
 | PIT timer | [x] | |
+| LAPIC timer | [x] | Calibrated, used when APIC available |
 | ATA PIO (IDE) | [x] | Primary master |
+| ATA DMA (Bus Master IDE) | [x] | Bounce buffer, PRDT, IRQ-coordinated |
+| PCI enumeration | [x] | Full bus/slot/func scan with BAR + IRQ |
+| ACPI (MADT parsing) | [x] | CPU topology + IOAPIC discovery |
+| LAPIC + IOAPIC | [x] | Replaces legacy PIC |
+| SMP (multi-CPU boot) | [x] | 4 CPUs via INIT-SIPI-SIPI, per-CPU data via GS |
+| CPUID feature detection | [x] | Leaf 0/1/7/extended; SMEP/SMAP detection |
+| VBE framebuffer | [x] | Maps LFB, pixel drawing, font rendering |
+| SYSENTER fast syscall | [x] | MSR setup + handler |
 | RTC (real-time clock) | [ ] | |
-| PCI enumeration | [ ] | |
-| Framebuffer / VESA | [ ] | |
 | Network (e1000/virtio-net) | [ ] | |
 | Virtio-blk | [ ] | |
 
@@ -182,10 +193,10 @@ Notes:
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| ELF32 loader | [x] | |
+| ELF32 loader | [x] | Secure with W^X enforcement |
 | `/bin/init.elf` (smoke tests) | [x] | Comprehensive test suite |
 | `/bin/echo.elf` | [x] | Minimal argv/envp test |
-| Minimal libc | [ ] | No libc; userland uses raw syscall wrappers |
+| Minimal libc (ulibc) | [x] | `printf`, `malloc`/`free`/`calloc`/`realloc`, `string.h`, `unistd.h`, `errno.h` |
 | Shell (`sh`) | [ ] | |
 | Core utilities (`ls`, `cat`, `cp`, `mv`, `rm`, `mkdir`) | [ ] | |
 | Dynamic linking | [ ] | |
@@ -209,24 +220,31 @@ Notes:
 ## Priority Roadmap (next steps)
 
 ### Near-term (unlock a usable shell)
-1. **Minimal libc** — `printf`, `malloc`/`free`, `string.h`, `stdio.h` wrappers
-2. **Shell** — `sh`-compatible; needs `fork`+`execve`+`waitpid`+`pipe`+`dup2`+`chdir` (all implemented)
-3. **Core utilities** — `ls` (uses `getdents`), `cat`, `echo`, `mkdir`, `rm`, `mv`, `cp`
-4. **Signal characters** — Ctrl+C → `SIGINT`, Ctrl+Z → `SIGTSTP`, Ctrl+D → EOF
-5. **Raw TTY mode** — needed for interactive editors and proper shell line editing
+1. ~~Minimal libc~~ ✅ ulibc implemented (`printf`, `malloc`, `string.h`, `unistd.h`, `errno.h`)
+2. **Shell** — `sh`-compatible; all required syscalls are implemented
+3. **Core utilities** — `ls` (uses `getdents`), `cat`, `echo`, `mkdir`, `rm`
+4. ~~Signal characters~~ ✅ Ctrl+C→SIGINT, Ctrl+Z→SIGTSTP, Ctrl+D→EOF
+5. ~~Raw TTY mode~~ ✅ ICANON clearable via TCSETS
+6. **`/dev/zero`** + **`/dev/random`** — simple device nodes
+7. **Multiple PTY pairs** — currently only 1
 
 ### Medium-term (real POSIX compliance)
-6. **`brk`/`sbrk`** — userland heap
-7. **`mmap`/`munmap`** — memory-mapped files, shared memory
-8. **Permissions** — `uid`/`gid`, mode bits, `chmod`, `chown`, `access`, `umask`
-9. **`O_CLOEXEC`** — close-on-exec for fd hygiene
-10. **`/proc`** — process information filesystem
-11. **Hard/symbolic links** — `link`, `symlink`, `readlink`
+8. ~~`brk`/`sbrk`~~ ✅ Implemented
+9. **`mmap`/`munmap`** — memory-mapped files, shared memory
+10. **Permissions** — `uid`/`gid`, mode bits, `chmod`, `chown`, `access`, `umask`
+11. ~~`O_CLOEXEC`~~ ✅ Implemented
+12. **`/proc` per-process** — `/proc/[pid]/status`, `/proc/[pid]/maps`
+13. **Hard/symbolic links** — `link`, `symlink`, `readlink`
+14. **VMIN/VTIME** — termios non-canonical timing
+15. **Generic wait queue abstraction** — replace ad-hoc blocking
 
 ### Long-term (full Unix experience)
-12. **Networking** — socket API, TCP/IP stack
-13. **Multi-arch bring-up** — ARM/RISC-V functional kernels
-14. **COW fork + demand paging**
-15. **Threads** (`clone`/`pthread`)
-16. **Dynamic linking** (`ld.so`)
-17. **ext2/FAT** filesystem support
+16. **Networking** — socket API, TCP/IP stack
+17. **Multi-arch bring-up** — ARM/RISC-V functional kernels
+18. ~~COW fork~~ ✅ Implemented
+19. **Threads** (`clone`/`pthread`)
+20. **Dynamic linking** (`ld.so`)
+21. **ext2/FAT** filesystem support
+22. **PAE + NX bit** — hardware W^X
+23. **Per-thread errno** (needs TLS)
+24. **vDSO** — fast `clock_gettime` without syscall

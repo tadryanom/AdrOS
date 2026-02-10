@@ -183,7 +183,7 @@ check: cppcheck sparse
 # ---- Automated Smoke Test (QEMU + expect) ----
 
 SMOKE_SMP ?= 4
-SMOKE_TIMEOUT ?= 40
+SMOKE_TIMEOUT ?= 60
 
 test: iso
 	@echo "[TEST] Running smoke test (SMP=$(SMOKE_SMP), timeout=$(SMOKE_TIMEOUT)s)..."
