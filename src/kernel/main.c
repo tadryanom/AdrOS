@@ -8,6 +8,7 @@
 #include "process.h"
 #include "keyboard.h"
 #include "shell.h"
+#include "kconsole.h"
 #include "heap.h"
 #include "timer.h"
 #include "initrd.h"
@@ -62,8 +63,8 @@ void kernel_main(const struct boot_info* bi) {
     int init_ret = init_start(bi);
     
     if (init_ret < 0) {
-        // Start Shell as the main interaction loop
-        shell_init();
+        // VFS/init failed — enter kernel emergency console
+        kconsole_enter();
     }
     
 done:
