@@ -3,6 +3,7 @@
 #include "utils.h"
 
 #include <stddef.h>
+#include <stdint.h>
 
 static inline void cpuid(uint32_t leaf, uint32_t* eax, uint32_t* ebx,
                           uint32_t* ecx, uint32_t* edx) {
@@ -22,10 +23,10 @@ void x86_cpuid_detect(struct x86_cpu_features* out) {
     cpuid(0, &eax, &ebx, &ecx, &edx);
     out->max_leaf = eax;
 
-    /* Vendor: EBX-EDX-ECX */
-    *(uint32_t*)&out->vendor[0] = ebx;
-    *(uint32_t*)&out->vendor[4] = edx;
-    *(uint32_t*)&out->vendor[8] = ecx;
+    /* Vendor: EBX-EDX-ECX (use memcpy to avoid strict-aliasing UB) */
+    memcpy(&out->vendor[0], &ebx, 4);
+    memcpy(&out->vendor[4], &edx, 4);
+    memcpy(&out->vendor[8], &ecx, 4);
     out->vendor[12] = '\0';
 
     if (out->max_leaf < 1) return;
@@ -127,7 +128,7 @@ void x86_cpuid_print(const struct x86_cpu_features* f) {
     uart_print("\n");
 
     uart_print("[CPUID] APIC ID: ");
-    char tmp[4];
+    char tmp[12];
     itoa(f->initial_apic_id, tmp, 10);
     uart_print(tmp);
     uart_print(", Logical CPUs: ");

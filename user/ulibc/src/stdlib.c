@@ -25,7 +25,7 @@ void* malloc(size_t size) {
     void* new_end = (void*)((char*)heap_end + size);
     void* result = brk(new_end);
 
-    if ((unsigned int)result < (unsigned int)new_end) {
+    if ((uintptr_t)result < (uintptr_t)new_end) {
         return (void*)0;  /* OOM */
     }
 

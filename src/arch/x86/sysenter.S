@@ -51,6 +51,9 @@ sysenter_entry:
      *   User stack: [return_eip, saved_edx(arg3), saved_ecx(arg2)]
      */
 
+    /* Ensure direction flag is clear — userspace may have set DF=1 */
+    cld
+
     /* Build iret-style frame: ss, useresp, eflags, cs, eip */
     push $0x23          /* ss  = user data segment (GDT entry 4 | RPL 3) */
     push %ecx           /* useresp = user ESP */
