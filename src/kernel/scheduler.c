@@ -82,6 +82,15 @@ static struct process* rq_pick_next(void) {
     return NULL;  // only idle task left
 }
 
+void sched_enqueue_ready(struct process* p) {
+    if (!p) return;
+    uintptr_t flags = spin_lock_irqsave(&sched_lock);
+    if (p->state == PROCESS_READY) {
+        rq_enqueue(rq_active, p);
+    }
+    spin_unlock_irqrestore(&sched_lock, flags);
+}
+
 void thread_wrapper(void (*fn)(void));
 
 static struct process* process_find_locked(uint32_t pid) {

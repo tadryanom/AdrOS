@@ -87,6 +87,7 @@ static void waitq_wake_one(struct process** q, uint32_t* head, uint32_t* tail) {
     struct process* p = waitq_pop(q, head, tail);
     if (p && p->state == PROCESS_BLOCKED) {
         p->state = PROCESS_READY;
+        sched_enqueue_ready(p);
     }
 }
 

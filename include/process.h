@@ -109,6 +109,10 @@ int process_waitpid(int pid, int* status_out, uint32_t options);
 // Mark current process as exiting and notify/wake a waiter (if any).
 void process_exit_notify(int status);
 
+// Enqueue a READY process into the active O(1) runqueue.
+// Must be called whenever a process transitions to PROCESS_READY from outside scheduler.c.
+void sched_enqueue_ready(struct process* p);
+
 // Kill a process (minimal signals). Returns 0 on success or -errno.
 int process_kill(uint32_t pid, int sig);
 

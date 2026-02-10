@@ -34,6 +34,7 @@ static void hal_kbd_bridge(char c) {
     if (kbd_waiter) {
         if (kbd_waiter->state == PROCESS_BLOCKED) {
             kbd_waiter->state = PROCESS_READY;
+            sched_enqueue_ready(kbd_waiter);
         }
         kbd_waiter = NULL;
     }

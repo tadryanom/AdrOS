@@ -159,6 +159,7 @@ static void tty_wake_one(void) {
     struct process* p = waitq_pop();
     if (p && p->state == PROCESS_BLOCKED) {
         p->state = PROCESS_READY;
+        sched_enqueue_ready(p);
     }
 }
 
