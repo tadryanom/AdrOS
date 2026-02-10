@@ -11,6 +11,9 @@
 #include "pty.h"
 #include "persistfs.h"
 #include "diskfs.h"
+#include "procfs.h"
+#include "pci.h"
+#include "vbe.h"
 #include "uart_console.h"
 
 #include "hal/mm.h"
@@ -65,6 +68,9 @@ int init_start(const struct boot_info* bi) {
         (void)vfs_mount("/tmp", tmp);
     }
 
+    pci_init();
+    vbe_init(bi);
+
     tty_init();
     pty_init();
 
@@ -81,6 +87,11 @@ int init_start(const struct boot_info* bi) {
     fs_node_t* disk = diskfs_create_root();
     if (disk) {
         (void)vfs_mount("/disk", disk);
+    }
+
+    fs_node_t* proc = procfs_create_root();
+    if (proc) {
+        (void)vfs_mount("/proc", proc);
     }
 
     int user_ret = arch_platform_start_userspace(bi);

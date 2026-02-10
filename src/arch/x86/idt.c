@@ -4,6 +4,7 @@
 #include "process.h"
 #include "spinlock.h"
 #include "uaccess.h"
+#include "vmm.h"
 #include "syscall.h"
 #include "signal.h"
 #include <stddef.h>
@@ -328,6 +329,12 @@ void isr_handler(struct registers* regs) {
                 __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
 
                 if ((regs->cs & 3U) == 3U) {
+                    // Check for Copy-on-Write fault (write to read-only CoW page).
+                    // Error code bit 1 = caused by a write.
+                    if ((regs->err_code & 0x2) && vmm_handle_cow_fault((uintptr_t)cr2)) {
+                        return;  // CoW resolved, resume user process.
+                    }
+
                     const int SIG_SEGV = 11;
                     if (current_process) {
                         current_process->last_fault_addr = (uintptr_t)cr2;

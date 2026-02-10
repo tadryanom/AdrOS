@@ -7,6 +7,7 @@
 #define VMM_FLAG_PRESENT  (1 << 0)
 #define VMM_FLAG_RW       (1 << 1)
 #define VMM_FLAG_USER     (1 << 2)
+#define VMM_FLAG_COW      (1 << 9)  /* OS-available bit: Copy-on-Write marker */
 
 /* 
  * Initialize Virtual Memory Manager
@@ -28,6 +29,18 @@ void vmm_as_activate(uintptr_t as);
 void vmm_as_map_page(uintptr_t as, uint64_t phys, uint64_t virt, uint32_t flags);
 
 uintptr_t vmm_as_clone_user(uintptr_t src_as);
+
+/*
+ * Clone user address space using Copy-on-Write.
+ * Shared pages are marked read-only + COW bit; physical frames get incref'd.
+ */
+uintptr_t vmm_as_clone_user_cow(uintptr_t src_as);
+
+/*
+ * Handle a Copy-on-Write page fault.
+ * Returns 1 if the fault was a CoW fault and was resolved, 0 otherwise.
+ */
+int vmm_handle_cow_fault(uintptr_t fault_addr);
 
 /*
  * Update flags for an already-mapped virtual page.

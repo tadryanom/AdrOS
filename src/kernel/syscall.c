@@ -16,6 +16,8 @@
 #include "elf.h"
 #include "stat.h"
 #include "vmm.h"
+#include "pmm.h"
+#include "timer.h"
 
 #include "hal/cpu.h"
 
@@ -23,9 +25,17 @@
 
 enum {
     O_NONBLOCK = 0x800,
+    O_CLOEXEC  = 0x80000,
 };
 
 enum {
+    FD_CLOEXEC = 1,
+};
+
+enum {
+    FCNTL_F_DUPFD = 0,
+    FCNTL_F_GETFD = 1,
+    FCNTL_F_SETFD = 2,
     FCNTL_F_GETFL = 3,
     FCNTL_F_SETFL = 4,
 };
@@ -160,7 +170,7 @@ static int syscall_fork_impl(struct registers* regs) {
         current_process->addr_space = src_as;
     }
 
-    uintptr_t child_as = vmm_as_clone_user(src_as);
+    uintptr_t child_as = vmm_as_clone_user_cow(src_as);
     if (!child_as) return -ENOMEM;
 
     struct registers child_regs = *regs;
@@ -172,11 +182,15 @@ static int syscall_fork_impl(struct registers* regs) {
         return -ENOMEM;
     }
 
+    child->heap_start = current_process->heap_start;
+    child->heap_break = current_process->heap_break;
+
     for (int fd = 0; fd < PROCESS_MAX_FILES; fd++) {
         struct file* f = current_process->files[fd];
         if (!f) continue;
         f->refcount++;
         child->files[fd] = f;
+        child->fd_flags[fd] = current_process->fd_flags[fd];
     }
 
     return (int)child->pid;
@@ -480,10 +494,14 @@ static int syscall_pipe2_impl(int* user_fds, uint32_t flags) {
     if (!current_process) return -ECHILD;
 
     if (kfds[0] >= 0 && kfds[0] < PROCESS_MAX_FILES && current_process->files[kfds[0]]) {
-        current_process->files[kfds[0]]->flags = flags;
+        current_process->files[kfds[0]]->flags = flags & ~O_CLOEXEC;
     }
     if (kfds[1] >= 0 && kfds[1] < PROCESS_MAX_FILES && current_process->files[kfds[1]]) {
-        current_process->files[kfds[1]]->flags = flags;
+        current_process->files[kfds[1]]->flags = flags & ~O_CLOEXEC;
+    }
+    if (flags & O_CLOEXEC) {
+        if (kfds[0] >= 0 && kfds[0] < PROCESS_MAX_FILES) current_process->fd_flags[kfds[0]] = FD_CLOEXEC;
+        if (kfds[1] >= 0 && kfds[1] < PROCESS_MAX_FILES) current_process->fd_flags[kfds[1]] = FD_CLOEXEC;
     }
 
     if (copy_to_user(user_fds, kfds, sizeof(kfds)) < 0) {
@@ -638,7 +656,8 @@ static int syscall_execve_impl(struct registers* regs, const char* user_path, co
     uintptr_t entry = 0;
     uintptr_t user_sp = 0;
     uintptr_t new_as = 0;
-    if (elf32_load_user_from_initrd(path, &entry, &user_sp, &new_as) != 0) {
+    uintptr_t heap_brk = 0;
+    if (elf32_load_user_from_initrd(path, &entry, &user_sp, &new_as, &heap_brk) != 0) {
         ret = -EINVAL;
         goto out;
     }
@@ -654,6 +673,8 @@ static int syscall_execve_impl(struct registers* regs, const char* user_path, co
     }
 
     current_process->addr_space = new_as;
+    current_process->heap_start = heap_brk;
+    current_process->heap_break = heap_brk;
     vmm_as_activate(new_as);
 
     // Build a minimal initial user stack: argc, argv pointers, envp pointers, strings.
@@ -698,6 +719,13 @@ static int syscall_execve_impl(struct registers* regs, const char* user_path, co
 
     (void)argv_va;
     (void)envp_va;
+
+    for (int i = 0; i < PROCESS_MAX_FILES; i++) {
+        if (current_process->fd_flags[i] & FD_CLOEXEC) {
+            (void)fd_close(i);
+            current_process->fd_flags[i] = 0;
+        }
+    }
 
     if (old_as && old_as != new_as) {
         vmm_as_destroy(old_as);
@@ -848,6 +876,9 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
         kfree(f);
         return -EMFILE;
     }
+    if ((flags & O_CLOEXEC) && current_process) {
+        current_process->fd_flags[fd] = FD_CLOEXEC;
+    }
     return fd;
 }
 
@@ -861,11 +892,19 @@ static int syscall_fcntl_impl(int fd, int cmd, uint32_t arg) {
     struct file* f = fd_get(fd);
     if (!f) return -EBADF;
 
+    if (cmd == FCNTL_F_GETFD) {
+        if (!current_process) return 0;
+        return (int)current_process->fd_flags[fd];
+    }
+    if (cmd == FCNTL_F_SETFD) {
+        if (!current_process) return -EINVAL;
+        current_process->fd_flags[fd] = (uint8_t)(arg & FD_CLOEXEC);
+        return 0;
+    }
     if (cmd == FCNTL_F_GETFL) {
         return (int)f->flags;
     }
     if (cmd == FCNTL_F_SETFL) {
-        // Minimal: allow toggling O_NONBLOCK only.
         uint32_t keep = f->flags & ~O_NONBLOCK;
         uint32_t set = arg & O_NONBLOCK;
         f->flags = keep | set;
@@ -1352,6 +1391,206 @@ static int syscall_sigreturn_impl(struct registers* regs, const struct sigframe*
     return 0;
 }
 
+struct timespec {
+    uint32_t tv_sec;
+    uint32_t tv_nsec;
+};
+
+enum {
+    CLOCK_REALTIME = 0,
+    CLOCK_MONOTONIC = 1,
+};
+
+static int syscall_nanosleep_impl(const struct timespec* user_req, struct timespec* user_rem) {
+    if (!user_req) return -EFAULT;
+    if (user_range_ok(user_req, sizeof(struct timespec)) == 0) return -EFAULT;
+
+    struct timespec req;
+    if (copy_from_user(&req, user_req, sizeof(req)) < 0) return -EFAULT;
+
+    if (req.tv_nsec >= 1000000000U) return -EINVAL;
+
+    const uint32_t TICK_MS = 20;
+    uint32_t ms = req.tv_sec * 1000U + req.tv_nsec / 1000000U;
+    uint32_t ticks = (ms + TICK_MS - 1) / TICK_MS;
+    if (ticks == 0 && (req.tv_sec > 0 || req.tv_nsec > 0)) ticks = 1;
+
+    if (ticks > 0) {
+        process_sleep(ticks);
+    }
+
+    if (user_rem) {
+        if (user_range_ok(user_rem, sizeof(struct timespec)) != 0) {
+            struct timespec rem = {0, 0};
+            (void)copy_to_user(user_rem, &rem, sizeof(rem));
+        }
+    }
+
+    return 0;
+}
+
+static int syscall_clock_gettime_impl(uint32_t clk_id, struct timespec* user_tp) {
+    if (!user_tp) return -EFAULT;
+    if (user_range_ok(user_tp, sizeof(struct timespec)) == 0) return -EFAULT;
+
+    if (clk_id != CLOCK_REALTIME && clk_id != CLOCK_MONOTONIC) return -EINVAL;
+
+    uint32_t ticks = get_tick_count();
+    const uint32_t TICK_MS = 20;
+    uint32_t total_ms = ticks * TICK_MS;
+
+    struct timespec tp;
+    tp.tv_sec = total_ms / 1000U;
+    tp.tv_nsec = (total_ms % 1000U) * 1000000U;
+
+    if (copy_to_user(user_tp, &tp, sizeof(tp)) < 0) return -EFAULT;
+    return 0;
+}
+
+enum {
+    PROT_NONE  = 0x0,
+    PROT_READ  = 0x1,
+    PROT_WRITE = 0x2,
+    PROT_EXEC  = 0x4,
+};
+
+enum {
+    MAP_SHARED    = 0x01,
+    MAP_PRIVATE   = 0x02,
+    MAP_FIXED     = 0x10,
+    MAP_ANONYMOUS = 0x20,
+};
+
+static uintptr_t mmap_find_free(uint32_t length) {
+    if (!current_process) return 0;
+    const uintptr_t MMAP_BASE = 0x40000000U;
+    const uintptr_t MMAP_END  = 0x7FF00000U;
+
+    for (uintptr_t candidate = MMAP_BASE; candidate + length <= MMAP_END; candidate += 0x1000U) {
+        int overlap = 0;
+        for (int i = 0; i < PROCESS_MAX_MMAPS; i++) {
+            if (current_process->mmaps[i].length == 0) continue;
+            uintptr_t mb = current_process->mmaps[i].base;
+            uint32_t ml = current_process->mmaps[i].length;
+            if (candidate < mb + ml && candidate + length > mb) {
+                overlap = 1;
+                candidate = ((mb + ml + 0xFFFU) & ~(uintptr_t)0xFFFU) - 0x1000U;
+                break;
+            }
+        }
+        if (!overlap) return candidate;
+    }
+    return 0;
+}
+
+static uintptr_t syscall_mmap_impl(uintptr_t addr, uint32_t length, uint32_t prot,
+                                    uint32_t flags, int fd, uint32_t offset) {
+    (void)offset;
+    if (!current_process) return (uintptr_t)-EINVAL;
+    if (length == 0) return (uintptr_t)-EINVAL;
+
+    if (!(flags & MAP_ANONYMOUS)) return (uintptr_t)-ENOSYS;
+    if (fd != -1) return (uintptr_t)-EINVAL;
+
+    uint32_t aligned_len = (length + 0xFFFU) & ~(uint32_t)0xFFFU;
+
+    uintptr_t base;
+    if (flags & MAP_FIXED) {
+        if (addr == 0 || (addr & 0xFFF)) return (uintptr_t)-EINVAL;
+        if (addr >= 0xC0000000U) return (uintptr_t)-EINVAL;
+        base = addr;
+    } else {
+        base = mmap_find_free(aligned_len);
+        if (!base) return (uintptr_t)-ENOMEM;
+    }
+
+    int slot = -1;
+    for (int i = 0; i < PROCESS_MAX_MMAPS; i++) {
+        if (current_process->mmaps[i].length == 0) { slot = i; break; }
+    }
+    if (slot < 0) return (uintptr_t)-ENOMEM;
+
+    uint32_t vmm_flags = VMM_FLAG_PRESENT | VMM_FLAG_USER;
+    if (prot & PROT_WRITE) vmm_flags |= VMM_FLAG_RW;
+
+    for (uintptr_t va = base; va < base + aligned_len; va += 0x1000U) {
+        void* frame = pmm_alloc_page();
+        if (!frame) return (uintptr_t)-ENOMEM;
+        vmm_map_page((uint64_t)(uintptr_t)frame, (uint64_t)va, vmm_flags);
+        memset((void*)va, 0, 0x1000U);
+    }
+
+    current_process->mmaps[slot].base = base;
+    current_process->mmaps[slot].length = aligned_len;
+
+    return base;
+}
+
+static int syscall_munmap_impl(uintptr_t addr, uint32_t length) {
+    if (!current_process) return -EINVAL;
+    if (addr == 0 || (addr & 0xFFF)) return -EINVAL;
+    if (length == 0) return -EINVAL;
+
+    uint32_t aligned_len = (length + 0xFFFU) & ~(uint32_t)0xFFFU;
+
+    int found = -1;
+    for (int i = 0; i < PROCESS_MAX_MMAPS; i++) {
+        if (current_process->mmaps[i].base == addr &&
+            current_process->mmaps[i].length == aligned_len) {
+            found = i;
+            break;
+        }
+    }
+    if (found < 0) return -EINVAL;
+
+    for (uintptr_t va = addr; va < addr + aligned_len; va += 0x1000U) {
+        vmm_unmap_page((uint64_t)va);
+    }
+
+    current_process->mmaps[found].base = 0;
+    current_process->mmaps[found].length = 0;
+    return 0;
+}
+
+static uintptr_t syscall_brk_impl(uintptr_t addr) {
+    if (!current_process) return 0;
+
+    if (addr == 0) {
+        return current_process->heap_break;
+    }
+
+    const uintptr_t X86_KERN_BASE = 0xC0000000U;
+    const uintptr_t USER_STACK_BASE = 0x00800000U;
+
+    if (addr < current_process->heap_start) return current_process->heap_break;
+    if (addr >= USER_STACK_BASE) return current_process->heap_break;
+    if (addr >= X86_KERN_BASE) return current_process->heap_break;
+
+    uintptr_t old_brk = current_process->heap_break;
+    uintptr_t new_brk = (addr + 0xFFFU) & ~(uintptr_t)0xFFFU;
+    uintptr_t old_brk_page = (old_brk + 0xFFFU) & ~(uintptr_t)0xFFFU;
+
+    if (new_brk > old_brk_page) {
+        for (uintptr_t va = old_brk_page; va < new_brk; va += 0x1000U) {
+            void* frame = pmm_alloc_page();
+            if (!frame) {
+                return current_process->heap_break;
+            }
+            vmm_as_map_page(current_process->addr_space,
+                            (uint64_t)(uintptr_t)frame, (uint64_t)va,
+                            VMM_FLAG_PRESENT | VMM_FLAG_RW | VMM_FLAG_USER);
+            memset((void*)va, 0, 0x1000U);
+        }
+    } else if (new_brk < old_brk_page) {
+        for (uintptr_t va = new_brk; va < old_brk_page; va += 0x1000U) {
+            vmm_unmap_page((uint64_t)va);
+        }
+    }
+
+    current_process->heap_break = addr;
+    return addr;
+}
+
 static void syscall_handler(struct registers* regs) {
     uint32_t syscall_no = regs->eax;
 
@@ -1664,6 +1903,43 @@ static void syscall_handler(struct registers* regs) {
     if (syscall_no == SYSCALL_RMDIR) {
         const char* path = (const char*)regs->ebx;
         regs->eax = (uint32_t)syscall_rmdir_impl(path);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_BRK) {
+        uintptr_t addr = (uintptr_t)regs->ebx;
+        regs->eax = (uint32_t)syscall_brk_impl(addr);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_NANOSLEEP) {
+        const struct timespec* req = (const struct timespec*)regs->ebx;
+        struct timespec* rem = (struct timespec*)regs->ecx;
+        regs->eax = (uint32_t)syscall_nanosleep_impl(req, rem);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_CLOCK_GETTIME) {
+        uint32_t clk_id = regs->ebx;
+        struct timespec* tp = (struct timespec*)regs->ecx;
+        regs->eax = (uint32_t)syscall_clock_gettime_impl(clk_id, tp);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_MMAP) {
+        uintptr_t addr = (uintptr_t)regs->ebx;
+        uint32_t length = regs->ecx;
+        uint32_t prot = regs->edx;
+        uint32_t mflags = regs->esi;
+        int fd = (int)regs->edi;
+        regs->eax = (uint32_t)syscall_mmap_impl(addr, length, prot, mflags, fd, 0);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_MUNMAP) {
+        uintptr_t addr = (uintptr_t)regs->ebx;
+        uint32_t length = regs->ecx;
+        regs->eax = (uint32_t)syscall_munmap_impl(addr, length);
         return;
     }
 

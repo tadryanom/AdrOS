@@ -21,6 +21,67 @@ static uint32_t next_pid = 1;
 static spinlock_t sched_lock = {0};
 static uintptr_t kernel_as = 0;
 
+/* ---------- O(1) runqueue ---------- */
+struct prio_queue {
+    struct process* head;
+    struct process* tail;
+};
+
+struct runqueue {
+    uint32_t bitmap;                        // bit i set => queue[i] non-empty
+    struct prio_queue queue[SCHED_NUM_PRIOS];
+};
+
+static struct runqueue rq_active_store;
+static struct runqueue rq_expired_store;
+static struct runqueue* rq_active  = &rq_active_store;
+static struct runqueue* rq_expired = &rq_expired_store;
+
+static inline uint32_t bsf32(uint32_t v) {
+    uint32_t r;
+    __asm__ volatile("bsf %1, %0" : "=r"(r) : "rm"(v) : "cc");
+    return r;
+}
+
+static void rq_enqueue(struct runqueue* rq, struct process* p) {
+    uint8_t prio = p->priority;
+    struct prio_queue* pq = &rq->queue[prio];
+    p->rq_next = NULL;
+    p->rq_prev = pq->tail;
+    if (pq->tail) pq->tail->rq_next = p;
+    else          pq->head = p;
+    pq->tail = p;
+    rq->bitmap |= (1U << prio);
+}
+
+static void rq_dequeue(struct runqueue* rq, struct process* p) {
+    uint8_t prio = p->priority;
+    struct prio_queue* pq = &rq->queue[prio];
+    if (p->rq_prev) p->rq_prev->rq_next = p->rq_next;
+    else            pq->head = p->rq_next;
+    if (p->rq_next) p->rq_next->rq_prev = p->rq_prev;
+    else            pq->tail = p->rq_prev;
+    p->rq_next = NULL;
+    p->rq_prev = NULL;
+    if (!pq->head) rq->bitmap &= ~(1U << prio);
+}
+
+static struct process* rq_pick_next(void) {
+    if (rq_active->bitmap) {
+        uint32_t prio = bsf32(rq_active->bitmap);
+        return rq_active->queue[prio].head;
+    }
+    // Swap active <-> expired
+    struct runqueue* tmp = rq_active;
+    rq_active = rq_expired;
+    rq_expired = tmp;
+    if (rq_active->bitmap) {
+        uint32_t prio = bsf32(rq_active->bitmap);
+        return rq_active->queue[prio].head;
+    }
+    return NULL;  // only idle task left
+}
+
 void thread_wrapper(void (*fn)(void));
 
 static struct process* process_find_locked(uint32_t pid) {
@@ -127,6 +188,7 @@ int process_kill(uint32_t pid, int sig) {
                     parent->wait_result_pid = (int)p->pid;
                     parent->wait_result_status = p->exit_status;
                     parent->state = PROCESS_READY;
+                    rq_enqueue(rq_active, parent);
                 }
             }
         }
@@ -134,11 +196,39 @@ int process_kill(uint32_t pid, int sig) {
         p->sig_pending_mask |= (1U << (uint32_t)sig);
         if (p->state == PROCESS_BLOCKED || p->state == PROCESS_SLEEPING) {
             p->state = PROCESS_READY;
+            rq_enqueue(rq_active, p);
         }
     }
 
     spin_unlock_irqrestore(&sched_lock, flags);
     return 0;
+}
+
+int process_kill_pgrp(uint32_t pgrp, int sig) {
+    if (pgrp == 0) return -EINVAL;
+    if (sig <= 0 || sig >= PROCESS_MAX_SIG) return -EINVAL;
+
+    uintptr_t flags = spin_lock_irqsave(&sched_lock);
+    int found = 0;
+
+    struct process* it = ready_queue_head;
+    if (it) {
+        const struct process* const start = it;
+        do {
+            if (it->pgrp_id == pgrp && it->pid != 0 && it->state != PROCESS_ZOMBIE) {
+                it->sig_pending_mask |= (1U << (uint32_t)sig);
+                if (it->state == PROCESS_BLOCKED || it->state == PROCESS_SLEEPING) {
+                    it->state = PROCESS_READY;
+                    rq_enqueue(rq_active, it);
+                }
+                found = 1;
+            }
+            it = it->next;
+        } while (it && it != start);
+    }
+
+    spin_unlock_irqrestore(&sched_lock, flags);
+    return found ? 0 : -ESRCH;
 }
 
 int process_waitpid(int pid, int* status_out, uint32_t options) {
@@ -227,6 +317,7 @@ void process_exit_notify(int status) {
                 parent->wait_result_pid = (int)current_process->pid;
                 parent->wait_result_status = status;
                 parent->state = PROCESS_READY;
+                rq_enqueue(rq_active, parent);
             }
         }
     }
@@ -270,6 +361,8 @@ struct process* process_fork_create(uintptr_t child_as, const struct registers* 
     proc->parent_pid = current_process ? current_process->pid : 0;
     proc->session_id = current_process ? current_process->session_id : proc->pid;
     proc->pgrp_id = current_process ? current_process->pgrp_id : proc->pid;
+    proc->priority = current_process ? current_process->priority : SCHED_DEFAULT_PRIO;
+    proc->nice = current_process ? current_process->nice : 0;
     proc->state = PROCESS_READY;
     proc->addr_space = child_as;
     proc->wake_at_tick = 0;
@@ -314,6 +407,8 @@ struct process* process_fork_create(uintptr_t child_as, const struct registers* 
     ready_queue_head->prev = proc;
     ready_queue_tail = proc;
 
+    rq_enqueue(rq_active, proc);
+
     spin_unlock_irqrestore(&sched_lock, flags);
     return proc;
 }
@@ -333,11 +428,16 @@ void process_init(void) {
     }
 
     memset(kernel_proc, 0, sizeof(*kernel_proc));
-    
+
+    memset(&rq_active_store, 0, sizeof(rq_active_store));
+    memset(&rq_expired_store, 0, sizeof(rq_expired_store));
+
     kernel_proc->pid = 0;
     kernel_proc->parent_pid = 0;
     kernel_proc->session_id = 0;
     kernel_proc->pgrp_id = 0;
+    kernel_proc->priority = SCHED_NUM_PRIOS - 1;  // idle = lowest priority
+    kernel_proc->nice = 19;
     kernel_proc->state = PROCESS_RUNNING;
     kernel_proc->wake_at_tick = 0;
     kernel_proc->addr_space = hal_cpu_get_address_space();
@@ -387,6 +487,8 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
     proc->parent_pid = current_process ? current_process->pid : 0;
     proc->session_id = current_process ? current_process->session_id : proc->pid;
     proc->pgrp_id = current_process ? current_process->pgrp_id : proc->pid;
+    proc->priority = SCHED_DEFAULT_PRIO;
+    proc->nice = 0;
     proc->state = PROCESS_READY;
     proc->addr_space = kernel_as ? kernel_as : (current_process ? current_process->addr_space : 0);
     proc->wake_at_tick = 0;
@@ -424,38 +526,27 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
     ready_queue_head->prev = proc;
     ready_queue_tail = proc;
 
+    rq_enqueue(rq_active, proc);
+
     spin_unlock_irqrestore(&sched_lock, flags);
     return proc;
 }
 
-// Find next READY process
+// Find next READY process — O(1) via bitmap
 struct process* get_next_ready_process(void) {
-    if (!current_process) return NULL;
-    if (!current_process->next) return current_process;
+    struct process* next = rq_pick_next();
+    if (next) return next;
 
-    struct process* iterator = current_process->next;
-
-    // Scan the full circular list for a READY process.
-    while (iterator && iterator != current_process) {
-        if (iterator->state == PROCESS_READY) {
-            return iterator;
-        }
-        iterator = iterator->next;
-    }
-    
-    // If current is ready/running, return it.
-    if (current_process->state == PROCESS_RUNNING || current_process->state == PROCESS_READY)
-        return current_process;
-        
-    // If EVERYONE is sleeping, we must return the IDLE task (PID 0)
-    // Assuming PID 0 is always in the list.
-    // Search specifically for PID 0
-    iterator = current_process->next;
-    while (iterator && iterator->pid != 0) {
-        iterator = iterator->next;
-        if (iterator == current_process) break; // Should not happen
-    }
-    return iterator ? iterator : current_process;
+    // Fallback: idle task (PID 0)
+    if (current_process && current_process->pid == 0) return current_process;
+    struct process* it = ready_queue_head;
+    if (!it) return current_process;
+    const struct process* start = it;
+    do {
+        if (it->pid == 0) return it;
+        it = it->next;
+    } while (it && it != start);
+    return current_process;
 }
 
 void schedule(void) {
@@ -467,17 +558,44 @@ void schedule(void) {
     }
 
     struct process* prev = current_process;
-    struct process* next = get_next_ready_process();
-    
-    if (prev == next) {
-        spin_unlock_irqrestore(&sched_lock, irq_flags);
-        return; 
-    }
 
-    // Only change state to READY if it was RUNNING. 
-    // If it was SLEEPING/BLOCKED, leave it as is.
+    // Put prev back into expired runqueue if it's still runnable.
     if (prev->state == PROCESS_RUNNING) {
         prev->state = PROCESS_READY;
+        rq_enqueue(rq_expired, prev);
+    }
+
+    // Pick highest-priority READY process (may swap active/expired).
+    struct process* next = get_next_ready_process();
+
+    if (next) {
+        // next is in rq_active (possibly after swap) — remove it.
+        rq_dequeue(rq_active, next);
+    }
+
+    if (!next) {
+        // Nothing in runqueues. If prev is still runnable, keep it.
+        if (prev->state == PROCESS_READY) {
+            rq_dequeue(rq_expired, prev);
+            next = prev;
+        } else {
+            // Fall back to idle (PID 0).
+            struct process* it = ready_queue_head;
+            next = it;
+            if (it) {
+                const struct process* start = it;
+                do {
+                    if (it->pid == 0) { next = it; break; }
+                    it = it->next;
+                } while (it && it != start);
+            }
+        }
+    }
+
+    if (prev == next) {
+        prev->state = PROCESS_RUNNING;
+        spin_unlock_irqrestore(&sched_lock, irq_flags);
+        return;
     }
 
     current_process = next;
@@ -487,7 +605,6 @@ void schedule(void) {
         hal_cpu_set_address_space(current_process->addr_space);
     }
 
-    // For ring3->ring0 transitions, esp0 must point to the top of the kernel stack.
     if (current_process->kernel_stack) {
         hal_cpu_set_kernel_stack((uintptr_t)current_process->kernel_stack + 4096);
     }
@@ -496,9 +613,6 @@ void schedule(void) {
 
     context_switch(&prev->sp, current_process->sp);
 
-    // Do not restore the old IF state after switching stacks.
-    // The previous context may have entered schedule() with IF=0 (e.g. syscall/ISR),
-    // and propagating that would prevent timer/keyboard IRQs from firing.
     hal_cpu_enable_interrupts();
 }
 
@@ -544,7 +658,7 @@ void process_wake_check(uint32_t current_tick) {
         if (iter->state == PROCESS_SLEEPING) {
             if (current_tick >= iter->wake_at_tick) {
                 iter->state = PROCESS_READY;
-                // uart_print("Woke up PID "); 
+                rq_enqueue(rq_active, iter);
             }
         }
         iter = iter->next;

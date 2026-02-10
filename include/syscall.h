@@ -56,6 +56,12 @@ enum {
 
     SYSCALL_RENAME = 39,
     SYSCALL_RMDIR = 40,
+
+    SYSCALL_BRK = 41,
+    SYSCALL_NANOSLEEP = 42,
+    SYSCALL_CLOCK_GETTIME = 43,
+    SYSCALL_MMAP = 44,
+    SYSCALL_MUNMAP = 45,
 };
 
 #endif

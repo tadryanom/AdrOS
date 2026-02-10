@@ -188,6 +188,20 @@ int pty_master_write_kbuf(const void* kbuf, uint32_t len) {
     int jc = pty_jobctl_write_check();
     if (jc < 0) return jc;
 
+    enum { SIGINT_NUM = 2, SIGQUIT_NUM = 3, SIGTSTP_NUM = 20 };
+
+    const uint8_t* bytes = (const uint8_t*)kbuf;
+    for (uint32_t i = 0; i < len; i++) {
+        uint8_t ch = bytes[i];
+        int sig = 0;
+        if (ch == 0x03) sig = SIGINT_NUM;
+        else if (ch == 0x1C) sig = SIGQUIT_NUM;
+        else if (ch == 0x1A) sig = SIGTSTP_NUM;
+        if (sig && pty_fg_pgrp != 0) {
+            process_kill_pgrp(pty_fg_pgrp, sig);
+        }
+    }
+
     uintptr_t flags = spin_lock_irqsave(&pty_lock);
     uint32_t free = rb_free(m2s_head, m2s_tail);
     uint32_t to_write = len;

@@ -103,7 +103,7 @@ static int elf32_map_user_range(uintptr_t as, uintptr_t vaddr, size_t len, uint3
     return 0;
 }
 
-int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uintptr_t* user_stack_top_out, uintptr_t* addr_space_out) {
+int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uintptr_t* user_stack_top_out, uintptr_t* addr_space_out, uintptr_t* heap_break_out) {
     if (!filename || !entry_out || !user_stack_top_out || !addr_space_out) return -EFAULT;
     if (!fs_root) return -EINVAL;
 
@@ -155,6 +155,7 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
     }
 
     const elf32_phdr_t* ph = (const elf32_phdr_t*)(file + eh->e_phoff);
+    uintptr_t highest_seg_end = 0;
 
     for (uint16_t i = 0; i < eh->e_phnum; i++) {
         if (ph[i].p_type != PT_LOAD) continue;
@@ -215,6 +216,10 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
         if (ph[i].p_memsz > ph[i].p_filesz) {
             memset((void*)(uintptr_t)(ph[i].p_vaddr + ph[i].p_filesz), 0, ph[i].p_memsz - ph[i].p_filesz);
         }
+
+        if (seg_end > highest_seg_end) {
+            highest_seg_end = seg_end;
+        }
     }
 
     const uintptr_t user_stack_base = 0x00800000U;
@@ -232,17 +237,21 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
     *entry_out = (uintptr_t)eh->e_entry;
     *user_stack_top_out = user_stack_base + user_stack_size;
     *addr_space_out = new_as;
+    if (heap_break_out) {
+        *heap_break_out = (highest_seg_end + 0xFFFU) & ~(uintptr_t)0xFFFU;
+    }
 
     kfree(file);
     vmm_as_activate(old_as);
     return 0;
 }
 #else
-int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uintptr_t* user_stack_top_out, uintptr_t* addr_space_out) {
+int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uintptr_t* user_stack_top_out, uintptr_t* addr_space_out, uintptr_t* heap_break_out) {
     (void)filename;
     (void)entry_out;
     (void)user_stack_top_out;
     (void)addr_space_out;
+    (void)heap_break_out;
     return -1;
 }
 #endif

@@ -18,6 +18,7 @@ extern uint8_t _end;
 #define BITMAP_SIZE (MAX_RAM_SIZE / PAGE_SIZE / 8)
 
 static uint8_t memory_bitmap[BITMAP_SIZE];
+static uint16_t frame_refcount[MAX_RAM_SIZE / PAGE_SIZE];
 static uint64_t total_memory = 0;
 static uint64_t used_memory = 0;
 static uint64_t max_frames = 0;
@@ -313,6 +314,7 @@ void* pmm_alloc_page(void) {
 
         if (!bitmap_test(i)) {
             bitmap_set(i);
+            frame_refcount[i] = 1;
             used_memory += PAGE_SIZE;
             last_alloc_frame = i + 1;
             if (last_alloc_frame >= max_frames) last_alloc_frame = 1;
@@ -325,6 +327,38 @@ void* pmm_alloc_page(void) {
 void pmm_free_page(void* ptr) {
     uintptr_t addr = (uintptr_t)ptr;
     uint64_t frame = addr / PAGE_SIZE;
+    if (frame == 0 || frame >= max_frames) return;
+
+    uint16_t rc = frame_refcount[frame];
+    if (rc > 1) {
+        __sync_sub_and_fetch(&frame_refcount[frame], 1);
+        return;
+    }
+
+    frame_refcount[frame] = 0;
     bitmap_unset(frame);
     used_memory -= PAGE_SIZE;
+}
+
+void pmm_incref(uintptr_t paddr) {
+    uint64_t frame = paddr / PAGE_SIZE;
+    if (frame == 0 || frame >= max_frames) return;
+    __sync_fetch_and_add(&frame_refcount[frame], 1);
+}
+
+uint16_t pmm_decref(uintptr_t paddr) {
+    uint64_t frame = paddr / PAGE_SIZE;
+    if (frame == 0 || frame >= max_frames) return 0;
+    uint16_t new_val = __sync_sub_and_fetch(&frame_refcount[frame], 1);
+    if (new_val == 0) {
+        bitmap_unset(frame);
+        used_memory -= PAGE_SIZE;
+    }
+    return new_val;
+}
+
+uint16_t pmm_get_refcount(uintptr_t paddr) {
+    uint64_t frame = paddr / PAGE_SIZE;
+    if (frame >= max_frames) return 0;
+    return frame_refcount[frame];
 }

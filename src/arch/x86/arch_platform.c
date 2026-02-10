@@ -36,13 +36,16 @@ static void userspace_init_thread(void) {
     uintptr_t entry = 0;
     uintptr_t user_sp = 0;
     uintptr_t user_as = 0;
-    if (elf32_load_user_from_initrd("/bin/init.elf", &entry, &user_sp, &user_as) != 0) {
+    uintptr_t heap_brk = 0;
+    if (elf32_load_user_from_initrd("/bin/init.elf", &entry, &user_sp, &user_as, &heap_brk) != 0) {
         process_exit_notify(1);
         schedule();
         for (;;) hal_cpu_idle();
     }
 
     current_process->addr_space = user_as;
+    current_process->heap_start = heap_brk;
+    current_process->heap_break = heap_brk;
     vmm_as_activate(user_as);
 
     uart_print("[ELF] starting /bin/init.elf\n");

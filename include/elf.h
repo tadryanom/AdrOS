@@ -51,6 +51,6 @@ typedef struct {
 #define PF_W 0x2
 #define PF_R 0x4
 
-int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uintptr_t* user_stack_top_out, uintptr_t* addr_space_out);
+int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uintptr_t* user_stack_top_out, uintptr_t* addr_space_out, uintptr_t* heap_break_out);
 
 #endif

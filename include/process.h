@@ -33,8 +33,13 @@ struct process {
     uintptr_t sp;
     uintptr_t addr_space;
     uint32_t* kernel_stack;
+#define SCHED_NUM_PRIOS 32
+#define SCHED_DEFAULT_PRIO 16
+
+    uint8_t priority;           // 0 = highest, 31 = lowest
+    int8_t  nice;               // -20 to +19 (maps to priority)
     process_state_t state;
-    uint32_t wake_at_tick;      // New: When to wake up (global tick count)
+    uint32_t wake_at_tick;
     int exit_status;
 
     int has_user_regs;
@@ -51,6 +56,15 @@ struct process {
     // For SIGSEGV: last page fault address (CR2) captured in ring3.
     uintptr_t last_fault_addr;
 
+#define PROCESS_MAX_MMAPS 32
+    struct {
+        uintptr_t base;
+        uint32_t  length;
+    } mmaps[PROCESS_MAX_MMAPS];
+
+    uintptr_t heap_start;
+    uintptr_t heap_break;
+
     char cwd[128];
 
     int waiting;
@@ -58,8 +72,12 @@ struct process {
     int wait_result_pid;
     int wait_result_status;
     struct file* files[PROCESS_MAX_FILES];
+    uint8_t fd_flags[PROCESS_MAX_FILES];
     struct process* next;
-    struct process* prev;       // Doubly linked list helps here too! (Optional but good)
+    struct process* prev;
+
+    struct process* rq_next;    // O(1) runqueue per-priority list
+    struct process* rq_prev;
 };
 
 // Global pointer to the currently running process
@@ -93,6 +111,9 @@ void process_exit_notify(int status);
 
 // Kill a process (minimal signals). Returns 0 on success or -errno.
 int process_kill(uint32_t pid, int sig);
+
+// Send a signal to all processes in a process group.
+int process_kill_pgrp(uint32_t pgrp, int sig);
 
 // Create a child process that will resume in usermode from a saved register frame.
 struct process* process_fork_create(uintptr_t child_as, const struct registers* child_regs);

@@ -38,6 +38,11 @@ static uint32_t multiboot_copy_size;
     bi.initrd_start = 0;
     bi.initrd_end = 0;
     bi.cmdline = NULL;
+    bi.fb_addr = 0;
+    bi.fb_pitch = 0;
+    bi.fb_width = 0;
+    bi.fb_height = 0;
+    bi.fb_bpp = 0;
 
     if (mbi_phys) {
         uint32_t total_size = *(volatile uint32_t*)mbi_phys;
@@ -69,6 +74,14 @@ static uint32_t multiboot_copy_size;
             if (tag->type == MULTIBOOT_TAG_TYPE_CMDLINE) {
                 const struct multiboot_tag_string* s = (const struct multiboot_tag_string*)tag;
                 bi.cmdline = s->string;
+            }
+            if (tag->type == MULTIBOOT_TAG_TYPE_FRAMEBUFFER) {
+                const struct multiboot_tag_framebuffer* fb = (const struct multiboot_tag_framebuffer*)tag;
+                bi.fb_addr = (uintptr_t)fb->framebuffer_addr;
+                bi.fb_pitch = fb->framebuffer_pitch;
+                bi.fb_width = fb->framebuffer_width;
+                bi.fb_height = fb->framebuffer_height;
+                bi.fb_bpp = fb->framebuffer_bpp;
             }
         }
     }

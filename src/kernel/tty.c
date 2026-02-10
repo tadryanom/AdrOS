@@ -26,7 +26,9 @@ static struct process* waitq[TTY_WAITQ_MAX];
 static uint32_t waitq_head = 0;
 static uint32_t waitq_tail = 0;
 
-static uint32_t tty_lflag = TTY_ICANON | TTY_ECHO;
+static uint32_t tty_lflag = TTY_ICANON | TTY_ECHO | TTY_ISIG;
+
+static struct winsize tty_winsize = { 24, 80, 0, 0 };
 
 static uint32_t tty_session_id = 0;
 static uint32_t tty_fg_pgrp = 0;
@@ -165,6 +167,8 @@ enum {
     TTY_TCSETS = 0x5402,
     TTY_TIOCGPGRP = 0x540F,
     TTY_TIOCSPGRP = 0x5410,
+    TTY_TIOCGWINSZ = 0x5413,
+    TTY_TIOCSWINSZ = 0x5414,
 };
 
 int tty_ioctl(uint32_t cmd, void* user_arg) {
@@ -206,6 +210,7 @@ int tty_ioctl(uint32_t cmd, void* user_arg) {
 
     if (cmd == TTY_TCGETS) {
         struct termios t;
+        memset(&t, 0, sizeof(t));
         uintptr_t flags = spin_lock_irqsave(&tty_lock);
         t.c_lflag = tty_lflag;
         spin_unlock_irqrestore(&tty_lock, flags);
@@ -217,8 +222,20 @@ int tty_ioctl(uint32_t cmd, void* user_arg) {
         struct termios t;
         if (copy_from_user(&t, user_arg, sizeof(t)) < 0) return -EFAULT;
         uintptr_t flags = spin_lock_irqsave(&tty_lock);
-        tty_lflag = t.c_lflag & (TTY_ICANON | TTY_ECHO);
+        tty_lflag = t.c_lflag & (TTY_ICANON | TTY_ECHO | TTY_ISIG);
         spin_unlock_irqrestore(&tty_lock, flags);
+        return 0;
+    }
+
+    if (cmd == TTY_TIOCGWINSZ) {
+        if (user_range_ok(user_arg, sizeof(struct winsize)) == 0) return -EFAULT;
+        if (copy_to_user(user_arg, &tty_winsize, sizeof(tty_winsize)) < 0) return -EFAULT;
+        return 0;
+    }
+
+    if (cmd == TTY_TIOCSWINSZ) {
+        if (user_range_ok(user_arg, sizeof(struct winsize)) == 0) return -EFAULT;
+        if (copy_from_user(&tty_winsize, user_arg, sizeof(tty_winsize)) < 0) return -EFAULT;
         return 0;
     }
 
@@ -228,6 +245,56 @@ int tty_ioctl(uint32_t cmd, void* user_arg) {
 void tty_input_char(char c) {
     uintptr_t flags = spin_lock_irqsave(&tty_lock);
     uint32_t lflag = tty_lflag;
+
+    enum { SIGINT_NUM = 2, SIGQUIT_NUM = 3, SIGTSTP_NUM = 20 };
+
+    if (lflag & TTY_ISIG) {
+        if (c == 0x03) {
+            spin_unlock_irqrestore(&tty_lock, flags);
+            if (lflag & TTY_ECHO) {
+                uart_print("^C\n");
+            }
+            if (tty_fg_pgrp != 0) {
+                process_kill_pgrp(tty_fg_pgrp, SIGINT_NUM);
+            }
+            return;
+        }
+
+        if (c == 0x1C) {
+            spin_unlock_irqrestore(&tty_lock, flags);
+            if (lflag & TTY_ECHO) {
+                uart_print("^\\\n");
+            }
+            if (tty_fg_pgrp != 0) {
+                process_kill_pgrp(tty_fg_pgrp, SIGQUIT_NUM);
+            }
+            return;
+        }
+
+        if (c == 0x1A) {
+            spin_unlock_irqrestore(&tty_lock, flags);
+            if (lflag & TTY_ECHO) {
+                uart_print("^Z\n");
+            }
+            if (tty_fg_pgrp != 0) {
+                process_kill_pgrp(tty_fg_pgrp, SIGTSTP_NUM);
+            }
+            return;
+        }
+    }
+
+    if (c == 0x04 && (lflag & TTY_ICANON)) {
+        if (lflag & TTY_ECHO) {
+            uart_print("^D");
+        }
+        for (uint32_t i = 0; i < line_len; i++) {
+            canon_push(line_buf[i]);
+        }
+        line_len = 0;
+        tty_wake_one();
+        spin_unlock_irqrestore(&tty_lock, flags);
+        return;
+    }
 
     if ((lflag & TTY_ICANON) == 0) {
         if (c == '\r') c = '\n';

@@ -5,12 +5,23 @@
 #include <stdint.h>
 
 struct termios {
+    uint32_t c_iflag;
+    uint32_t c_oflag;
+    uint32_t c_cflag;
     uint32_t c_lflag;
 };
 
+struct winsize {
+    uint16_t ws_row;
+    uint16_t ws_col;
+    uint16_t ws_xpixel;
+    uint16_t ws_ypixel;
+};
+
 enum {
-    TTY_ICANON = 0x0001,
-    TTY_ECHO   = 0x0002,
+    TTY_ICANON = 0x0002,
+    TTY_ECHO   = 0x0008,
+    TTY_ISIG   = 0x0001,
 };
 
 void tty_init(void);
