@@ -67,6 +67,13 @@ enum {
     SYSCALL_UNLINK = 29,
 
     SYSCALL_GETDENTS = 30,
+
+    SYSCALL_FCNTL = 31,
+};
+
+enum {
+    F_GETFL = 3,
+    F_SETFL = 4,
 };
 
 enum {
@@ -121,6 +128,11 @@ enum {
 enum {
     O_CREAT = 0x40,
     O_TRUNC = 0x200,
+    O_NONBLOCK = 0x800,
+};
+
+enum {
+    EAGAIN = 11,
 };
 
 #define S_IFMT  0170000
@@ -139,6 +151,17 @@ static int sys_write(int fd, const void* buf, uint32_t len) {
         "int $0x80"
         : "=a"(ret)
         : "a"(SYSCALL_WRITE), "b"(fd), "c"(buf), "d"(len)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_fcntl(int fd, int cmd, uint32_t arg) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_FCNTL), "b"(fd), "c"(cmd), "d"(arg)
         : "memory"
     );
     return __syscall_fix(ret);
@@ -1709,6 +1732,68 @@ void _start(void) {
         }
 
         sys_write(1, "[init] isatty OK\n", (uint32_t)(sizeof("[init] isatty OK\n") - 1));
+    }
+
+    // B6: O_NONBLOCK smoke (pipe + pty)
+    {
+        int fds[2];
+        if (sys_pipe(fds) < 0) {
+            sys_write(1, "[init] pipe for nonblock failed\n",
+                      (uint32_t)(sizeof("[init] pipe for nonblock failed\n") - 1));
+            sys_exit(1);
+        }
+
+        if (sys_fcntl(fds[0], F_SETFL, O_NONBLOCK) < 0) {
+            sys_write(1, "[init] fcntl nonblock pipe failed\n",
+                      (uint32_t)(sizeof("[init] fcntl nonblock pipe failed\n") - 1));
+            sys_exit(1);
+        }
+
+        char b;
+        int r = sys_read(fds[0], &b, 1);
+        if (r != -1 || errno != EAGAIN) {
+            sys_write(1, "[init] nonblock pipe read expected EAGAIN\n",
+                      (uint32_t)(sizeof("[init] nonblock pipe read expected EAGAIN\n") - 1));
+            sys_exit(1);
+        }
+
+        if (sys_write(fds[1], "x", 1) != 1) {
+            sys_write(1, "[init] pipe write failed\n",
+                      (uint32_t)(sizeof("[init] pipe write failed\n") - 1));
+            sys_exit(1);
+        }
+        r = sys_read(fds[0], &b, 1);
+        if (r != 1 || b != 'x') {
+            sys_write(1, "[init] nonblock pipe read after write failed\n",
+                      (uint32_t)(sizeof("[init] nonblock pipe read after write failed\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_close(fds[0]);
+        (void)sys_close(fds[1]);
+
+        int p = sys_open("/dev/ptmx", 0);
+        if (p < 0) {
+            sys_write(1, "[init] open /dev/ptmx failed\n",
+                      (uint32_t)(sizeof("[init] open /dev/ptmx failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_fcntl(p, F_SETFL, O_NONBLOCK) < 0) {
+            sys_write(1, "[init] fcntl nonblock ptmx failed\n",
+                      (uint32_t)(sizeof("[init] fcntl nonblock ptmx failed\n") - 1));
+            sys_exit(1);
+        }
+        char pch;
+        r = sys_read(p, &pch, 1);
+        if (r != -1 || errno != EAGAIN) {
+            sys_write(1, "[init] nonblock ptmx read expected EAGAIN\n",
+                      (uint32_t)(sizeof("[init] nonblock ptmx read expected EAGAIN\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(p);
+
+        sys_write(1, "[init] O_NONBLOCK OK\n",
+                  (uint32_t)(sizeof("[init] O_NONBLOCK OK\n") - 1));
     }
 
     enum { NCHILD = 100 };

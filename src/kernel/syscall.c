@@ -21,6 +21,15 @@
 
 #include <stddef.h>
 
+enum {
+    O_NONBLOCK = 0x800,
+};
+
+enum {
+    FCNTL_F_GETFL = 3,
+    FCNTL_F_SETFL = 4,
+};
+
 #if defined(__i386__)
 static const uint32_t SIGFRAME_MAGIC = 0x53494746U; // 'SIGF'
 struct sigframe {
@@ -784,7 +793,7 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
     if (!f) return -ENOMEM;
     f->node = node;
     f->offset = 0;
-    f->flags = 0;
+    f->flags = flags;
     f->refcount = 1;
 
     int fd = fd_alloc(f);
@@ -793,6 +802,23 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
         return -EMFILE;
     }
     return fd;
+}
+
+static int syscall_fcntl_impl(int fd, int cmd, uint32_t arg) {
+    struct file* f = fd_get(fd);
+    if (!f) return -EBADF;
+
+    if (cmd == FCNTL_F_GETFL) {
+        return (int)f->flags;
+    }
+    if (cmd == FCNTL_F_SETFL) {
+        // Minimal: allow toggling O_NONBLOCK only.
+        uint32_t keep = f->flags & ~O_NONBLOCK;
+        uint32_t set = arg & O_NONBLOCK;
+        f->flags = keep | set;
+        return 0;
+    }
+    return -EINVAL;
 }
 
 static int syscall_mkdir_impl(const char* user_path) {
@@ -886,6 +912,29 @@ static int syscall_read_impl(int fd, void* user_buf, uint32_t len) {
     struct file* f = fd_get(fd);
     if (!f || !f->node) return -EBADF;
 
+    int nonblock = (f->flags & O_NONBLOCK) ? 1 : 0;
+    if (nonblock) {
+        // Non-blocking pipes: if empty but writers exist, return -EAGAIN.
+        if (f->node->name[0] == 'p' && f->node->name[1] == 'i' && f->node->name[2] == 'p' && f->node->name[3] == 'e' && f->node->name[4] == ':') {
+            struct pipe_node* pn = (struct pipe_node*)f->node;
+            struct pipe_state* ps = pn ? pn->ps : 0;
+            if (pn && ps && pn->is_read_end && ps->count == 0 && ps->writers != 0) {
+                return -EAGAIN;
+            }
+        }
+
+        // Non-blocking char devices (tty/pty) need special handling, since devfs read blocks.
+        if (f->node->flags == FS_CHARDEVICE) {
+            if (f->node->inode == 3) {
+                if (!tty_can_read()) return -EAGAIN;
+            } else if (f->node->inode == 4) {
+                if (!pty_master_can_read()) return -EAGAIN;
+            } else if (f->node->inode == 6) {
+                if (!pty_slave_can_read()) return -EAGAIN;
+            }
+        }
+    }
+
     if (f->node->flags == FS_CHARDEVICE) {
         uint8_t kbuf[256];
         uint32_t total = 0;
@@ -930,6 +979,8 @@ static int syscall_read_impl(int fd, void* user_buf, uint32_t len) {
     return (int)total;
 }
 
+static int syscall_write_impl(int fd, const void* user_buf, uint32_t len);
+
 static int syscall_write_impl(int fd, const void* user_buf, uint32_t len) {
     if (len > 1024 * 1024) return -EINVAL;
     if (user_range_ok(user_buf, (size_t)len) == 0) return -EFAULT;
@@ -942,6 +993,20 @@ static int syscall_write_impl(int fd, const void* user_buf, uint32_t len) {
 
     struct file* f = fd_get(fd);
     if (!f || !f->node) return -EBADF;
+
+    int nonblock = (f->flags & O_NONBLOCK) ? 1 : 0;
+    if (nonblock) {
+        // Non-blocking pipe write: if full but readers exist, return -EAGAIN.
+        if (f->node->name[0] == 'p' && f->node->name[1] == 'i' && f->node->name[2] == 'p' && f->node->name[3] == 'e' && f->node->name[4] == ':') {
+            struct pipe_node* pn = (struct pipe_node*)f->node;
+            struct pipe_state* ps = pn ? pn->ps : 0;
+            if (pn && ps && !pn->is_read_end) {
+                if (ps->readers != 0 && (ps->cap - ps->count) == 0) {
+                    return -EAGAIN;
+                }
+            }
+        }
+    }
     if (!f->node->write) return -ESPIPE;
     if (((f->node->flags & FS_FILE) == 0) && f->node->flags != FS_CHARDEVICE) return -ESPIPE;
 
@@ -1279,6 +1344,14 @@ static void syscall_handler(struct registers* regs) {
     if (syscall_no == SYSCALL_SIGRETURN) {
         const struct sigframe* user_frame = (const struct sigframe*)regs->ebx;
         regs->eax = (uint32_t)syscall_sigreturn_impl(regs, user_frame);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_FCNTL) {
+        int fd = (int)regs->ebx;
+        int cmd = (int)regs->ecx;
+        uint32_t arg = (uint32_t)regs->edx;
+        regs->eax = (uint32_t)syscall_fcntl_impl(fd, cmd, arg);
         return;
     }
 

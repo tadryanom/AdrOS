@@ -42,6 +42,8 @@ enum {
     SYSCALL_UNLINK = 29,
 
     SYSCALL_GETDENTS = 30,
+
+    SYSCALL_FCNTL = 31,
 };
 
 #endif
