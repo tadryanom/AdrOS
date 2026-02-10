@@ -45,14 +45,49 @@ static inline void irq_restore(uintptr_t flags) {
     __asm__ volatile ("push %0; popf" :: "r"(flags) : "memory", "cc");
 #endif
 }
-#else
+#elif defined(__arm__)
 static inline uintptr_t irq_save(void) {
-    return 0;
+    uintptr_t cpsr;
+    __asm__ volatile("mrs %0, cpsr\n\tcpsid i" : "=r"(cpsr) :: "memory");
+    return cpsr;
 }
 
 static inline void irq_restore(uintptr_t flags) {
-    (void)flags;
+    __asm__ volatile("msr cpsr_c, %0" :: "r"(flags) : "memory");
 }
+
+#elif defined(__riscv)
+static inline uintptr_t irq_save(void) {
+    uintptr_t mstatus;
+    __asm__ volatile("csrrci %0, mstatus, 0x8" : "=r"(mstatus) :: "memory");
+    return mstatus & 0x8;
+}
+
+static inline void irq_restore(uintptr_t flags) {
+    if (flags) {
+        __asm__ volatile("csrsi mstatus, 0x8" ::: "memory");
+    }
+}
+
+#elif defined(__mips__)
+static inline uintptr_t irq_save(void) {
+    uintptr_t status;
+    __asm__ volatile(
+        "mfc0 %0, $12\n\t"
+        "di"
+        : "=r"(status) :: "memory");
+    return status & 1U;
+}
+
+static inline void irq_restore(uintptr_t flags) {
+    if (flags) {
+        __asm__ volatile("ei" ::: "memory");
+    }
+}
+
+#else
+static inline uintptr_t irq_save(void) { return 0; }
+static inline void irq_restore(uintptr_t flags) { (void)flags; }
 #endif
 
 static inline uintptr_t spin_lock_irqsave(spinlock_t* l) {
