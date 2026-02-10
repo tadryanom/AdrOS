@@ -18,6 +18,8 @@
 #define X86_PTE_PRESENT 0x1
 #define X86_PTE_RW      0x2
 #define X86_PTE_USER    0x4
+#define X86_PTE_PWT     0x8    /* Page Write-Through */
+#define X86_PTE_PCD     0x10   /* Page Cache Disable */
 #define X86_PTE_COW     0x200  /* Bit 9: OS-available, marks Copy-on-Write */
 
 /* Defined in boot.S (Physical address loaded in CR3, but accessed via virt alias) */
@@ -36,6 +38,8 @@ static uint32_t vmm_flags_to_x86(uint32_t flags) {
     if (flags & VMM_FLAG_PRESENT) x86_flags |= X86_PTE_PRESENT;
     if (flags & VMM_FLAG_RW)      x86_flags |= X86_PTE_RW;
     if (flags & VMM_FLAG_USER)    x86_flags |= X86_PTE_USER;
+    if (flags & VMM_FLAG_PWT)     x86_flags |= X86_PTE_PWT;
+    if (flags & VMM_FLAG_PCD)     x86_flags |= X86_PTE_PCD;
     if (flags & VMM_FLAG_COW)     x86_flags |= X86_PTE_COW;
     return x86_flags;
 }

@@ -7,6 +7,9 @@
 #define VMM_FLAG_PRESENT  (1 << 0)
 #define VMM_FLAG_RW       (1 << 1)
 #define VMM_FLAG_USER     (1 << 2)
+#define VMM_FLAG_PWT      (1 << 3)  /* Page Write-Through */
+#define VMM_FLAG_PCD      (1 << 4)  /* Page Cache Disable */
+#define VMM_FLAG_NOCACHE  (VMM_FLAG_PWT | VMM_FLAG_PCD) /* For MMIO regions */
 #define VMM_FLAG_COW      (1 << 9)  /* OS-available bit: Copy-on-Write marker */
 
 /* 

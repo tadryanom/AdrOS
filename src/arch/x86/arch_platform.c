@@ -17,6 +17,12 @@
 #include "hal/usermode.h"
 
 #if defined(__i386__)
+#include "arch/x86/acpi.h"
+#include "arch/x86/lapic.h"
+#include "arch/x86/ioapic.h"
+#endif
+
+#if defined(__i386__)
 extern void x86_usermode_test_start(void);
 #endif
 
@@ -80,6 +86,30 @@ int arch_platform_setup(const struct boot_info* bi) {
     kprintf("[AdrOS] Kernel Initialized (VGA).\n");
 
     syscall_init();
+
+    /* Parse ACPI tables (MADT) to discover CPU topology and IOAPIC addresses */
+    acpi_init();
+
+    /* Initialize LAPIC + IOAPIC (replaces legacy PIC 8259).
+     * If APIC is not available, PIC remains active from idt_init(). */
+    if (lapic_init()) {
+        if (ioapic_init()) {
+            uint32_t bsp_id = lapic_get_id();
+            /* Route ISA IRQs through IOAPIC:
+             * IRQ 0 (PIT/Timer)    -> IDT vector 32
+             * IRQ 1 (Keyboard)     -> IDT vector 33
+             * IRQ 14 (ATA primary) -> IDT vector 46 */
+            ioapic_route_irq(0,  32, (uint8_t)bsp_id);
+            ioapic_route_irq(1,  33, (uint8_t)bsp_id);
+            ioapic_route_irq(14, 46, (uint8_t)bsp_id);
+
+            /* Now that IOAPIC routes are live, disable the legacy PIC.
+             * This must happen AFTER IOAPIC is configured to avoid
+             * a window where no interrupt controller handles IRQs. */
+            pic_disable();
+        }
+    }
+
     keyboard_init();
 
     return 0;
