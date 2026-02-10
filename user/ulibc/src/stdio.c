@@ -20,12 +20,11 @@ int puts(const char* s) {
 int vsnprintf(char* buf, size_t size, const char* fmt, va_list ap) {
     size_t pos = 0;
 
-#define PUTC(c) do { if (pos < size - 1) buf[pos] = (c); pos++; } while(0)
+#define PUTC(c) do { if (pos + 1 < size) buf[pos] = (c); pos++; } while(0)
 
     if (size == 0) {
-        /* Just count characters */
-        while (*fmt) { pos++; fmt++; }
-        return (int)pos;
+        /* Cannot write anything; return 0 */
+        return 0;
     }
 
     while (*fmt) {
