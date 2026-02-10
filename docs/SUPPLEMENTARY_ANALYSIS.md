@@ -16,12 +16,12 @@ Unix-like, POSIX-compatible operating system.
 | Bitmap allocator | ✅ Bitmap-based | ✅ Bitmap-based (`src/mm/pmm.c`) | None |
 | Multiboot memory map parsing | ✅ Parse MMAP entries | ✅ Full Multiboot2 MMAP parsing, clamping, fallback | None |
 | Kernel/module protection | ✅ Reserve kernel + initrd | ✅ Protects kernel (`_start`–`_end`), modules, low 1MB | None |
-| Frame reference counting | ✅ `uint16_t frame_ref_count[]` for CoW | ❌ Not implemented | **Critical for CoW fork** |
-| Contiguous block allocation | ✅ `pmm_alloc_blocks(count)` for DMA | ❌ Only single-frame `pmm_alloc_page()` | Needed for DMA drivers |
-| Atomic ref operations | ✅ `__sync_fetch_and_add` | ❌ N/A (no refcount) | Future |
-| Spinlock protection | ✅ `spinlock_acquire(&pmm_lock)` | ❌ PMM has no lock (single-core safe only) | Needed for SMP |
+| Frame reference counting | ✅ `uint16_t frame_ref_count[]` for CoW | ✅ `pmm_incref`/`pmm_decref`/`pmm_get_refcount` | None |
+| Contiguous block allocation | ✅ `pmm_alloc_blocks(count)` for DMA | ❌ Only single-frame `pmm_alloc_page()` | Needed for multi-page DMA |
+| Atomic ref operations | ✅ `__sync_fetch_and_add` | ✅ File refcounts use `__sync_*` builtins | None |
+| Spinlock protection | ✅ `spinlock_acquire(&pmm_lock)` | ✅ `pmm_lock` with `spin_lock_irqsave` | None |
 
-**Summary:** AdrOS PMM is solid for single-core use. Missing ref-counting (blocks CoW) and contiguous allocation (blocks DMA).
+**Summary:** AdrOS PMM is SMP-safe with spinlock protection and frame refcounting for CoW. Only missing contiguous block allocation.
 
 ---
 
@@ -34,13 +34,15 @@ Unix-like, POSIX-compatible operating system.
 | Per-process address spaces | ✅ Clone kernel PD | ✅ `vmm_as_create_kernel_clone()`, `vmm_as_clone_user()` | None |
 | W^X logical policy | ✅ `vmm_apply_wx_policy()` rejects RWX | ✅ ELF loader maps `.text` as RO after load via `vmm_protect_range()` | Partial — no policy function, but effect achieved |
 | W^X hardware (NX bit) | ✅ PAE + NX via EFER MSR | ❌ 32-bit paging, no PAE, no NX | Long-term |
-| CPUID feature detection | ✅ `cpu_get_features()` for PAE/NX | ❌ Not implemented | Long-term |
+| CPUID feature detection | ✅ `cpu_get_features()` for PAE/NX | ✅ Full CPUID leaf 0/1/7/extended; SMEP/SMAP detection | None |
+| SMEP | Not discussed | ✅ Enabled in CR4 if CPU supports | **AdrOS is ahead** |
+| Copy-on-Write (CoW) | ✅ Full implementation | ✅ `vmm_as_clone_user_cow()` + `vmm_handle_cow_fault()` | None |
 | `vmm_find_free_area()` | ✅ Scan user VA space for holes | ❌ Not implemented | Needed for `mmap` |
 | `vmm_map_dma_buffer()` | ✅ Map phys into user VA | ❌ Not implemented | Needed for zero-copy I/O |
 | TLB flush | ✅ `invlpg` + full flush | ✅ `invlpg()` per page | None |
 | Spinlock on VMM ops | ✅ `vmm_kernel_lock` | ❌ No lock | Needed for SMP |
 
-**Summary:** AdrOS VMM is functional and well-designed (recursive mapping is elegant). Missing hardware NX (requires PAE migration) and free-area search for `mmap`.
+**Summary:** AdrOS VMM is functional and well-designed with CoW fork, recursive mapping, and SMEP. Missing hardware NX (requires PAE migration) and free-area search for `mmap`.
 
 ---
 
@@ -51,9 +53,10 @@ Unix-like, POSIX-compatible operating system.
 | Doubly-linked free list | Mentioned | ✅ `heap.c` with `HEAP_MAGIC` validation | None |
 | Coalescing | Mentioned | ✅ Forward + backward coalesce (fixed in previous session) | None |
 | Spinlock | ✅ Required | ✅ `heap_lock` spinlock present | None |
-| Slab allocator | ✅ `slab_cache_t` for fixed-size objects | ❌ Not implemented | Medium priority |
+| Slab allocator | ✅ `slab_cache_t` for fixed-size objects | ✅ `slab_cache_init`/`slab_alloc`/`slab_free` with spinlock | None |
+| Dynamic growth | Not discussed | ✅ Heap grows from 10MB up to 64MB on demand | **AdrOS is ahead** |
 
-**Summary:** Heap works correctly. Slab allocator would improve performance for frequent small allocations (process structs, file descriptors).
+**Summary:** Heap works correctly with dynamic growth and slab allocator for fixed-size objects.
 
 ---
 
@@ -62,18 +65,18 @@ Unix-like, POSIX-compatible operating system.
 | Aspect | Supplementary Suggestion | AdrOS Current State | Gap |
 |--------|--------------------------|---------------------|-----|
 | Process states | ✅ READY/RUNNING/SLEEPING/ZOMBIE | ✅ READY/RUNNING/ZOMBIE/BLOCKED/SLEEPING | AdrOS has more states |
-| Round-robin scheduling | Baseline | ✅ Implemented in `scheduler.c` | None |
-| O(1) scheduler (bitmap + active/expired) | ✅ Full implementation | ❌ Simple linked-list traversal | Enhancement |
-| Priority queues (MLFQ) | ✅ 32 priority levels | ❌ No priority levels | Enhancement |
+| Round-robin scheduling | Baseline | ✅ Implemented as fallback | None |
+| O(1) scheduler (bitmap + active/expired) | ✅ Full implementation | ✅ Bitmap + active/expired swap, 32 priority levels | None |
+| Priority queues (MLFQ) | ✅ 32 priority levels | ✅ 32 priority levels via `SCHED_NUM_PRIOS` | None |
 | Unix decay-based priority | ✅ `p_cpu` decay + `nice` | ❌ Not implemented | Enhancement |
 | Per-CPU runqueues | ✅ `cpu_runqueue_t` per CPU | ❌ Single global queue | Needed for SMP |
-| Sleep/wakeup (wait queues) | ✅ `sleep(chan, lock)` / `wakeup(chan)` | ✅ Process blocking via `PROCESS_BLOCKED` state + manual wake | Partial — no generic wait queue abstraction |
+| Sleep/wakeup (wait queues) | ✅ `sleep(chan, lock)` / `wakeup(chan)` | ✅ Process blocking + `nanosleep` syscall | Partial — no generic wait queue abstraction |
 | Context switch (assembly) | ✅ Save/restore callee-saved + CR3 | ✅ `context_switch.S` saves/restores regs + CR3 | None |
-| `fork()` | ✅ Slab + CoW + enqueue | ✅ `process_fork_create()` — full copy (no CoW) | CoW missing |
-| `execve()` | ✅ Load ELF, reset stack | ✅ `syscall_execve_impl()` — loads ELF, handles argv/envp | None |
+| `fork()` | ✅ Slab + CoW + enqueue | ✅ `vmm_as_clone_user_cow()` + page fault handler | None |
+| `execve()` | ✅ Load ELF, reset stack | ✅ `syscall_execve_impl()` — loads ELF, handles argv/envp, `O_CLOEXEC` | None |
 | Spinlock protection | ✅ `sched_lock` | ✅ `sched_lock` present | None |
 
-**Summary:** AdrOS scheduler is functional with all essential operations. The supplementary material suggests O(1)/MLFQ upgrades which are performance enhancements, not correctness issues.
+**Summary:** AdrOS scheduler is now O(1) with bitmap + active/expired arrays and 32 priority levels. Missing decay-based priority and per-CPU runqueues.
 
 ---
 
@@ -121,9 +124,11 @@ Unix-like, POSIX-compatible operating system.
 | PTY master/slave | Not discussed | ✅ Full PTY implementation with `/dev/ptmx` + `/dev/pts/0` | **AdrOS is ahead** |
 | Job control (SIGTTIN/SIGTTOU) | Not discussed | ✅ `pty_jobctl_read_check()` / `pty_jobctl_write_check()` | **AdrOS is ahead** |
 | `poll()` support | ✅ `tty_poll()` | ✅ `pty_master_can_read()` etc. integrated with `poll` | None |
-| Raw mode | Not discussed | ❌ Not implemented | Needed for editors/games |
+| Raw mode | Not discussed | ✅ `ICANON` clearable via `TCSETS` | None |
+| Signal characters | Not discussed | ✅ Ctrl+C→SIGINT, Ctrl+Z→SIGTSTP, Ctrl+D→EOF, Ctrl+\\→SIGQUIT | **AdrOS is ahead** |
+| Window size | Not discussed | ✅ `TIOCGWINSZ`/`TIOCSWINSZ` | **AdrOS is ahead** |
 
-**Summary:** AdrOS TTY/PTY is **significantly ahead** of the supplementary material. Full PTY with job control is a major achievement.
+**Summary:** AdrOS TTY/PTY is **significantly ahead** of the supplementary material. Full PTY with job control, raw mode, signal characters, and window size.
 
 ---
 
@@ -136,10 +141,10 @@ Unix-like, POSIX-compatible operating system.
 | IRQ save/restore | ✅ `pushcli`/`popcli` with nesting | ✅ `irq_save()`/`irq_restore()` via `pushf`/`popf` | None |
 | `spin_lock_irqsave` | ✅ Combined lock + IRQ disable | ✅ `spin_lock_irqsave()` / `spin_unlock_irqrestore()` | None |
 | Debug name field | ✅ `char *name` for panic messages | ❌ No name field | Minor |
-| CPU ID tracking | ✅ `lock->cpu_id` for deadlock detection | ❌ Not tracked | Needed for SMP |
-| Nesting counter (`ncli`) | ✅ Per-CPU nesting | ❌ Not implemented (flat save/restore) | Needed for SMP |
+| CPU ID tracking | ✅ `lock->cpu_id` for deadlock detection | ❌ Not tracked | Enhancement |
+| Nesting counter (`ncli`) | ✅ Per-CPU nesting | ❌ Not implemented (flat save/restore) | Enhancement |
 
-**Summary:** AdrOS spinlocks are correct for single-core. The supplementary material's SMP-aware features (CPU tracking, nesting) are needed only when AdrOS targets multi-core.
+**Summary:** AdrOS spinlocks are correct and used throughout the kernel (PMM, heap, slab, scheduler, TTY). SMP-aware features (CPU tracking, nesting) are enhancements.
 
 ---
 
@@ -163,34 +168,38 @@ Unix-like, POSIX-compatible operating system.
 |--------|--------------------------|---------------------|-----|
 | `crt0.S` (entry point) | ✅ `_start` → `main` → `exit` | ✅ `user/crt0.S` with argc/argv setup | None |
 | Syscall stub (int 0x80) | ✅ `_syscall_invoke` via registers | ✅ `_syscall` in `user/syscall.S` | None |
-| `SYSENTER` fast path | ✅ vDSO + MSR setup | ❌ Only `int 0x80` | Enhancement |
-| libc wrappers | ✅ `syscalls.c` with errno | ❌ Raw syscall wrappers only, no errno | **Key gap** |
+| libc wrappers | ✅ `syscalls.c` with errno | ✅ ulibc: `printf`, `malloc`/`free`/`calloc`/`realloc`, `string.h`, `errno.h` | None |
 | `init.c` (early userspace) | ✅ mount + pivot_root + execve | ✅ `user/init.c` — comprehensive smoke tests | Different purpose |
 | User linker script | ✅ `user.ld` at 0x08048000 | ✅ `user/user.ld` at 0x00400000 | Both valid |
+| `SYSENTER` fast path | ✅ vDSO + MSR setup | ✅ `sysenter_init.c` — MSR setup + handler | None |
 
-**Summary:** AdrOS has a working userspace with syscall stubs and a comprehensive test binary. Missing a proper libc and `SYSENTER` optimization.
+**Summary:** AdrOS has a working userspace with ulibc, SYSENTER fast path, and a comprehensive test binary. Missing a shell and core utilities.
 
 ---
 
-### 1.11 Drivers (Not Yet in AdrOS)
+### 1.11 Drivers
 
 | Driver | Supplementary Suggestion | AdrOS Current State |
 |--------|--------------------------|---------------------|
-| PCI enumeration | ✅ Full scan (bus/dev/func) | ❌ Not implemented |
+| PCI enumeration | ✅ Full scan (bus/dev/func) | ✅ Full scan with BAR + IRQ (`src/hal/x86/pci.c`) |
+| ATA DMA (Bus Master IDE) | Not discussed | ✅ Bounce buffer, PRDT, IRQ-coordinated (`src/hal/x86/ata_dma.c`) |
+| LAPIC + IOAPIC | Not discussed | ✅ Replaces legacy PIC; IRQ routing |
+| SMP (multi-CPU boot) | Not discussed | ✅ 4 CPUs via INIT-SIPI-SIPI, per-CPU data via GS |
+| ACPI (MADT parsing) | Not discussed | ✅ CPU topology + IOAPIC discovery |
+| VBE/Framebuffer | ✅ Map LFB + MTRR write-combining | ✅ Maps LFB, pixel drawing, font rendering (no MTRR WC) |
 | Intel E1000 NIC | ✅ RX/TX descriptor rings + DMA | ❌ Not implemented |
-| VBE/Framebuffer | ✅ Map LFB + MTRR write-combining | ❌ VGA text mode only |
 | Intel HDA Audio | ✅ DMA ring buffers | ❌ Not implemented |
 | lwIP TCP/IP stack | ✅ `sys_arch.c` bridge | ❌ Not implemented |
 
 ---
 
-### 1.12 Advanced Features (Not Yet in AdrOS)
+### 1.12 Advanced Features
 
 | Feature | Supplementary Suggestion | AdrOS Current State |
 |---------|--------------------------|---------------------|
-| Copy-on-Write (CoW) fork | ✅ Full implementation with ref-counting | ❌ Full address space copy |
-| Slab allocator | ✅ `slab_cache_t` with free-list-in-place | ❌ Only `kmalloc`/`kfree` |
-| Shared memory (shmem/mmap) | ✅ `sys_shmget` / `sys_shmat` | ❌ Not implemented |
+| Copy-on-Write (CoW) fork | ✅ Full implementation with ref-counting | ✅ `vmm_as_clone_user_cow()` + `vmm_handle_cow_fault()` |
+| Slab allocator | ✅ `slab_cache_t` with free-list-in-place | ✅ `slab_cache_init`/`slab_alloc`/`slab_free` with spinlock |
+| Shared memory (shmem/mmap) | ✅ `sys_shmget` / `sys_shmat` | ✅ `shm_get`/`shm_at`/`shm_dt`/`shm_ctl` in `src/kernel/shm.c` |
 | Zero-copy DMA I/O | ✅ Map DMA buffer into user VA | ❌ Not implemented |
 | vDSO | ✅ Kernel-mapped page with syscall code | ❌ Not implemented |
 
@@ -198,123 +207,141 @@ Unix-like, POSIX-compatible operating system.
 
 ## Part 2 — POSIX Compatibility Assessment
 
-### Overall Score: **~45% toward a practical Unix-like POSIX system**
+### Overall Score: **~70% toward a practical Unix-like POSIX system**
 
-This score reflects that AdrOS has the **core architectural skeleton** of a Unix system
-fully in place, but lacks several key POSIX interfaces and userland components needed
-for real-world use.
+This score reflects that AdrOS has a **mature kernel** with most core subsystems
+implemented and working. The main remaining gaps are userland tooling (shell, core
+utilities) and some POSIX interfaces (`mmap`, permissions, links).
 
 ### What AdrOS Already Has (Strengths)
 
-1. **Process model** — `fork`, `execve`, `waitpid`, `exit`, `getpid`, `getppid`, `setsid`, `setpgid`, `getpgrp` — all working
-2. **File I/O** — `open`, `read`, `write`, `close`, `lseek`, `stat`, `fstat`, `dup`, `dup2`, `dup3`, `pipe`, `pipe2`, `fcntl`, `getdents` — comprehensive
-3. **Signals** — `sigaction`, `sigprocmask`, `kill`, `sigreturn` with full trampoline — robust
-4. **VFS** — 5 filesystem types, mount table, path resolution, per-process cwd — excellent
-5. **TTY/PTY** — Line discipline, job control, blocking I/O, `ioctl` — very good
-6. **Select/Poll** — Working for pipes and TTY devices
-7. **Memory isolation** — Per-process address spaces, user/kernel separation, `uaccess` validation
-8. **ELF loading** — Secure loader with W^X enforcement
-9. **Spinlocks** — Correct `xchg`-based implementation with IRQ save/restore
+1. **Process model** — `fork` (CoW), `execve`, `waitpid`, `exit`, `getpid`, `getppid`, `setsid`, `setpgid`, `getpgrp`, `brk` — all working
+2. **File I/O** — `open`, `read`, `write`, `close`, `lseek`, `stat`, `fstat`, `dup`, `dup2`, `dup3`, `pipe`, `pipe2`, `fcntl`, `getdents`, `O_CLOEXEC`, `FD_CLOEXEC` — comprehensive
+3. **Signals** — `sigaction`, `sigprocmask`, `kill`, `sigreturn` with full trampoline, Ctrl+C/Z/D signal chars — robust
+4. **VFS** — 6 filesystem types (tmpfs, devfs, overlayfs, diskfs, persistfs, procfs), mount table, path resolution — excellent
+5. **TTY/PTY** — Line discipline, raw mode, job control, signal chars, `TIOCGWINSZ`, PTY — very good
+6. **Select/Poll** — Working for pipes, TTY, PTY, `/dev/null`
+7. **Memory management** — PMM (spinlock + refcount), VMM (CoW, recursive PD), heap (dynamic 64MB), slab allocator, SMEP, shared memory
+8. **Hardware** — PCI, ATA DMA, LAPIC/IOAPIC, SMP (4 CPUs), ACPI, VBE framebuffer, SYSENTER, CPUID
+9. **Userland** — ulibc (`printf`, `malloc`, `string.h`, `errno.h`), ELF loader with W^X
+10. **Testing** — 47 host unit tests, 19 smoke tests, cppcheck, GDB scripted checks
+11. **Security** — SMEP, user_range_ok hardened, sigreturn eflags sanitized, atomic file refcounts
 
 ### What's Missing for Practical POSIX (Gaps by Priority)
 
 #### Tier 1 — Blocks basic usability
 | Gap | Impact | Effort |
 |-----|--------|--------|
-| **Minimal libc** (`printf`, `malloc`, `string.h`, `stdio.h`) | Can't build real userland programs | Medium |
+| ~~Minimal libc~~ | ✅ ulibc implemented | Done |
 | **Shell** (`sh`-compatible) | No interactive use without it | Medium |
-| **Signal characters** (Ctrl+C → SIGINT, Ctrl+D → EOF) | Can't interrupt/control processes | Small |
-| **`brk`/`sbrk`** (user heap) | No `malloc` in userspace | Small-Medium |
+| ~~Signal characters~~ | ✅ Ctrl+C/Z/D implemented | Done |
+| ~~`brk`/`sbrk`~~ | ✅ Implemented | Done |
 | **Core utilities** (`ls`, `cat`, `echo`, `mkdir`, `rm`) | No file management | Medium |
+| **`/dev/zero`** | Missing common device node | Small |
+| **Multiple PTY pairs** | Only 1 pair limits multi-process use | Small |
 
 #### Tier 2 — Required for POSIX compliance
 | Gap | Impact | Effort |
 |-----|--------|--------|
-| **`mmap`/`munmap`** | No memory-mapped files, no shared memory | Medium-Large |
-| **`O_CLOEXEC`** | FD leaks across `execve` | Small |
+| **`mmap`/`munmap`** | No memory-mapped files | Medium-Large |
+| ~~`O_CLOEXEC`~~ | ✅ Implemented | Done |
 | **Permissions** (`uid`/`gid`/mode/`chmod`/`chown`) | No multi-user security | Medium |
 | **Hard/symbolic links** | Incomplete filesystem semantics | Medium |
-| **`/proc` filesystem** | No process introspection | Medium |
-| **`nanosleep`/`clock_gettime`** | No time management | Small |
-| **Raw TTY mode** | Can't run editors or games | Small |
+| **`/proc` per-process** | Only `/proc/meminfo`, no `/proc/[pid]` | Medium |
+| ~~`nanosleep`/`clock_gettime`~~ | ✅ Implemented | Done |
+| ~~Raw TTY mode~~ | ✅ Implemented | Done |
+| **VMIN/VTIME** | Non-canonical timing not supported | Small |
 
 #### Tier 3 — Full Unix experience
 | Gap | Impact | Effort |
 |-----|--------|--------|
-| **CoW fork** | Memory waste on fork-heavy workloads | Large |
+| ~~CoW fork~~ | ✅ Implemented | Done |
 | **PAE + NX bit** | No hardware W^X enforcement | Large |
-| **Slab allocator** | Performance for frequent small allocs | Medium |
+| ~~Slab allocator~~ | ✅ Implemented | Done |
 | **Networking** (socket API + TCP/IP) | No network connectivity | Very Large |
 | **Threads** (`clone`/`pthread`) | No multi-threaded programs | Large |
 | **Dynamic linking** (`ld.so`) | Can't use shared libraries | Very Large |
-| **VBE framebuffer** | No graphical output | Medium |
-| **PCI + device drivers** | No hardware discovery | Large |
+| ~~VBE framebuffer~~ | ✅ Implemented | Done |
+| ~~PCI + device drivers~~ | ✅ PCI + ATA DMA implemented | Done |
 
 ---
 
 ## Part 3 — Architectural Comparison Summary
 
 | Dimension | Supplementary Material | AdrOS Current | Verdict |
-|-----------|----------------------|---------------|---------|
+|-----------|----------------------|---------------|----------|
 | **Boot flow** | GRUB → Stub (LZ4) → Kernel → USTAR InitRD | GRUB → Kernel → Custom InitRD → OverlayFS | Both valid; AdrOS is simpler |
-| **Memory architecture** | PMM + Slab + CoW + Zero-Copy DMA | PMM + Heap (linked list) | Supplementary is more advanced |
-| **Scheduler** | O(1) with bitmap + active/expired arrays | Round-robin with linked list | Supplementary is more advanced |
-| **VFS** | USTAR + FAT (planned) | tmpfs + devfs + overlayfs + diskfs + persistfs | **AdrOS is more advanced** |
-| **Syscall interface** | int 0x80 + SYSENTER + vDSO | int 0x80 only | Supplementary has more optimization |
-| **Signal handling** | Basic trampoline concept | Full SA_SIGINFO + sigreturn + sigframe | **AdrOS is more advanced** |
-| **TTY/PTY** | Basic circular buffer | Full PTY with job control | **AdrOS is more advanced** |
-| **Synchronization** | SMP-aware spinlocks with CPU tracking | Single-core spinlocks with IRQ save | Supplementary targets SMP |
-| **Userland** | libc stubs + init + shell concept | Raw syscall wrappers + test binary | Both early-stage |
-| **Drivers** | PCI + E1000 + VBE + HDA (conceptual) | UART + VGA text + PS/2 + ATA PIO | Supplementary has more scope |
+| **Memory architecture** | PMM + Slab + CoW + Zero-Copy DMA | PMM (spinlock+refcount) + Slab + CoW + Heap (64MB dynamic) + SMEP + Shmem | **Comparable** (AdrOS missing zero-copy DMA) |
+| **Scheduler** | O(1) with bitmap + active/expired arrays | O(1) with bitmap + active/expired, 32 priority levels | **Comparable** (AdrOS missing decay + per-CPU) |
+| **VFS** | USTAR + FAT (planned) | tmpfs + devfs + overlayfs + diskfs + persistfs + procfs | **AdrOS is more advanced** |
+| **Syscall interface** | int 0x80 + SYSENTER + vDSO | int 0x80 + SYSENTER | **Comparable** (AdrOS missing vDSO) |
+| **Signal handling** | Basic trampoline concept | Full SA_SIGINFO + sigreturn + sigframe + signal chars | **AdrOS is more advanced** |
+| **TTY/PTY** | Basic circular buffer | Full PTY + raw mode + job control + signal chars + TIOCGWINSZ | **AdrOS is more advanced** |
+| **Synchronization** | SMP-aware spinlocks with CPU tracking | Spinlocks with IRQ save, used throughout (PMM, heap, slab, sched) | **Comparable** (AdrOS missing CPU tracking) |
+| **Userland** | libc stubs + init + shell concept | ulibc (printf, malloc, string.h) + init + echo | **Comparable** (AdrOS missing shell) |
+| **Drivers** | PCI + E1000 + VBE + HDA (conceptual) | PCI + ATA DMA + VBE + LAPIC/IOAPIC + SMP + ACPI | **AdrOS is more advanced** |
 
 ---
 
 ## Part 4 — Recommendations
 
-### Immediate Actions (use supplementary material as inspiration)
+### Completed (since initial analysis)
 
-1. **Add signal characters to TTY** — Ctrl+C/Ctrl+Z/Ctrl+D handling in `tty_input_char()`. Small change, huge usability gain.
+1. ~~Add signal characters to TTY~~ ✅ Ctrl+C/Z/D/\\ implemented
+2. ~~Implement `brk`/`sbrk` syscall~~ ✅ `syscall_brk_impl()`
+3. ~~Build minimal libc~~ ✅ ulibc with printf, malloc, string.h, errno.h
+4. ~~PMM ref-counting~~ ✅ `pmm_incref`/`pmm_decref`/`pmm_get_refcount`
+5. ~~CoW fork~~ ✅ `vmm_as_clone_user_cow()` + `vmm_handle_cow_fault()`
+6. ~~O(1) scheduler~~ ✅ Bitmap + active/expired arrays, 32 priority levels
+7. ~~Slab allocator~~ ✅ `slab_cache_init`/`slab_alloc`/`slab_free`
+8. ~~PCI enumeration~~ ✅ Full bus/slot/func scan
+9. ~~CPUID~~ ✅ Leaf 0/1/7/extended, SMEP enabled
 
-2. **Implement `brk`/`sbrk` syscall** — Track a per-process heap break pointer. Essential for userland `malloc`.
+### Immediate Actions (next priorities)
 
-3. **Build minimal libc** — Start with `write`-based `printf`, `brk`-based `malloc`, `string.h`. The supplementary `syscalls.c.txt` and `unistd.c.txt` show the pattern.
+1. **Build a shell** — All required syscalls are implemented. This is the single biggest usability unlock.
 
-4. **Build a shell** — All required syscalls (`fork`+`execve`+`waitpid`+`pipe`+`dup2`+`chdir`) are already implemented.
+2. **Core utilities** — `ls`, `cat`, `echo`, `mkdir`, `rm`. All required VFS operations exist.
 
-### Medium-Term (architectural improvements from supplementary material)
+3. **`/dev/zero`** + **`/dev/random`** — Simple device nodes, small effort.
 
-5. **PMM ref-counting** — Add `uint16_t` ref-count array alongside bitmap. Prerequisite for CoW.
+4. **Multiple PTY pairs** — Currently only 1 pair. Needed for multi-process terminal use.
 
-6. **CoW fork** — Use PTE bit 9 as CoW marker, handle in page fault. The supplementary material's `vmm_copy_for_fork()` pattern is clean.
+### Medium-Term
 
-7. **W^X policy function** — Add `vmm_apply_wx_policy()` as a centralized check. Currently AdrOS achieves W^X ad-hoc in the ELF loader.
+5. **`mmap`/`munmap`** — Requires `vmm_find_free_area()`. Critical for POSIX.
 
-8. **`mmap`/`munmap`** — Requires `vmm_find_free_area()` from supplementary material. Critical for POSIX.
+6. **Permissions model** — `uid`/`gid`/mode bits, `chmod`, `chown`, `access`, `umask`.
 
-### Long-Term (from supplementary material roadmap)
+7. **`/proc` per-process** — `/proc/[pid]/status`, `/proc/[pid]/maps`.
 
-9. **CPUID + PAE + NX** — Follow the `cpu_get_features()` / `cpu_enable_nx()` pattern for hardware W^X.
+8. **Hard/symbolic links** — `link`, `symlink`, `readlink`.
 
-10. **O(1) scheduler** — The active/expired bitmap swap pattern is elegant and well-suited for AdrOS.
+### Long-Term
 
-11. **Slab allocator** — The supplementary material's free-list-in-place design is simple and effective.
+9. **PAE + NX** — Hardware W^X enforcement.
 
-12. **PCI + networking** — Follow the PCI scan → BAR mapping → E1000 DMA ring → lwIP bridge pattern.
+10. **Networking** — E1000 DMA ring → lwIP bridge → socket API.
+
+11. **Threads** — `clone`/`pthread`.
+
+12. **Dynamic linking** — `ld.so`.
 
 ---
 
 ## Conclusion
 
-AdrOS is a **well-architected hobby OS** that has already implemented many of the hardest
-parts of a Unix-like system: process management with signals, a multi-filesystem VFS,
-PTY with job control, and a secure ELF loader. It is approximately **45% of the way**
-to a practical POSIX-compatible system.
+AdrOS is a **mature hobby OS** that has implemented most of the hard parts of a Unix-like
+system: CoW fork, O(1) scheduler, slab allocator, SMP boot, PCI/DMA drivers, full signal
+handling, a multi-filesystem VFS, PTY with job control, and a secure ELF loader. It is
+approximately **70% of the way** to a practical POSIX-compatible system.
 
-The supplementary material provides excellent **architectural blueprints** for the next
-evolution: CoW memory, O(1) scheduling, hardware NX, and networking. However, AdrOS is
-already **ahead** of the supplementary material in several areas (VFS diversity, signal
-handling, PTY/job control).
+The supplementary material's architectural blueprints have been largely **realized**:
+CoW memory, O(1) scheduling, slab allocator, PCI enumeration, and CPUID detection are
+all implemented. AdrOS is **ahead** of the supplementary material in several areas
+(VFS diversity, signal handling, TTY/PTY, driver support, SMP).
 
-The most impactful next steps are **not** the advanced features from the supplementary
-material, but rather the **userland enablers**: a minimal libc, a shell, and `brk`/`sbrk`.
-These would transform AdrOS from a kernel with smoke tests into an interactive Unix system.
+The most impactful next steps are **userland tooling**: a shell and core utilities.
+With ulibc already providing `printf`/`malloc`/`string.h`, and all required syscalls
+implemented, building a functional shell is now straightforward. This would transform
+AdrOS from a kernel with smoke tests into an **interactive Unix system**.
