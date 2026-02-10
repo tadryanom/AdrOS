@@ -77,6 +77,10 @@ enum {
 };
 
 enum {
+    ENOTTY = 25,
+};
+
+enum {
     ICANON = 0x0001,
     ECHO   = 0x0002,
 };
@@ -138,6 +142,17 @@ static int sys_write(int fd, const void* buf, uint32_t len) {
         : "memory"
     );
     return __syscall_fix(ret);
+}
+
+static int sys_ioctl(int fd, uint32_t cmd, void* arg);
+
+static int isatty_fd(int fd) {
+    struct termios t;
+    if (sys_ioctl(fd, TCGETS, &t) < 0) {
+        if (errno == ENOTTY) return 0;
+        return -1;
+    }
+    return 1;
 }
 
 static int sys_getdents(int fd, void* buf, uint32_t len) {
@@ -1661,6 +1676,39 @@ void _start(void) {
 
         sys_write(1, "[init] diskfs getdents OK\n",
                   (uint32_t)(sizeof("[init] diskfs getdents OK\n") - 1));
+    }
+
+    // B5: isatty() POSIX-like smoke (via ioctl TCGETS)
+    {
+        int fd = sys_open("/dev/tty", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] isatty open /dev/tty failed\n",
+                      (uint32_t)(sizeof("[init] isatty open /dev/tty failed\n") - 1));
+            sys_exit(1);
+        }
+        int r = isatty_fd(fd);
+        (void)sys_close(fd);
+        if (r != 1) {
+            sys_write(1, "[init] isatty(/dev/tty) failed\n",
+                      (uint32_t)(sizeof("[init] isatty(/dev/tty) failed\n") - 1));
+            sys_exit(1);
+        }
+
+        fd = sys_open("/dev/null", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] isatty open /dev/null failed\n",
+                      (uint32_t)(sizeof("[init] isatty open /dev/null failed\n") - 1));
+            sys_exit(1);
+        }
+        r = isatty_fd(fd);
+        (void)sys_close(fd);
+        if (r != 0) {
+            sys_write(1, "[init] isatty(/dev/null) expected 0\n",
+                      (uint32_t)(sizeof("[init] isatty(/dev/null) expected 0\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] isatty OK\n", (uint32_t)(sizeof("[init] isatty OK\n") - 1));
     }
 
     enum { NCHILD = 100 };
