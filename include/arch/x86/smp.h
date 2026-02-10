@@ -15,9 +15,14 @@ struct cpu_info {
     uint32_t kernel_stack;   /* Top of this CPU's kernel stack */
 };
 
-/* Initialize SMP: discover APs via ACPI, send INIT-SIPI-SIPI.
- * Returns the number of CPUs that started (including BSP). */
-int smp_init(void);
+/* Phase 1: Discover CPUs from ACPI MADT and populate cpu_info.
+ * Does NOT send SIPI. Returns number of CPUs found. */
+int smp_enumerate(void);
+
+/* Phase 2: Send INIT-SIPI-SIPI to wake APs.
+ * Must be called after percpu_init() so GDT entries exist.
+ * Returns number of CPUs that started (including BSP). */
+int smp_start_aps(void);
 
 /* Get the number of active CPUs. */
 uint32_t smp_get_cpu_count(void);

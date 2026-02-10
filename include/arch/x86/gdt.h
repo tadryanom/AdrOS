@@ -13,5 +13,6 @@ extern struct gdt_ptr gp;
 
 void gdt_init(void);
 void tss_set_kernel_stack(uintptr_t esp0);
+void gdt_set_gate_ext(int num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran);
 
 #endif

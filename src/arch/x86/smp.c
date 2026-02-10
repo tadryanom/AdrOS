@@ -1,6 +1,7 @@
 #include "arch/x86/smp.h"
 #include "arch/x86/acpi.h"
 #include "arch/x86/lapic.h"
+#include "arch/x86/percpu.h"
 #include "arch/x86/idt.h"
 #include "arch/x86/gdt.h"
 #include "uart_console.h"
@@ -65,9 +66,10 @@ void ap_entry(void) {
     /* Get our LAPIC ID */
     uint32_t my_id = lapic_get_id();
 
-    /* Find our cpu_info slot and mark started */
+    /* Find our cpu_info slot, set up per-CPU GS, and mark started */
     for (uint32_t i = 0; i < g_cpu_count; i++) {
         if (g_cpus[i].lapic_id == (uint8_t)my_id) {
+            percpu_setup_gs(i);
             __atomic_store_n(&g_cpus[i].started, 1, __ATOMIC_SEQ_CST);
             break;
         }
@@ -80,18 +82,18 @@ void ap_entry(void) {
     }
 }
 
-int smp_init(void) {
+int smp_enumerate(void) {
     const struct acpi_info* acpi = acpi_get_info();
     if (!acpi || acpi->num_cpus <= 1) {
         g_cpu_count = 1;
         g_cpus[0].lapic_id = (uint8_t)lapic_get_id();
         g_cpus[0].cpu_index = 0;
         g_cpus[0].started = 1;
-        uart_print("[SMP] Single CPU, no APs to start.\n");
+        g_cpus[0].kernel_stack = 0;
+        uart_print("[SMP] Single CPU enumerated.\n");
         return 1;
     }
 
-    /* Populate cpu_info from ACPI */
     g_cpu_count = acpi->num_cpus;
     uint8_t bsp_id = (uint8_t)lapic_get_id();
 
@@ -101,6 +103,25 @@ int smp_init(void) {
         g_cpus[i].started = (g_cpus[i].lapic_id == bsp_id) ? 1 : 0;
         g_cpus[i].kernel_stack = (uint32_t)(uintptr_t)&ap_stacks[i][AP_STACK_SIZE];
     }
+
+    char tmp[12];
+    uart_print("[SMP] Enumerated ");
+    itoa(g_cpu_count, tmp, 10);
+    uart_print(tmp);
+    uart_print(" CPU(s).\n");
+
+    return (int)g_cpu_count;
+}
+
+int smp_start_aps(void) {
+    if (g_cpu_count <= 1) {
+        return 1;
+    }
+
+    const struct acpi_info* acpi = acpi_get_info();
+    if (!acpi) return 1;
+
+    uint8_t bsp_id = (uint8_t)lapic_get_id();
 
     /* Copy trampoline code to 0x8000 (identity-mapped by boot.S) */
     uint32_t tramp_size = (uint32_t)((uintptr_t)ap_trampoline_end - (uintptr_t)ap_trampoline_start);
