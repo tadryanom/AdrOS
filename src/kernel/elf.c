@@ -10,11 +10,11 @@
 #include "errno.h"
 
 #include "hal/cpu.h"
+#include "hal/mm.h"
 
 #include <stdint.h>
 
 #if defined(__i386__)
-#define X86_KERNEL_VIRT_BASE 0xC0000000U
 
 static void* pmm_alloc_page_low_16mb(void) {
     for (int tries = 0; tries < 4096; tries++) {
@@ -52,7 +52,7 @@ static int elf32_validate(const elf32_ehdr_t* eh, size_t file_len) {
     if (ph_end > file_len) return -EINVAL;
 
     if (eh->e_entry == 0) return -EINVAL;
-    if (eh->e_entry >= X86_KERNEL_VIRT_BASE) return -EINVAL;
+    if (eh->e_entry >= hal_mm_kernel_virt_base()) return -EINVAL;
 
     return 0;
 }
@@ -60,11 +60,11 @@ static int elf32_validate(const elf32_ehdr_t* eh, size_t file_len) {
 static int elf32_map_user_range(uintptr_t as, uintptr_t vaddr, size_t len, uint32_t flags) {
     if (len == 0) return 0;
     if (vaddr == 0) return -EINVAL;
-    if (vaddr >= X86_KERNEL_VIRT_BASE) return -EINVAL;
+    if (vaddr >= hal_mm_kernel_virt_base()) return -EINVAL;
 
     uintptr_t end = vaddr + len - 1;
     if (end < vaddr) return -EINVAL;
-    if (end >= X86_KERNEL_VIRT_BASE) return -EINVAL;
+    if (end >= hal_mm_kernel_virt_base()) return -EINVAL;
 
     uintptr_t start_page = vaddr & ~(uintptr_t)0xFFF;
     uintptr_t end_page = end & ~(uintptr_t)0xFFF;
@@ -168,7 +168,7 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
             vmm_as_destroy(new_as);
             return -EINVAL;
         }
-        if (ph[i].p_vaddr >= X86_KERNEL_VIRT_BASE) {
+        if (ph[i].p_vaddr >= hal_mm_kernel_virt_base()) {
             uart_print("[ELF] PT_LOAD in kernel range rejected\n");
             kfree(file);
             vmm_as_activate(old_as);
@@ -183,7 +183,7 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
             vmm_as_destroy(new_as);
             return -EINVAL;
         }
-        if (seg_end >= X86_KERNEL_VIRT_BASE) {
+        if (seg_end >= hal_mm_kernel_virt_base()) {
             kfree(file);
             vmm_as_activate(old_as);
             vmm_as_destroy(new_as);

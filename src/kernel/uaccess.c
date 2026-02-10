@@ -2,19 +2,19 @@
 
 #include "errno.h"
 #include "interrupts.h"
+#include "hal/mm.h"
 
 #include <stdint.h>
 
 #if defined(__i386__)
-#define X86_KERNEL_VIRT_BASE 0xC0000000U
 
 static int x86_user_range_basic_ok(uintptr_t uaddr, size_t len) {
     if (len == 0) return 1;
     if (uaddr == 0) return 0;
-    if (uaddr >= X86_KERNEL_VIRT_BASE) return 0;
+    if (uaddr >= hal_mm_kernel_virt_base()) return 0;
     uintptr_t end = uaddr + len - 1;
     if (end < uaddr) return 0;
-    if (end >= X86_KERNEL_VIRT_BASE) return 0;
+    if (end >= hal_mm_kernel_virt_base()) return 0;
     return 1;
 }
 
@@ -31,7 +31,7 @@ int uaccess_try_recover(uintptr_t fault_addr, struct registers* regs) {
     if (g_uaccess_recover_eip == 0) return 0;
 
     // Only recover faults on user addresses; kernel faults should still panic.
-    if (fault_addr >= X86_KERNEL_VIRT_BASE) return 0;
+    if (fault_addr >= hal_mm_kernel_virt_base()) return 0;
 
     g_uaccess_faulted = 1;
     regs->eip = (uint32_t)g_uaccess_recover_eip;
