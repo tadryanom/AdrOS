@@ -1,7 +1,7 @@
 # AdrOS
 
 ## Overview
-AdrOS is a multi-architecture operating system developed for research and academic purposes. The goal is to build a secure, monolithic kernel from scratch, eventually serving as a platform for security testing and exploit development.
+AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system developed for research and academic purposes. The goal is to build a secure, monolithic kernel from scratch, eventually serving as a platform for security testing and exploit development.
 
 ## Architectures Targeted
 - **x86** (32-bit & 64-bit)
@@ -42,18 +42,17 @@ AdrOS is a multi-architecture operating system developed for research and academ
   - InitRD-backed filesystem node tree (`fs_node_t` + `finddir`)
   - Absolute path lookup (`vfs_lookup("/bin/init.elf")`)
   - Mount table support (`vfs_mount`) + `tmpfs` and `overlayfs`
-- **File descriptors + syscalls (x86)**
-  - `int 0x80` syscall gate
-  - `SYSCALL_WRITE`, `SYSCALL_EXIT`, `SYSCALL_GETPID`, `SYSCALL_GETPPID`, `SYSCALL_OPEN`, `SYSCALL_READ`, `SYSCALL_CLOSE`
-  - `SYSCALL_LSEEK`, `SYSCALL_STAT`, `SYSCALL_FSTAT`
-  - `SYSCALL_DUP`, `SYSCALL_DUP2`, `SYSCALL_PIPE`
-  - `SYSCALL_FORK`, `SYSCALL_EXECVE` (with minimal argv/envp stack setup)
-  - `SYSCALL_SELECT`, `SYSCALL_POLL`
-  - `SYSCALL_SIGACTION`, `SYSCALL_SIGPROCMASK`, `SYSCALL_KILL`
-  - `SYSCALL_SETSID`, `SYSCALL_SETPGID`, `SYSCALL_GETPGRP`
-  - Per-process fd table (starting at fd=3)
+- **Syscalls (x86, `int 0x80`)**
+  - **File I/O:** `open`, `openat`, `read`, `write`, `close`, `lseek`, `stat`, `fstat`, `fstatat`, `dup`, `dup2`, `dup3`, `pipe`, `pipe2`, `select`, `poll`, `ioctl`, `fcntl`
+  - **Directory ops:** `mkdir`, `rmdir`, `unlink`, `unlinkat`, `rename`, `getdents`, `chdir`, `getcwd`
+  - **Process:** `fork`, `execve`, `exit`, `waitpid` (incl. `WNOHANG`), `getpid`, `getppid`, `setsid`, `setpgid`, `getpgrp`
+  - **Signals:** `sigaction`, `sigprocmask`, `kill`, `sigreturn` (trampoline-based return path)
+  - **Modern POSIX:** `openat`/`fstatat`/`unlinkat` (`AT_FDCWD`), `dup3`, `pipe2` (with `O_NONBLOCK` flags)
+  - Per-process fd table with refcounted file objects
+  - Per-process current working directory (`cwd`) with relative path resolution
+  - Non-blocking I/O (`O_NONBLOCK`) on pipes, TTY, and PTY via `fcntl`
   - Centralized user-pointer access API (`user_range_ok`, `copy_from_user`, `copy_to_user`)
-  - Ring3 init program (`/bin/init.elf`) exercising IO + process + exec smoke tests
+  - Ring3 init program (`/bin/init.elf`) with comprehensive smoke tests
   - Error returns use negative errno codes (Linux-style)
 - **TTY (canonical line discipline)**
   - Keyboard -> TTY input path
@@ -64,12 +63,21 @@ AdrOS is a multi-architecture operating system developed for research and academ
   - Minimal termios/ioctl support (`TCGETS`, `TCSETS`, `TIOCGPGRP`, `TIOCSPGRP`)
   - Basic job control enforcement (`SIGTTIN`/`SIGTTOU` when background pgrp touches the controlling TTY)
 - **Devices (devfs)**
-  - `/dev` mount
-  - `/dev/null`
-  - `/dev/tty`
-- **Persistent storage (x86 / QEMU)**
+  - `/dev` mount with `readdir` support
+  - `/dev/null`, `/dev/tty`
+  - `/dev/ptmx` + `/dev/pts/0` (pseudo-terminal)
+- **PTY subsystem**
+  - PTY master/slave pair (`/dev/ptmx` + `/dev/pts/0`)
+  - Non-blocking I/O support
+  - Used by userland smoke tests
+- **On-disk filesystem (diskfs)**
   - ATA PIO driver (primary master IDE)
-  - Minimal on-disk persistence filesystem mounted at `/persist` (single `counter` file used by smoke tests)
+  - Hierarchical inode-based filesystem mounted at `/disk`
+  - Supports: `open` (create/truncate), `read`, `write`, `stat`, `mkdir`, `unlink`, `rmdir`, `rename`, `getdents`
+  - Persistence filesystem mounted at `/persist` (smoke tests)
+- **Generic `readdir`/`getdents` across all VFS**
+  - Works on diskfs, tmpfs, devfs, and overlayfs
+  - Unified `struct vfs_dirent` format
 - **W^X (Option 1) for user ELFs (x86)**
   - User segments are mapped RW during load, then write permissions are dropped for non-writable segments
   - This provides "text is read-only" hardening without requiring NX/PAE
@@ -86,34 +94,43 @@ QEMU debug helpers:
 - `make ARCH=x86 run QEMU_DEBUG=1 QEMU_INT=1`
 
 ## TODO
+
+See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for a detailed checklist.
+
+- **Syscalls / POSIX gaps**
+  - `brk`/`sbrk` (heap management)
+  - `mmap`/`munmap` (memory-mapped I/O)
+  - `access`, `chmod`, `chown`, `umask` (permissions)
+  - `link`, `symlink`, `readlink` (hard/symbolic links)
+  - `truncate`/`ftruncate`
+  - `socket`/`bind`/`listen`/`accept`/`connect`/`send`/`recv` (networking)
+  - Userspace `errno` variable + libc-style wrappers
+- **Filesystem**
+  - Permissions/ownership (`uid/gid`, mode bits)
+  - `/proc` filesystem
+  - Real on-disk FS (ext2/FAT) as alternative to diskfs
+- **TTY / terminal**
+  - Full termios flags (raw mode, VMIN/VTIME, signal chars)
+  - Multiple PTY pairs
+- **Virtual memory hardening**
+  - PAE + NX enforcement (execute disable for data/stack)
+  - Guard pages, ASLR
 - **Multi-architecture kernel bring-up**
   - Implement VMM/interrupts/scheduler for ARM/RISC-V/MIPS
-  - Standardize arch entrypoint behavior (`arch_early_setup`) across architectures
-- **Userspace / POSIX process model**
-  - `brk`/`sbrk`
-  - Signal return ABI (`sigreturn`) and default actions for more signals (current support is minimal)
-- **Syscalls / ABI**
-  - `getcwd`, `chdir`
-  - Userspace `errno` variable + libc-style wrappers (`-1` return + `errno` set)
-- **Virtual memory hardening**
-  - Option 2: PAE + NX enforcement (execute disable for data/stack)
-  - Guard pages, and tighter user/kernel separation checks
-- **Filesystem**
-  - Expand persisted storage beyond the current minimal `/persist` filesystem
-  - Permissions/ownership (`uid/gid`, mode bits) and `umask`
-  - Special files: block devices, `/proc`
-  - Real on-disk fs (ext2/fat)
-- **TTY / PTY**
-  - Termios-like mode flags (canonical/raw, echo, erase, intr)
-  - Sessions / process groups / controlling terminal
-  - PTYs for userland shells
+- **Userland**
+  - Minimal libc (`printf`, `malloc`, `string.h`, etc.)
+  - Shell (sh-compatible)
+  - Core utilities (`ls`, `cat`, `cp`, `mv`, `rm`, `echo`, `mkdir`)
 - **Observability & tooling**
-  - Better memory stats (`mem` shell command)
-  - Debug facilities (panic backtraces, symbolization, structured logs)
-  - CI-ish targets: `cppcheck`, `scan-build`, `mkinitrd-asan`
+  - Panic backtraces, symbolization
+  - CI pipeline with `cppcheck`, `scan-build`
 
 ## Directory Structure
-- `src/kernel/` - Architecture-independent kernel code
-- `src/arch/` - Architecture-specific code (boot, context switch, interrupts)
-- `src/drivers/` - Device drivers
+- `src/kernel/` - Architecture-independent kernel code (VFS, syscalls, scheduler, tmpfs, diskfs, devfs, overlayfs, PTY, TTY)
+- `src/arch/` - Architecture-specific code (boot, context switch, interrupts, VMM)
+- `src/hal/` - Hardware abstraction layer (CPU, keyboard, timer, UART, video)
+- `src/drivers/` - Device drivers (ATA, initrd, keyboard, timer, UART, VGA)
+- `src/mm/` - Memory management (PMM, heap)
 - `include/` - Header files
+- `user/` - Userland programs (`init.c`, `echo.c`)
+- `docs/` - Documentation (POSIX roadmap)

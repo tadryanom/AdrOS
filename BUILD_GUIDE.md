@@ -2,6 +2,8 @@
 
 This guide explains how to build and run AdrOS on your local machine (Linux/WSL).
 
+AdrOS is a Unix-like, POSIX-compatible OS kernel. See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for the full compatibility checklist.
+
 ## 1. Dependencies
 
 You will need:
@@ -9,14 +11,15 @@ You will need:
 - `qemu-system-*` (emulators)
 - `xorriso` (to create bootable ISOs)
 - `grub-pc-bin` and `grub-common` (x86 bootloader)
-- Cross-compilers for ARM/RISC-V
+- Cross-compilers for ARM/RISC-V (optional, for non-x86 targets)
+- `cppcheck` (optional, for static analysis)
 
 ### On Ubuntu/Debian:
 ```bash
 sudo apt update
 sudo apt install build-essential bison flex libgmp3-dev libmpc-dev libmpfr-dev texinfo \
     qemu-system-x86 qemu-system-arm qemu-system-misc \
-    grub-common grub-pc-bin xorriso mtools \
+    grub-common grub-pc-bin xorriso mtools cppcheck \
     gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu
 ```
 
@@ -51,7 +54,10 @@ make ARCH=x86 run
 
 Persistent storage note:
 - The x86 QEMU run target attaches a `disk.img` file as an IDE drive (primary master).
-- `/persist` is mounted from this disk and is used by userspace smoke tests (e.g. `/persist/counter`).
+- The kernel mounts two filesystems from this disk:
+  - `/persist` — minimal persistence filesystem (e.g. `/persist/counter`)
+  - `/disk` — hierarchical inode-based filesystem (diskfs) supporting `mkdir`, `unlink`, `rmdir`, `rename`, `getdents`, etc.
+- If `disk.img` does not exist, it is created automatically by the Makefile.
 
 If you are iterating on kernel changes and want to avoid hanging runs, you can wrap it with a timeout:
 ```bash
@@ -64,7 +70,27 @@ Generated outputs/artifacts:
 
 Syscall return convention note:
 - The kernel follows a Linux-style convention: syscalls return `0`/positive values on success, and `-errno` (negative) on failure.
-- A libc-style `errno` variable (per-thread) is not implemented yet.
+- Userland (`user/init.c`) uses a `__syscall_fix()` helper that converts negative returns to `-1` and sets a global `errno`.
+- A full libc-style per-thread `errno` is not yet implemented.
+
+### Userland smoke tests
+The init program (`/bin/init.elf`) runs a comprehensive suite of smoke tests on boot, covering:
+- File I/O (`open`, `read`, `write`, `close`, `lseek`, `stat`, `fstat`)
+- Overlay copy-up, `dup2`, `pipe`, `select`, `poll`
+- TTY/ioctl, job control (`SIGTTIN`/`SIGTTOU`)
+- PTY (`/dev/ptmx` + `/dev/pts/0`)
+- Signals (`sigaction`, `kill`, `sigreturn`)
+- Session/process groups (`setsid`, `setpgid`, `getpgrp`)
+- `isatty`, `O_NONBLOCK` (pipes + PTY), `fcntl`
+- `pipe2`/`dup3` with flags
+- `chdir`/`getcwd` with relative path resolution
+- `openat`/`fstatat`/`unlinkat` (`AT_FDCWD`)
+- `rename`, `rmdir`
+- `getdents` across multiple FS types (diskfs, devfs, tmpfs)
+- `fork` (100 children), `waitpid` (`WNOHANG`), `execve`
+- `SIGSEGV` handler
+
+All tests print `[init] ... OK` on success. Any failure calls `sys_exit(1)`.
 
 Static analysis helper:
 ```bash

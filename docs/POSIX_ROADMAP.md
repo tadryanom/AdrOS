@@ -1,217 +1,232 @@
 # AdrOS POSIX Roadmap (Checklist)
 
-This document tracks **what is already implemented** versus **what is missing** to reach a practical Unix-like system with increasing POSIX compatibility.
+This document tracks **what is already implemented** versus **what is missing** to reach a practical Unix-like system with full POSIX compatibility.
 
 Notes:
 - This is intentionally pragmatic: items are ordered to unlock userland capabilities quickly.
 - Checkboxes reflect the current state of the `master` branch.
 
 ## Status Legend
-- `[x]` implemented (works end-to-end)
+- `[x]` implemented (works end-to-end, smoke-tested)
 - `[~]` partial (exists but incomplete/limited)
 - `[ ]` not implemented
 
 ---
 
-## 0) Current Baseline (Already in tree)
+## 1. Syscalls — File I/O
 
-### Boot / platform / core kernel
-- [x] x86 (i386) boot via GRUB2 Multiboot2
-- [x] Higher-half kernel mapping
-- [x] IDT + IRQ enable
-- [x] Basic scheduler / kernel threads
-- [x] Timer tick
-- [x] Kernel heap (`kmalloc`/`kfree`)
-- [~] Multi-arch stubs (ARM/RISC-V/MIPS) (not functionally brought up)
+| Syscall | Status | Notes |
+|---------|--------|-------|
+| `open` | [x] | Supports `O_CREAT`, `O_TRUNC`; works on diskfs, devfs, tmpfs, overlayfs |
+| `openat` | [x] | `AT_FDCWD` supported; other dirfd values return `ENOSYS` |
+| `read` | [x] | Files, pipes, TTY, PTY; `O_NONBLOCK` returns `EAGAIN` |
+| `write` | [x] | Files, pipes, TTY, PTY; `O_NONBLOCK` returns `EAGAIN` |
+| `close` | [x] | Refcounted file objects |
+| `lseek` | [x] | `SEEK_SET`, `SEEK_CUR`, `SEEK_END` |
+| `stat` | [x] | Minimal `struct stat` (mode/type/size/inode) |
+| `fstat` | [x] | |
+| `fstatat` | [x] | `AT_FDCWD` supported |
+| `dup` | [x] | |
+| `dup2` | [x] | |
+| `dup3` | [x] | Flags parameter (currently only `flags=0` accepted) |
+| `pipe` | [x] | In-kernel ring buffer |
+| `pipe2` | [x] | Supports `O_NONBLOCK` flag |
+| `select` | [x] | Minimal (pipes, TTY) |
+| `poll` | [x] | Minimal (pipes, TTY, `/dev/null`) |
+| `ioctl` | [x] | `TCGETS`, `TCSETS`, `TIOCGPGRP`, `TIOCSPGRP` |
+| `fcntl` | [x] | `F_GETFL`, `F_SETFL` (for `O_NONBLOCK`) |
+| `getdents` | [x] | Generic across all VFS (diskfs, tmpfs, devfs, overlayfs) |
+| `pread`/`pwrite` | [ ] | |
+| `readv`/`writev` | [ ] | |
+| `truncate`/`ftruncate` | [ ] | |
+| `fsync`/`fdatasync` | [ ] | |
 
-### InitRD + filesystem basics
-- [x] InitRD format: TAR/USTAR
-- [x] InitRD directory tree support
-- [x] `fs_node_t` abstraction with `read/finddir` for InitRD nodes
-- [x] `vfs_lookup()` absolute path resolver
-- [x] VFS mount table support (`vfs_mount`)
-- [x] Writable filesystem support (`tmpfs`)
-- [x] `overlayfs` (copy-up overlay for root)
+## 2. Syscalls — Directory & Path Operations
 
-### Userspace bring-up
-- [x] ELF32 userspace loader from VFS (`/bin/init.elf`)
-- [~] Process model is minimal, but Unix-like primitives exist (fork/exec/wait)
-- [x] `int 0x80` syscall entry (x86)
+| Syscall | Status | Notes |
+|---------|--------|-------|
+| `mkdir` | [x] | diskfs |
+| `rmdir` | [x] | diskfs; checks directory is empty (`ENOTEMPTY`) |
+| `unlink` | [x] | diskfs; returns `EISDIR` for directories |
+| `unlinkat` | [x] | `AT_FDCWD` supported |
+| `rename` | [x] | diskfs; handles same-type overwrite |
+| `chdir` | [x] | Per-process `cwd` |
+| `getcwd` | [x] | |
+| `link` | [ ] | Hard links |
+| `symlink` | [ ] | Symbolic links |
+| `readlink` | [ ] | |
+| `access` | [ ] | Permission checks |
+| `umask` | [ ] | |
+| `realpath` | [ ] | Userland (needs libc) |
 
-### Syscalls (current)
-- [x] `write(fd=1/2)`
-- [x] `exit()` (closes FDs, marks zombie, notifies parent)
-- [~] `getpid()` (minimal)
-- [x] `open()` (read-only)
-- [x] `read()` (files + stdin)
-- [x] `close()`
-- [x] `waitpid()`
-- [x] `waitpid(..., WNOHANG)`
-- [x] `lseek()`
-- [x] `stat()` / `fstat()`
-- [x] `dup()` / `dup2()`
-- [x] `pipe()`
-- [x] `fork()`
-- [~] `execve()` (loads ELF from InitRD; minimal argv/envp)
-- [x] `getppid()`
-- [x] `select()` / `poll()` (minimal)
-- [~] Basic signals (`sigaction`, `sigprocmask`, `kill`) (delivery model is minimal)
-- [x] `sigreturn()` trampoline (userspace return path for signal handlers)
-- [x] `setsid()` / `setpgid()` / `getpgrp()` (minimal)
+## 3. Syscalls — Process Management
 
-### FD layer
-- [x] Per-process fd table (fd allocation starts at 3)
-- [x] File read offset tracking
-- [x] `dup/dup2` with refcounted file objects
-- [x] `pipe()` with in-kernel ring buffer endpoints
-- [x] `lseek()`
+| Syscall | Status | Notes |
+|---------|--------|-------|
+| `fork` | [x] | Full COW not implemented; copies address space |
+| `execve` | [~] | Loads ELF from VFS; minimal argv/envp; no `$PATH` search |
+| `exit` / `_exit` | [x] | Closes FDs, marks zombie, notifies parent |
+| `waitpid` | [x] | `-1` (any child), specific pid, `WNOHANG` |
+| `getpid` | [x] | |
+| `getppid` | [x] | |
+| `setsid` | [x] | |
+| `setpgid` | [x] | |
+| `getpgrp` | [x] | |
+| `getuid`/`getgid`/`geteuid`/`getegid` | [ ] | No user/group model yet |
+| `setuid`/`setgid` | [ ] | |
+| `brk`/`sbrk` | [ ] | Heap management |
+| `mmap`/`munmap` | [ ] | Memory-mapped I/O |
+| `clone` | [ ] | Thread creation |
+| `nanosleep`/`sleep` | [ ] | |
+| `alarm` | [ ] | |
+| `times`/`getrusage` | [ ] | |
 
-### TTY
-- [x] TTY canonical input (line-buffered until `\n`)
-- [x] Echo + backspace handling
-- [x] Blocking reads (process `BLOCKED`) + wait queue (multiple waiters)
-- [x] `fd=0` wired to `tty_read`, `fd=1/2` wired to `tty_write`
-- [~] Termios-like configuration (minimal: `TCGETS`/`TCSETS`)
-- [~] Sessions / process groups / controlling terminal (minimal: `TIOCGPGRP`/`TIOCSPGRP` + job control checks)
-- [ ] PTY
+## 4. Syscalls — Signals
 
-### Persistence (x86 / QEMU)
-- [x] ATA PIO driver (primary master IDE)
-- [x] Minimal on-disk persistence filesystem mounted at `/persist`
+| Syscall | Status | Notes |
+|---------|--------|-------|
+| `sigaction` | [x] | Installs handlers; `sa_flags` minimal |
+| `sigprocmask` | [x] | Block/unblock signals |
+| `kill` | [x] | Send signal to process/group |
+| `sigreturn` | [x] | Trampoline-based return from signal handlers |
+| `raise` | [ ] | Userland (needs libc) |
+| `sigpending` | [ ] | |
+| `sigsuspend` | [ ] | |
+| `sigqueue` | [ ] | |
+| `sigaltstack` | [ ] | Alternate signal stack |
+| Signal defaults | [~] | `SIGKILL`/`SIGSEGV`/`SIGUSR1` handled; many signals missing default actions |
+
+## 5. File Descriptor Layer
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Per-process fd table | [x] | Up to `PROCESS_MAX_FILES` entries |
+| Refcounted file objects | [x] | Shared across `dup`/`fork` |
+| File offset tracking | [x] | |
+| `O_NONBLOCK` | [x] | Pipes, TTY, PTY via `fcntl` or `pipe2` |
+| `O_CLOEXEC` | [ ] | Close-on-exec flag |
+| `O_APPEND` | [ ] | |
+| `FD_CLOEXEC` via `fcntl` | [ ] | |
+| File locking (`flock`/`fcntl`) | [ ] | |
+
+## 6. Filesystem / VFS
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| VFS mount table | [x] | Up to 8 mounts |
+| `vfs_lookup` path resolution | [x] | Absolute + relative (via `cwd`) |
+| `fs_node_t` with `read`/`write`/`finddir`/`readdir` | [x] | |
+| `struct vfs_dirent` (generic) | [x] | Unified format across all FS |
+| **tmpfs** | [x] | In-memory; dirs + files; `readdir` |
+| **overlayfs** | [x] | Copy-up; `readdir` delegates to upper/lower |
+| **devfs** | [x] | `/dev/null`, `/dev/tty`, `/dev/ptmx`, `/dev/pts/0`; `readdir` |
+| **diskfs** (on-disk) | [x] | Hierarchical inodes; `open`/`read`/`write`/`stat`/`mkdir`/`unlink`/`rmdir`/`rename`/`getdents` |
+| **persistfs** | [x] | Minimal persistence at `/persist` |
+| Permissions (`uid`/`gid`/mode) | [ ] | No permission model |
+| Hard links | [ ] | |
+| Symbolic links | [ ] | |
+| `/proc` filesystem | [ ] | |
+| ext2 / FAT support | [ ] | |
+
+## 7. TTY / PTY
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Canonical input (line-buffered) | [x] | |
+| Echo + backspace | [x] | |
+| Blocking reads + wait queue | [x] | |
+| `TCGETS`/`TCSETS` | [x] | Minimal termios |
+| `TIOCGPGRP`/`TIOCSPGRP` | [x] | |
+| Job control (`SIGTTIN`/`SIGTTOU`) | [x] | Background pgrp enforcement |
+| `isatty` (via `ioctl TCGETS`) | [x] | |
+| PTY master/slave | [x] | `/dev/ptmx` + `/dev/pts/0` |
+| Non-blocking PTY I/O | [x] | |
+| Raw mode (non-canonical) | [ ] | |
+| VMIN/VTIME | [ ] | |
+| Signal characters (Ctrl+C → `SIGINT`, etc.) | [ ] | |
+| Multiple PTY pairs | [ ] | Only 1 pair currently |
+| Window size (`TIOCGWINSZ`/`TIOCSWINSZ`) | [ ] | |
+
+## 8. Memory Management
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| PMM (bitmap allocator) | [x] | |
+| VMM (x86 paging) | [x] | Higher-half kernel |
+| Per-process address spaces | [x] | Page directory per process |
+| Kernel heap (`kmalloc`/`kfree`) | [x] | 10MB heap |
+| W^X for user ELFs | [x] | Text segments read-only after load |
+| `brk`/`sbrk` | [ ] | |
+| `mmap`/`munmap` | [ ] | |
+| Copy-on-write (COW) fork | [ ] | Currently full-copy |
+| PAE + NX bit | [ ] | |
+| Guard pages | [ ] | |
+| ASLR | [ ] | |
+
+## 9. Drivers & Hardware
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| UART serial console | [x] | |
+| VGA text console (x86) | [x] | |
+| PS/2 keyboard | [x] | |
+| PIT timer | [x] | |
+| ATA PIO (IDE) | [x] | Primary master |
+| RTC (real-time clock) | [ ] | |
+| PCI enumeration | [ ] | |
+| Framebuffer / VESA | [ ] | |
+| Network (e1000/virtio-net) | [ ] | |
+| Virtio-blk | [ ] | |
+
+## 10. Userland
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| ELF32 loader | [x] | |
+| `/bin/init.elf` (smoke tests) | [x] | Comprehensive test suite |
+| `/bin/echo.elf` | [x] | Minimal argv/envp test |
+| Minimal libc | [ ] | No libc; userland uses raw syscall wrappers |
+| Shell (`sh`) | [ ] | |
+| Core utilities (`ls`, `cat`, `cp`, `mv`, `rm`, `mkdir`) | [ ] | |
+| Dynamic linking | [ ] | |
+| `$PATH` search in `execve` | [ ] | |
+
+## 11. Networking (future)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| `socket` | [ ] | |
+| `bind`/`listen`/`accept` | [ ] | |
+| `connect`/`send`/`recv` | [ ] | |
+| TCP/IP stack | [ ] | |
+| UDP | [ ] | |
+| DNS resolver | [ ] | |
+| `/etc/hosts` | [ ] | |
+| `getaddrinfo` | [ ] | Userland (needs libc) |
 
 ---
 
-## 1) Milestone A1 — Process lifecycle: `waitpid` + cleanup on `exit`
+## Priority Roadmap (next steps)
 
-Goal: make process termination and waiting work reliably; unblock shells and service managers.
+### Near-term (unlock a usable shell)
+1. **Minimal libc** — `printf`, `malloc`/`free`, `string.h`, `stdio.h` wrappers
+2. **Shell** — `sh`-compatible; needs `fork`+`execve`+`waitpid`+`pipe`+`dup2`+`chdir` (all implemented)
+3. **Core utilities** — `ls` (uses `getdents`), `cat`, `echo`, `mkdir`, `rm`, `mv`, `cp`
+4. **Signal characters** — Ctrl+C → `SIGINT`, Ctrl+Z → `SIGTSTP`, Ctrl+D → EOF
+5. **Raw TTY mode** — needed for interactive editors and proper shell line editing
 
-### Kernel process lifecycle
-- [x] Introduce parent/child relationship tracking
-- [x] Track exit status per process
-- [x] Transition to `PROCESS_ZOMBIE` on exit
-- [x] Reap zombie processes and free resources
+### Medium-term (real POSIX compliance)
+6. **`brk`/`sbrk`** — userland heap
+7. **`mmap`/`munmap`** — memory-mapped files, shared memory
+8. **Permissions** — `uid`/`gid`, mode bits, `chmod`, `chown`, `access`, `umask`
+9. **`O_CLOEXEC`** — close-on-exec for fd hygiene
+10. **`/proc`** — process information filesystem
+11. **Hard/symbolic links** — `link`, `symlink`, `readlink`
 
-### `exit()` cleanup
-- [x] Close all open file descriptors for the process
-- [x] Release process memory resources (kernel stack + user addr_space when reaped)
-- [~] Remove process from run queues safely (best-effort; continues improving)
-
-### `waitpid()` syscall
-- [x] Add syscall number + userland wrapper
-- [x] `waitpid(-1, ...)` wait for any child
-- [x] `waitpid(pid, ...)` wait for specific child
-- [x] Non-blocking mode (optional early): `WNOHANG`
-- [~] Return semantics consistent with POSIX (pid on success, -1 on error)
-
-### Tests
-- [x] Userspace test: parent forks children, children exit, parent waits, validates status
-- [ ] Regression: ensure keyboard/TTY still works
-
----
-
-## 2) Milestone A2 — Address spaces per process
-
-Goal: move from a shared address space to per-process virtual memory, required for real isolation and POSIX process semantics.
-
-### Core VM changes
-- [x] Per-process page directory / page tables
-- [x] Context switch also switches address space
-- [x] Kernel mapped in all address spaces
-- [~] User/kernel separation rules enforced (uaccess checks + no user mappings in kernel range)
-
-### Syscall/uaccess hardening
-- [~] Ensure `user_range_ok` is robust across per-process mappings
-- [x] `copy_to_user` requires writable user mappings (x86)
-- [ ] Page-fault handling for invalid user pointers (deliver `SIGSEGV` later)
-
-### Userspace loader
-- [x] ELF loader targets the new process address space
-- [x] User stack per process
-
-### Tests
-- [x] Smoke: boot + run `/bin/init.elf`
-- [ ] Two-process test: verify isolation (write to memory in one does not affect other)
-
----
-
-## 3) Milestone B1 — POSIX-ish file API basics (`lseek`, `stat/fstat`)
-
-Goal: unlock standard libc-style IO patterns.
-
-### Syscalls
-- [x] `lseek(fd, off, whence)`
-- [x] `stat(path, struct stat*)`
-- [x] `fstat(fd, struct stat*)`
-
-### Kernel data model
-- [x] Define minimal `struct stat` ABI (mode/type/size/inode)
-- [x] Map InitRD node metadata to `stat`
-
-### Error model
-- [x] Negative errno returns in kernel/syscalls (`-errno`)
-- [ ] Userspace `errno` + libc-style wrappers (`-1` + `errno`)
-
-### Tests
-- [x] Userspace test: open -> fstat -> read -> lseek -> read
-
----
-
-## 4) Milestone C1 — Mounts + `tmpfs` (writable)
-
-Goal: get a writable filesystem (even if volatile) and a real VFS layout.
-
-### VFS mounts
-- [x] Mount table support
-- [x] `vfs_lookup` resolves across mounts
-- [ ] Mount InitRD at `/` or at `/initrd` (decision)
-
-### `tmpfs`
-- [x] In-memory inode/dentry model
-- [~] Create/unlink (limited)
-- [x] Read/write
-- [x] Directories
-
-### Devices (minimum Unix feel)
-- [x] `/dev` mount
-- [x] `/dev/tty`
-- [x] `/dev/null`
-
-### Tests
-- [x] Userspace test: create file in tmpfs, write, read back
-
----
-
-## 5) Later milestones (in progress)
-
-### Process / POSIX expansion
-- [x] `fork()`
-- [~] `execve()`
-- [x] `getppid()`
-- [~] Signals + basic job control (`SIGTTIN`/`SIGTTOU` for background TTY I/O)
-
-#### Signals (details)
-- [x] `sigreturn()` syscall + userspace trampoline return path
-- [x] Userspace smoke test: signal handler returns correctly (see `user/init.c`)
-
-### Pipes + IO multiplexing
-- [x] `pipe()`
-- [x] `dup/dup2`
-- [x] `select/poll`
-
-### TTY advanced
-- [ ] termios flags (canonical/raw/echo)
-- [~] controlling terminal, sessions, pgrp (minimal)
-- [ ] PTY for userland shells
-
----
-
-## 6) Milestone D1 — Persistent storage (minimal on-disk)
-
-Goal: have at least one end-to-end persisted storage path for smoke tests and future filesystems.
-
-### Block device
-- [x] ATA PIO (primary master IDE)
-
-### Filesystem
-- [x] Minimal persisted filesystem mounted at `/persist`
-- [ ] General-purpose on-disk FS (directories, allocation, metadata)
+### Long-term (full Unix experience)
+12. **Networking** — socket API, TCP/IP stack
+13. **Multi-arch bring-up** — ARM/RISC-V functional kernels
+14. **COW fork + demand paging**
+15. **Threads** (`clone`/`pthread`)
+16. **Dynamic linking** (`ld.so`)
+17. **ext2/FAT** filesystem support
