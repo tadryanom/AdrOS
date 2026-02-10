@@ -6,7 +6,7 @@
 #include "arch/x86/idt.h"
 #include "uart_console.h"
 
-#include "multiboot2.h"
+#include "arch/x86/multiboot2.h"
 
 extern void kernel_main(const struct boot_info* bi);
 
