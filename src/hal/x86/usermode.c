@@ -13,3 +13,11 @@ int hal_usermode_enter(uintptr_t user_eip, uintptr_t user_esp) {
     return -1;
 #endif
 }
+
+void hal_usermode_enter_regs(const struct registers* regs) {
+#if defined(__i386__)
+    x86_enter_usermode_regs(regs);
+#else
+    (void)regs;
+#endif
+}

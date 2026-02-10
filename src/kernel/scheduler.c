@@ -8,9 +8,7 @@
 #include "utils.h"
 #include "errno.h"
 #include "hal/cpu.h"
-#if defined(__i386__)
-#include "arch/x86/usermode.h"
-#endif
+#include "hal/usermode.h"
 #include <stddef.h>
 
 struct process* current_process = NULL;
@@ -333,7 +331,6 @@ void process_exit_notify(int status) {
 }
 
 static void fork_child_trampoline(void) {
-#if defined(__i386__)
     if (!current_process || !current_process->has_user_regs) {
         process_exit_notify(1);
         schedule();
@@ -344,12 +341,7 @@ static void fork_child_trampoline(void) {
         vmm_as_activate(current_process->addr_space);
     }
 
-    x86_enter_usermode_regs(&current_process->user_regs);
-#else
-    process_exit_notify(1);
-    schedule();
-    for (;;) hal_cpu_idle();
-#endif
+    hal_usermode_enter_regs(&current_process->user_regs);
 }
 
 struct process* process_fork_create(uintptr_t child_as, const struct registers* child_regs) {
