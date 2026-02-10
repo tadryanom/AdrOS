@@ -4,11 +4,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define NCCS 8
+#define VMIN  4
+#define VTIME 5
+
 struct termios {
     uint32_t c_iflag;
     uint32_t c_oflag;
     uint32_t c_cflag;
     uint32_t c_lflag;
+    uint8_t  c_cc[NCCS];
 };
 
 struct winsize {
