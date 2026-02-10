@@ -134,4 +134,7 @@ IRQ 15, 47
 /* Syscall vector (int 0x80 -> 128) */
 ISR_NOERRCODE 128
 
+/* LAPIC spurious interrupt vector (255) */
+ISR_NOERRCODE 255
+
  .section .note.GNU-stack,"",@progbits

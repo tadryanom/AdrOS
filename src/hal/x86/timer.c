@@ -2,7 +2,9 @@
 
 #if defined(__i386__)
 #include "arch/x86/idt.h"
+#include "arch/x86/lapic.h"
 #include "io.h"
+#include "uart_console.h"
 
 static hal_timer_tick_cb_t g_tick_cb = 0;
 
@@ -16,12 +18,18 @@ void hal_timer_init(uint32_t frequency_hz, hal_timer_tick_cb_t tick_cb) {
 
     register_interrupt_handler(32, timer_irq);
 
-    uint32_t divisor = 1193180 / frequency_hz;
-    outb(0x43, 0x36);
-    uint8_t l = (uint8_t)(divisor & 0xFF);
-    uint8_t h = (uint8_t)((divisor >> 8) & 0xFF);
-    outb(0x40, l);
-    outb(0x40, h);
+    if (lapic_is_enabled()) {
+        /* Use LAPIC timer — more precise and per-CPU capable */
+        lapic_timer_start(frequency_hz);
+    } else {
+        /* Fallback to legacy PIT */
+        uint32_t divisor = 1193180 / frequency_hz;
+        outb(0x43, 0x36);
+        uint8_t l = (uint8_t)(divisor & 0xFF);
+        uint8_t h = (uint8_t)((divisor >> 8) & 0xFF);
+        outb(0x40, l);
+        outb(0x40, h);
+    }
 }
 #else
 void hal_timer_init(uint32_t frequency_hz, hal_timer_tick_cb_t tick_cb) {

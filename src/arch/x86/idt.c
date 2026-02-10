@@ -1,4 +1,5 @@
 #include "arch/x86/idt.h"
+#include "arch/x86/lapic.h"
 #include "io.h"
 #include "uart_console.h"
 #include "process.h"
@@ -42,6 +43,7 @@ extern void irq8(); extern void irq9(); extern void irq10(); extern void irq11()
 extern void irq12(); extern void irq13(); extern void irq14(); extern void irq15();
 
 extern void isr128();
+extern void isr255();
 
 void idt_set_gate(uint8_t num, uint32_t base, uint16_t sel, uint8_t flags) {
     idt[num].base_lo = base & 0xFFFF;
@@ -287,6 +289,9 @@ void idt_init(void) {
     // Syscall gate (int 0x80) must be callable from user mode (DPL=3)
     idt_set_gate(128, (uint32_t)isr128, 0x08, 0xEE);
 
+    // LAPIC spurious interrupt vector (must have an IDT entry or CPU triple-faults)
+    idt_set_gate(255, (uint32_t)isr255, 0x08, 0x8E);
+
     // Load IDT
     __asm__ volatile("lidt %0" : : "m"(idtp));
 
@@ -314,6 +319,26 @@ void print_reg(const char* name, uint32_t val) {
 
 // The Main Handler called by assembly
 void isr_handler(struct registers* regs) {
+    // LAPIC spurious interrupt (vector 255): do NOT send EOI per Intel spec
+    if (regs->int_no == 255) {
+        return;
+    }
+
+    // Send EOI for IRQs (32-47) BEFORE calling the handler.
+    // This is critical: the timer handler calls schedule() which may
+    // context-switch away. If EOI is deferred until after the handler,
+    // it never executes and the LAPIC blocks all further interrupts.
+    if (regs->int_no >= 32 && regs->int_no <= 47) {
+        if (lapic_is_enabled()) {
+            lapic_eoi();
+        } else {
+            if (regs->int_no >= 40) {
+                outb(0xA0, 0x20); // Slave EOI
+            }
+            outb(0x20, 0x20); // Master EOI
+        }
+    }
+
     // Check if we have a custom handler
     if (interrupt_handlers[regs->int_no] != 0) {
         isr_handler_t handler = interrupt_handlers[regs->int_no];
@@ -381,14 +406,6 @@ void isr_handler(struct registers* regs) {
             uart_print("\nSystem Halted.\n");
             for(;;) __asm__("hlt");
         }
-    }
-    
-    // Send EOI (End of Interrupt) to PICs for IRQs (32-47)
-    if (regs->int_no >= 32 && regs->int_no <= 47) {
-        if (regs->int_no >= 40) {
-            outb(0xA0, 0x20); // Slave EOI
-        }
-        outb(0x20, 0x20); // Master EOI
     }
 
     deliver_signals_to_usermode(regs);
