@@ -54,6 +54,7 @@ SECTIONS
     .rodata : AT(ADDR(.rodata) - KERNEL_VIRT_BASE)
     {
         *(.rodata)
+        *(.ap_trampoline)
     } :rodata
 
     . = ALIGN(0x1000);
