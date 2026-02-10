@@ -44,6 +44,9 @@ enum {
     SYSCALL_GETDENTS = 30,
 
     SYSCALL_FCNTL = 31,
+
+    SYSCALL_CHDIR = 32,
+    SYSCALL_GETCWD = 33,
 };
 
 #endif

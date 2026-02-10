@@ -22,6 +22,8 @@
 #define EMFILE 24
 #define ESPIPE 29
 #define ENOTTY 25
+#define ERANGE 34
+#define ENAMETOOLONG 36
 #define ENOSYS 38
 
 #endif

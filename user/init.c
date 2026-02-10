@@ -69,6 +69,9 @@ enum {
     SYSCALL_GETDENTS = 30,
 
     SYSCALL_FCNTL = 31,
+
+    SYSCALL_CHDIR = 32,
+    SYSCALL_GETCWD = 33,
 };
 
 enum {
@@ -151,6 +154,28 @@ static int sys_write(int fd, const void* buf, uint32_t len) {
         "int $0x80"
         : "=a"(ret)
         : "a"(SYSCALL_WRITE), "b"(fd), "c"(buf), "d"(len)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_chdir(const char* path) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_CHDIR), "b"(path)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_getcwd(char* buf, uint32_t size) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_GETCWD), "b"(buf), "c"(size)
         : "memory"
     );
     return __syscall_fix(ret);
@@ -1794,6 +1819,51 @@ void _start(void) {
 
         sys_write(1, "[init] O_NONBLOCK OK\n",
                   (uint32_t)(sizeof("[init] O_NONBLOCK OK\n") - 1));
+    }
+
+    // B7: chdir/getcwd smoke + relative paths
+    {
+        int r = sys_mkdir("/disk/cwd");
+        if (r < 0 && errno != 17) {
+            sys_write(1, "[init] mkdir /disk/cwd failed\n",
+                      (uint32_t)(sizeof("[init] mkdir /disk/cwd failed\n") - 1));
+            sys_exit(1);
+        }
+
+        r = sys_chdir("/disk/cwd");
+        if (r < 0) {
+            sys_write(1, "[init] chdir failed\n",
+                      (uint32_t)(sizeof("[init] chdir failed\n") - 1));
+            sys_exit(1);
+        }
+
+        char cwd[64];
+        for (uint32_t i = 0; i < (uint32_t)sizeof(cwd); i++) cwd[i] = 0;
+        if (sys_getcwd(cwd, (uint32_t)sizeof(cwd)) < 0) {
+            sys_write(1, "[init] getcwd failed\n",
+                      (uint32_t)(sizeof("[init] getcwd failed\n") - 1));
+            sys_exit(1);
+        }
+
+        // Create file using relative path.
+        int fd = sys_open("rel", O_CREAT | O_TRUNC);
+        if (fd < 0) {
+            sys_write(1, "[init] open relative failed\n",
+                      (uint32_t)(sizeof("[init] open relative failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+
+        // Stat with relative path.
+        struct stat st;
+        if (sys_stat("rel", &st) < 0) {
+            sys_write(1, "[init] stat relative failed\n",
+                      (uint32_t)(sizeof("[init] stat relative failed\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] chdir/getcwd OK\n",
+                  (uint32_t)(sizeof("[init] chdir/getcwd OK\n") - 1));
     }
 
     enum { NCHILD = 100 };

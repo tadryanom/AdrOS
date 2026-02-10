@@ -280,6 +280,12 @@ struct process* process_fork_create(uintptr_t child_as, const struct registers* 
     proc->wait_result_pid = -1;
     proc->wait_result_status = 0;
 
+    if (current_process) {
+        strcpy(proc->cwd, current_process->cwd);
+    } else {
+        strcpy(proc->cwd, "/");
+    }
+
     proc->has_user_regs = 1;
     proc->user_regs = *child_regs;
 
@@ -341,6 +347,8 @@ void process_init(void) {
     kernel_proc->wait_pid = -1;
     kernel_proc->wait_result_pid = -1;
     kernel_proc->wait_result_status = 0;
+
+    strcpy(kernel_proc->cwd, "/");
 
     for (int i = 0; i < PROCESS_MAX_FILES; i++) {
         kernel_proc->files[i] = NULL;

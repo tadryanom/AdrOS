@@ -30,6 +30,8 @@ enum {
     FCNTL_F_SETFL = 4,
 };
 
+static int path_resolve_user(const char* user_path, char* out, size_t out_sz);
+
 #if defined(__i386__)
 static const uint32_t SIGFRAME_MAGIC = 0x53494746U; // 'SIGF'
 struct sigframe {
@@ -695,16 +697,8 @@ static int syscall_stat_impl(const char* user_path, struct stat* user_st) {
     if (user_range_ok(user_st, sizeof(*user_st)) == 0) return -EFAULT;
 
     char path[128];
-    for (size_t i = 0; i < sizeof(path); i++) {
-        if (copy_from_user(&path[i], &user_path[i], 1) < 0) {
-            return -EFAULT;
-        }
-        if (path[i] == 0) break;
-        if (i + 1 == sizeof(path)) {
-            path[sizeof(path) - 1] = 0;
-            break;
-        }
-    }
+    int prc = path_resolve_user(user_path, path, sizeof(path));
+    if (prc < 0) return prc;
 
     fs_node_t* node = vfs_lookup(path);
     if (!node) return -ENOENT;
@@ -760,16 +754,8 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
     if (!user_path) return -EFAULT;
 
     char path[128];
-    for (size_t i = 0; i < sizeof(path); i++) {
-        if (copy_from_user(&path[i], &user_path[i], 1) < 0) {
-            return -EFAULT;
-        }
-        if (path[i] == 0) break;
-        if (i + 1 == sizeof(path)) {
-            path[sizeof(path) - 1] = 0;
-            break;
-        }
-    }
+    int prc = path_resolve_user(user_path, path, sizeof(path));
+    if (prc < 0) return prc;
 
     fs_node_t* node = NULL;
     if (path[0] == '/' && path[1] == 'd' && path[2] == 'i' && path[3] == 's' && path[4] == 'k' && path[5] == '/') {
@@ -821,20 +807,123 @@ static int syscall_fcntl_impl(int fd, int cmd, uint32_t arg) {
     return -EINVAL;
 }
 
+static int path_is_absolute(const char* p) {
+    return p && p[0] == '/';
+}
+
+static void path_normalize_inplace(char* s) {
+    if (!s) return;
+    // Collapse duplicate slashes and remove trailing slash (except for root).
+    char tmp[128];
+    size_t w = 0;
+    size_t r = 0;
+    if (s[0] == 0) {
+        strcpy(s, "/");
+        return;
+    }
+
+    while (s[r] != 0 && w + 1 < sizeof(tmp)) {
+        char c = s[r++];
+        if (c == '/') {
+            if (w == 0 || tmp[w - 1] != '/') {
+                tmp[w++] = '/';
+            }
+        } else {
+            tmp[w++] = c;
+        }
+    }
+    tmp[w] = 0;
+
+    size_t l = strlen(tmp);
+    while (l > 1 && tmp[l - 1] == '/') {
+        tmp[l - 1] = 0;
+        l--;
+    }
+
+    strcpy(s, tmp);
+}
+
+static int path_resolve_user(const char* user_path, char* out, size_t out_sz) {
+    if (!out || out_sz == 0) return -EINVAL;
+    out[0] = 0;
+    if (!user_path) return -EFAULT;
+
+    char in[128];
+    for (size_t i = 0; i < sizeof(in); i++) {
+        if (copy_from_user(&in[i], &user_path[i], 1) < 0) {
+            return -EFAULT;
+        }
+        if (in[i] == 0) break;
+        if (i + 1 == sizeof(in)) {
+            in[sizeof(in) - 1] = 0;
+            break;
+        }
+    }
+
+    if (path_is_absolute(in)) {
+        // bounded copy
+        size_t i = 0;
+        while (in[i] != 0 && i + 1 < out_sz) {
+            out[i] = in[i];
+            i++;
+        }
+        out[i] = 0;
+        path_normalize_inplace(out);
+        return 0;
+    }
+
+    const char* base = (current_process && current_process->cwd[0]) ? current_process->cwd : "/";
+    size_t w = 0;
+    if (strcmp(base, "/") == 0) {
+        if (out_sz < 2) return -ENAMETOOLONG;
+        out[w++] = '/';
+    } else {
+        for (size_t i = 0; base[i] != 0 && w + 1 < out_sz; i++) {
+            out[w++] = base[i];
+        }
+        if (w + 1 < out_sz) out[w++] = '/';
+    }
+
+    for (size_t i = 0; in[i] != 0 && w + 1 < out_sz; i++) {
+        out[w++] = in[i];
+    }
+    out[w] = 0;
+    path_normalize_inplace(out);
+    return 0;
+}
+
+static int syscall_chdir_impl(const char* user_path) {
+    if (!current_process) return -EINVAL;
+    char path[128];
+    int rc = path_resolve_user(user_path, path, sizeof(path));
+    if (rc < 0) return rc;
+
+    fs_node_t* n = vfs_lookup(path);
+    if (!n) return -ENOENT;
+    if (n->flags != FS_DIRECTORY) return -ENOTDIR;
+    strcpy(current_process->cwd, path);
+    return 0;
+}
+
+static int syscall_getcwd_impl(char* user_buf, uint32_t size) {
+    if (!current_process) return -EINVAL;
+    if (!user_buf) return -EFAULT;
+    if (size == 0) return -EINVAL;
+    if (user_range_ok(user_buf, (size_t)size) == 0) return -EFAULT;
+
+    const char* cwd = current_process->cwd[0] ? current_process->cwd : "/";
+    uint32_t need = (uint32_t)strlen(cwd) + 1U;
+    if (need > size) return -ERANGE;
+    if (copy_to_user(user_buf, cwd, need) < 0) return -EFAULT;
+    return 0;
+}
+
 static int syscall_mkdir_impl(const char* user_path) {
     if (!user_path) return -EFAULT;
 
     char path[128];
-    for (size_t i = 0; i < sizeof(path); i++) {
-        if (copy_from_user(&path[i], &user_path[i], 1) < 0) {
-            return -EFAULT;
-        }
-        if (path[i] == 0) break;
-        if (i + 1 == sizeof(path)) {
-            path[sizeof(path) - 1] = 0;
-            break;
-        }
-    }
+    int prc = path_resolve_user(user_path, path, sizeof(path));
+    if (prc < 0) return prc;
 
     if (path[0] == '/' && path[1] == 'd' && path[2] == 'i' && path[3] == 's' && path[4] == 'k' && path[5] == '/') {
         const char* rel = path + 6;
@@ -879,16 +968,8 @@ static int syscall_unlink_impl(const char* user_path) {
     if (!user_path) return -EFAULT;
 
     char path[128];
-    for (size_t i = 0; i < sizeof(path); i++) {
-        if (copy_from_user(&path[i], &user_path[i], 1) < 0) {
-            return -EFAULT;
-        }
-        if (path[i] == 0) break;
-        if (i + 1 == sizeof(path)) {
-            path[sizeof(path) - 1] = 0;
-            break;
-        }
-    }
+    int prc = path_resolve_user(user_path, path, sizeof(path));
+    if (prc < 0) return prc;
 
     if (path[0] == '/' && path[1] == 'd' && path[2] == 'i' && path[3] == 's' && path[4] == 'k' && path[5] == '/') {
         const char* rel = path + 6;
@@ -1153,6 +1234,19 @@ static void syscall_handler(struct registers* regs) {
         const char* path = (const char*)regs->ebx;
         uint32_t flags = regs->ecx;
         regs->eax = (uint32_t)syscall_open_impl(path, flags);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_CHDIR) {
+        const char* path = (const char*)regs->ebx;
+        regs->eax = (uint32_t)syscall_chdir_impl(path);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_GETCWD) {
+        char* buf = (char*)regs->ebx;
+        uint32_t size = (uint32_t)regs->ecx;
+        regs->eax = (uint32_t)syscall_getcwd_impl(buf, size);
         return;
     }
 
