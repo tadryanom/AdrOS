@@ -13,6 +13,10 @@
 #include "diskfs.h"
 
 #include "errno.h"
+
+#if defined(__i386__)
+extern void x86_sysenter_init(void);
+#endif
 #include "elf.h"
 #include "stat.h"
 #include "vmm.h"
@@ -1592,7 +1596,7 @@ static uintptr_t syscall_brk_impl(uintptr_t addr) {
     return addr;
 }
 
-static void syscall_handler(struct registers* regs) {
+void syscall_handler(struct registers* regs) {
     uint32_t syscall_no = regs->eax;
 
     if (syscall_no == SYSCALL_WRITE) {
@@ -1951,5 +1955,6 @@ static void syscall_handler(struct registers* regs) {
 void syscall_init(void) {
 #if defined(__i386__)
     register_interrupt_handler(128, syscall_handler);
+    x86_sysenter_init();
 #endif
 }

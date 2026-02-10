@@ -81,8 +81,11 @@ static void tss_write(uint32_t idx, uint16_t kernel_ss, uint32_t kernel_esp) {
     tss.iomap_base = (uint16_t)sizeof(tss);
 }
 
+extern void x86_sysenter_set_kernel_stack(uintptr_t esp0);
+
 void tss_set_kernel_stack(uintptr_t esp0) {
     tss.esp0 = (uint32_t)esp0;
+    x86_sysenter_set_kernel_stack(esp0);
 }
 
 void gdt_init(void) {
