@@ -384,6 +384,10 @@ struct process* process_fork_create(uintptr_t child_as, const struct registers* 
     for (int i = 0; i < PROCESS_MAX_FILES; i++) {
         proc->files[i] = NULL;
     }
+    for (int i = 0; i < PROCESS_MAX_MMAPS; i++) {
+        proc->mmaps[i] = current_process ? current_process->mmaps[i]
+                                         : (typeof(proc->mmaps[i])){0, 0, -1};
+    }
 
     void* stack = kmalloc(4096);
     if (!stack) {
@@ -452,6 +456,9 @@ void process_init(void) {
     for (int i = 0; i < PROCESS_MAX_FILES; i++) {
         kernel_proc->files[i] = NULL;
     }
+    for (int i = 0; i < PROCESS_MAX_MMAPS; i++) {
+        kernel_proc->mmaps[i].shmid = -1;
+    }
     
     current_process = kernel_proc;
     ready_queue_head = kernel_proc;
@@ -499,6 +506,9 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
 
     for (int i = 0; i < PROCESS_MAX_FILES; i++) {
         proc->files[i] = NULL;
+    }
+    for (int i = 0; i < PROCESS_MAX_MMAPS; i++) {
+        proc->mmaps[i].shmid = -1;
     }
     
     void* stack = kmalloc(4096);

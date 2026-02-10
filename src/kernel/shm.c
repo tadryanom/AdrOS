@@ -3,7 +3,9 @@
 #include "vmm.h"
 #include "process.h"
 #include "spinlock.h"
+#include "uaccess.h"
 #include "errno.h"
+#include "utils.h"
 
 #include <stddef.h>
 
@@ -24,7 +26,7 @@ static spinlock_t shm_lock = {0};
 
 void shm_init(void) {
     for (int i = 0; i < SHM_MAX_SEGMENTS; i++) {
-        segments[i].used = 0;
+        memset(&segments[i], 0, sizeof(segments[i]));
     }
 }
 
@@ -32,10 +34,9 @@ static void shm_destroy(struct shm_segment* seg) {
     for (uint32_t i = 0; i < seg->npages; i++) {
         if (seg->pages[i]) {
             pmm_free_page((void*)seg->pages[i]);
-            seg->pages[i] = 0;
         }
     }
-    seg->used = 0;
+    memset(seg, 0, sizeof(*seg));
 }
 
 int shm_get(uint32_t key, uint32_t size, int flags) {
@@ -112,47 +113,42 @@ void* shm_at(int shmid, uintptr_t shmaddr) {
         return (void*)(uintptr_t)-EINVAL;
     }
 
-    /* Find a free virtual address range in user space for mapping.
-     * Use the process mmap slots. */
     if (!current_process) {
         spin_unlock_irqrestore(&shm_lock, irqf);
         return (void*)(uintptr_t)-EINVAL;
     }
 
+    /* Find a free mmap slot (always needed to track the mapping) */
+    int mslot = -1;
+    for (int i = 0; i < PROCESS_MAX_MMAPS; i++) {
+        if (current_process->mmaps[i].length == 0) {
+            mslot = i;
+            break;
+        }
+    }
+    if (mslot < 0) {
+        spin_unlock_irqrestore(&shm_lock, irqf);
+        return (void*)(uintptr_t)-ENOMEM;
+    }
+
     /* If shmaddr == 0, kernel picks address */
     uintptr_t vaddr = shmaddr;
     if (vaddr == 0) {
-        /* Find free mmap slot and pick address starting at 0x40000000 */
-        int mslot = -1;
-        for (int i = 0; i < PROCESS_MAX_MMAPS; i++) {
-            if (current_process->mmaps[i].length == 0) {
-                mslot = i;
-                break;
-            }
-        }
-        if (mslot < 0) {
-            spin_unlock_irqrestore(&shm_lock, irqf);
-            return (void*)(uintptr_t)-ENOMEM;
-        }
-
-        /* Simple address allocation: 0x40000000 + slot * 64KB */
         vaddr = 0x40000000U + (uint32_t)mslot * (SHM_MAX_PAGES * PAGE_SIZE);
-
-        /* Map physical pages into user address space */
-        for (uint32_t i = 0; i < seg->npages; i++) {
-            vmm_map_page(vaddr + i * PAGE_SIZE, seg->pages[i],
-                         VMM_FLAG_PRESENT | VMM_FLAG_RW | VMM_FLAG_USER);
-        }
-
-        current_process->mmaps[mslot].base = vaddr;
-        current_process->mmaps[mslot].length = seg->npages * PAGE_SIZE;
-    } else {
-        /* Map at requested address */
-        for (uint32_t i = 0; i < seg->npages; i++) {
-            vmm_map_page(vaddr + i * PAGE_SIZE, seg->pages[i],
-                         VMM_FLAG_PRESENT | VMM_FLAG_RW | VMM_FLAG_USER);
-        }
     }
+
+    /* Map physical pages into user address space.
+     * vmm_map_page signature: (phys, virt, flags) */
+    for (uint32_t i = 0; i < seg->npages; i++) {
+        vmm_map_page((uint64_t)seg->pages[i],
+                     (uint64_t)(vaddr + i * PAGE_SIZE),
+                     VMM_FLAG_PRESENT | VMM_FLAG_RW | VMM_FLAG_USER);
+    }
+
+    /* Record mapping in process mmap table with shmid for detach lookup */
+    current_process->mmaps[mslot].base = vaddr;
+    current_process->mmaps[mslot].length = seg->npages * PAGE_SIZE;
+    current_process->mmaps[mslot].shmid = shmid;
 
     seg->nattch++;
     spin_unlock_irqrestore(&shm_lock, irqf);
@@ -180,36 +176,25 @@ int shm_dt(const void* shmaddr) {
 
     uint32_t len = current_process->mmaps[mslot].length;
     uint32_t npages = len / PAGE_SIZE;
+    int shmid = current_process->mmaps[mslot].shmid;
 
     /* Unmap pages (but don't free — they belong to the shm segment) */
     for (uint32_t i = 0; i < npages; i++) {
         vmm_unmap_page((uint64_t)(addr + i * PAGE_SIZE));
     }
 
+    /* Clear the mmap slot */
     current_process->mmaps[mslot].base = 0;
     current_process->mmaps[mslot].length = 0;
+    current_process->mmaps[mslot].shmid = -1;
 
-    /* Find the segment and decrement attach count */
-    for (int i = 0; i < SHM_MAX_SEGMENTS; i++) {
-        if (!segments[i].used) continue;
-        /* Check if any page matches */
-        for (uint32_t p = 0; p < segments[i].npages; p++) {
-            uintptr_t expected_va = addr + p * PAGE_SIZE;
-            (void)expected_va;
-            /* We can't easily reverse-map. Just decrement nattch for
-             * segments with matching page count. This is a simplification. */
+    /* Decrement attach count using the stored shmid */
+    if (shmid >= 0 && shmid < SHM_MAX_SEGMENTS && segments[shmid].used) {
+        if (segments[shmid].nattch > 0) {
+            segments[shmid].nattch--;
         }
-    }
-
-    /* Simplified: decrement nattch by scanning for segments whose pages
-     * were mapped at this address range. For now, just scan by npages match. */
-    for (int i = 0; i < SHM_MAX_SEGMENTS; i++) {
-        if (segments[i].used && segments[i].npages == npages && segments[i].nattch > 0) {
-            segments[i].nattch--;
-            if (segments[i].nattch == 0 && segments[i].marked_rm) {
-                shm_destroy(&segments[i]);
-            }
-            break;
+        if (segments[shmid].nattch == 0 && segments[shmid].marked_rm) {
+            shm_destroy(&segments[shmid]);
         }
     }
 
@@ -229,12 +214,18 @@ int shm_ctl(int shmid, int cmd, struct shmid_ds* buf) {
     }
 
     if (cmd == IPC_STAT) {
-        if (buf) {
-            buf->shm_segsz = seg->size;
-            buf->shm_nattch = seg->nattch;
-            buf->shm_key = seg->key;
-        }
+        /* Copy to local struct first, then release lock before
+         * writing to userspace to avoid deadlock on page fault. */
+        struct shmid_ds local;
+        local.shm_segsz = seg->size;
+        local.shm_nattch = seg->nattch;
+        local.shm_key = seg->key;
         spin_unlock_irqrestore(&shm_lock, irqf);
+        if (buf) {
+            if (copy_to_user(buf, &local, sizeof(local)) < 0) {
+                return -EFAULT;
+            }
+        }
         return 0;
     }
 
