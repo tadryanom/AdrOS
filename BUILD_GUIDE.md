@@ -13,13 +13,15 @@ You will need:
 - `grub-pc-bin` and `grub-common` (x86 bootloader)
 - Cross-compilers for ARM/RISC-V (optional, for non-x86 targets)
 - `cppcheck` (optional, for static analysis)
+- `expect` (optional, for automated smoke tests)
+- `sparse` (optional, for kernel-style static analysis)
 
 ### On Ubuntu/Debian:
 ```bash
 sudo apt update
 sudo apt install build-essential bison flex libgmp3-dev libmpc-dev libmpfr-dev texinfo \
     qemu-system-x86 qemu-system-arm qemu-system-misc \
-    grub-common grub-pc-bin xorriso mtools cppcheck \
+    grub-common grub-pc-bin xorriso mtools cppcheck expect sparse \
     gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu
 ```
 
@@ -92,13 +94,25 @@ The init program (`/bin/init.elf`) runs a comprehensive suite of smoke tests on 
 
 All tests print `[init] ... OK` on success. Any failure calls `sys_exit(1)`.
 
-Static analysis helper:
+### Testing
+
+Run all tests (static analysis + host unit tests + QEMU smoke tests):
 ```bash
-make ARCH=x86 cppcheck
+make test-all
 ```
 
-Additional analysis helpers:
+Individual test targets:
 ```bash
+make check        # cppcheck + sparse + gcc -fanalyzer
+make test-host    # 47 host-side unit tests (test_utils + test_security)
+make test         # QEMU smoke test (4 CPUs, 40s timeout, 19 checks)
+make test-1cpu    # Single-CPU smoke test (50s timeout)
+make test-gdb     # GDB scripted integrity checks (heap, PMM, VGA)
+```
+
+Static analysis helpers:
+```bash
+make ARCH=x86 cppcheck
 make ARCH=x86 scan-build
 make ARCH=x86 mkinitrd-asan
 ```
