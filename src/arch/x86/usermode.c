@@ -107,9 +107,12 @@ __attribute__((noreturn)) void x86_enter_usermode_regs(const struct registers* r
     // Layout follows include/arch/x86/idt.h struct registers.
     const uint32_t eflags = (regs->eflags | 0x200U);
 
+    /* Use ESI as scratch to hold regs pointer, since we'll overwrite
+     * EBP manually inside the asm block. ESI is restored from the
+     * struct before iret. */
     __asm__ volatile(
         "cli\n"
-        "mov %[r], %%ebp\n"
+        "mov %[r], %%esi\n"
 
         "mov $0x23, %%ax\n"
         "mov %%ax, %%ds\n"
@@ -118,23 +121,23 @@ __attribute__((noreturn)) void x86_enter_usermode_regs(const struct registers* r
         "mov %%ax, %%gs\n"
 
         "pushl $0x23\n"           /* ss */
-        "pushl 56(%%ebp)\n"       /* useresp */
+        "pushl 56(%%esi)\n"       /* useresp */
         "pushl %[efl]\n"          /* eflags */
         "pushl $0x1B\n"           /* cs */
-        "pushl 44(%%ebp)\n"       /* eip */
+        "pushl 44(%%esi)\n"       /* eip */
 
-        "mov 4(%%ebp), %%edi\n"   /* edi */
-        "mov 8(%%ebp), %%esi\n"   /* esi */
-        "mov 20(%%ebp), %%ebx\n"  /* ebx */
-        "mov 24(%%ebp), %%edx\n"  /* edx */
-        "mov 28(%%ebp), %%ecx\n"  /* ecx */
-        "mov 32(%%ebp), %%eax\n"  /* eax */
-        "mov 12(%%ebp), %%ebp\n"  /* ebp */
+        "mov 4(%%esi), %%edi\n"   /* edi */
+        "mov 12(%%esi), %%ebp\n"  /* ebp */
+        "mov 20(%%esi), %%ebx\n"  /* ebx */
+        "mov 24(%%esi), %%edx\n"  /* edx */
+        "mov 28(%%esi), %%ecx\n"  /* ecx */
+        "mov 32(%%esi), %%eax\n"  /* eax */
+        "mov 8(%%esi), %%esi\n"   /* esi (last — self-overwrite) */
         "iret\n"
         :
         : [r] "r"(regs),
           [efl] "r"(eflags)
-        : "memory", "cc", "ax", "ebp"
+        : "memory", "cc"
     );
 
     __builtin_unreachable();

@@ -13,6 +13,7 @@
 #include "diskfs.h"
 
 #include "errno.h"
+#include "shm.h"
 
 #if defined(__i386__)
 extern void x86_sysenter_init(void);
@@ -1946,6 +1947,35 @@ void syscall_handler(struct registers* regs) {
         uintptr_t addr = (uintptr_t)regs->ebx;
         uint32_t length = regs->ecx;
         regs->eax = (uint32_t)syscall_munmap_impl(addr, length);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SHMGET) {
+        uint32_t key = regs->ebx;
+        uint32_t size = regs->ecx;
+        int flags = (int)regs->edx;
+        regs->eax = (uint32_t)shm_get(key, size, flags);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SHMAT) {
+        int shmid = (int)regs->ebx;
+        uintptr_t shmaddr = (uintptr_t)regs->ecx;
+        regs->eax = (uint32_t)(uintptr_t)shm_at(shmid, shmaddr);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SHMDT) {
+        const void* shmaddr = (const void*)regs->ebx;
+        regs->eax = (uint32_t)shm_dt(shmaddr);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SHMCTL) {
+        int shmid = (int)regs->ebx;
+        int cmd = (int)regs->ecx;
+        struct shmid_ds* buf = (struct shmid_ds*)regs->edx;
+        regs->eax = (uint32_t)shm_ctl(shmid, cmd, buf);
         return;
     }
 

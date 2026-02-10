@@ -62,6 +62,11 @@ enum {
     SYSCALL_CLOCK_GETTIME = 43,
     SYSCALL_MMAP = 44,
     SYSCALL_MUNMAP = 45,
+
+    SYSCALL_SHMGET = 46,
+    SYSCALL_SHMAT  = 47,
+    SYSCALL_SHMDT  = 48,
+    SYSCALL_SHMCTL = 49,
 };
 
 #endif
