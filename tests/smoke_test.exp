@@ -1,0 +1,186 @@
+#!/usr/bin/expect -f
+#
+# AdrOS Automated Smoke Test via QEMU serial console
+#
+# Usage: expect tests/smoke_test.exp [smp_count] [timeout_sec]
+#   smp_count  : number of CPUs (default: 4)
+#   timeout_sec: max seconds to wait for full boot (default: 30)
+#
+# Exit codes:
+#   0 = all checks passed
+#   1 = test failure (missing expected output or PANIC detected)
+#   2 = timeout (boot did not complete in time)
+
+set smp [lindex $argv 0]
+if {$smp eq ""} { set smp 4 }
+
+set timeout_sec [lindex $argv 1]
+if {$timeout_sec eq ""} { set timeout_sec 30 }
+
+set iso "adros-x86.iso"
+set disk "disk.img"
+set serial_log "serial.log"
+
+# Ensure disk image exists
+if {![file exists $disk]} {
+    exec dd if=/dev/zero of=$disk bs=1M count=4 2>/dev/null
+}
+
+# Remove old serial log
+file delete -force $serial_log
+
+# Start QEMU in background, serial to file
+set qemu_pid [exec qemu-system-i386 \
+    -smp $smp -boot d -cdrom $iso -m 128M -display none \
+    -drive file=$disk,if=ide,format=raw \
+    -serial file:$serial_log -monitor none \
+    -no-reboot -no-shutdown &]
+
+# Wait for QEMU to start writing
+after 1000
+
+# ---- Test definitions ----
+# Each test is {description pattern}
+set tests {
+    {"Heap init"            "\\[HEAP\\] 10MB Heap Ready."}
+    {"PCI enumeration"      "\\[PCI\\] Enumerated"}
+    {"ATA DMA init"         "\\[ATA-DMA\\] Initialized"}
+    {"ATA DMA mode"         "\\[ATA\\] Using DMA mode."}
+    {"SMP CPUs active"      "CPU\\(s\\) active."}
+    {"User ring3 entry"     "\\[USER\\] enter ring3"}
+    {"init.elf hello"       "\\[init\\] hello from init.elf"}
+    {"open/read/close"      "\\[init\\] open/read/close OK"}
+    {"overlay copy-up"      "\\[init\\] overlay copy-up OK"}
+    {"lseek/stat/fstat"     "\\[init\\] lseek/stat/fstat OK"}
+    {"dup2 restore"         "\\[init\\] dup2 restore tty OK"}
+    {"kill SIGKILL"         "\\[init\\] kill\\(SIGKILL\\) OK"}
+    {"poll pipe"            "\\[init\\] poll\\(pipe\\) OK"}
+    {"select pipe"          "\\[init\\] select\\(pipe\\) OK"}
+    {"persist counter"      "\\[init\\] /persist/counter="}
+    {"dev tty write"        "\\[init\\] /dev/tty write OK"}
+    {"diskfs test"          "\\[init\\] /disk/test prev="}
+    {"diskfs mkdir/unlink"  "\\[init\\] diskfs mkdir/unlink OK"}
+    {"diskfs getdents"      "\\[init\\] diskfs getdents OK"}
+}
+
+# ---- Poll serial.log for results ----
+set start_time [clock seconds]
+set passed 0
+set failed 0
+set panic 0
+set total [llength $tests]
+
+# Track which tests have passed
+for {set i 0} {$i < $total} {incr i} {
+    set test_passed($i) 0
+}
+
+proc check_log {} {
+    global serial_log
+    if {[file exists $serial_log]} {
+        set fd [open $serial_log r]
+        set content [read $fd]
+        close $fd
+        return $content
+    }
+    return ""
+}
+
+# Poll loop
+while {1} {
+    set elapsed [expr {[clock seconds] - $start_time}]
+    if {$elapsed > $timeout_sec} {
+        break
+    }
+
+    set log [check_log]
+
+    # Check for PANIC
+    if {[regexp {KERNEL PANIC} $log]} {
+        set panic 1
+        break
+    }
+
+    # Check for HEAP OOM
+    if {[regexp {\[HEAP\] OOM} $log]} {
+        set panic 1
+        break
+    }
+
+    # Check each test
+    set all_done 1
+    for {set i 0} {$i < $total} {incr i} {
+        if {$test_passed($i)} continue
+        set pattern [lindex [lindex $tests $i] 1]
+        if {[regexp $pattern $log]} {
+            set test_passed($i) 1
+        } else {
+            set all_done 0
+        }
+    }
+
+    if {$all_done} {
+        break
+    }
+
+    after 1000
+}
+
+# Kill QEMU
+catch {exec pkill -f "qemu-system-i386.*$iso" 2>/dev/null}
+after 500
+
+# ---- Report results ----
+puts ""
+puts "========================================="
+puts "  AdrOS Smoke Test Results (SMP=$smp)"
+puts "========================================="
+
+if {$panic} {
+    set log [check_log]
+    puts ""
+    puts "  *** KERNEL PANIC DETECTED ***"
+    if {[regexp {Exception Number: (\d+)} $log _ exc]} {
+        puts "  Exception: $exc"
+    }
+    if {[regexp {EIP: (0x[0-9A-Fa-f]+)} $log _ eip]} {
+        puts "  EIP: $eip"
+    }
+    if {[regexp {PAGE FAULT at address: (0x[0-9A-Fa-f]+)} $log _ addr]} {
+        puts "  Fault address: $addr"
+    }
+    puts ""
+}
+
+for {set i 0} {$i < $total} {incr i} {
+    set desc [lindex [lindex $tests $i] 0]
+    if {$test_passed($i)} {
+        puts "  PASS  $desc"
+        incr passed
+    } else {
+        puts "  FAIL  $desc"
+        incr failed
+    }
+}
+
+set elapsed [expr {[clock seconds] - $start_time}]
+puts ""
+puts "  $passed/$total passed, $failed failed ($elapsed sec)"
+
+if {$panic} {
+    puts "  RESULT: FAIL (PANIC)"
+    exit 1
+}
+
+if {$failed > 0} {
+    set elapsed_val [expr {[clock seconds] - $start_time}]
+    if {$elapsed_val >= $timeout_sec} {
+        puts "  RESULT: FAIL (TIMEOUT after ${timeout_sec}s)"
+        exit 2
+    }
+    puts "  RESULT: FAIL"
+    exit 1
+}
+
+puts "  RESULT: PASS"
+exit 0
