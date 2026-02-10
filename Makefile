@@ -118,6 +118,12 @@ iso: $(KERNEL_NAME) $(INITRD_IMG)
 $(MKINITRD): tools/mkinitrd.c
 	@gcc tools/mkinitrd.c -o $(MKINITRD)
 
+ULIBC_DIR := user/ulibc
+ULIBC_LIB := $(ULIBC_DIR)/libulibc.a
+
+$(ULIBC_LIB):
+	@$(MAKE) -C $(ULIBC_DIR) --no-print-directory
+
 $(USER_ELF): user/init.c user/linker.ld
 	@i686-elf-gcc -m32 -I include -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(USER_ELF) user/init.c user/errno.c
 
