@@ -684,12 +684,14 @@ static int syscall_execve_impl(struct registers* regs, const char* user_path, co
     // The loader returns a fresh stack top (user_sp). We'll pack strings below it.
     uintptr_t sp = user_sp;
     sp &= ~(uintptr_t)0xF;
+    const uintptr_t sp_base = user_sp - user_stack_size;
 
     uintptr_t argv_ptrs_va[EXECVE_MAX_ARGC + 1];
     uintptr_t envp_ptrs_va[EXECVE_MAX_ENVC + 1];
 
     for (int i = envc - 1; i >= 0; i--) {
         size_t len = strlen(kenvp[i]) + 1;
+        if (sp - len < sp_base) { vmm_as_activate(old_as); current_process->addr_space = old_as; vmm_as_destroy(new_as); ret = -E2BIG; goto out; }
         sp -= len;
         memcpy((void*)sp, kenvp[i], len);
         envp_ptrs_va[i] = sp;
@@ -698,6 +700,7 @@ static int syscall_execve_impl(struct registers* regs, const char* user_path, co
 
     for (int i = argc - 1; i >= 0; i--) {
         size_t len = strlen(kargv[i]) + 1;
+        if (sp - len < sp_base) { vmm_as_activate(old_as); current_process->addr_space = old_as; vmm_as_destroy(new_as); ret = -E2BIG; goto out; }
         sp -= len;
         memcpy((void*)sp, kargv[i], len);
         argv_ptrs_va[i] = sp;

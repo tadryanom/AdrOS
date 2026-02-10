@@ -261,7 +261,7 @@ int process_waitpid(int pid, int* status_out, uint32_t options) {
                     }
                 }
                 it = it->next;
-            } while (it != start);
+            } while (it && it != start);
         }
 
         if (!found_child) {
