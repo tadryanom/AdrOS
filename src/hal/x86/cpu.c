@@ -10,7 +10,7 @@
 
 #include "hal/cpu.h"
 
-#include "gdt.h"
+#include "arch/x86/gdt.h"
 
 #if defined(__i386__) || defined(__x86_64__)
 
