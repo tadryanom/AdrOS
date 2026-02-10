@@ -14,4 +14,8 @@ int diskfs_open_file(const char* rel_path, uint32_t flags, fs_node_t** out_node)
 int diskfs_mkdir(const char* rel_path);
 int diskfs_unlink(const char* rel_path);
 
+// Writes fixed-size dirent records into out buffer.
+// Returns number of bytes written or negative errno.
+int diskfs_getdents(uint16_t dir_ino, uint32_t* inout_index, void* out, uint32_t out_len);
+
 #endif

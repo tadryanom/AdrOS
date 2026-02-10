@@ -65,6 +65,8 @@ enum {
 
     SYSCALL_MKDIR = 28,
     SYSCALL_UNLINK = 29,
+
+    SYSCALL_GETDENTS = 30,
 };
 
 enum {
@@ -138,6 +140,17 @@ static int sys_write(int fd, const void* buf, uint32_t len) {
     return __syscall_fix(ret);
 }
 
+static int sys_getdents(int fd, void* buf, uint32_t len) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_GETDENTS), "b"(fd), "c"(buf), "d"(len)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
 static void write_int_dec(int v) {
     char buf[16];
     int i = 0;
@@ -184,12 +197,22 @@ static void write_hex32(uint32_t v) {
 }
 
 static int memeq(const void* a, const void* b, uint32_t n) {
-    const uint8_t* pa = (const uint8_t*)a;
-    const uint8_t* pb = (const uint8_t*)b;
+    const uint8_t* x = (const uint8_t*)a;
+    const uint8_t* y = (const uint8_t*)b;
     for (uint32_t i = 0; i < n; i++) {
-        if (pa[i] != pb[i]) return 0;
+        if (x[i] != y[i]) return 0;
     }
     return 1;
+}
+
+static int streq(const char* a, const char* b) {
+    if (!a || !b) return 0;
+    uint32_t i = 0;
+    while (a[i] != 0 && b[i] != 0) {
+        if (a[i] != b[i]) return 0;
+        i++;
+    }
+    return a[i] == b[i];
 }
 
 static int sys_sigaction2(int sig, const struct sigaction* act, struct sigaction* oldact) {
@@ -1534,9 +1557,10 @@ void _start(void) {
     // B3: diskfs mkdir/unlink smoke
     {
         int r = sys_mkdir("/disk/dir");
-        if (r < 0 && r != -17) {
-            sys_write(1, "[init] mkdir /disk/dir failed\n",
-                      (uint32_t)(sizeof("[init] mkdir /disk/dir failed\n") - 1));
+        if (r < 0 && errno != 17) {
+            sys_write(1, "[init] mkdir /disk/dir failed errno=", (uint32_t)(sizeof("[init] mkdir /disk/dir failed errno=") - 1));
+            write_int_dec(errno);
+            sys_write(1, "\n", 1);
             sys_exit(1);
         }
 
@@ -1570,6 +1594,73 @@ void _start(void) {
 
         sys_write(1, "[init] diskfs mkdir/unlink OK\n",
                   (uint32_t)(sizeof("[init] diskfs mkdir/unlink OK\n") - 1));
+    }
+
+    // B4: diskfs getdents smoke
+    {
+        int r = sys_mkdir("/disk/ls");
+        if (r < 0 && errno != 17) {
+            sys_write(1, "[init] mkdir /disk/ls failed errno=", (uint32_t)(sizeof("[init] mkdir /disk/ls failed errno=") - 1));
+            write_int_dec(errno);
+            sys_write(1, "\n", 1);
+            sys_exit(1);
+        }
+
+        int fd = sys_open("/disk/ls/file1", O_CREAT | O_TRUNC);
+        if (fd < 0) {
+            sys_write(1, "[init] create /disk/ls/file1 failed\n",
+                      (uint32_t)(sizeof("[init] create /disk/ls/file1 failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+
+        fd = sys_open("/disk/ls/file2", O_CREAT | O_TRUNC);
+        if (fd < 0) {
+            sys_write(1, "[init] create /disk/ls/file2 failed\n",
+                      (uint32_t)(sizeof("[init] create /disk/ls/file2 failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+
+        int dfd = sys_open("/disk/ls", 0);
+        if (dfd < 0) {
+            sys_write(1, "[init] open dir /disk/ls failed\n",
+                      (uint32_t)(sizeof("[init] open dir /disk/ls failed\n") - 1));
+            sys_exit(1);
+        }
+
+        struct {
+            uint32_t d_ino;
+            uint16_t d_reclen;
+            uint8_t d_type;
+            char d_name[24];
+        } ents[8];
+
+        int n = sys_getdents(dfd, ents, (uint32_t)sizeof(ents));
+        (void)sys_close(dfd);
+        if (n <= 0) {
+            sys_write(1, "[init] getdents failed\n",
+                      (uint32_t)(sizeof("[init] getdents failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int saw_dot = 0, saw_dotdot = 0, saw_f1 = 0, saw_f2 = 0;
+        int cnt = n / (int)sizeof(ents[0]);
+        for (int i = 0; i < cnt; i++) {
+            if (streq(ents[i].d_name, ".")) saw_dot = 1;
+            else if (streq(ents[i].d_name, "..")) saw_dotdot = 1;
+            else if (streq(ents[i].d_name, "file1")) saw_f1 = 1;
+            else if (streq(ents[i].d_name, "file2")) saw_f2 = 1;
+        }
+
+        if (!saw_dot || !saw_dotdot || !saw_f1 || !saw_f2) {
+            sys_write(1, "[init] getdents verify failed\n",
+                      (uint32_t)(sizeof("[init] getdents verify failed\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] diskfs getdents OK\n",
+                  (uint32_t)(sizeof("[init] diskfs getdents OK\n") - 1));
     }
 
     enum { NCHILD = 100 };

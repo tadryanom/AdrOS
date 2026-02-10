@@ -764,10 +764,17 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
 
     fs_node_t* node = NULL;
     if (path[0] == '/' && path[1] == 'd' && path[2] == 'i' && path[3] == 's' && path[4] == 'k' && path[5] == '/') {
-        const char* rel = path + 6;
-        if (rel[0] == 0) return -ENOENT;
-        int rc = diskfs_open_file(rel, flags, &node);
-        if (rc < 0) return rc;
+        // With hierarchical diskfs, /disk may contain directories.
+        // Use diskfs_open_file only when creation/truncation is requested.
+        if ((flags & 0x40U) != 0U || (flags & 0x200U) != 0U) {
+            const char* rel = path + 6;
+            if (rel[0] == 0) return -ENOENT;
+            int rc = diskfs_open_file(rel, flags, &node);
+            if (rc < 0) return rc;
+        } else {
+            node = vfs_lookup(path);
+            if (!node) return -ENOENT;
+        }
     } else {
         node = vfs_lookup(path);
         if (!node) return -ENOENT;
@@ -810,6 +817,36 @@ static int syscall_mkdir_impl(const char* user_path) {
     }
 
     return -ENOSYS;
+}
+
+static int syscall_getdents_impl(int fd, void* user_buf, uint32_t len) {
+    if (len == 0) return 0;
+    if (!user_buf) return -EFAULT;
+    if (user_range_ok(user_buf, (size_t)len) == 0) return -EFAULT;
+
+    struct file* f = fd_get(fd);
+    if (!f || !f->node) return -EBADF;
+    if (f->node->flags != FS_DIRECTORY) return -ENOTDIR;
+
+    // For now only support diskfs dirs (mounted at /disk). We encode diskfs inode as 100+ino.
+    if (f->node->inode < 100U) return -ENOSYS;
+    uint16_t dir_ino = (uint16_t)(f->node->inode - 100U);
+
+    uint8_t kbuf[256];
+    if (len < (uint32_t)sizeof(kbuf)) {
+        // keep behavior simple: require small buffers too
+    }
+    uint32_t klen = len;
+    if (klen > (uint32_t)sizeof(kbuf)) klen = (uint32_t)sizeof(kbuf);
+
+    uint32_t idx = f->offset;
+    int rc = diskfs_getdents(dir_ino, &idx, kbuf, klen);
+    if (rc < 0) return rc;
+    if (rc == 0) return 0;
+
+    if (copy_to_user(user_buf, kbuf, (uint32_t)rc) < 0) return -EFAULT;
+    f->offset = idx;
+    return rc;
 }
 
 static int syscall_unlink_impl(const char* user_path) {
@@ -1254,6 +1291,14 @@ static void syscall_handler(struct registers* regs) {
     if (syscall_no == SYSCALL_UNLINK) {
         const char* path = (const char*)regs->ebx;
         regs->eax = (uint32_t)syscall_unlink_impl(path);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_GETDENTS) {
+        int fd = (int)regs->ebx;
+        void* buf = (void*)regs->ecx;
+        uint32_t len = (uint32_t)regs->edx;
+        regs->eax = (uint32_t)syscall_getdents_impl(fd, buf, len);
         return;
     }
 

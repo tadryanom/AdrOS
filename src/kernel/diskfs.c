@@ -72,7 +72,7 @@ struct diskfs_node {
     uint16_t ino;
 };
 
-static fs_node_t g_root;
+static struct diskfs_node g_root;
 static uint32_t g_ready = 0;
 
 static int diskfs_super_store(const struct diskfs_super* sb);
@@ -306,6 +306,13 @@ static int diskfs_lookup_path(struct diskfs_super* sb, const char* path, uint16_
     return 0;
 }
 
+struct diskfs_kdirent {
+    uint32_t d_ino;
+    uint16_t d_reclen;
+    uint8_t d_type;
+    char d_name[DISKFS_NAME_MAX];
+};
+
 static uint32_t diskfs_read_impl(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
     if (!node || !buffer) return 0;
     if (node->flags != FS_FILE) return 0;
@@ -422,10 +429,7 @@ static struct fs_node* diskfs_root_finddir(struct fs_node* node, const char* nam
     if (!name || name[0] == 0) return 0;
     if (!diskfs_segment_valid(name)) return 0;
 
-    uint16_t parent_ino = 0;
-    if (parent) {
-        parent_ino = parent->ino;
-    }
+    uint16_t parent_ino = parent ? parent->ino : 0;
 
     struct diskfs_super sb;
     if (diskfs_super_load(&sb) < 0) return 0;
@@ -578,6 +582,65 @@ int diskfs_unlink(const char* rel_path) {
     return diskfs_super_store(&sb);
 }
 
+int diskfs_getdents(uint16_t dir_ino, uint32_t* inout_index, void* out, uint32_t out_len) {
+    if (!inout_index || !out) return -EINVAL;
+    if (!g_ready) return -ENODEV;
+    if (out_len < sizeof(struct diskfs_kdirent)) return -EINVAL;
+
+    struct diskfs_super sb;
+    if (diskfs_super_load(&sb) < 0) return -EIO;
+
+    if (dir_ino >= DISKFS_MAX_INODES) return -ENOENT;
+    if (sb.inodes[dir_ino].type != DISKFS_INODE_DIR) return -ENOTDIR;
+
+    uint32_t idx = *inout_index;
+    uint32_t written = 0;
+    struct diskfs_kdirent* ents = (struct diskfs_kdirent*)out;
+    uint32_t cap = out_len / (uint32_t)sizeof(struct diskfs_kdirent);
+
+    // index 0 => '.' ; index 1 => '..' ; index >=2 => scan inodes
+    while (written < cap) {
+        struct diskfs_kdirent e;
+        memset(&e, 0, sizeof(e));
+
+        if (idx == 0) {
+            e.d_ino = (uint32_t)dir_ino;
+            e.d_type = (uint8_t)DISKFS_INODE_DIR;
+            diskfs_strlcpy(e.d_name, ".", sizeof(e.d_name));
+        } else if (idx == 1) {
+            e.d_ino = (uint32_t)sb.inodes[dir_ino].parent;
+            e.d_type = (uint8_t)DISKFS_INODE_DIR;
+            diskfs_strlcpy(e.d_name, "..", sizeof(e.d_name));
+        } else {
+            uint16_t scan = (uint16_t)(idx - 2);
+            int found = 0;
+            for (; scan < DISKFS_MAX_INODES; scan++) {
+                if (sb.inodes[scan].type == DISKFS_INODE_FREE) continue;
+                if (sb.inodes[scan].parent != dir_ino) continue;
+                if (sb.inodes[scan].name[0] == 0) continue;
+                e.d_ino = (uint32_t)scan;
+                e.d_type = sb.inodes[scan].type;
+                diskfs_strlcpy(e.d_name, sb.inodes[scan].name, sizeof(e.d_name));
+                found = 1;
+                scan++;
+                idx = (uint32_t)scan + 2U;
+                break;
+            }
+            if (!found) break;
+        }
+
+        e.d_reclen = (uint16_t)sizeof(e);
+        ents[written] = e;
+        written++;
+
+        if (idx == 0) idx = 1;
+        else if (idx == 1) idx = 2;
+    }
+
+    *inout_index = idx;
+    return (int)(written * (uint32_t)sizeof(struct diskfs_kdirent));
+}
+
 fs_node_t* diskfs_create_root(void) {
     if (!g_ready) {
         if (ata_pio_init_primary_master() == 0) {
@@ -587,15 +650,16 @@ fs_node_t* diskfs_create_root(void) {
         }
 
         memset(&g_root, 0, sizeof(g_root));
-        strcpy(g_root.name, "disk");
-        g_root.flags = FS_DIRECTORY;
-        g_root.inode = 1;
-        g_root.length = 0;
-        g_root.read = 0;
-        g_root.write = 0;
-        g_root.open = 0;
-        g_root.close = 0;
-        g_root.finddir = &diskfs_root_finddir;
+        strcpy(g_root.vfs.name, "disk");
+        g_root.vfs.flags = FS_DIRECTORY;
+        g_root.vfs.inode = 100;
+        g_root.vfs.length = 0;
+        g_root.vfs.read = 0;
+        g_root.vfs.write = 0;
+        g_root.vfs.open = 0;
+        g_root.vfs.close = 0;
+        g_root.vfs.finddir = &diskfs_root_finddir;
+        g_root.ino = 0;
 
         if (g_ready) {
             struct diskfs_super sb;
@@ -603,5 +667,5 @@ fs_node_t* diskfs_create_root(void) {
         }
     }
 
-    return g_ready ? &g_root : 0;
+    return g_ready ? &g_root.vfs : 0;
 }
