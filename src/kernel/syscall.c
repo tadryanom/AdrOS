@@ -10,6 +10,7 @@
 #include "heap.h"
 #include "tty.h"
 #include "pty.h"
+#include "diskfs.h"
 
 #include "errno.h"
 #include "elf.h"
@@ -747,7 +748,6 @@ static int syscall_lseek_impl(int fd, int32_t offset, int whence) {
 }
 
 static int syscall_open_impl(const char* user_path, uint32_t flags) {
-    (void)flags;
     if (!user_path) return -EFAULT;
 
     char path[128];
@@ -762,8 +762,16 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
         }
     }
 
-    fs_node_t* node = vfs_lookup(path);
-    if (!node) return -ENOENT;
+    fs_node_t* node = NULL;
+    if (path[0] == '/' && path[1] == 'd' && path[2] == 'i' && path[3] == 's' && path[4] == 'k' && path[5] == '/') {
+        const char* rel = path + 6;
+        if (rel[0] == 0) return -ENOENT;
+        int rc = diskfs_open_file(rel, flags, &node);
+        if (rc < 0) return rc;
+    } else {
+        node = vfs_lookup(path);
+        if (!node) return -ENOENT;
+    }
 
     struct file* f = (struct file*)kmalloc(sizeof(*f));
     if (!f) return -ENOMEM;

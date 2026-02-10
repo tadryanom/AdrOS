@@ -10,6 +10,7 @@
 #include "tty.h"
 #include "pty.h"
 #include "persistfs.h"
+#include "diskfs.h"
 #include "uart_console.h"
 
 #include "hal/mm.h"
@@ -75,6 +76,11 @@ int init_start(const struct boot_info* bi) {
     fs_node_t* persist = persistfs_create_root();
     if (persist) {
         (void)vfs_mount("/persist", persist);
+    }
+
+    fs_node_t* disk = diskfs_create_root();
+    if (disk) {
+        (void)vfs_mount("/disk", disk);
     }
 
     int user_ret = arch_platform_start_userspace(bi);

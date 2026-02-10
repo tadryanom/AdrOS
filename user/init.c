@@ -109,6 +109,11 @@ enum {
     SEEK_END = 2,
 };
 
+enum {
+    O_CREAT = 0x40,
+    O_TRUNC = 0x200,
+};
+
 #define S_IFMT  0170000
 #define S_IFREG 0100000
 
@@ -1424,6 +1429,81 @@ void _start(void) {
             sys_exit(1);
         }
         (void)sys_close(fd);
+    }
+
+    // B2: on-disk general filesystem smoke (/disk)
+    {
+        int fd = sys_open("/disk/test", O_CREAT);
+        if (fd < 0) {
+            sys_write(1, "[init] /disk/test open failed\n",
+                      (uint32_t)(sizeof("[init] /disk/test open failed\n") - 1));
+            sys_exit(1);
+        }
+
+        char buf[16];
+        int rd = sys_read(fd, buf, sizeof(buf));
+        int prev = 0;
+        if (rd > 0) {
+            for (int i = 0; i < rd; i++) {
+                if (buf[i] < '0' || buf[i] > '9') break;
+                prev = prev * 10 + (buf[i] - '0');
+            }
+        }
+
+        (void)sys_close(fd);
+
+        fd = sys_open("/disk/test", O_CREAT | O_TRUNC);
+        if (fd < 0) {
+            sys_write(1, "[init] /disk/test open2 failed\n",
+                      (uint32_t)(sizeof("[init] /disk/test open2 failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int next = prev + 1;
+        char out[16];
+        int n = 0;
+        int v = next;
+        if (v == 0) {
+            out[n++] = '0';
+        } else {
+            char tmp[16];
+            int t = 0;
+            while (v > 0 && t < (int)sizeof(tmp)) {
+                tmp[t++] = (char)('0' + (v % 10));
+                v /= 10;
+            }
+            while (t > 0) {
+                out[n++] = tmp[--t];
+            }
+        }
+
+        if (sys_write(fd, out, (uint32_t)n) != n) {
+            sys_write(1, "[init] /disk/test write failed\n",
+                      (uint32_t)(sizeof("[init] /disk/test write failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+
+        fd = sys_open("/disk/test", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] /disk/test open3 failed\n",
+                      (uint32_t)(sizeof("[init] /disk/test open3 failed\n") - 1));
+            sys_exit(1);
+        }
+        for (uint32_t i = 0; i < (uint32_t)sizeof(buf); i++) buf[i] = 0;
+        rd = sys_read(fd, buf, sizeof(buf));
+        (void)sys_close(fd);
+        if (rd != n || !memeq(buf, out, (uint32_t)n)) {
+            sys_write(1, "[init] /disk/test verify failed\n",
+                      (uint32_t)(sizeof("[init] /disk/test verify failed\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] /disk/test prev=", (uint32_t)(sizeof("[init] /disk/test prev=") - 1));
+        write_int_dec(prev);
+        sys_write(1, " next=", (uint32_t)(sizeof(" next=") - 1));
+        write_int_dec(next);
+        sys_write(1, " OK\n", (uint32_t)(sizeof(" OK\n") - 1));
     }
 
     enum { NCHILD = 100 };
