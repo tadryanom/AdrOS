@@ -6,6 +6,7 @@ build/
 *.img
 *.log
 *.elf
+*.a
 
 # ISO staging: keep config, ignore generated kernel binaries
 iso/boot/*.bin
