@@ -20,6 +20,7 @@
 #include "arch/x86/acpi.h"
 #include "arch/x86/lapic.h"
 #include "arch/x86/ioapic.h"
+#include "arch/x86/smp.h"
 #endif
 
 #if defined(__i386__)
@@ -108,6 +109,9 @@ int arch_platform_setup(const struct boot_info* bi) {
              * a window where no interrupt controller handles IRQs. */
             pic_disable();
         }
+
+        /* Bootstrap Application Processors (APs) via INIT-SIPI-SIPI */
+        smp_init();
     }
 
     keyboard_init();

@@ -15,13 +15,13 @@
 static volatile uint32_t* lapic_base = 0;
 static int lapic_active = 0;
 
-static inline uint64_t rdmsr(uint32_t msr) {
+uint64_t rdmsr(uint32_t msr) {
     uint32_t lo, hi;
     __asm__ volatile("rdmsr" : "=a"(lo), "=d"(hi) : "c"(msr));
     return ((uint64_t)hi << 32) | lo;
 }
 
-static inline void wrmsr(uint32_t msr, uint64_t value) {
+void wrmsr(uint32_t msr, uint64_t value) {
     uint32_t lo = (uint32_t)(value & 0xFFFFFFFF);
     uint32_t hi = (uint32_t)(value >> 32);
     __asm__ volatile("wrmsr" : : "c"(msr), "a"(lo), "d"(hi));
@@ -47,6 +47,18 @@ uint32_t lapic_get_id(void) {
 void lapic_eoi(void) {
     if (lapic_active) {
         lapic_write(LAPIC_EOI, 0);
+    }
+}
+
+void lapic_send_ipi(uint8_t dest_id, uint32_t icr_lo) {
+    if (!lapic_active) return;
+    /* Write destination LAPIC ID to ICR high (bits 24-31) */
+    lapic_write(LAPIC_ICR_HI, ((uint32_t)dest_id) << 24);
+    /* Write command to ICR low — this triggers the IPI */
+    lapic_write(LAPIC_ICR_LO, icr_lo);
+    /* Wait for delivery (bit 12 = delivery status, 0 = idle) */
+    while (lapic_read(LAPIC_ICR_LO) & (1U << 12)) {
+        __asm__ volatile("pause");
     }
 }
 
