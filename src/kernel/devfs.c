@@ -98,6 +98,84 @@ static struct fs_node* devfs_pts_finddir_impl(struct fs_node* node, const char* 
     return 0;
 }
 
+static int devfs_readdir_impl(struct fs_node* node, uint32_t* inout_index, void* buf, uint32_t buf_len) {
+    (void)node;
+    if (!inout_index || !buf) return -1;
+    if (buf_len < sizeof(struct vfs_dirent)) return -1;
+
+    static const struct { const char* name; uint32_t ino; uint8_t type; } devs[] = {
+        { "null", 2, FS_CHARDEVICE },
+        { "tty",  3, FS_CHARDEVICE },
+        { "ptmx", 4, FS_CHARDEVICE },
+        { "pts",  5, FS_DIRECTORY },
+    };
+    enum { NDEVS = 4 };
+
+    uint32_t idx = *inout_index;
+    uint32_t cap = buf_len / (uint32_t)sizeof(struct vfs_dirent);
+    struct vfs_dirent* ents = (struct vfs_dirent*)buf;
+    uint32_t written = 0;
+
+    while (written < cap) {
+        struct vfs_dirent e;
+        memset(&e, 0, sizeof(e));
+
+        if (idx == 0) {
+            e.d_ino = 1; e.d_type = FS_DIRECTORY; strcpy(e.d_name, ".");
+        } else if (idx == 1) {
+            e.d_ino = 1; e.d_type = FS_DIRECTORY; strcpy(e.d_name, "..");
+        } else {
+            uint32_t di = idx - 2;
+            if (di >= NDEVS) break;
+            e.d_ino = devs[di].ino;
+            e.d_type = devs[di].type;
+            strcpy(e.d_name, devs[di].name);
+        }
+
+        e.d_reclen = (uint16_t)sizeof(e);
+        ents[written] = e;
+        written++;
+        idx++;
+    }
+
+    *inout_index = idx;
+    return (int)(written * (uint32_t)sizeof(struct vfs_dirent));
+}
+
+static int devfs_pts_readdir_impl(struct fs_node* node, uint32_t* inout_index, void* buf, uint32_t buf_len) {
+    (void)node;
+    if (!inout_index || !buf) return -1;
+    if (buf_len < sizeof(struct vfs_dirent)) return -1;
+
+    uint32_t idx = *inout_index;
+    uint32_t cap = buf_len / (uint32_t)sizeof(struct vfs_dirent);
+    struct vfs_dirent* ents = (struct vfs_dirent*)buf;
+    uint32_t written = 0;
+
+    while (written < cap) {
+        struct vfs_dirent e;
+        memset(&e, 0, sizeof(e));
+
+        if (idx == 0) {
+            e.d_ino = 5; e.d_type = FS_DIRECTORY; strcpy(e.d_name, ".");
+        } else if (idx == 1) {
+            e.d_ino = 1; e.d_type = FS_DIRECTORY; strcpy(e.d_name, "..");
+        } else if (idx == 2) {
+            e.d_ino = 6; e.d_type = FS_CHARDEVICE; strcpy(e.d_name, "0");
+        } else {
+            break;
+        }
+
+        e.d_reclen = (uint16_t)sizeof(e);
+        ents[written] = e;
+        written++;
+        idx++;
+    }
+
+    *inout_index = idx;
+    return (int)(written * (uint32_t)sizeof(struct vfs_dirent));
+}
+
 static void devfs_init_once(void) {
     if (g_devfs_inited) return;
     g_devfs_inited = 1;
@@ -112,6 +190,7 @@ static void devfs_init_once(void) {
     g_dev_root.vfs.open = 0;
     g_dev_root.vfs.close = 0;
     g_dev_root.vfs.finddir = &devfs_finddir_impl;
+    g_dev_root.vfs.readdir = &devfs_readdir_impl;
 
     memset(&g_dev_null, 0, sizeof(g_dev_null));
     strcpy(g_dev_null.name, "null");
@@ -156,6 +235,7 @@ static void devfs_init_once(void) {
     g_dev_pts_dir.open = 0;
     g_dev_pts_dir.close = 0;
     g_dev_pts_dir.finddir = &devfs_pts_finddir_impl;
+    g_dev_pts_dir.readdir = &devfs_pts_readdir_impl;
 
     memset(&g_dev_pts0, 0, sizeof(g_dev_pts0));
     strcpy(g_dev_pts0.name, "0");

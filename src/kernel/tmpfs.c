@@ -17,6 +17,7 @@ struct tmpfs_node {
 static uint32_t g_tmpfs_next_inode = 1;
 
 static struct fs_node* tmpfs_finddir_impl(struct fs_node* node, const char* name);
+static int tmpfs_readdir_impl(struct fs_node* node, uint32_t* inout_index, void* buf, uint32_t buf_len);
 static uint32_t tmpfs_write_impl(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer);
 
 static struct tmpfs_node* tmpfs_node_alloc(const char* name, uint32_t flags) {
@@ -68,6 +69,7 @@ static struct tmpfs_node* tmpfs_child_ensure_dir(struct tmpfs_node* dir, const c
     nd->vfs.open = 0;
     nd->vfs.close = 0;
     nd->vfs.finddir = &tmpfs_finddir_impl;
+    nd->vfs.readdir = &tmpfs_readdir_impl;
     tmpfs_child_add(dir, nd);
     return nd;
 }
@@ -148,6 +150,49 @@ static struct fs_node* tmpfs_finddir_impl(struct fs_node* node, const char* name
     return &child->vfs;
 }
 
+static int tmpfs_readdir_impl(struct fs_node* node, uint32_t* inout_index, void* buf, uint32_t buf_len) {
+    if (!node || !inout_index || !buf) return -1;
+    if (node->flags != FS_DIRECTORY) return -1;
+    if (buf_len < sizeof(struct vfs_dirent)) return -1;
+
+    struct tmpfs_node* dir = (struct tmpfs_node*)node;
+    uint32_t idx = *inout_index;
+    uint32_t cap = buf_len / (uint32_t)sizeof(struct vfs_dirent);
+    struct vfs_dirent* ents = (struct vfs_dirent*)buf;
+    uint32_t written = 0;
+
+    while (written < cap) {
+        struct vfs_dirent e;
+        memset(&e, 0, sizeof(e));
+
+        if (idx == 0) {
+            e.d_ino = node->inode;
+            e.d_type = FS_DIRECTORY;
+            strcpy(e.d_name, ".");
+        } else if (idx == 1) {
+            e.d_ino = dir->parent ? dir->parent->vfs.inode : node->inode;
+            e.d_type = FS_DIRECTORY;
+            strcpy(e.d_name, "..");
+        } else {
+            uint32_t skip = idx - 2;
+            struct tmpfs_node* c = dir->first_child;
+            while (c && skip > 0) { c = c->next_sibling; skip--; }
+            if (!c) break;
+            e.d_ino = c->vfs.inode;
+            e.d_type = (uint8_t)c->vfs.flags;
+            strcpy(e.d_name, c->vfs.name);
+        }
+
+        e.d_reclen = (uint16_t)sizeof(e);
+        ents[written] = e;
+        written++;
+        idx++;
+    }
+
+    *inout_index = idx;
+    return (int)(written * (uint32_t)sizeof(struct vfs_dirent));
+}
+
 fs_node_t* tmpfs_create_root(void) {
     struct tmpfs_node* root = tmpfs_node_alloc("", FS_DIRECTORY);
     if (!root) return NULL;
@@ -157,6 +202,7 @@ fs_node_t* tmpfs_create_root(void) {
     root->vfs.open = 0;
     root->vfs.close = 0;
     root->vfs.finddir = &tmpfs_finddir_impl;
+    root->vfs.readdir = &tmpfs_readdir_impl;
 
     return &root->vfs;
 }

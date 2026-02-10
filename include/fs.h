@@ -21,7 +21,15 @@ typedef struct fs_node {
     void (*open)(struct fs_node* node);
     void (*close)(struct fs_node* node);
     struct fs_node* (*finddir)(struct fs_node* node, const char* name);
+    int (*readdir)(struct fs_node* node, uint32_t* inout_index, void* buf, uint32_t buf_len);
 } fs_node_t;
+
+struct vfs_dirent {
+    uint32_t d_ino;
+    uint16_t d_reclen;
+    uint8_t  d_type;
+    char     d_name[24];
+};
 
 // Standard VFS functions
 uint32_t vfs_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer);

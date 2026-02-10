@@ -2073,6 +2073,42 @@ void _start(void) {
                   (uint32_t)(sizeof("[init] rename/rmdir OK\n") - 1));
     }
 
+    // B10: getdents on /dev (devfs) and /tmp (tmpfs)
+    {
+        int devfd = sys_open("/dev", 0);
+        if (devfd < 0) {
+            sys_write(1, "[init] open /dev failed\n",
+                      (uint32_t)(sizeof("[init] open /dev failed\n") - 1));
+            sys_exit(1);
+        }
+        char dbuf[256];
+        int dr = sys_getdents(devfd, dbuf, (uint32_t)sizeof(dbuf));
+        (void)sys_close(devfd);
+        if (dr <= 0) {
+            sys_write(1, "[init] getdents /dev failed\n",
+                      (uint32_t)(sizeof("[init] getdents /dev failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int tmpfd = sys_open("/tmp", 0);
+        if (tmpfd < 0) {
+            sys_write(1, "[init] open /tmp failed\n",
+                      (uint32_t)(sizeof("[init] open /tmp failed\n") - 1));
+            sys_exit(1);
+        }
+        char tbuf[256];
+        int tr = sys_getdents(tmpfd, tbuf, (uint32_t)sizeof(tbuf));
+        (void)sys_close(tmpfd);
+        if (tr <= 0) {
+            sys_write(1, "[init] getdents /tmp failed\n",
+                      (uint32_t)(sizeof("[init] getdents /tmp failed\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] getdents multi-fs OK\n",
+                  (uint32_t)(sizeof("[init] getdents multi-fs OK\n") - 1));
+    }
+
     enum { NCHILD = 100 };
     int children[NCHILD];
     for (int i = 0; i < NCHILD; i++) {

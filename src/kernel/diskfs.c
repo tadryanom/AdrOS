@@ -423,6 +423,40 @@ static uint32_t diskfs_write_impl(fs_node_t* node, uint32_t offset, uint32_t siz
     return total;
 }
 
+static int diskfs_readdir_impl(struct fs_node* node, uint32_t* inout_index, void* buf, uint32_t buf_len) {
+    if (!node || !inout_index || !buf) return -1;
+    if (node->flags != FS_DIRECTORY) return -1;
+    if (buf_len < sizeof(struct vfs_dirent)) return -1;
+
+    struct diskfs_node* dn = (struct diskfs_node*)node;
+    uint16_t dir_ino = dn->ino;
+
+    // Use diskfs_getdents which fills diskfs_kdirent; convert to vfs_dirent.
+    struct diskfs_kdirent kbuf[8];
+    uint32_t klen = sizeof(kbuf);
+    if (klen > buf_len) klen = buf_len;
+
+    uint32_t idx = *inout_index;
+    int rc = diskfs_getdents(dir_ino, &idx, kbuf, klen);
+    if (rc <= 0) return rc;
+
+    uint32_t nents = (uint32_t)rc / (uint32_t)sizeof(struct diskfs_kdirent);
+    uint32_t cap = buf_len / (uint32_t)sizeof(struct vfs_dirent);
+    if (nents > cap) nents = cap;
+
+    struct vfs_dirent* out = (struct vfs_dirent*)buf;
+    for (uint32_t i = 0; i < nents; i++) {
+        memset(&out[i], 0, sizeof(out[i]));
+        out[i].d_ino = kbuf[i].d_ino;
+        out[i].d_reclen = (uint16_t)sizeof(struct vfs_dirent);
+        out[i].d_type = kbuf[i].d_type;
+        diskfs_strlcpy(out[i].d_name, kbuf[i].d_name, sizeof(out[i].d_name));
+    }
+
+    *inout_index = idx;
+    return (int)(nents * (uint32_t)sizeof(struct vfs_dirent));
+}
+
 static struct fs_node* diskfs_root_finddir(struct fs_node* node, const char* name) {
     struct diskfs_node* parent = (struct diskfs_node*)node;
     if (!g_ready) return 0;
@@ -456,6 +490,7 @@ static struct fs_node* diskfs_root_finddir(struct fs_node* node, const char* nam
         dn->vfs.read = 0;
         dn->vfs.write = 0;
         dn->vfs.finddir = &diskfs_root_finddir;
+        dn->vfs.readdir = &diskfs_readdir_impl;
     } else {
         dn->vfs.flags = FS_FILE;
         dn->vfs.length = sb.inodes[cino].size_bytes;
@@ -725,6 +760,7 @@ fs_node_t* diskfs_create_root(void) {
         g_root.vfs.open = 0;
         g_root.vfs.close = 0;
         g_root.vfs.finddir = &diskfs_root_finddir;
+        g_root.vfs.readdir = &diskfs_readdir_impl;
         g_root.ino = 0;
 
         if (g_ready) {

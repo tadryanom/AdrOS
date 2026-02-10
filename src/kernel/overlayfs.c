@@ -22,6 +22,7 @@ struct overlay_node {
 };
 
 static struct fs_node* overlay_finddir_impl(struct fs_node* node, const char* name);
+static int overlay_readdir_impl(struct fs_node* node, uint32_t* inout_index, void* buf, uint32_t buf_len);
 
 static void overlay_str_copy_n(char* dst, size_t dst_sz, const char* src, size_t src_n) {
     if (!dst || dst_sz == 0) return;
@@ -114,6 +115,7 @@ static fs_node_t* overlay_wrap_child(struct overlay_node* parent, const char* na
     c->vfs.open = 0;
     c->vfs.close = 0;
     c->vfs.finddir = (c->vfs.flags == FS_DIRECTORY) ? &overlay_finddir_impl : 0;
+    c->vfs.readdir = (c->vfs.flags == FS_DIRECTORY) ? &overlay_readdir_impl : 0;
 
     if (parent->path[0] == 0) {
         c->path[0] = '/';
@@ -140,6 +142,19 @@ static fs_node_t* overlay_wrap_child(struct overlay_node* parent, const char* na
     }
 
     return &c->vfs;
+}
+
+static int overlay_readdir_impl(struct fs_node* node, uint32_t* inout_index, void* buf, uint32_t buf_len) {
+    if (!node || !inout_index || !buf) return -1;
+    if (node->flags != FS_DIRECTORY) return -1;
+    if (buf_len < sizeof(struct vfs_dirent)) return -1;
+
+    struct overlay_node* dir = (struct overlay_node*)node;
+
+    // Prefer upper layer readdir; fall back to lower.
+    fs_node_t* src = dir->upper ? dir->upper : dir->lower;
+    if (!src || !src->readdir) return 0;
+    return src->readdir(src, inout_index, buf, buf_len);
 }
 
 static struct fs_node* overlay_finddir_impl(struct fs_node* node, const char* name) {
@@ -190,6 +205,7 @@ fs_node_t* overlayfs_create_root(fs_node_t* lower_root, fs_node_t* upper_root) {
     root->vfs.open = 0;
     root->vfs.close = 0;
     root->vfs.finddir = &overlay_finddir_impl;
+    root->vfs.readdir = &overlay_readdir_impl;
 
     root->path[0] = 0;
 

@@ -1007,20 +1007,14 @@ static int syscall_getdents_impl(int fd, void* user_buf, uint32_t len) {
     struct file* f = fd_get(fd);
     if (!f || !f->node) return -EBADF;
     if (f->node->flags != FS_DIRECTORY) return -ENOTDIR;
-
-    // For now only support diskfs dirs (mounted at /disk). We encode diskfs inode as 100+ino.
-    if (f->node->inode < 100U) return -ENOSYS;
-    uint16_t dir_ino = (uint16_t)(f->node->inode - 100U);
+    if (!f->node->readdir) return -ENOSYS;
 
     uint8_t kbuf[256];
-    if (len < (uint32_t)sizeof(kbuf)) {
-        // keep behavior simple: require small buffers too
-    }
     uint32_t klen = len;
     if (klen > (uint32_t)sizeof(kbuf)) klen = (uint32_t)sizeof(kbuf);
 
     uint32_t idx = f->offset;
-    int rc = diskfs_getdents(dir_ino, &idx, kbuf, klen);
+    int rc = f->node->readdir(f->node, &idx, kbuf, klen);
     if (rc < 0) return rc;
     if (rc == 0) return 0;
 
