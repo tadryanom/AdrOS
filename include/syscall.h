@@ -23,6 +23,7 @@ enum {
     SYSCALL_DUP = 12,
     SYSCALL_DUP2 = 13,
     SYSCALL_PIPE = 14,
+    SYSCALL_PIPE2 = 34,
     SYSCALL_EXECVE = 15,
     SYSCALL_FORK = 16,
     SYSCALL_GETPPID = 17,
@@ -47,6 +48,7 @@ enum {
 
     SYSCALL_CHDIR = 32,
     SYSCALL_GETCWD = 33,
+    SYSCALL_DUP3 = 35,
 };
 
 #endif

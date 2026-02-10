@@ -388,10 +388,8 @@ static int pipe_node_create(struct pipe_state* ps, int is_read_end, fs_node_t** 
     return 0;
 }
 
-static int syscall_pipe_impl(int* user_fds) {
-    if (!user_fds) return -EFAULT;
-    if (user_range_ok(user_fds, sizeof(int) * 2) == 0) return -EFAULT;
-
+static int pipe_create_kfds(int kfds[2]) {
+    if (!kfds) return -EINVAL;
     struct pipe_state* ps = (struct pipe_state*)kmalloc(sizeof(*ps));
     if (!ps) return -ENOMEM;
     memset(ps, 0, sizeof(*ps));
@@ -445,12 +443,46 @@ static int syscall_pipe_impl(int* user_fds) {
         return -EMFILE;
     }
 
-    int kfds[2];
     kfds[0] = rfd;
     kfds[1] = wfd;
+    return 0;
+}
+
+static int syscall_pipe_impl(int* user_fds) {
+    if (!user_fds) return -EFAULT;
+    if (user_range_ok(user_fds, sizeof(int) * 2) == 0) return -EFAULT;
+
+    int kfds[2];
+    int rc = pipe_create_kfds(kfds);
+    if (rc < 0) return rc;
+
     if (copy_to_user(user_fds, kfds, sizeof(kfds)) < 0) {
-        (void)fd_close(rfd);
-        (void)fd_close(wfd);
+        (void)fd_close(kfds[0]);
+        (void)fd_close(kfds[1]);
+        return -EFAULT;
+    }
+    return 0;
+}
+
+static int syscall_pipe2_impl(int* user_fds, uint32_t flags) {
+    if (!user_fds) return -EFAULT;
+    if (user_range_ok(user_fds, sizeof(int) * 2) == 0) return -EFAULT;
+
+    int kfds[2];
+    int rc = pipe_create_kfds(kfds);
+    if (rc < 0) return rc;
+    if (!current_process) return -ECHILD;
+
+    if (kfds[0] >= 0 && kfds[0] < PROCESS_MAX_FILES && current_process->files[kfds[0]]) {
+        current_process->files[kfds[0]]->flags = flags;
+    }
+    if (kfds[1] >= 0 && kfds[1] < PROCESS_MAX_FILES && current_process->files[kfds[1]]) {
+        current_process->files[kfds[1]]->flags = flags;
+    }
+
+    if (copy_to_user(user_fds, kfds, sizeof(kfds)) < 0) {
+        (void)fd_close(kfds[0]);
+        (void)fd_close(kfds[1]);
         return -EFAULT;
     }
 
@@ -682,6 +714,23 @@ static int syscall_dup2_impl(int oldfd, int newfd) {
     struct file* f = fd_get(oldfd);
     if (!f) return -EBADF;
     if (oldfd == newfd) return newfd;
+
+    if (current_process && current_process->files[newfd]) {
+        (void)fd_close(newfd);
+    }
+
+    f->refcount++;
+    current_process->files[newfd] = f;
+    return newfd;
+}
+
+static int syscall_dup3_impl(int oldfd, int newfd, uint32_t flags) {
+    // Minimal: accept only flags==0 for now.
+    if (flags != 0) return -EINVAL;
+    if (newfd < 0 || newfd >= PROCESS_MAX_FILES) return -EBADF;
+    if (oldfd == newfd) return -EINVAL;
+    struct file* f = fd_get(oldfd);
+    if (!f) return -EBADF;
 
     if (current_process && current_process->files[newfd]) {
         (void)fd_close(newfd);
@@ -1350,9 +1399,24 @@ static void syscall_handler(struct registers* regs) {
         return;
     }
 
+    if (syscall_no == SYSCALL_DUP3) {
+        int oldfd = (int)regs->ebx;
+        int newfd = (int)regs->ecx;
+        uint32_t flags = (uint32_t)regs->edx;
+        regs->eax = (uint32_t)syscall_dup3_impl(oldfd, newfd, flags);
+        return;
+    }
+
     if (syscall_no == SYSCALL_PIPE) {
         int* user_fds = (int*)regs->ebx;
         regs->eax = (uint32_t)syscall_pipe_impl(user_fds);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_PIPE2) {
+        int* user_fds = (int*)regs->ebx;
+        uint32_t flags = (uint32_t)regs->ecx;
+        regs->eax = (uint32_t)syscall_pipe2_impl(user_fds, flags);
         return;
     }
 

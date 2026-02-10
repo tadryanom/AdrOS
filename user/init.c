@@ -48,6 +48,7 @@ enum {
     SYSCALL_DUP = 12,
     SYSCALL_DUP2 = 13,
     SYSCALL_PIPE = 14,
+    SYSCALL_PIPE2 = 34,
     SYSCALL_EXECVE = 15,
     SYSCALL_FORK = 16,
     SYSCALL_GETPPID = 17,
@@ -72,6 +73,7 @@ enum {
 
     SYSCALL_CHDIR = 32,
     SYSCALL_GETCWD = 33,
+    SYSCALL_DUP3 = 35,
 };
 
 enum {
@@ -136,6 +138,7 @@ enum {
 
 enum {
     EAGAIN = 11,
+    EINVAL = 22,
 };
 
 #define S_IFMT  0170000
@@ -154,6 +157,17 @@ static int sys_write(int fd, const void* buf, uint32_t len) {
         "int $0x80"
         : "=a"(ret)
         : "a"(SYSCALL_WRITE), "b"(fd), "c"(buf), "d"(len)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_pipe2(int fds[2], uint32_t flags) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_PIPE2), "b"(fds), "c"(flags)
         : "memory"
     );
     return __syscall_fix(ret);
@@ -456,6 +470,17 @@ static int sys_dup2(int oldfd, int newfd) {
         "int $0x80"
         : "=a"(ret)
         : "a"(SYSCALL_DUP2), "b"(oldfd), "c"(newfd)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_dup3(int oldfd, int newfd, uint32_t flags) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_DUP3), "b"(oldfd), "c"(newfd), "d"(flags)
         : "memory"
     );
     return __syscall_fix(ret);
@@ -1819,6 +1844,36 @@ void _start(void) {
 
         sys_write(1, "[init] O_NONBLOCK OK\n",
                   (uint32_t)(sizeof("[init] O_NONBLOCK OK\n") - 1));
+    }
+
+    // B6b: pipe2 + dup3 smoke
+    {
+        int fds[2];
+        if (sys_pipe2(fds, O_NONBLOCK) < 0) {
+            sys_write(1, "[init] pipe2 failed\n",
+                      (uint32_t)(sizeof("[init] pipe2 failed\n") - 1));
+            sys_exit(1);
+        }
+
+        char b;
+        int r = sys_read(fds[0], &b, 1);
+        if (r != -1 || errno != EAGAIN) {
+            sys_write(1, "[init] pipe2 nonblock read expected EAGAIN\n",
+                      (uint32_t)(sizeof("[init] pipe2 nonblock read expected EAGAIN\n") - 1));
+            sys_exit(1);
+        }
+
+        int d = sys_dup3(fds[0], fds[0], 0);
+        if (d != -1 || errno != EINVAL) {
+            sys_write(1, "[init] dup3 samefd expected EINVAL\n",
+                      (uint32_t)(sizeof("[init] dup3 samefd expected EINVAL\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_close(fds[0]);
+        (void)sys_close(fds[1]);
+        sys_write(1, "[init] pipe2/dup3 OK\n",
+                  (uint32_t)(sizeof("[init] pipe2/dup3 OK\n") - 1));
     }
 
     // B7: chdir/getcwd smoke + relative paths
