@@ -65,4 +65,13 @@ int lapic_is_enabled(void);
  * Call AFTER IOAPIC is fully configured with IRQ routes. */
 void pic_disable(void);
 
+/* Send an IPI (Inter-Processor Interrupt) to a specific LAPIC.
+ * dest_id: target LAPIC ID (placed in ICR_HI bits 24-31)
+ * icr_lo:  ICR low word (delivery mode, vector, etc.) */
+void lapic_send_ipi(uint8_t dest_id, uint32_t icr_lo);
+
+/* MSR access helpers (defined in lapic.c) */
+uint64_t rdmsr(uint32_t msr);
+void wrmsr(uint32_t msr, uint64_t val);
+
 #endif
