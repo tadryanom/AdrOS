@@ -45,7 +45,9 @@ struct tss_entry {
 extern void gdt_flush(uint32_t gdt_ptr_addr);
 extern void tss_flush(uint16_t tss_selector);
 
-static struct gdt_entry gdt[6];
+/* 6 base entries + up to SMP_MAX_CPUS per-CPU GS segments */
+#define GDT_MAX_ENTRIES 24
+static struct gdt_entry gdt[GDT_MAX_ENTRIES];
 struct gdt_ptr gp;
 static struct tss_entry tss;
 
@@ -59,6 +61,14 @@ static void gdt_set_gate(int num, uint32_t base, uint32_t limit, uint8_t access,
 
     gdt[num].granularity |= (gran & 0xF0);
     gdt[num].access = access;
+}
+
+void gdt_set_gate_ext(int num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran) {
+    if (num < 0 || num >= GDT_MAX_ENTRIES) return;
+    gdt_set_gate(num, base, limit, access, gran);
+    /* Reload GDT limit to include new entries */
+    gp.limit = (uint16_t)(sizeof(struct gdt_entry) * GDT_MAX_ENTRIES - 1);
+    __asm__ volatile("lgdt %0" : : "m"(gp));
 }
 
 static void tss_write(uint32_t idx, uint16_t kernel_ss, uint32_t kernel_esp) {
@@ -86,7 +96,7 @@ void tss_set_kernel_stack(uintptr_t esp0) {
 void gdt_init(void) {
     uart_print("[GDT] Initializing GDT/TSS...\n");
 
-    gp.limit = (uint16_t)(sizeof(struct gdt_entry) * 6 - 1);
+    gp.limit = (uint16_t)(sizeof(struct gdt_entry) * GDT_MAX_ENTRIES - 1);
     gp.base = (uint32_t)(uintptr_t)&gdt;
 
     gdt_set_gate(0, 0, 0, 0, 0);
