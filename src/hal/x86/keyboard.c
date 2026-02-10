@@ -1,7 +1,7 @@
 #include "hal/keyboard.h"
 
 #if defined(__i386__)
-#include "idt.h"
+#include "arch/x86/idt.h"
 #include "io.h"
 
 static hal_keyboard_char_cb_t g_cb = 0;

@@ -1,4 +1,4 @@
-#include "idt.h"
+#include "arch/x86/idt.h"
 #include "io.h"
 #include "uart_console.h"
 #include "process.h"

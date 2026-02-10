@@ -6,7 +6,7 @@
 #include "uart_console.h"
 #include "utils.h"
  #include "arch/x86/usermode.h"
-#include "idt.h"
+#include "arch/x86/idt.h"
 
 #if defined(__i386__)
 

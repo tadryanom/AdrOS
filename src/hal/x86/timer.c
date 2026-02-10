@@ -1,7 +1,7 @@
 #include "hal/timer.h"
 
 #if defined(__i386__)
-#include "idt.h"
+#include "arch/x86/idt.h"
 #include "io.h"
 
 static hal_timer_tick_cb_t g_tick_cb = 0;

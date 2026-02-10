@@ -1,5 +1,5 @@
-#ifndef IDT_H
-#define IDT_H
+#ifndef INTERRUPTS_H
+#define INTERRUPTS_H
 
 #include <stdint.h>
 
@@ -24,4 +24,4 @@ static inline void register_interrupt_handler(uint8_t n, isr_handler_t handler) 
 
 #endif
 
-#endif
+#endif /* INTERRUPTS_H */

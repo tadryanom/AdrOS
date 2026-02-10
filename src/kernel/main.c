@@ -5,8 +5,6 @@
 #include "uart_console.h"
 #include "pmm.h"
 #include "vmm.h"
-#include "idt.h"
-#include "io.h"
 #include "process.h"
 #include "keyboard.h"
 #include "shell.h"

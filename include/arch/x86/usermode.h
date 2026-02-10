@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#include "idt.h"
+#include "arch/x86/idt.h"
 
 #if defined(__i386__)
 __attribute__((noreturn)) void x86_enter_usermode(uintptr_t user_eip, uintptr_t user_esp);

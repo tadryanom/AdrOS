@@ -2,7 +2,7 @@
 #define PROCESS_H
 
 #include <stdint.h>
-#include "idt.h" // For struct registers
+#include "interrupts.h" // For struct registers
 #include "fs.h"
 #include "signal.h"
 

@@ -2,8 +2,8 @@
 
 #include "kernel/boot_info.h"
 
-#include "gdt.h"
-#include "idt.h"
+#include "arch/x86/gdt.h"
+#include "arch/x86/idt.h"
 #include "uart_console.h"
 
 #include "multiboot2.h"

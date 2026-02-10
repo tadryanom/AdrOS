@@ -1,7 +1,7 @@
 #include "uaccess.h"
 
 #include "errno.h"
-#include "idt.h"
+#include "interrupts.h"
 
 #include <stdint.h>
 
