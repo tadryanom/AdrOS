@@ -41,6 +41,10 @@ struct x86_cpu_features {
     uint8_t lm        : 1;    /* Long Mode (64-bit) */
     uint8_t syscall   : 1;    /* SYSCALL/SYSRET */
 
+    /* CPUID leaf 7 — EBX (structured extended features) */
+    uint8_t smep      : 1;    /* Supervisor Mode Execution Prevention */
+    uint8_t smap      : 1;    /* Supervisor Mode Access Prevention */
+
     /* Extended info */
     uint32_t max_ext_leaf;
     char brand[49];           /* CPU brand string (leaves 0x80000002-4) */

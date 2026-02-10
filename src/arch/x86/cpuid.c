@@ -66,6 +66,13 @@ void x86_cpuid_detect(struct x86_cpu_features* out) {
     out->initial_apic_id = (uint8_t)(ebx >> 24);
     out->logical_cpus    = (uint8_t)(ebx >> 16);
 
+    /* Leaf 7: structured extended features (SMEP, SMAP, etc.) */
+    if (out->max_leaf >= 7) {
+        cpuid(7, &eax, &ebx, &ecx, &edx);
+        out->smep = (ebx >> 7)  & 1;
+        out->smap = (ebx >> 20) & 1;
+    }
+
     /* Extended leaves */
     cpuid(0x80000000, &eax, &ebx, &ecx, &edx);
     out->max_ext_leaf = eax;
@@ -125,6 +132,8 @@ void x86_cpuid_print(const struct x86_cpu_features* f) {
     if (f->x2apic) uart_print(" x2APIC");
     if (f->hypervisor) uart_print(" HYPERVISOR");
     if (f->syscall) uart_print(" SYSCALL");
+    if (f->smep) uart_print(" SMEP");
+    if (f->smap) uart_print(" SMAP");
     uart_print("\n");
 
     uart_print("[CPUID] APIC ID: ");

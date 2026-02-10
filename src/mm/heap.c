@@ -11,6 +11,7 @@
 // Heap starts at 3GB + 256MB
 #define KHEAP_START 0xD0000000
 #define KHEAP_INITIAL_SIZE (10 * 1024 * 1024) // 10MB
+#define KHEAP_MAX_SIZE    (64 * 1024 * 1024) // 64MB max growth
 #define PAGE_SIZE 4096
 
 #define HEAP_MAGIC 0xCAFEBABE
@@ -26,6 +27,7 @@ typedef struct heap_header {
 
 static heap_header_t* head = NULL;
 static heap_header_t* tail = NULL;
+static uintptr_t heap_end = 0; // Current end of mapped heap region
 
 static spinlock_t heap_lock = {0};
 
@@ -74,6 +76,7 @@ void kheap_init(void) {
     head->prev = NULL;
     
     tail = head;
+    heap_end = KHEAP_START + KHEAP_INITIAL_SIZE;
     spin_unlock_irqrestore(&heap_lock, flags);
 
     uart_print("[HEAP] 10MB Heap Ready.\n");
@@ -136,8 +139,90 @@ void* kmalloc(size_t size) {
         current = current->next;
     }
     
+    // No free block found — try to grow the heap.
+    size_t grow_size = aligned_size + sizeof(heap_header_t);
+    // Round up to page boundary, minimum 64KB growth.
+    if (grow_size < 64 * 1024) grow_size = 64 * 1024;
+    grow_size = (grow_size + PAGE_SIZE - 1) & ~(size_t)(PAGE_SIZE - 1);
+
+    if (heap_end + grow_size > KHEAP_START + KHEAP_MAX_SIZE) {
+        spin_unlock_irqrestore(&heap_lock, flags);
+        uart_print("[HEAP] OOM: max heap size reached.\n");
+        return NULL;
+    }
+
+    // Map new pages.
+    uintptr_t map_addr = heap_end;
+    for (size_t off = 0; off < grow_size; off += PAGE_SIZE) {
+        void* phys_frame = pmm_alloc_page();
+        if (!phys_frame) {
+            // Partial growth: use whatever we mapped so far.
+            grow_size = off;
+            break;
+        }
+        vmm_map_page((uint64_t)(uintptr_t)phys_frame, (uint64_t)(map_addr + off),
+                     VMM_FLAG_PRESENT | VMM_FLAG_RW);
+    }
+
+    if (grow_size == 0) {
+        spin_unlock_irqrestore(&heap_lock, flags);
+        uart_print("[HEAP] OOM: kmalloc failed (no phys pages).\n");
+        return NULL;
+    }
+
+    // Create a new free block in the grown region.
+    heap_header_t* new_block = (heap_header_t*)heap_end;
+    new_block->magic = HEAP_MAGIC;
+    new_block->size = grow_size - sizeof(heap_header_t);
+    new_block->is_free = 1;
+    new_block->next = NULL;
+    new_block->prev = tail;
+    if (tail) tail->next = new_block;
+    tail = new_block;
+    heap_end += grow_size;
+
+    // Coalesce with previous block if it's free and adjacent.
+    if (new_block->prev && new_block->prev->is_free) {
+        heap_header_t* prev = new_block->prev;
+        heap_header_t* expected = (heap_header_t*)((uint8_t*)prev + sizeof(heap_header_t) + prev->size);
+        if (expected == new_block) {
+            prev->size += sizeof(heap_header_t) + new_block->size;
+            prev->next = new_block->next;
+            if (new_block->next) {
+                new_block->next->prev = prev;
+            } else {
+                tail = prev;
+            }
+        }
+    }
+
+    // Retry allocation from the start (the new block should satisfy it).
+    current = head;
+    while (current) {
+        if (current->magic != HEAP_MAGIC) break;
+        if (current->is_free && current->size >= aligned_size) {
+            if (current->size > aligned_size + sizeof(heap_header_t) + 16) {
+                heap_header_t* split = (heap_header_t*)((uint8_t*)current + sizeof(heap_header_t) + aligned_size);
+                split->magic = HEAP_MAGIC;
+                split->size = current->size - aligned_size - sizeof(heap_header_t);
+                split->is_free = 1;
+                split->next = current->next;
+                split->prev = current;
+                if (current->next) current->next->prev = split;
+                current->next = split;
+                current->size = aligned_size;
+                if (current == tail) tail = split;
+            }
+            current->is_free = 0;
+            void* ret = (void*)((uint8_t*)current + sizeof(heap_header_t));
+            spin_unlock_irqrestore(&heap_lock, flags);
+            return ret;
+        }
+        current = current->next;
+    }
+
     spin_unlock_irqrestore(&heap_lock, flags);
-    uart_print("[HEAP] OOM: kmalloc failed.\n");
+    uart_print("[HEAP] OOM: kmalloc failed after grow.\n");
     return NULL;
 }
 

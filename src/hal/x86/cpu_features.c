@@ -1,7 +1,21 @@
 #include "hal/cpu_features.h"
 #include "arch/x86/cpuid.h"
+#include "uart_console.h"
 
 #include <stddef.h>
+
+#define CR4_SMEP (1U << 20)
+#define CR4_SMAP (1U << 21)
+
+static inline uint32_t read_cr4(void) {
+    uint32_t val;
+    __asm__ volatile("mov %%cr4, %0" : "=r"(val));
+    return val;
+}
+
+static inline void write_cr4(uint32_t val) {
+    __asm__ volatile("mov %0, %%cr4" :: "r"(val) : "memory");
+}
 
 static struct cpu_features g_features;
 static struct x86_cpu_features g_x86_features;
@@ -34,6 +48,21 @@ void hal_cpu_detect_features(void) {
 
     g_features.logical_cpus  = g_x86_features.logical_cpus;
     g_features.initial_cpu_id = g_x86_features.initial_apic_id;
+
+    /* Enable SMEP if supported: prevents kernel from executing user-mapped pages.
+     * This blocks a common exploit technique where an attacker maps shellcode in
+     * userspace and tricks the kernel into jumping to it. */
+    if (g_x86_features.smep) {
+        uint32_t cr4 = read_cr4();
+        cr4 |= CR4_SMEP;
+        write_cr4(cr4);
+        uart_print("[CPU] SMEP enabled.\n");
+    }
+
+    /* SMAP (Supervisor Mode Access Prevention) is NOT enabled yet because
+     * copy_from_user/copy_to_user do not bracket accesses with STAC/CLAC.
+     * Enabling SMAP without STAC/CLAC would fault on every user memory access.
+     * TODO: Add STAC/CLAC to x86 uaccess.c, then enable SMAP here. */
 }
 
 const struct cpu_features* hal_cpu_get_features(void) {

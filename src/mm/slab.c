@@ -1,5 +1,6 @@
 #include "slab.h"
 #include "pmm.h"
+#include "heap.h"
 #include "hal/mm.h"
 #include "uart_console.h"
 
@@ -24,19 +25,12 @@ void slab_cache_init(slab_cache_t* cache, const char* name, uint32_t obj_size) {
 }
 
 static int slab_grow(slab_cache_t* cache) {
-    void* page = pmm_alloc_page();
-    if (!page) return -1;
-
-    uint8_t* base = (uint8_t*)(uintptr_t)page;
-
-    /* In higher-half kernel the physical page needs to be accessible.
-     * For simplicity we assume the kernel heap region or identity-mapped
-     * low memory is used. We map via the kernel virtual address. */
-    /* TODO: For pages above 4MB, a proper kernel mapping is needed.
-     * For now, slab pages come from pmm_alloc_page which returns
-     * physical addresses. We need to convert to virtual. */
-
-    uint8_t* vbase = (uint8_t*)hal_mm_phys_to_virt((uintptr_t)base);
+    /* Allocate from the kernel heap instead of raw pmm_alloc_page.
+     * The heap is already VMM-mapped at valid kernel VAs, so we avoid
+     * the hal_mm_phys_to_virt bug where phys addresses above 16MB
+     * translate to VAs that collide with the heap range (0xD0000000+). */
+    uint8_t* vbase = (uint8_t*)kmalloc(PAGE_SIZE);
+    if (!vbase) return -1;
 
     for (uint32_t i = 0; i < cache->objs_per_slab; i++) {
         struct slab_free_node* node = (struct slab_free_node*)(vbase + i * cache->obj_size);
