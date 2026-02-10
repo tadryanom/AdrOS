@@ -1,33 +1,52 @@
 #include "persistfs.h"
 
 #include "ata_pio.h"
+#include "diskfs.h"
 #include "errno.h"
 #include "heap.h"
 #include "utils.h"
 
-// Minimal on-disk persistent storage:
-// - LBA0 reserved
-// - LBA1 holds one 512-byte file called "counter" (first 4 bytes are the counter value)
+// Persistent storage wrapper over diskfs:
+// - Exposes /persist/counter with legacy 512-byte semantics.
+// - Backed by a diskfs file named "persist.counter".
+// - Migrates the legacy LBA1 counter value into diskfs once.
 
 #define PERSISTFS_LBA_COUNTER 1U
+#define PERSISTFS_BACKING_NAME "persist.counter"
+
+enum {
+    PERSIST_O_CREAT = 0x40,
+    PERSIST_O_TRUNC = 0x200,
+};
 
 static fs_node_t g_root;
 static fs_node_t g_counter;
 static uint32_t g_ready = 0;
+
+static fs_node_t* persistfs_backing_open(uint32_t flags) {
+    fs_node_t* n = 0;
+    if (diskfs_open_file(PERSISTFS_BACKING_NAME, flags, &n) < 0) return 0;
+    return n;
+}
+
+static void persistfs_backing_close(fs_node_t* n) {
+    if (!n) return;
+    vfs_close(n);
+}
 
 static uint32_t persist_counter_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
     (void)node;
     if (!buffer) return 0;
     if (!g_ready) return 0;
 
-    uint8_t sec[512];
-    if (ata_pio_read28(PERSISTFS_LBA_COUNTER, sec) < 0) return 0;
-
     if (offset >= 512U) return 0;
     if (offset + size > 512U) size = 512U - offset;
 
-    memcpy(buffer, sec + offset, size);
-    return size;
+    fs_node_t* b = persistfs_backing_open(PERSIST_O_CREAT);
+    if (!b) return 0;
+    uint32_t rd = vfs_read(b, offset, size, buffer);
+    persistfs_backing_close(b);
+    return rd;
 }
 
 static uint32_t persist_counter_write(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer) {
@@ -38,13 +57,11 @@ static uint32_t persist_counter_write(fs_node_t* node, uint32_t offset, uint32_t
     if (offset >= 512U) return 0;
     if (offset + size > 512U) size = 512U - offset;
 
-    uint8_t sec[512];
-    if (ata_pio_read28(PERSISTFS_LBA_COUNTER, sec) < 0) return 0;
-
-    memcpy(sec + offset, buffer, size);
-
-    if (ata_pio_write28(PERSISTFS_LBA_COUNTER, sec) < 0) return 0;
-    return size;
+    fs_node_t* b = persistfs_backing_open(PERSIST_O_CREAT);
+    if (!b) return 0;
+    uint32_t wr = vfs_write(b, offset, size, buffer);
+    persistfs_backing_close(b);
+    return wr;
 }
 
 static struct fs_node* persist_root_finddir(struct fs_node* node, const char* name) {
@@ -60,6 +77,25 @@ fs_node_t* persistfs_create_root(void) {
             g_ready = 1;
         } else {
             g_ready = 0;
+        }
+
+        if (g_ready) {
+            // Ensure diskfs is initialized even if /disk mount happens later.
+            (void)diskfs_create_root();
+
+            // One-time migration from legacy LBA1 counter storage.
+            uint8_t sec[512];
+            if (ata_pio_read28(PERSISTFS_LBA_COUNTER, sec) == 0) {
+                fs_node_t* b = persistfs_backing_open(PERSIST_O_CREAT);
+                if (b) {
+                    uint8_t cur4[4];
+                    uint32_t rd = vfs_read(b, 0, 4, cur4);
+                    if (rd == 0) {
+                        (void)vfs_write(b, 0, 4, sec);
+                    }
+                    persistfs_backing_close(b);
+                }
+            }
         }
 
         memset(&g_root, 0, sizeof(g_root));
