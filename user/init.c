@@ -78,6 +78,9 @@ enum {
     SYSCALL_OPENAT = 36,
     SYSCALL_FSTATAT = 37,
     SYSCALL_UNLINKAT = 38,
+
+    SYSCALL_RENAME = 39,
+    SYSCALL_RMDIR = 40,
 };
 
 enum {
@@ -198,6 +201,28 @@ static int sys_unlinkat(int dirfd, const char* path, uint32_t flags) {
         "int $0x80"
         : "=a"(ret)
         : "a"(SYSCALL_UNLINKAT), "b"(dirfd), "c"(path), "d"(flags)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_rename(const char* oldpath, const char* newpath) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_RENAME), "b"(oldpath), "c"(newpath)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_rmdir(const char* path) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_RMDIR), "b"(path)
         : "memory"
     );
     return __syscall_fix(ret);
@@ -1993,6 +2018,59 @@ void _start(void) {
 
         sys_write(1, "[init] *at OK\n",
                   (uint32_t)(sizeof("[init] *at OK\n") - 1));
+    }
+
+    // B9: rename + rmdir smoke
+    {
+        // Create a file, rename it, verify old gone and new exists.
+        int fd = sys_open("/disk/rnold", O_CREAT | O_TRUNC);
+        if (fd < 0) {
+            sys_write(1, "[init] rename: create failed\n",
+                      (uint32_t)(sizeof("[init] rename: create failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_write(fd, "RN", 2);
+        (void)sys_close(fd);
+
+        if (sys_rename("/disk/rnold", "/disk/rnnew") < 0) {
+            sys_write(1, "[init] rename failed\n",
+                      (uint32_t)(sizeof("[init] rename failed\n") - 1));
+            sys_exit(1);
+        }
+
+        struct stat st;
+        if (sys_stat("/disk/rnold", &st) >= 0) {
+            sys_write(1, "[init] rename: old still exists\n",
+                      (uint32_t)(sizeof("[init] rename: old still exists\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_stat("/disk/rnnew", &st) < 0) {
+            sys_write(1, "[init] rename: new not found\n",
+                      (uint32_t)(sizeof("[init] rename: new not found\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_unlink("/disk/rnnew");
+
+        // mkdir, then rmdir
+        if (sys_mkdir("/disk/rmtmp") < 0 && errno != 17) {
+            sys_write(1, "[init] rmdir: mkdir failed\n",
+                      (uint32_t)(sizeof("[init] rmdir: mkdir failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_rmdir("/disk/rmtmp") < 0) {
+            sys_write(1, "[init] rmdir failed\n",
+                      (uint32_t)(sizeof("[init] rmdir failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_stat("/disk/rmtmp", &st) >= 0) {
+            sys_write(1, "[init] rmdir: dir still exists\n",
+                      (uint32_t)(sizeof("[init] rmdir: dir still exists\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] rename/rmdir OK\n",
+                  (uint32_t)(sizeof("[init] rename/rmdir OK\n") - 1));
     }
 
     enum { NCHILD = 100 };

@@ -582,6 +582,72 @@ int diskfs_unlink(const char* rel_path) {
     return diskfs_super_store(&sb);
 }
 
+int diskfs_rmdir(const char* rel_path) {
+    if (!g_ready) return -ENODEV;
+    if (!rel_path || rel_path[0] == 0) return -EINVAL;
+
+    struct diskfs_super sb;
+    if (diskfs_super_load(&sb) < 0) return -EIO;
+
+    uint16_t ino = 0;
+    int rc = diskfs_lookup_path(&sb, rel_path, &ino, 0, 0, 0);
+    if (rc < 0) return rc;
+    if (ino == 0) return -EPERM;
+    if (ino >= DISKFS_MAX_INODES) return -EIO;
+    if (sb.inodes[ino].type != DISKFS_INODE_DIR) return -ENOTDIR;
+
+    // Check directory is empty (no children).
+    for (uint16_t i = 0; i < DISKFS_MAX_INODES; i++) {
+        if (sb.inodes[i].type == DISKFS_INODE_FREE) continue;
+        if (sb.inodes[i].parent == ino && i != ino) return -ENOTEMPTY;
+    }
+
+    memset(&sb.inodes[ino], 0, sizeof(sb.inodes[ino]));
+    return diskfs_super_store(&sb);
+}
+
+int diskfs_rename(const char* old_rel, const char* new_rel) {
+    if (!g_ready) return -ENODEV;
+    if (!old_rel || old_rel[0] == 0) return -EINVAL;
+    if (!new_rel || new_rel[0] == 0) return -EINVAL;
+
+    struct diskfs_super sb;
+    if (diskfs_super_load(&sb) < 0) return -EIO;
+
+    uint16_t src_ino = 0;
+    int rc = diskfs_lookup_path(&sb, old_rel, &src_ino, 0, 0, 0);
+    if (rc < 0) return rc;
+    if (src_ino == 0) return -EPERM;
+    if (src_ino >= DISKFS_MAX_INODES) return -EIO;
+
+    // Resolve destination: if it exists, it must be same type or we fail.
+    uint16_t dst_ino = 0;
+    uint16_t dst_parent = 0;
+    char dst_last[DISKFS_NAME_MAX];
+    dst_last[0] = 0;
+    rc = diskfs_lookup_path(&sb, new_rel, &dst_ino, &dst_parent, dst_last, sizeof(dst_last));
+    if (rc == 0) {
+        // Destination exists: if it's a dir and source is file (or vice-versa), error.
+        if (sb.inodes[dst_ino].type != sb.inodes[src_ino].type) return -EINVAL;
+        if (dst_ino == src_ino) return 0; // same inode
+        // Remove destination.
+        memset(&sb.inodes[dst_ino], 0, sizeof(sb.inodes[dst_ino]));
+    } else if (rc == -ENOENT) {
+        // Parent must exist and be a dir.
+        if (dst_parent >= DISKFS_MAX_INODES) return -EIO;
+        if (sb.inodes[dst_parent].type != DISKFS_INODE_DIR) return -ENOTDIR;
+    } else {
+        return rc;
+    }
+
+    // Move: update parent and name.
+    sb.inodes[src_ino].parent = dst_parent;
+    memset(sb.inodes[src_ino].name, 0, sizeof(sb.inodes[src_ino].name));
+    diskfs_strlcpy(sb.inodes[src_ino].name, dst_last, sizeof(sb.inodes[src_ino].name));
+
+    return diskfs_super_store(&sb);
+}
+
 int diskfs_getdents(uint16_t dir_ino, uint32_t* inout_index, void* out, uint32_t out_len) {
     if (!inout_index || !out) return -EINVAL;
     if (!g_ready) return -ENODEV;

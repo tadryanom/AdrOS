@@ -1051,6 +1051,44 @@ static int syscall_unlinkat_impl(int dirfd, const char* user_path, uint32_t flag
     return syscall_unlink_impl(user_path);
 }
 
+static int syscall_rmdir_impl(const char* user_path) {
+    if (!user_path) return -EFAULT;
+
+    char path[128];
+    int prc = path_resolve_user(user_path, path, sizeof(path));
+    if (prc < 0) return prc;
+
+    if (path[0] == '/' && path[1] == 'd' && path[2] == 'i' && path[3] == 's' && path[4] == 'k' && path[5] == '/') {
+        const char* rel = path + 6;
+        if (rel[0] == 0) return -EINVAL;
+        return diskfs_rmdir(rel);
+    }
+
+    return -ENOSYS;
+}
+
+static int syscall_rename_impl(const char* user_old, const char* user_new) {
+    if (!user_old || !user_new) return -EFAULT;
+
+    char oldp[128];
+    char newp[128];
+    int rc = path_resolve_user(user_old, oldp, sizeof(oldp));
+    if (rc < 0) return rc;
+    rc = path_resolve_user(user_new, newp, sizeof(newp));
+    if (rc < 0) return rc;
+
+    // Both must be under /disk/
+    if (oldp[0] == '/' && oldp[1] == 'd' && oldp[2] == 'i' && oldp[3] == 's' && oldp[4] == 'k' && oldp[5] == '/' &&
+        newp[0] == '/' && newp[1] == 'd' && newp[2] == 'i' && newp[3] == 's' && newp[4] == 'k' && newp[5] == '/') {
+        const char* old_rel = oldp + 6;
+        const char* new_rel = newp + 6;
+        if (old_rel[0] == 0 || new_rel[0] == 0) return -EINVAL;
+        return diskfs_rename(old_rel, new_rel);
+    }
+
+    return -ENOSYS;
+}
+
 static int syscall_read_impl(int fd, void* user_buf, uint32_t len) {
     if (len > 1024 * 1024) return -EINVAL;
     if (user_range_ok(user_buf, (size_t)len) == 0) return -EFAULT;
@@ -1578,6 +1616,19 @@ static void syscall_handler(struct registers* regs) {
         void* buf = (void*)regs->ecx;
         uint32_t len = (uint32_t)regs->edx;
         regs->eax = (uint32_t)syscall_getdents_impl(fd, buf, len);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_RENAME) {
+        const char* oldpath = (const char*)regs->ebx;
+        const char* newpath = (const char*)regs->ecx;
+        regs->eax = (uint32_t)syscall_rename_impl(oldpath, newpath);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_RMDIR) {
+        const char* path = (const char*)regs->ebx;
+        regs->eax = (uint32_t)syscall_rmdir_impl(path);
         return;
     }
 

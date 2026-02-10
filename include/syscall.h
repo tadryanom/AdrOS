@@ -53,6 +53,9 @@ enum {
     SYSCALL_OPENAT = 36,
     SYSCALL_FSTATAT = 37,
     SYSCALL_UNLINKAT = 38,
+
+    SYSCALL_RENAME = 39,
+    SYSCALL_RMDIR = 40,
 };
 
 #endif
