@@ -288,23 +288,33 @@ If `name` exceeds 128 bytes (the size of `fs_node.name`), this overflows.
 
 ## 6. Summary Table
 
-| # | Severity | Category | Location | Description |
-|---|----------|----------|----------|-------------|
-| 3.1 | CRITICAL | Security | uaccess.c | user_range_ok allows kernel addr |
-| 3.2 | CRITICAL | Security | syscall.c | sigreturn allows IOPL escalation |
-| 2.1 | CRITICAL | Race | pmm.c | No locking on PMM bitmap |
-| 2.2 | CRITICAL | Race | syscall.c | file refcount not atomic |
-| 1.1 | CRITICAL | Layer | syscall.c | x86 registers in generic code |
-| 2.3 | HIGH | Memory | slab.c | phys_to_virt can hit heap VA |
-| 3.3 | HIGH | Security | syscall.c | execve bypasses copy_to_user |
-| 3.4 | HIGH | Security | - | No SMEP/SMAP |
-| 4.1 | HIGH | Memory | heap.c | Heap never grows |
-| 2.4 | HIGH | Logic | scheduler.c | waitpid NULL deref risk |
-| 1.2 | MODERATE | Layer | heap.c | Hardcoded heap VA |
-| 1.3 | MODERATE | Layer | interrupts.h | x86 registers leak |
-| 2.5 | MODERATE | Race | scheduler.c | Unlock before context_switch |
-| 2.6 | MODERATE | Logic | utils.c | itoa no buffer size |
-| 2.7 | MODERATE | Logic | utils.c | itoa UB for INT_MIN |
-| 3.5 | MODERATE | Security | syscall.c | fd bounds not always checked |
-| 4.2 | MODERATE | Memory | heap.c | kfree doesn't zero |
-| 4.3 | MODERATE | Memory | scheduler.c | No stack guard pages |
+| # | Severity | Category | Location | Description | Status |
+|---|----------|----------|----------|-------------|--------|
+| 3.1 | CRITICAL | Security | uaccess.c | user_range_ok allows kernel addr | **FIXED** |
+| 3.2 | CRITICAL | Security | syscall.c | sigreturn allows IOPL escalation | **FIXED** |
+| 2.1 | CRITICAL | Race | pmm.c | No locking on PMM bitmap | **FIXED** |
+| 2.2 | CRITICAL | Race | syscall.c | file refcount not atomic | **FIXED** |
+| 1.1 | CRITICAL | Layer | syscall.c | x86 registers in generic code | Open |
+| 2.3 | HIGH | Memory | slab.c | phys_to_virt can hit heap VA | **FIXED** |
+| 3.3 | HIGH | Security | syscall.c | execve bypasses copy_to_user | **FIXED** |
+| 3.4 | HIGH | Security | - | No SMEP/SMAP | **SMEP FIXED** |
+| 4.1 | HIGH | Memory | heap.c | Heap never grows | **FIXED** |
+| 2.4 | HIGH | Logic | scheduler.c | waitpid NULL deref risk | **FIXED** |
+| 1.2 | MODERATE | Layer | heap.c | Hardcoded heap VA | Open |
+| 1.3 | MODERATE | Layer | interrupts.h | x86 registers leak | Open |
+| 2.5 | MODERATE | Race | scheduler.c | Unlock before context_switch | Open |
+| 2.6 | MODERATE | Logic | utils.c | itoa no buffer size | Open |
+| 2.7 | MODERATE | Logic | utils.c | itoa UB for INT_MIN | Open |
+| 3.5 | MODERATE | Security | syscall.c | fd bounds not always checked | Open |
+| 4.2 | MODERATE | Memory | heap.c | kfree doesn't zero | Open |
+| 4.3 | MODERATE | Memory | scheduler.c | No stack guard pages | Open |
+
+## 7. Fix Summary
+
+**4 CRITICAL fixed**: user_range_ok kernel addr check, sigreturn eflags sanitization,
+PMM spinlock, file refcount atomics.
+
+**5 HIGH fixed**: slab uses kmalloc instead of phys_to_virt, execve sp bounds check,
+SMEP enabled via CR4, heap grows dynamically to 64MB, waitpid NULL guard.
+
+**Remaining**: 1 CRITICAL (layer violation — arch refactor), 8 MODERATE (open).
