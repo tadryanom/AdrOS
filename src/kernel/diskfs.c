@@ -522,6 +522,62 @@ int diskfs_open_file(const char* rel_path, uint32_t flags, fs_node_t** out_node)
     return 0;
 }
 
+int diskfs_mkdir(const char* rel_path) {
+    if (!g_ready) return -ENODEV;
+    if (!rel_path || rel_path[0] == 0) return -EINVAL;
+
+    struct diskfs_super sb;
+    if (diskfs_super_load(&sb) < 0) return -EIO;
+
+    uint16_t ino = 0;
+    uint16_t parent = 0;
+    char last[DISKFS_NAME_MAX];
+    last[0] = 0;
+    int rc = diskfs_lookup_path(&sb, rel_path, &ino, &parent, last, sizeof(last));
+    if (rc == 0) {
+        return -EEXIST;
+    }
+    if (rc != -ENOENT) return rc;
+    if (last[0] == 0) return -EINVAL;
+
+    if (parent >= DISKFS_MAX_INODES) return -EIO;
+    if (sb.inodes[parent].type != DISKFS_INODE_DIR) return -ENOTDIR;
+
+    for (uint16_t i = 1; i < DISKFS_MAX_INODES; i++) {
+        if (sb.inodes[i].type != DISKFS_INODE_FREE) continue;
+        sb.inodes[i].type = DISKFS_INODE_DIR;
+        sb.inodes[i].parent = parent;
+        memset(sb.inodes[i].name, 0, sizeof(sb.inodes[i].name));
+        diskfs_strlcpy(sb.inodes[i].name, last, sizeof(sb.inodes[i].name));
+        sb.inodes[i].start_lba = 0;
+        sb.inodes[i].size_bytes = 0;
+        sb.inodes[i].cap_sectors = 0;
+        return diskfs_super_store(&sb);
+    }
+
+    return -ENOSPC;
+}
+
+int diskfs_unlink(const char* rel_path) {
+    if (!g_ready) return -ENODEV;
+    if (!rel_path || rel_path[0] == 0) return -EINVAL;
+
+    struct diskfs_super sb;
+    if (diskfs_super_load(&sb) < 0) return -EIO;
+
+    uint16_t ino = 0;
+    int rc = diskfs_lookup_path(&sb, rel_path, &ino, 0, 0, 0);
+    if (rc < 0) return rc;
+    if (ino == 0) return -EPERM;
+    if (ino >= DISKFS_MAX_INODES) return -EIO;
+
+    if (sb.inodes[ino].type == DISKFS_INODE_DIR) return -EISDIR;
+    if (sb.inodes[ino].type != DISKFS_INODE_FILE) return -ENOENT;
+
+    memset(&sb.inodes[ino], 0, sizeof(sb.inodes[ino]));
+    return diskfs_super_store(&sb);
+}
+
 fs_node_t* diskfs_create_root(void) {
     if (!g_ready) {
         if (ata_pio_init_primary_master() == 0) {

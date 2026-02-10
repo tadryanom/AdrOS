@@ -788,6 +788,54 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
     return fd;
 }
 
+static int syscall_mkdir_impl(const char* user_path) {
+    if (!user_path) return -EFAULT;
+
+    char path[128];
+    for (size_t i = 0; i < sizeof(path); i++) {
+        if (copy_from_user(&path[i], &user_path[i], 1) < 0) {
+            return -EFAULT;
+        }
+        if (path[i] == 0) break;
+        if (i + 1 == sizeof(path)) {
+            path[sizeof(path) - 1] = 0;
+            break;
+        }
+    }
+
+    if (path[0] == '/' && path[1] == 'd' && path[2] == 'i' && path[3] == 's' && path[4] == 'k' && path[5] == '/') {
+        const char* rel = path + 6;
+        if (rel[0] == 0) return -EINVAL;
+        return diskfs_mkdir(rel);
+    }
+
+    return -ENOSYS;
+}
+
+static int syscall_unlink_impl(const char* user_path) {
+    if (!user_path) return -EFAULT;
+
+    char path[128];
+    for (size_t i = 0; i < sizeof(path); i++) {
+        if (copy_from_user(&path[i], &user_path[i], 1) < 0) {
+            return -EFAULT;
+        }
+        if (path[i] == 0) break;
+        if (i + 1 == sizeof(path)) {
+            path[sizeof(path) - 1] = 0;
+            break;
+        }
+    }
+
+    if (path[0] == '/' && path[1] == 'd' && path[2] == 'i' && path[3] == 's' && path[4] == 'k' && path[5] == '/') {
+        const char* rel = path + 6;
+        if (rel[0] == 0) return -EINVAL;
+        return diskfs_unlink(rel);
+    }
+
+    return -ENOSYS;
+}
+
 static int syscall_read_impl(int fd, void* user_buf, uint32_t len) {
     if (len > 1024 * 1024) return -EINVAL;
     if (user_range_ok(user_buf, (size_t)len) == 0) return -EFAULT;
@@ -1194,6 +1242,18 @@ static void syscall_handler(struct registers* regs) {
     if (syscall_no == SYSCALL_SIGRETURN) {
         const struct sigframe* user_frame = (const struct sigframe*)regs->ebx;
         regs->eax = (uint32_t)syscall_sigreturn_impl(regs, user_frame);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_MKDIR) {
+        const char* path = (const char*)regs->ebx;
+        regs->eax = (uint32_t)syscall_mkdir_impl(path);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_UNLINK) {
+        const char* path = (const char*)regs->ebx;
+        regs->eax = (uint32_t)syscall_unlink_impl(path);
         return;
     }
 

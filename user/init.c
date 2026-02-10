@@ -62,6 +62,9 @@ enum {
     SYSCALL_SIGACTION = 25,
     SYSCALL_SIGPROCMASK = 26,
     SYSCALL_SIGRETURN = 27,
+
+    SYSCALL_MKDIR = 28,
+    SYSCALL_UNLINK = 29,
 };
 
 enum {
@@ -389,6 +392,28 @@ static int sys_open(const char* path, uint32_t flags) {
         "int $0x80"
         : "=a"(ret)
         : "a"(SYSCALL_OPEN), "b"(path), "c"(flags)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_mkdir(const char* path) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_MKDIR), "b"(path)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_unlink(const char* path) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_UNLINK), "b"(path)
         : "memory"
     );
     return __syscall_fix(ret);
@@ -1504,6 +1529,47 @@ void _start(void) {
         sys_write(1, " next=", (uint32_t)(sizeof(" next=") - 1));
         write_int_dec(next);
         sys_write(1, " OK\n", (uint32_t)(sizeof(" OK\n") - 1));
+    }
+
+    // B3: diskfs mkdir/unlink smoke
+    {
+        int r = sys_mkdir("/disk/dir");
+        if (r < 0 && r != -17) {
+            sys_write(1, "[init] mkdir /disk/dir failed\n",
+                      (uint32_t)(sizeof("[init] mkdir /disk/dir failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int fd = sys_open("/disk/dir/file", O_CREAT | O_TRUNC);
+        if (fd < 0) {
+            sys_write(1, "[init] open /disk/dir/file failed\n",
+                      (uint32_t)(sizeof("[init] open /disk/dir/file failed\n") - 1));
+            sys_exit(1);
+        }
+        static const char msg2[] = "ok";
+        if (sys_write(fd, msg2, 2) != 2) {
+            sys_write(1, "[init] write /disk/dir/file failed\n",
+                      (uint32_t)(sizeof("[init] write /disk/dir/file failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+
+        r = sys_unlink("/disk/dir/file");
+        if (r < 0) {
+            sys_write(1, "[init] unlink /disk/dir/file failed\n",
+                      (uint32_t)(sizeof("[init] unlink /disk/dir/file failed\n") - 1));
+            sys_exit(1);
+        }
+
+        fd = sys_open("/disk/dir/file", 0);
+        if (fd >= 0) {
+            sys_write(1, "[init] unlink did not remove file\n",
+                      (uint32_t)(sizeof("[init] unlink did not remove file\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] diskfs mkdir/unlink OK\n",
+                  (uint32_t)(sizeof("[init] diskfs mkdir/unlink OK\n") - 1));
     }
 
     enum { NCHILD = 100 };
