@@ -60,6 +60,7 @@ struct process {
     struct {
         uintptr_t base;
         uint32_t  length;
+        int       shmid;       /* shm segment id, or -1 if not shm */
     } mmaps[PROCESS_MAX_MMAPS];
 
     uintptr_t heap_start;

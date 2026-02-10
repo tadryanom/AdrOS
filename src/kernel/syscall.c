@@ -1528,6 +1528,7 @@ static uintptr_t syscall_mmap_impl(uintptr_t addr, uint32_t length, uint32_t pro
 
     current_process->mmaps[slot].base = base;
     current_process->mmaps[slot].length = aligned_len;
+    current_process->mmaps[slot].shmid = -1;
 
     return base;
 }
@@ -1555,6 +1556,7 @@ static int syscall_munmap_impl(uintptr_t addr, uint32_t length) {
 
     current_process->mmaps[found].base = 0;
     current_process->mmaps[found].length = 0;
+    current_process->mmaps[found].shmid = -1;
     return 0;
 }
 
