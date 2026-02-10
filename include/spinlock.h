@@ -5,6 +5,27 @@
 
 #include <stddef.h>
 
+/*
+ * Per-architecture spin-wait hint.
+ * Reduces power consumption and avoids memory-order pipeline stalls
+ * while spinning. Essential for SMP correctness and performance.
+ */
+static inline void cpu_relax(void) {
+#if defined(__i386__) || defined(__x86_64__)
+    __asm__ volatile("pause" ::: "memory");
+#elif defined(__arm__)
+    __asm__ volatile("yield" ::: "memory");
+#elif defined(__aarch64__)
+    __asm__ volatile("yield" ::: "memory");
+#elif defined(__riscv)
+    __asm__ volatile("fence" ::: "memory");
+#elif defined(__mips__)
+    __asm__ volatile("pause" ::: "memory");
+#else
+    __sync_synchronize();
+#endif
+}
+
 typedef struct {
     volatile uint32_t locked;
 } spinlock_t;
@@ -13,17 +34,32 @@ static inline void spinlock_init(spinlock_t* l) {
     l->locked = 0;
 }
 
+static inline int spin_is_locked(spinlock_t* l) {
+    return l->locked != 0;
+}
+
+/*
+ * Test-and-test-and-set (TTAS) spinlock.
+ * __sync_lock_test_and_set compiles to:
+ *   x86:    XCHG (implicit LOCK prefix)
+ *   ARM:    LDREX/STREX
+ *   RISC-V: AMOSWAP.W.AQ
+ *   MIPS:   LL/SC
+ */
 static inline void spin_lock(spinlock_t* l) {
     while (__sync_lock_test_and_set(&l->locked, 1)) {
         while (l->locked) {
-#if defined(__i386__) || defined(__x86_64__)
-            __asm__ volatile ("pause");
-#endif
+            cpu_relax();
         }
     }
 }
 
+static inline int spin_trylock(spinlock_t* l) {
+    return __sync_lock_test_and_set(&l->locked, 1) == 0;
+}
+
 static inline void spin_unlock(spinlock_t* l) {
+    __sync_synchronize();
     __sync_lock_release(&l->locked);
 }
 
