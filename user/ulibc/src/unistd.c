@@ -98,5 +98,7 @@ void* brk(void* addr) {
 
 void _exit(int status) {
     _syscall1(SYS_EXIT, status);
-    for (;;) __asm__ volatile("hlt");
+    /* If exit syscall somehow returns, loop forever.
+     * Cannot use hlt — it's privileged and causes #GP in ring 3. */
+    for (;;) __asm__ volatile("nop");
 }
