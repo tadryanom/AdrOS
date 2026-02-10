@@ -74,6 +74,14 @@ enum {
     SYSCALL_CHDIR = 32,
     SYSCALL_GETCWD = 33,
     SYSCALL_DUP3 = 35,
+
+    SYSCALL_OPENAT = 36,
+    SYSCALL_FSTATAT = 37,
+    SYSCALL_UNLINKAT = 38,
+};
+
+enum {
+    AT_FDCWD = -100,
 };
 
 enum {
@@ -157,6 +165,39 @@ static int sys_write(int fd, const void* buf, uint32_t len) {
         "int $0x80"
         : "=a"(ret)
         : "a"(SYSCALL_WRITE), "b"(fd), "c"(buf), "d"(len)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_openat(int dirfd, const char* path, uint32_t flags, uint32_t mode) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_OPENAT), "b"(dirfd), "c"(path), "d"(flags), "S"(mode)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_fstatat(int dirfd, const char* path, struct stat* st, uint32_t flags) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_FSTATAT), "b"(dirfd), "c"(path), "d"(st), "S"(flags)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_unlinkat(int dirfd, const char* path, uint32_t flags) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_UNLINKAT), "b"(dirfd), "c"(path), "d"(flags)
         : "memory"
     );
     return __syscall_fix(ret);
@@ -1919,6 +1960,39 @@ void _start(void) {
 
         sys_write(1, "[init] chdir/getcwd OK\n",
                   (uint32_t)(sizeof("[init] chdir/getcwd OK\n") - 1));
+    }
+
+    // B8: *at() syscalls smoke (AT_FDCWD)
+    {
+        int fd = sys_openat(AT_FDCWD, "atfile", O_CREAT | O_TRUNC, 0);
+        if (fd < 0) {
+            sys_write(1, "[init] openat failed\n",
+                      (uint32_t)(sizeof("[init] openat failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+
+        struct stat st;
+        if (sys_fstatat(AT_FDCWD, "atfile", &st, 0) < 0) {
+            sys_write(1, "[init] fstatat failed\n",
+                      (uint32_t)(sizeof("[init] fstatat failed\n") - 1));
+            sys_exit(1);
+        }
+
+        if (sys_unlinkat(AT_FDCWD, "atfile", 0) < 0) {
+            sys_write(1, "[init] unlinkat failed\n",
+                      (uint32_t)(sizeof("[init] unlinkat failed\n") - 1));
+            sys_exit(1);
+        }
+
+        if (sys_stat("atfile", &st) >= 0) {
+            sys_write(1, "[init] unlinkat did not remove file\n",
+                      (uint32_t)(sizeof("[init] unlinkat did not remove file\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] *at OK\n",
+                  (uint32_t)(sizeof("[init] *at OK\n") - 1));
     }
 
     enum { NCHILD = 100 };

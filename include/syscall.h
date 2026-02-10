@@ -49,6 +49,10 @@ enum {
     SYSCALL_CHDIR = 32,
     SYSCALL_GETCWD = 33,
     SYSCALL_DUP3 = 35,
+
+    SYSCALL_OPENAT = 36,
+    SYSCALL_FSTATAT = 37,
+    SYSCALL_UNLINKAT = 38,
 };
 
 #endif

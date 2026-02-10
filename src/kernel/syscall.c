@@ -30,6 +30,10 @@ enum {
     FCNTL_F_SETFL = 4,
 };
 
+enum {
+    AT_FDCWD = -100,
+};
+
 static int path_resolve_user(const char* user_path, char* out, size_t out_sz);
 
 #if defined(__i386__)
@@ -759,6 +763,12 @@ static int syscall_stat_impl(const char* user_path, struct stat* user_st) {
     return 0;
 }
 
+static int syscall_fstatat_impl(int dirfd, const char* user_path, struct stat* user_st, uint32_t flags) {
+    (void)flags;
+    if (dirfd != AT_FDCWD) return -ENOSYS;
+    return syscall_stat_impl(user_path, user_st);
+}
+
 static int syscall_fstat_impl(int fd, struct stat* user_st) {
     if (!user_st) return -EFAULT;
     if (user_range_ok(user_st, sizeof(*user_st)) == 0) return -EFAULT;
@@ -837,6 +847,12 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
         return -EMFILE;
     }
     return fd;
+}
+
+static int syscall_openat_impl(int dirfd, const char* user_path, uint32_t flags, uint32_t mode) {
+    (void)mode;
+    if (dirfd != AT_FDCWD) return -ENOSYS;
+    return syscall_open_impl(user_path, flags);
 }
 
 static int syscall_fcntl_impl(int fd, int cmd, uint32_t arg) {
@@ -1027,6 +1043,12 @@ static int syscall_unlink_impl(const char* user_path) {
     }
 
     return -ENOSYS;
+}
+
+static int syscall_unlinkat_impl(int dirfd, const char* user_path, uint32_t flags) {
+    (void)flags;
+    if (dirfd != AT_FDCWD) return -ENOSYS;
+    return syscall_unlink_impl(user_path);
 }
 
 static int syscall_read_impl(int fd, void* user_buf, uint32_t len) {
@@ -1286,6 +1308,15 @@ static void syscall_handler(struct registers* regs) {
         return;
     }
 
+    if (syscall_no == SYSCALL_OPENAT) {
+        int dirfd = (int)regs->ebx;
+        const char* path = (const char*)regs->ecx;
+        uint32_t flags = (uint32_t)regs->edx;
+        uint32_t mode = (uint32_t)regs->esi;
+        regs->eax = (uint32_t)syscall_openat_impl(dirfd, path, flags, mode);
+        return;
+    }
+
     if (syscall_no == SYSCALL_CHDIR) {
         const char* path = (const char*)regs->ebx;
         regs->eax = (uint32_t)syscall_chdir_impl(path);
@@ -1381,8 +1412,17 @@ static void syscall_handler(struct registers* regs) {
 
     if (syscall_no == SYSCALL_STAT) {
         const char* path = (const char*)regs->ebx;
-        struct stat* st = (struct stat*)regs->ecx;
-        regs->eax = (uint32_t)syscall_stat_impl(path, st);
+        struct stat* user_st = (struct stat*)regs->ecx;
+        regs->eax = (uint32_t)syscall_stat_impl(path, user_st);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_FSTATAT) {
+        int dirfd = (int)regs->ebx;
+        const char* path = (const char*)regs->ecx;
+        struct stat* user_st = (struct stat*)regs->edx;
+        uint32_t flags = (uint32_t)regs->esi;
+        regs->eax = (uint32_t)syscall_fstatat_impl(dirfd, path, user_st, flags);
         return;
     }
 
@@ -1522,6 +1562,14 @@ static void syscall_handler(struct registers* regs) {
     if (syscall_no == SYSCALL_UNLINK) {
         const char* path = (const char*)regs->ebx;
         regs->eax = (uint32_t)syscall_unlink_impl(path);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_UNLINKAT) {
+        int dirfd = (int)regs->ebx;
+        const char* path = (const char*)regs->ecx;
+        uint32_t flags = (uint32_t)regs->edx;
+        regs->eax = (uint32_t)syscall_unlinkat_impl(dirfd, path, flags);
         return;
     }
 
