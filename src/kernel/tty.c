@@ -17,6 +17,7 @@
 #include "errno.h"
 
 #include "hal/cpu.h"
+#include "utils.h"
 
 #define TTY_LINE_MAX 256
 #define TTY_CANON_BUF 1024
