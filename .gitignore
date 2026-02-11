@@ -36,3 +36,4 @@ supplementary-material
 .vscode/
 *.swp
 *~
+third_party/
