@@ -47,6 +47,10 @@ ifeq ($(ARCH),x86)
     USER_ELF := user/init.elf
     ECHO_ELF := user/echo.elf
     SH_ELF := user/sh.elf
+    CAT_ELF := user/cat.elf
+    LS_ELF := user/ls.elf
+    MKDIR_ELF := user/mkdir.elf
+    RM_ELF := user/rm.elf
     INITRD_IMG := initrd.img
     MKINITRD := tools/mkinitrd
 endif
@@ -134,8 +138,20 @@ $(ECHO_ELF): user/echo.c user/linker.ld
 $(SH_ELF): user/sh.c user/linker.ld
 	@i686-elf-gcc -m32 -I include -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(SH_ELF) user/sh.c user/errno.c
 
-$(INITRD_IMG): $(MKINITRD) $(USER_ELF) $(ECHO_ELF) $(SH_ELF)
-	@./$(MKINITRD) $(INITRD_IMG) $(USER_ELF):bin/init.elf $(ECHO_ELF):bin/echo.elf $(SH_ELF):bin/sh
+$(CAT_ELF): user/cat.c user/linker.ld
+	@i686-elf-gcc -m32 -I include -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(CAT_ELF) user/cat.c user/errno.c
+
+$(LS_ELF): user/ls.c user/linker.ld
+	@i686-elf-gcc -m32 -I include -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(LS_ELF) user/ls.c user/errno.c
+
+$(MKDIR_ELF): user/mkdir.c user/linker.ld
+	@i686-elf-gcc -m32 -I include -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(MKDIR_ELF) user/mkdir.c user/errno.c
+
+$(RM_ELF): user/rm.c user/linker.ld
+	@i686-elf-gcc -m32 -I include -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(RM_ELF) user/rm.c user/errno.c
+
+$(INITRD_IMG): $(MKINITRD) $(USER_ELF) $(ECHO_ELF) $(SH_ELF) $(CAT_ELF) $(LS_ELF) $(MKDIR_ELF) $(RM_ELF)
+	@./$(MKINITRD) $(INITRD_IMG) $(USER_ELF):bin/init.elf $(ECHO_ELF):bin/echo.elf $(SH_ELF):bin/sh $(CAT_ELF):bin/cat $(LS_ELF):bin/ls $(MKDIR_ELF):bin/mkdir $(RM_ELF):bin/rm
 
 run: iso
 	@rm -f serial.log qemu.log
