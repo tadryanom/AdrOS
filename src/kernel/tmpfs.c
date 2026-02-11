@@ -313,3 +313,40 @@ fs_node_t* tmpfs_create_file(fs_node_t* root_dir, const char* path, const uint8_
     tmpfs_child_add(cur, f);
     return &f->vfs;
 }
+
+int tmpfs_create_symlink(fs_node_t* root_dir, const char* link_path, const char* target) {
+    if (!root_dir || root_dir->flags != FS_DIRECTORY) return -ENOTDIR;
+    if (!link_path || !target) return -EINVAL;
+
+    struct tmpfs_node* cur = (struct tmpfs_node*)root_dir;
+    const char* p = link_path;
+    char part[128];
+    char leaf[128];
+    leaf[0] = 0;
+
+    while (tmpfs_split_next(&p, part, sizeof(part))) {
+        if (*p == 0) {
+            strcpy(leaf, part);
+            break;
+        }
+        struct tmpfs_node* next = tmpfs_child_ensure_dir(cur, part);
+        if (!next) return -ENOMEM;
+        cur = next;
+    }
+
+    if (leaf[0] == 0) return -EINVAL;
+    if (tmpfs_child_find(cur, leaf)) return -EEXIST;
+
+    struct tmpfs_node* ln = tmpfs_node_alloc(leaf, FS_SYMLINK);
+    if (!ln) return -ENOMEM;
+
+    strcpy(ln->vfs.symlink_target, target);
+    ln->vfs.length = (uint32_t)strlen(target);
+    ln->vfs.read = 0;
+    ln->vfs.write = 0;
+    ln->vfs.finddir = 0;
+    ln->vfs.readdir = 0;
+
+    tmpfs_child_add(cur, ln);
+    return 0;
+}

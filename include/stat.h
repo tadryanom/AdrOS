@@ -7,6 +7,7 @@
 #define S_IFREG 0100000
 #define S_IFDIR 0040000
 #define S_IFCHR 0020000
+#define S_IFLNK 0120000
 
 #define S_IRWXU 00700
 #define S_IRUSR 00400
