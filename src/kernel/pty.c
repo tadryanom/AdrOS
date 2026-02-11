@@ -2,6 +2,7 @@
 
 #include "errno.h"
 #include "process.h"
+#include "waitqueue.h"
 #include "spinlock.h"
 #include "uaccess.h"
 #include "utils.h"
@@ -11,7 +12,6 @@
 #include <stddef.h>
 
 #define PTY_BUF_CAP 1024
-#define PTY_WAITQ_MAX 16
 
 enum {
     SIGTTIN = 21,
@@ -32,13 +32,8 @@ struct pty_pair {
     uint32_t s2m_head;
     uint32_t s2m_tail;
 
-    struct process* m2s_waitq[PTY_WAITQ_MAX];
-    uint32_t m2s_wq_head;
-    uint32_t m2s_wq_tail;
-
-    struct process* s2m_waitq[PTY_WAITQ_MAX];
-    uint32_t s2m_wq_head;
-    uint32_t s2m_wq_tail;
+    waitqueue_t m2s_wq;
+    waitqueue_t s2m_wq;
 
     uint32_t session_id;
     uint32_t fg_pgrp;
@@ -77,28 +72,6 @@ static int rb_pop(uint8_t* buf, uint32_t* head, uint32_t* tail, uint8_t* out) {
     return 1;
 }
 
-static int waitq_push(struct process** q, uint32_t* head, uint32_t* tail, struct process* p) {
-    uint32_t next = (*head + 1U) % PTY_WAITQ_MAX;
-    if (next == *tail) return -1;
-    q[*head] = p;
-    *head = next;
-    return 0;
-}
-
-static struct process* waitq_pop(struct process** q, uint32_t* head, uint32_t* tail) {
-    if (*head == *tail) return NULL;
-    struct process* p = q[*tail];
-    *tail = (*tail + 1U) % PTY_WAITQ_MAX;
-    return p;
-}
-
-static void waitq_wake_one(struct process** q, uint32_t* head, uint32_t* tail) {
-    struct process* p = waitq_pop(q, head, tail);
-    if (p && p->state == PROCESS_BLOCKED) {
-        p->state = PROCESS_READY;
-        sched_enqueue_ready(p);
-    }
-}
 
 static uint32_t pty_master_read_fn(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer);
 static uint32_t pty_master_write_fn(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer);
@@ -248,7 +221,7 @@ int pty_master_read_idx(int idx, void* kbuf, uint32_t len) {
         }
 
         if (current_process) {
-            if (waitq_push(p->s2m_waitq, &p->s2m_wq_head, &p->s2m_wq_tail, current_process) == 0) {
+            if (wq_push(&p->s2m_wq, current_process) == 0) {
                 current_process->state = PROCESS_BLOCKED;
             }
         }
@@ -292,7 +265,7 @@ int pty_master_write_idx(int idx, const void* kbuf, uint32_t len) {
     }
 
     if (to_write) {
-        waitq_wake_one(p->m2s_waitq, &p->m2s_wq_head, &p->m2s_wq_tail);
+        wq_wake_one(&p->m2s_wq);
     }
 
     spin_unlock_irqrestore(&pty_lock, flags);
@@ -324,7 +297,7 @@ int pty_slave_read_idx(int idx, void* kbuf, uint32_t len) {
         }
 
         if (current_process) {
-            if (waitq_push(p->m2s_waitq, &p->m2s_wq_head, &p->m2s_wq_tail, current_process) == 0) {
+            if (wq_push(&p->m2s_wq, current_process) == 0) {
                 current_process->state = PROCESS_BLOCKED;
             }
         }
@@ -354,7 +327,7 @@ int pty_slave_write_idx(int idx, const void* kbuf, uint32_t len) {
     }
 
     if (to_write) {
-        waitq_wake_one(p->s2m_waitq, &p->s2m_wq_head, &p->s2m_wq_tail);
+        wq_wake_one(&p->s2m_wq);
     }
 
     spin_unlock_irqrestore(&pty_lock, flags);
