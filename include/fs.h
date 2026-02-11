@@ -8,6 +8,7 @@
 #define FS_DIRECTORY   0x02
 #define FS_CHARDEVICE  0x03
 #define FS_BLOCKDEVICE 0x04
+#define FS_SYMLINK     0x05
 
 typedef struct fs_node {
     char name[128];
@@ -17,6 +18,7 @@ typedef struct fs_node {
     uint32_t uid;
     uint32_t gid;
     uint32_t mode;
+    char symlink_target[128];
     
     // Function pointers for operations (Polymorphism in C)
     uint32_t (*read)(struct fs_node* node, uint32_t offset, uint32_t size, uint8_t* buffer);

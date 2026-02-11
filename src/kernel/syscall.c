@@ -11,6 +11,7 @@
 #include "tty.h"
 #include "pty.h"
 #include "diskfs.h"
+#include "tmpfs.h"
 
 #include "errno.h"
 #include "shm.h"
@@ -533,6 +534,7 @@ static int stat_from_node(const fs_node_t* node, struct stat* st) {
     uint32_t mode = node->mode & 07777;
     if (node->flags == FS_DIRECTORY) mode |= S_IFDIR;
     else if (node->flags == FS_CHARDEVICE) mode |= S_IFCHR;
+    else if (node->flags == FS_SYMLINK) mode |= S_IFLNK;
     else mode |= S_IFREG;
     if ((mode & 07777) == 0) mode |= 0755;
     st->st_mode = mode;
@@ -1609,6 +1611,85 @@ static uintptr_t syscall_brk_impl(uintptr_t addr) {
     return addr;
 }
 
+static int syscall_symlink_impl(const char* user_target, const char* user_linkpath) {
+    if (!user_target || !user_linkpath) return -EFAULT;
+
+    char target[128], linkpath[128];
+    if (copy_from_user(target, user_target, sizeof(target)) < 0) return -EFAULT;
+    target[sizeof(target) - 1] = 0;
+
+    int prc = path_resolve_user(user_linkpath, linkpath, sizeof(linkpath));
+    if (prc < 0) return prc;
+
+    /* Find parent directory */
+    char parent[128];
+    char leaf[128];
+    strcpy(parent, linkpath);
+    char* last_slash = NULL;
+    for (char* p = parent; *p; p++) {
+        if (*p == '/') last_slash = p;
+    }
+    if (!last_slash) return -EINVAL;
+    if (last_slash == parent) {
+        parent[1] = 0;
+        strcpy(leaf, linkpath + 1);
+    } else {
+        *last_slash = 0;
+        strcpy(leaf, last_slash + 1);
+    }
+    if (leaf[0] == 0) return -EINVAL;
+
+    fs_node_t* dir = vfs_lookup(parent);
+    if (!dir || dir->flags != FS_DIRECTORY) return -ENOENT;
+
+    return tmpfs_create_symlink(dir, leaf, target);
+}
+
+static int syscall_readlink_impl(const char* user_path, char* user_buf, uint32_t bufsz) {
+    if (!user_path || !user_buf) return -EFAULT;
+    if (bufsz == 0) return -EINVAL;
+    if (user_range_ok(user_buf, (size_t)bufsz) == 0) return -EFAULT;
+
+    char path[128];
+    int prc = path_resolve_user(user_path, path, sizeof(path));
+    if (prc < 0) return prc;
+
+    /* readlink must NOT follow the final symlink — look up parent + finddir */
+    char parent[128];
+    char leaf[128];
+    strcpy(parent, path);
+    char* last_slash = NULL;
+    for (char* p = parent; *p; p++) {
+        if (*p == '/') last_slash = p;
+    }
+    if (!last_slash) return -EINVAL;
+    if (last_slash == parent) {
+        parent[1] = 0;
+        strcpy(leaf, path + 1);
+    } else {
+        *last_slash = 0;
+        strcpy(leaf, last_slash + 1);
+    }
+
+    fs_node_t* dir = vfs_lookup(parent);
+    if (!dir || !dir->finddir) return -ENOENT;
+
+    fs_node_t* node = dir->finddir(dir, leaf);
+    if (!node) return -ENOENT;
+    if (node->flags != FS_SYMLINK) return -EINVAL;
+
+    uint32_t len = (uint32_t)strlen(node->symlink_target);
+    if (len > bufsz) len = bufsz;
+    if (copy_to_user(user_buf, node->symlink_target, len) < 0) return -EFAULT;
+    return (int)len;
+}
+
+static int syscall_link_impl(const char* user_oldpath, const char* user_newpath) {
+    (void)user_oldpath;
+    (void)user_newpath;
+    return -ENOSYS;
+}
+
 static int syscall_chmod_impl(const char* user_path, uint32_t mode) {
     if (!user_path) return -EFAULT;
 
@@ -2017,6 +2098,28 @@ void syscall_handler(struct registers* regs) {
         int cmd = (int)regs->ecx;
         struct shmid_ds* buf = (struct shmid_ds*)regs->edx;
         regs->eax = (uint32_t)shm_ctl(shmid, cmd, buf);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_LINK) {
+        const char* oldpath = (const char*)regs->ebx;
+        const char* newpath = (const char*)regs->ecx;
+        regs->eax = (uint32_t)syscall_link_impl(oldpath, newpath);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SYMLINK) {
+        const char* target = (const char*)regs->ebx;
+        const char* linkpath = (const char*)regs->ecx;
+        regs->eax = (uint32_t)syscall_symlink_impl(target, linkpath);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_READLINK) {
+        const char* path = (const char*)regs->ebx;
+        char* buf = (char*)regs->ecx;
+        uint32_t bufsz = regs->edx;
+        regs->eax = (uint32_t)syscall_readlink_impl(path, buf, bufsz);
         return;
     }
 

@@ -91,8 +91,15 @@ void vfs_close(fs_node_t* node) {
         node->close(node);
 }
 
+static fs_node_t* vfs_lookup_depth(const char* path, int depth);
+
 fs_node_t* vfs_lookup(const char* path) {
+    return vfs_lookup_depth(path, 0);
+}
+
+static fs_node_t* vfs_lookup_depth(const char* path, int depth) {
     if (!path || !fs_root) return NULL;
+    if (depth > 8) return NULL;
 
     fs_node_t* base = fs_root;
     const char* rel = path;
@@ -137,6 +144,11 @@ fs_node_t* vfs_lookup(const char* path) {
         if (!cur || !cur->finddir) return NULL;
         cur = cur->finddir(cur, part);
         if (!cur) return NULL;
+
+        if (cur->flags == FS_SYMLINK && cur->symlink_target[0]) {
+            cur = vfs_lookup_depth(cur->symlink_target, depth + 1);
+            if (!cur) return NULL;
+        }
     }
 
     return cur;
