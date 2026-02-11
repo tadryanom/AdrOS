@@ -46,6 +46,7 @@ ifeq ($(ARCH),x86)
 
     USER_ELF := user/init.elf
     ECHO_ELF := user/echo.elf
+    SH_ELF := user/sh.elf
     INITRD_IMG := initrd.img
     MKINITRD := tools/mkinitrd
 endif
@@ -130,8 +131,11 @@ $(USER_ELF): user/init.c user/linker.ld
 $(ECHO_ELF): user/echo.c user/linker.ld
 	@i686-elf-gcc -m32 -I include -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(ECHO_ELF) user/echo.c user/errno.c
 
-$(INITRD_IMG): $(MKINITRD) $(USER_ELF) $(ECHO_ELF)
-	@./$(MKINITRD) $(INITRD_IMG) $(USER_ELF):bin/init.elf $(ECHO_ELF):bin/echo.elf
+$(SH_ELF): user/sh.c user/linker.ld
+	@i686-elf-gcc -m32 -I include -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(SH_ELF) user/sh.c user/errno.c
+
+$(INITRD_IMG): $(MKINITRD) $(USER_ELF) $(ECHO_ELF) $(SH_ELF)
+	@./$(MKINITRD) $(INITRD_IMG) $(USER_ELF):bin/init.elf $(ECHO_ELF):bin/echo.elf $(SH_ELF):bin/sh
 
 run: iso
 	@rm -f serial.log qemu.log
