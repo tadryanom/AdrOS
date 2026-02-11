@@ -2148,6 +2148,12 @@ void syscall_handler(struct registers* regs) {
         return;
     }
 
+    if (syscall_no == SYSCALL_SET_THREAD_AREA) {
+        /* Stub: will be implemented when clone/threads are added */
+        regs->eax = (uint32_t)-ENOSYS;
+        return;
+    }
+
     regs->eax = (uint32_t)-ENOSYS;
 }
 

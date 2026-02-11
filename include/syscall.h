@@ -76,6 +76,8 @@ enum {
     SYSCALL_LINK     = 54,
     SYSCALL_SYMLINK  = 55,
     SYSCALL_READLINK = 56,
+
+    SYSCALL_SET_THREAD_AREA = 57,
 };
 
 #endif
