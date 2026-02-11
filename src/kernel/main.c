@@ -32,6 +32,7 @@
 #include "hal/cpu.h"
 #include "hal/cpu_features.h"
 #include "shm.h"
+#include "net.h"
 
 
 /* Check if the compiler thinks we are targeting the wrong operating system. */
@@ -88,6 +89,7 @@ done:
 
     // Infinite loop acting as Idle Task
     for(;;) {
+        net_poll();
         hal_cpu_idle();
     }
 }
