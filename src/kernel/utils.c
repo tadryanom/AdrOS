@@ -40,6 +40,27 @@ void* memcpy(void* dst, const void* src, size_t n) {
     return dst;
 }
 
+void* memmove(void* dst, const void* src, size_t n) {
+    unsigned char* d = dst;
+    const unsigned char* s = src;
+    if (d < s) {
+        while (n--) *d++ = *s++;
+    } else {
+        d += n; s += n;
+        while (n--) *--d = *--s;
+    }
+    return dst;
+}
+
+int memcmp(const void* a, const void* b, size_t n) {
+    const unsigned char* pa = a;
+    const unsigned char* pb = b;
+    for (size_t i = 0; i < n; i++) {
+        if (pa[i] != pb[i]) return (int)pa[i] - (int)pb[i];
+    }
+    return 0;
+}
+
 char* strcpy(char* dest, const char* src) {
     char* saved = dest;
     while (*src) {
@@ -105,6 +126,57 @@ int atoi(const char* str) {
     }
   
     return sign * res;
+}
+
+char* strncpy(char* dest, const char* src, size_t n) {
+    size_t i;
+    for (i = 0; i < n && src[i]; i++) dest[i] = src[i];
+    for (; i < n; i++) dest[i] = '\0';
+    return dest;
+}
+
+long strtol(const char* nptr, char** endptr, int base) {
+    long result = 0;
+    int neg = 0;
+    const char* p = nptr;
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p == '-') { neg = 1; p++; }
+    else if (*p == '+') p++;
+    if (base == 0) {
+        if (*p == '0' && (p[1] == 'x' || p[1] == 'X')) { base = 16; p += 2; }
+        else if (*p == '0') { base = 8; p++; }
+        else base = 10;
+    } else if (base == 16 && *p == '0' && (p[1] == 'x' || p[1] == 'X')) {
+        p += 2;
+    }
+    while (*p) {
+        int digit;
+        if (*p >= '0' && *p <= '9') digit = *p - '0';
+        else if (*p >= 'a' && *p <= 'f') digit = *p - 'a' + 10;
+        else if (*p >= 'A' && *p <= 'F') digit = *p - 'A' + 10;
+        else break;
+        if (digit >= base) break;
+        result = result * base + digit;
+        p++;
+    }
+    if (endptr) *endptr = (char*)p;
+    return neg ? -result : result;
+}
+
+/* GCC fortified memcpy — use builtin to avoid infinite recursion */
+void* __memcpy_chk(void* dst, const void* src, size_t n, size_t dst_len) {
+    (void)dst_len;
+    char* d = dst;
+    const char* s = src;
+    while (n--) *d++ = *s++;
+    return dst;
+}
+
+/* GCC ctype locale stub — lwIP ip4_addr_c uses isdigit/isxdigit */
+static const unsigned short _ctype_table[384] = {0};
+static const unsigned short* _ctype_ptr = &_ctype_table[128];
+const unsigned short** __ctype_b_loc(void) {
+    return (const unsigned short**)&_ctype_ptr;
 }
 
 void itoa_hex(uint32_t num, char* str) {

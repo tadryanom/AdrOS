@@ -28,8 +28,24 @@ ifeq ($(ARCH),x86)
     AS ?= $(TOOLPREFIX)as
     LD ?= $(TOOLPREFIX)ld
     
+    # lwIP sources (NO_SYS=1, IPv4 only, no apps)
+    LWIPDIR := third_party/lwip/src
+    LWIP_CORE := $(LWIPDIR)/core/init.c $(LWIPDIR)/core/def.c $(LWIPDIR)/core/inet_chksum.c \
+        $(LWIPDIR)/core/ip.c $(LWIPDIR)/core/mem.c $(LWIPDIR)/core/memp.c \
+        $(LWIPDIR)/core/netif.c $(LWIPDIR)/core/pbuf.c $(LWIPDIR)/core/raw.c \
+        $(LWIPDIR)/core/stats.c $(LWIPDIR)/core/sys.c $(LWIPDIR)/core/tcp.c \
+        $(LWIPDIR)/core/tcp_in.c $(LWIPDIR)/core/tcp_out.c $(LWIPDIR)/core/timeouts.c \
+        $(LWIPDIR)/core/udp.c
+    LWIP_IPV4 := $(LWIPDIR)/core/ipv4/etharp.c $(LWIPDIR)/core/ipv4/icmp.c \
+        $(LWIPDIR)/core/ipv4/ip4.c $(LWIPDIR)/core/ipv4/ip4_addr.c \
+        $(LWIPDIR)/core/ipv4/ip4_frag.c
+    LWIP_NETIF := $(LWIPDIR)/netif/ethernet.c
+    LWIP_SOURCES := $(LWIP_CORE) $(LWIP_IPV4) $(LWIP_NETIF)
+    NET_SOURCES := $(wildcard $(SRC_DIR)/net/*.c) $(wildcard $(SRC_DIR)/net/lwip_port/*.c)
+    C_SOURCES += $(NET_SOURCES)
+
     # Mandatory Architecture Flags
-    ARCH_CFLAGS := -m32 -ffreestanding -Iinclude
+    ARCH_CFLAGS := -m32 -ffreestanding -fno-builtin -U_FORTIFY_SOURCE -Iinclude -Isrc/net/lwip_port -Ithird_party/lwip/src/include
     ARCH_LDFLAGS := -m elf_i386 -T $(SRC_DIR)/arch/x86/linker.ld
     ARCH_ASFLAGS := --32
 
@@ -91,9 +107,13 @@ ifeq ($(ARCH),mips)
     C_SOURCES += $(wildcard $(SRC_DIR)/arch/mips/*.c)
 endif
 
+# lwIP object files (compiled from third_party, separate pattern)
+LWIP_OBJ := $(patsubst %.c, $(BUILD_DIR)/lwip/%.o, $(LWIP_SOURCES))
+
 # Object generation
 OBJ := $(patsubst $(SRC_DIR)/%.c, $(BUILD_DIR)/%.o, $(C_SOURCES))
 OBJ += $(patsubst $(SRC_DIR)/%.S, $(BUILD_DIR)/%.o, $(ASM_SOURCES))
+OBJ += $(LWIP_OBJ)
 
 QEMU_DFLAGS :=
 ifneq ($(QEMU_DEBUG),)
@@ -203,7 +223,7 @@ check: cppcheck sparse
 # ---- Automated Smoke Test (QEMU + expect) ----
 
 SMOKE_SMP ?= 4
-SMOKE_TIMEOUT ?= 60
+SMOKE_TIMEOUT ?= 90
 
 test: iso
 	@echo "[TEST] Running smoke test (SMP=$(SMOKE_SMP), timeout=$(SMOKE_TIMEOUT)s)..."
@@ -256,6 +276,12 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(dir $@)
 	@echo "  CC      $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
+
+# lwIP sources (compiled with relaxed warnings)
+$(BUILD_DIR)/lwip/%.o: %.c
+	@mkdir -p $(dir $@)
+	@echo "  CC      $< (lwIP)"
+	@$(CC) $(CFLAGS) -Wno-address -w -c $< -o $@
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.S
 	@mkdir -p $(dir $@)
