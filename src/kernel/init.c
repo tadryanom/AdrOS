@@ -13,6 +13,7 @@
 #include "diskfs.h"
 #include "procfs.h"
 #include "pci.h"
+#include "e1000.h"
 #include "vbe.h"
 #include "uart_console.h"
 
@@ -69,6 +70,7 @@ int init_start(const struct boot_info* bi) {
     }
 
     pci_init();
+    e1000_init();
     vbe_init(bi);
 
     tty_init();

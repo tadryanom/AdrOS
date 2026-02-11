@@ -103,6 +103,7 @@ int arch_platform_setup(const struct boot_info* bi) {
              * IRQ 14 (ATA primary) -> IDT vector 46 */
             ioapic_route_irq(0,  32, (uint8_t)bsp_id);
             ioapic_route_irq(1,  33, (uint8_t)bsp_id);
+            ioapic_route_irq(11, 43, (uint8_t)bsp_id); /* E1000 NIC */
             ioapic_route_irq(14, 46, (uint8_t)bsp_id);
 
             /* Now that IOAPIC routes are live, disable the legacy PIC.
