@@ -14,6 +14,9 @@ typedef struct fs_node {
     uint32_t flags;
     uint32_t inode;
     uint32_t length;
+    uint32_t uid;
+    uint32_t gid;
+    uint32_t mode;
     
     // Function pointers for operations (Polymorphism in C)
     uint32_t (*read)(struct fs_node* node, uint32_t offset, uint32_t size, uint8_t* buffer);
