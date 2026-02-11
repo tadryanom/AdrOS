@@ -34,15 +34,17 @@ int uaccess_try_recover(uintptr_t fault_addr, struct registers* regs) {
 }
 
 static int x86_user_page_writable_user(uintptr_t vaddr) {
-    volatile uint32_t* pd = (volatile uint32_t*)0xFFFFF000U;
-    volatile uint32_t* pt_base = (volatile uint32_t*)0xFFC00000U;
+    uint32_t pi = (vaddr >> 30) & 0x3;
+    uint32_t di = (vaddr >> 21) & 0x1FF;
+    uint32_t ti = (vaddr >> 12) & 0x1FF;
 
-    uint32_t pde = pd[vaddr >> 22];
+    volatile uint64_t* pd = (volatile uint64_t*)(uintptr_t)(0xFFFFC000U + pi * 0x1000U);
+    uint64_t pde = pd[di];
     if (!(pde & 0x1)) return 0;
     if (!(pde & 0x4)) return 0;
 
-    volatile uint32_t* pt = pt_base + ((vaddr >> 22) << 10);
-    uint32_t pte = pt[(vaddr >> 12) & 0x3FF];
+    volatile uint64_t* pt = (volatile uint64_t*)(uintptr_t)(0xFF800000U + pi * 0x200000U + di * 0x1000U);
+    uint64_t pte = pt[ti];
     if (!(pte & 0x1)) return 0;
     if (!(pte & 0x4)) return 0;
     if (!(pte & 0x2)) return 0;
@@ -50,15 +52,17 @@ static int x86_user_page_writable_user(uintptr_t vaddr) {
 }
 
 static int x86_user_page_present_and_user(uintptr_t vaddr) {
-    volatile uint32_t* pd = (volatile uint32_t*)0xFFFFF000U;
-    volatile uint32_t* pt_base = (volatile uint32_t*)0xFFC00000U;
+    uint32_t pi = (vaddr >> 30) & 0x3;
+    uint32_t di = (vaddr >> 21) & 0x1FF;
+    uint32_t ti = (vaddr >> 12) & 0x1FF;
 
-    uint32_t pde = pd[vaddr >> 22];
+    volatile uint64_t* pd = (volatile uint64_t*)(uintptr_t)(0xFFFFC000U + pi * 0x1000U);
+    uint64_t pde = pd[di];
     if (!(pde & 0x1)) return 0;
     if (!(pde & 0x4)) return 0;
 
-    volatile uint32_t* pt = pt_base + ((vaddr >> 22) << 10);
-    uint32_t pte = pt[(vaddr >> 12) & 0x3FF];
+    volatile uint64_t* pt = (volatile uint64_t*)(uintptr_t)(0xFF800000U + pi * 0x200000U + di * 0x1000U);
+    uint64_t pte = pt[ti];
     if (!(pte & 0x1)) return 0;
     if (!(pte & 0x4)) return 0;
 

@@ -71,14 +71,15 @@ static int elf32_map_user_range(uintptr_t as, uintptr_t vaddr, size_t len, uint3
     vmm_as_activate(as);
 
     for (uintptr_t va = start_page;; va += 0x1000) {
-        const uint32_t pdi = (uint32_t)(va >> 22);
-        const uint32_t pti = (uint32_t)((va >> 12) & 0x03FF);
+        const uint32_t pi = (uint32_t)((va >> 30) & 0x3);
+        const uint32_t di = (uint32_t)((va >> 21) & 0x1FF);
+        const uint32_t ti = (uint32_t)((va >> 12) & 0x1FF);
 
-        volatile uint32_t* pd = (volatile uint32_t*)0xFFFFF000U;
+        volatile uint64_t* pd = (volatile uint64_t*)(uintptr_t)(0xFFFFC000U + pi * 0x1000U);
         int already_mapped = 0;
-        if ((pd[pdi] & 1U) != 0U) {
-            volatile uint32_t* pt = (volatile uint32_t*)0xFFC00000U + ((uintptr_t)pdi << 10);
-            if ((pt[pti] & 1U) != 0U) {
+        if ((pd[di] & 1ULL) != 0ULL) {
+            volatile uint64_t* pt = (volatile uint64_t*)(uintptr_t)(0xFF800000U + pi * 0x200000U + di * 0x1000U);
+            if ((pt[ti] & 1ULL) != 0ULL) {
                 already_mapped = 1;
             }
         }

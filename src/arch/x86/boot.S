@@ -53,76 +53,156 @@ _start:
     outb %al, $0x21
     outb %al, $0xA1
 
-    /* 
-     * SETUP PAGING (Manually)
-     * We need to map:
-     * 1. Virt 0x00000000 -> Phys 0x00000000 (Identity, so we don't crash now)
-     * 2. Virt 0xC0000000 -> Phys 0x00000000 (Kernel Space)
-     */
-
     /*
-     * Map 0-16MB using 4 page tables.
-     * With Multiboot2 info copied in arch_early_setup and initrd mapped via VMM,
-     * we only need a small identity window for early bring-up.
+     * SETUP PAE PAGING
+     * PAE uses 3-level page tables:
+     *   PDPT (4 entries x 8 bytes = 32 bytes, 32-byte aligned)
+     *   PD[0..3] (512 entries x 8 bytes = 4KB each)
+     *   PT (512 entries x 8 bytes = 4KB each)
+     *
+     * Address split: bits 31:30 = PDPT, bits 29:21 = PD, bits 20:12 = PT
+     *
+     * We map 0-16MB identity + higher-half using 8 page tables (2MB each).
+     * PD[0] entries 0..7 = identity map (PT boot_pt0..boot_pt7)
+     * PD[3] entries 0..7 = higher-half map (same PTs)
+     * Recursive: PD[3][508..511] point to PD[0..3]
      */
 
-    /* Fill PTs (boot_pt0..boot_pt3) */
-    mov $boot_pt0, %edi
-    sub $KERNEL_VIRT_BASE, %edi /* Physical address of PT0 */
-    xor %ebx, %ebx              /* pt_index = 0 */
-
-1:
-    /* Fill current PT with 0x003 | (pt_index*4MB + i*4KB) */
-    mov %ebx, %eax
-    shl $22, %eax               /* base = pt_index * 4MB */
-    mov %eax, %esi
-
-    mov $1024, %ecx
-2:
-    mov %esi, %edx
-    or $3, %edx
-    mov %edx, (%edi)
-    add $4096, %esi
-    add $4, %edi
-    loop 2b
-
-    inc %ebx
-    cmp $4, %ebx
-    jne 1b
-
-    /* 3. Get Physical Address of Page Directory */
-    mov $boot_pd, %edi
+    /* --- Zero out all paging structures --- */
+    mov $boot_pdpt, %edi
     sub $KERNEL_VIRT_BASE, %edi
+    xor %eax, %eax
+    mov $(32 + 4*4096 + 8*4096), %ecx  /* PDPT + 4 PDs + 8 PTs in bytes */
+    shr $2, %ecx                        /* /4 for stosl */
+    rep stosl
 
-    /* Link PT0..PT3 into PD for both identity and higher-half mapping */
+    /* --- Fill page tables (boot_pt0..boot_pt7) with 64-bit PAE entries --- */
+    /* Each PT has 512 entries x 8 bytes. 8 PTs cover 8*512*4KB = 16MB. */
+    mov $boot_pt0, %edi
+    sub $KERNEL_VIRT_BASE, %edi
+    xor %esi, %esi              /* physical address = 0 */
+    mov $(512*8), %ecx          /* 8 PTs x 512 entries = 4096 entries */
+1:
+    mov %esi, %eax
+    or $0x03, %eax              /* PRESENT | RW */
+    mov %eax, (%edi)            /* low 32 bits */
+    movl $0, 4(%edi)            /* high 32 bits = 0 */
+    add $4096, %esi
+    add $8, %edi
+    dec %ecx
+    jnz 1b
+
+    /* --- Set up PD[0]: identity map entries 0..7 -> boot_pt0..boot_pt7 --- */
+    mov $boot_pd0, %edi
+    sub $KERNEL_VIRT_BASE, %edi
     mov $boot_pt0, %edx
-    sub $KERNEL_VIRT_BASE, %edx /* pt_phys = physical address of PT0 */
-    mov $0, %ebx                /* i = 0 */
+    sub $KERNEL_VIRT_BASE, %edx
+    mov $8, %ecx
+2:
+    mov %edx, %eax
+    or $0x03, %eax              /* PRESENT | RW */
+    mov %eax, (%edi)
+    movl $0, 4(%edi)
+    add $4096, %edx
+    add $8, %edi
+    dec %ecx
+    jnz 2b
 
+    /* --- Set up PD[3]: higher-half entries 0..7 -> boot_pt0..boot_pt7 --- */
+    mov $boot_pd3, %edi
+    sub $KERNEL_VIRT_BASE, %edi
+    mov $boot_pt0, %edx
+    sub $KERNEL_VIRT_BASE, %edx
+    mov $8, %ecx
 3:
     mov %edx, %eax
-    or $3, %eax
-    mov %eax, (%edi,%ebx,4)         /* PD[i] */
-    mov %eax, 3072(%edi,%ebx,4)     /* PD[768+i] */
+    or $0x03, %eax              /* PRESENT | RW */
+    mov %eax, (%edi)
+    movl $0, 4(%edi)
     add $4096, %edx
-    inc %ebx
-    cmp $4, %ebx
-    jne 3b
+    add $8, %edi
+    dec %ecx
+    jnz 3b
 
-    /* 6. Recursive Mapping (Optional, good for VMM later) at index 1023 */
-    mov $boot_pd, %edx
+    /* --- Recursive mapping: PD[3][508..511] -> PD[0..3] --- */
+    mov $boot_pd3, %edi
+    sub $KERNEL_VIRT_BASE, %edi
+    /* entry 508 = offset 508*8 = 4064 */
+    add $4064, %edi
+
+    mov $boot_pd0, %edx
     sub $KERNEL_VIRT_BASE, %edx
-    or $3, %edx
-    mov %edx, 4092(%edi)
+    mov %edx, %eax
+    or $0x03, %eax
+    mov %eax, (%edi)            /* PD[3][508] -> PD[0] */
+    movl $0, 4(%edi)
 
-    /* 7. Load CR3 */
-    mov $boot_pd, %ecx
+    mov $boot_pd1, %edx
+    sub $KERNEL_VIRT_BASE, %edx
+    mov %edx, %eax
+    or $0x03, %eax
+    mov %eax, 8(%edi)           /* PD[3][509] -> PD[1] */
+    movl $0, 12(%edi)
+
+    mov $boot_pd2, %edx
+    sub $KERNEL_VIRT_BASE, %edx
+    mov %edx, %eax
+    or $0x03, %eax
+    mov %eax, 16(%edi)          /* PD[3][510] -> PD[2] */
+    movl $0, 20(%edi)
+
+    mov $boot_pd3, %edx
+    sub $KERNEL_VIRT_BASE, %edx
+    mov %edx, %eax
+    or $0x03, %eax
+    mov %eax, 24(%edi)          /* PD[3][511] -> PD[3] */
+    movl $0, 28(%edi)
+
+    /* --- Set up PDPT: 4 entries -> PD[0..3] --- */
+    mov $boot_pdpt, %edi
+    sub $KERNEL_VIRT_BASE, %edi
+
+    mov $boot_pd0, %edx
+    sub $KERNEL_VIRT_BASE, %edx
+    mov %edx, %eax
+    or $0x01, %eax              /* PRESENT only (PDPT entries have limited flags) */
+    mov %eax, (%edi)
+    movl $0, 4(%edi)
+
+    mov $boot_pd1, %edx
+    sub $KERNEL_VIRT_BASE, %edx
+    mov %edx, %eax
+    or $0x01, %eax
+    mov %eax, 8(%edi)
+    movl $0, 12(%edi)
+
+    mov $boot_pd2, %edx
+    sub $KERNEL_VIRT_BASE, %edx
+    mov %edx, %eax
+    or $0x01, %eax
+    mov %eax, 16(%edi)
+    movl $0, 20(%edi)
+
+    mov $boot_pd3, %edx
+    sub $KERNEL_VIRT_BASE, %edx
+    mov %edx, %eax
+    or $0x01, %eax
+    mov %eax, 24(%edi)
+    movl $0, 28(%edi)
+
+    /* --- Enable PAE in CR4 --- */
+    mov %cr4, %ecx
+    or $0x20, %ecx              /* CR4.PAE = bit 5 */
+    mov %ecx, %cr4
+
+    /* --- Load CR3 with PDPT physical address --- */
+    mov $boot_pdpt, %ecx
     sub $KERNEL_VIRT_BASE, %ecx
     mov %ecx, %cr3
 
-    /* 8. Enable Paging (Set PG bit in CR0) */
+    /* --- Enable Paging (Set PG bit in CR0) --- */
     mov %cr0, %ecx
-    or $0x80000000, %ecx /* Bit 31 (PG) e Bit 0 (PE - Protection Enable) */
+    or $0x80000000, %ecx
     mov %ecx, %cr0
 
     /* 
@@ -169,15 +249,30 @@ higher_half_start:
 1:  hlt
     jmp 1b
 
-/* Global Paging Structures (Pre-allocated in BSS) */
+/* Global PAE Paging Structures (Pre-allocated in BSS) */
 .section .bss
+.align 32
+.global boot_pdpt
+boot_pdpt:
+    .skip 32
+
 .align 4096
-.global boot_pd
-boot_pd:
+.global boot_pd0
+boot_pd0:
     .skip 4096
+.global boot_pd1
+boot_pd1:
+    .skip 4096
+.global boot_pd2
+boot_pd2:
+    .skip 4096
+.global boot_pd3
+boot_pd3:
+    .skip 4096
+
 .global boot_pt0
 boot_pt0:
-    .skip 4096*4
+    .skip 4096*8
 
 .align 16
 .global arch_boot_args

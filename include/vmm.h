@@ -11,6 +11,7 @@
 #define VMM_FLAG_PCD      (1 << 4)  /* Page Cache Disable */
 #define VMM_FLAG_NOCACHE  (VMM_FLAG_PWT | VMM_FLAG_PCD) /* For MMIO regions */
 #define VMM_FLAG_COW      (1 << 9)  /* OS-available bit: Copy-on-Write marker */
+#define VMM_FLAG_NX       (1 << 10) /* No-Execute (PAE bit 63) */
 
 /* 
  * Initialize Virtual Memory Manager
