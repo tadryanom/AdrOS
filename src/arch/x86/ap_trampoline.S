@@ -56,7 +56,12 @@ ap_pm_entry:
     mov %ax, %gs
     mov %ax, %ss
 
-    /* Load CR3 (page directory) from data area */
+    /* Enable PAE in CR4 */
+    mov %cr4, %eax
+    or $0x20, %eax               /* CR4.PAE = bit 5 */
+    mov %eax, %cr4
+
+    /* Load CR3 (PDPT physical address) from data area */
     mov (AP_DATA_BASE + 8), %eax
     mov %eax, %cr3
 
