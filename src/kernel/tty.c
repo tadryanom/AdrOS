@@ -2,6 +2,7 @@
 
 #include "keyboard.h"
 #include "process.h"
+#include "waitqueue.h"
 #include "spinlock.h"
 #include "uart_console.h"
 #include "uaccess.h"
@@ -12,7 +13,6 @@
 
 #define TTY_LINE_MAX 256
 #define TTY_CANON_BUF 1024
-#define TTY_WAITQ_MAX 16
 
 static spinlock_t tty_lock = {0};
 
@@ -23,9 +23,7 @@ static char canon_buf[TTY_CANON_BUF];
 static uint32_t canon_head = 0;
 static uint32_t canon_tail = 0;
 
-static struct process* waitq[TTY_WAITQ_MAX];
-static uint32_t waitq_head = 0;
-static uint32_t waitq_tail = 0;
+static waitqueue_t tty_wq;
 
 static uint32_t tty_lflag = TTY_ICANON | TTY_ECHO | TTY_ISIG;
 static uint8_t tty_cc[NCCS] = {0, 0, 0, 0, 1, 0, 0, 0};
@@ -48,7 +46,6 @@ static int canon_empty(void) {
 }
 
 static uint32_t canon_count(void);
-static int waitq_push(struct process* p);
 
 int tty_write_kbuf(const void* kbuf, uint32_t len) {
     if (!kbuf) return -EFAULT;
@@ -104,7 +101,7 @@ int tty_read_kbuf(void* kbuf, uint32_t len) {
                 spin_unlock_irqrestore(&tty_lock, flags);
                 return rc;
             }
-            if (waitq_push(current_process) == 0)
+            if (wq_push(&tty_wq, current_process) == 0)
                 current_process->state = PROCESS_BLOCKED;
             spin_unlock_irqrestore(&tty_lock, flags);
             hal_cpu_enable_interrupts();
@@ -152,7 +149,7 @@ int tty_read_kbuf(void* kbuf, uint32_t len) {
             }
         }
 
-        if (waitq_push(current_process) == 0)
+        if (wq_push(&tty_wq, current_process) == 0)
             current_process->state = PROCESS_BLOCKED;
         spin_unlock_irqrestore(&tty_lock, flags);
         hal_cpu_enable_interrupts();
@@ -185,32 +182,6 @@ static void canon_push(char c) {
     canon_head = next;
 }
 
-static int waitq_empty(void) {
-    return waitq_head == waitq_tail;
-}
-
-static int waitq_push(struct process* p) {
-    uint32_t next = (waitq_head + 1U) % TTY_WAITQ_MAX;
-    if (next == waitq_tail) return -1;
-    waitq[waitq_head] = p;
-    waitq_head = next;
-    return 0;
-}
-
-static struct process* waitq_pop(void) {
-    if (waitq_empty()) return NULL;
-    struct process* p = waitq[waitq_tail];
-    waitq_tail = (waitq_tail + 1U) % TTY_WAITQ_MAX;
-    return p;
-}
-
-static void tty_wake_one(void) {
-    struct process* p = waitq_pop();
-    if (p && p->state == PROCESS_BLOCKED) {
-        p->state = PROCESS_READY;
-        sched_enqueue_ready(p);
-    }
-}
 
 enum {
     TTY_TCGETS = 0x5401,
@@ -343,7 +314,7 @@ void tty_input_char(char c) {
             canon_push(line_buf[i]);
         }
         line_len = 0;
-        tty_wake_one();
+        wq_wake_one(&tty_wq);
         spin_unlock_irqrestore(&tty_lock, flags);
         return;
     }
@@ -351,7 +322,7 @@ void tty_input_char(char c) {
     if ((lflag & TTY_ICANON) == 0) {
         if (c == '\r') c = '\n';
         canon_push(c);
-        tty_wake_one();
+        wq_wake_one(&tty_wq);
         if (lflag & TTY_ECHO) {
             uart_put_char(c);
         }
@@ -383,7 +354,7 @@ void tty_input_char(char c) {
         canon_push('\n');
         line_len = 0;
 
-        tty_wake_one();
+        wq_wake_one(&tty_wq);
         spin_unlock_irqrestore(&tty_lock, flags);
         return;
     }
@@ -408,7 +379,7 @@ void tty_init(void) {
     spinlock_init(&tty_lock);
     line_len = 0;
     canon_head = canon_tail = 0;
-    waitq_head = waitq_tail = 0;
+    wq_init(&tty_wq);
     tty_session_id = 0;
     tty_fg_pgrp = 0;
 
