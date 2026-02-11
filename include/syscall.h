@@ -82,6 +82,10 @@ enum {
     SYSCALL_CHOWN  = 51,
     SYSCALL_GETUID = 52,
     SYSCALL_GETGID = 53,
+
+    SYSCALL_LINK     = 54,
+    SYSCALL_SYMLINK  = 55,
+    SYSCALL_READLINK = 56,
 };
 
 #endif
