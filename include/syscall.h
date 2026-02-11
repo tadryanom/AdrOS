@@ -67,6 +67,11 @@ enum {
     SYSCALL_SHMAT  = 47,
     SYSCALL_SHMDT  = 48,
     SYSCALL_SHMCTL = 49,
+
+    SYSCALL_CHMOD  = 50,
+    SYSCALL_CHOWN  = 51,
+    SYSCALL_GETUID = 52,
+    SYSCALL_GETGID = 53,
 };
 
 #endif

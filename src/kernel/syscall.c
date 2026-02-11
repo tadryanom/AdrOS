@@ -527,11 +527,14 @@ static int stat_from_node(const fs_node_t* node, struct stat* st) {
     st->st_ino = node->inode;
     st->st_nlink = 1;
     st->st_size = node->length;
+    st->st_uid = node->uid;
+    st->st_gid = node->gid;
 
-    uint32_t mode = 0;
+    uint32_t mode = node->mode & 07777;
     if (node->flags == FS_DIRECTORY) mode |= S_IFDIR;
     else if (node->flags == FS_CHARDEVICE) mode |= S_IFCHR;
     else mode |= S_IFREG;
+    if ((mode & 07777) == 0) mode |= 0755;
     st->st_mode = mode;
     return 0;
 }
@@ -1606,6 +1609,35 @@ static uintptr_t syscall_brk_impl(uintptr_t addr) {
     return addr;
 }
 
+static int syscall_chmod_impl(const char* user_path, uint32_t mode) {
+    if (!user_path) return -EFAULT;
+
+    char path[128];
+    int prc = path_resolve_user(user_path, path, sizeof(path));
+    if (prc < 0) return prc;
+
+    fs_node_t* node = vfs_lookup(path);
+    if (!node) return -ENOENT;
+
+    node->mode = mode & 07777;
+    return 0;
+}
+
+static int syscall_chown_impl(const char* user_path, uint32_t uid, uint32_t gid) {
+    if (!user_path) return -EFAULT;
+
+    char path[128];
+    int prc = path_resolve_user(user_path, path, sizeof(path));
+    if (prc < 0) return prc;
+
+    fs_node_t* node = vfs_lookup(path);
+    if (!node) return -ENOENT;
+
+    node->uid = uid;
+    node->gid = gid;
+    return 0;
+}
+
 void syscall_handler(struct registers* regs) {
     uint32_t syscall_no = regs->eax;
 
@@ -1985,6 +2017,31 @@ void syscall_handler(struct registers* regs) {
         int cmd = (int)regs->ecx;
         struct shmid_ds* buf = (struct shmid_ds*)regs->edx;
         regs->eax = (uint32_t)shm_ctl(shmid, cmd, buf);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_CHMOD) {
+        const char* path = (const char*)regs->ebx;
+        uint32_t mode = regs->ecx;
+        regs->eax = (uint32_t)syscall_chmod_impl(path, mode);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_CHOWN) {
+        const char* path = (const char*)regs->ebx;
+        uint32_t uid = regs->ecx;
+        uint32_t gid = regs->edx;
+        regs->eax = (uint32_t)syscall_chown_impl(path, uid, gid);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_GETUID) {
+        regs->eax = current_process ? current_process->uid : 0;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_GETGID) {
+        regs->eax = current_process ? current_process->gid : 0;
         return;
     }
 
