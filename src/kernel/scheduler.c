@@ -844,6 +844,10 @@ void process_wake_check(uint32_t current_tick) {
                 rq_enqueue(rq_active, iter);
             }
         }
+        if (iter->alarm_tick != 0 && current_tick >= iter->alarm_tick) {
+            iter->alarm_tick = 0;
+            iter->sig_pending_mask |= (1U << 14); /* SIGALRM */
+        }
         iter = iter->next;
     } while (iter != start);
 

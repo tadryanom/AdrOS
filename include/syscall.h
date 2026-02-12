@@ -106,6 +106,7 @@ enum {
     SYSCALL_SIGSUSPEND = 80,
     SYSCALL_READV     = 81,
     SYSCALL_WRITEV    = 82,
+    SYSCALL_ALARM     = 83,
 };
 
 #endif

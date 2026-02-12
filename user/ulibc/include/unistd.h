@@ -42,6 +42,7 @@ int     setuid(int uid);
 int     setgid(int gid);
 int     truncate(const char* path, int length);
 int     ftruncate(int fd, int length);
+unsigned int alarm(unsigned int seconds);
 void*   brk(void* addr);
 
 void    _exit(int status) __attribute__((noreturn));

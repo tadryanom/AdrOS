@@ -57,6 +57,7 @@ struct process {
     int8_t  nice;               // -20 to +19 (maps to priority)
     process_state_t state;
     uint32_t wake_at_tick;
+    uint32_t alarm_tick;
     int exit_status;
 
     int has_user_regs;
