@@ -91,6 +91,16 @@ enum {
 
     SYSCALL_CLONE     = 67,
     SYSCALL_GETTID    = 68,
+
+    SYSCALL_FSYNC     = 69,
+    SYSCALL_FDATASYNC = 70,
+    SYSCALL_SIGPENDING = 71,
+    SYSCALL_PREAD     = 72,
+    SYSCALL_PWRITE    = 73,
+    SYSCALL_ACCESS    = 74,
+    SYSCALL_UMASK     = 75,
+    SYSCALL_SETUID    = 76,
+    SYSCALL_SETGID    = 77,
 };
 
 #endif

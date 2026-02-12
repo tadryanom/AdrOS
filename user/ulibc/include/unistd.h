@@ -33,6 +33,8 @@ int     setsid(void);
 int     setpgid(int pid, int pgid);
 int     getpgrp(void);
 int     gettid(void);
+int     fsync(int fd);
+int     fdatasync(int fd);
 void*   brk(void* addr);
 
 void    _exit(int status) __attribute__((noreturn));

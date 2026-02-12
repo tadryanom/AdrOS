@@ -2200,6 +2200,16 @@ void syscall_handler(struct registers* regs) {
         return;
     }
 
+    if (syscall_no == SYSCALL_FSYNC || syscall_no == SYSCALL_FDATASYNC) {
+        int fd = (int)regs->ebx;
+        if (!current_process || fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd]) {
+            regs->eax = (uint32_t)-EBADF;
+        } else {
+            regs->eax = 0;
+        }
+        return;
+    }
+
     /* ---- Socket syscalls ---- */
     socket_syscall_dispatch(regs, syscall_no);
     /* If socket dispatch handled it, eax is set and we return.
