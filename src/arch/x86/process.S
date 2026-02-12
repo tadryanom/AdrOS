@@ -11,19 +11,20 @@ context_switch:
     push %ebx
     push %esi
     push %edi
+    pushf                /* Save EFLAGS (including IF) */
     
     /* 2. Save the old ESP */
-    /* Get the location of old_esp_ptr. 
-       Stack is: [RetAddr] [old_esp_ptr] [new_esp] 
-       ESP points to EDI (last push) */
+    /* Stack is: [RetAddr] [old_esp_ptr] [new_esp] + 5 pushes (20 bytes)
+       ESP points to EFLAGS (last push) */
        
-    mov 20(%esp), %eax   /* EAX = old_esp_ptr */
+    mov 24(%esp), %eax   /* EAX = old_esp_ptr */
     mov %esp, (%eax)     /* *old_esp_ptr = ESP */
     
     /* 3. Switch to the NEW process stack */
-    mov 24(%esp), %esp   /* ESP = new_esp */
+    mov 28(%esp), %esp   /* ESP = new_esp */
     
     /* 4. Restore state of the NEW process */
+    popf                 /* Restore EFLAGS (including IF) from saved context */
     pop %edi
     pop %esi
     pop %ebx
