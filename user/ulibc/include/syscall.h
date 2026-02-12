@@ -58,6 +58,10 @@ enum {
     SYS_PWRITE = 73,
     SYS_ACCESS = 74,
     SYS_UMASK = 75,
+    SYS_CHMOD = 50,
+    SYS_CHOWN = 51,
+    SYS_GETUID = 52,
+    SYS_GETGID = 53,
     SYS_SETUID = 76,
     SYS_SETGID = 77,
     SYS_TRUNCATE = 78,
@@ -70,6 +74,10 @@ enum {
     SYS_FUTEX = 85,
     SYS_SIGALTSTACK = 86,
     SYS_FLOCK = 87,
+    SYS_GETEUID = 88,
+    SYS_GETEGID = 89,
+    SYS_SETEUID = 90,
+    SYS_SETEGID = 91,
 };
 
 /* Raw syscall wrappers — up to 5 args via INT 0x80 */

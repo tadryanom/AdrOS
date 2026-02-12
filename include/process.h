@@ -47,6 +47,8 @@ struct process {
     uint32_t pgrp_id;
     uint32_t uid;
     uint32_t gid;
+    uint32_t euid;
+    uint32_t egid;
     uintptr_t sp;
     uintptr_t addr_space;
     uint32_t* kernel_stack;

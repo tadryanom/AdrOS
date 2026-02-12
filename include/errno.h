@@ -3,6 +3,7 @@
 
 #define EPERM 1
 #define ENOENT 2
+#define EACCES 13
 #define EIO 5
 #define EINTR 4
 #define E2BIG 7
