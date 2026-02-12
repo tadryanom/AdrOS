@@ -312,3 +312,52 @@ int ata_dma_write28(uint32_t lba, const uint8_t* buf512) {
     spin_unlock(&dma_lock);
     return ret;
 }
+
+int ata_dma_read_direct(uint32_t lba, uint32_t phys_buf, uint16_t byte_count) {
+    if (!dma_available) return -ENOSYS;
+    if (phys_buf == 0 || (phys_buf & 1)) return -EINVAL;
+    if (byte_count == 0) byte_count = 512;
+
+    spin_lock(&dma_lock);
+
+    /* Save original PRDT and reprogram for zero-copy */
+    uint32_t saved_addr = prdt[0].phys_addr;
+    uint16_t saved_count = prdt[0].byte_count;
+    prdt[0].phys_addr = phys_buf;
+    prdt[0].byte_count = byte_count;
+
+    int ret = ata_dma_transfer(lba, 0);
+
+    /* Restore original PRDT for bounce-buffer mode */
+    prdt[0].phys_addr = saved_addr;
+    prdt[0].byte_count = saved_count;
+
+    spin_unlock(&dma_lock);
+    return ret;
+}
+
+int ata_dma_write_direct(uint32_t lba, uint32_t phys_buf, uint16_t byte_count) {
+    if (!dma_available) return -ENOSYS;
+    if (phys_buf == 0 || (phys_buf & 1)) return -EINVAL;
+    if (byte_count == 0) byte_count = 512;
+
+    spin_lock(&dma_lock);
+
+    uint32_t saved_addr = prdt[0].phys_addr;
+    uint16_t saved_count = prdt[0].byte_count;
+    prdt[0].phys_addr = phys_buf;
+    prdt[0].byte_count = byte_count;
+
+    int ret = ata_dma_transfer(lba, 1);
+
+    if (ret == 0) {
+        outb((uint16_t)(ATA_IO_BASE + ATA_REG_COMMAND), ATA_CMD_CACHE_FLUSH);
+        (void)ata_wait_not_busy();
+    }
+
+    prdt[0].phys_addr = saved_addr;
+    prdt[0].byte_count = saved_count;
+
+    spin_unlock(&dma_lock);
+    return ret;
+}

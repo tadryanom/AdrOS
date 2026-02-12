@@ -20,4 +20,10 @@ int ata_dma_read28(uint32_t lba, uint8_t* buf512);
  * Returns 0 on success, negative errno on failure. */
 int ata_dma_write28(uint32_t lba, const uint8_t* buf512);
 
+/* Zero-copy DMA: read/write using a caller-provided physical address.
+ * phys_buf must be 32-bit aligned, below 4GB, and not cross a 64KB boundary.
+ * Returns 0 on success, negative errno on failure. */
+int ata_dma_read_direct(uint32_t lba, uint32_t phys_buf, uint16_t byte_count);
+int ata_dma_write_direct(uint32_t lba, uint32_t phys_buf, uint16_t byte_count);
+
 #endif
