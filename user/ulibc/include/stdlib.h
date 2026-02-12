@@ -9,12 +9,14 @@ void*   calloc(size_t nmemb, size_t size);
 void*   realloc(void* ptr, size_t size);
 
 int     atoi(const char* s);
+double  atof(const char* s);
 long    strtol(const char* nptr, char** endptr, int base);
 char*   realpath(const char* path, char* resolved);
 char*   getenv(const char* name);
 int     abs(int x);
 long    labs(long x);
 
+int     system(const char* cmd);
 void    exit(int status) __attribute__((noreturn));
 
 #ifndef NULL

@@ -20,13 +20,28 @@ LINKER    := ../linker.ld
 CFLAGS := -m32 -O2 -ffreestanding -fno-pie -no-pie -nostdlib \
           -Wall -Wno-unused-parameter -Wno-sign-compare -Wno-pointer-sign \
           -Wno-missing-field-initializers -Wno-implicit-fallthrough \
-          -I$(ULIBC_INC) -I. -Idoomgeneric \
+          -Wno-format \
+          -I$(ULIBC_INC) -I. -Idoomgeneric/doomgeneric \
           -DNORMALUNIX -DLINUX
 
 LDFLAGS := -m32 -nostdlib -fno-pie -no-pie -Wl,-T,$(LINKER)
 
-# doomgeneric engine sources
-DG_SRC := $(wildcard doomgeneric/*.c)
+# doomgeneric engine sources (nested inside cloned repo)
+# Exclude platform adapters and files requiring external libraries
+DG_EXCLUDE := doomgeneric/doomgeneric/doomgeneric_allegro.c \
+              doomgeneric/doomgeneric/doomgeneric_emscripten.c \
+              doomgeneric/doomgeneric/doomgeneric_linuxvt.c \
+              doomgeneric/doomgeneric/doomgeneric_sdl.c \
+              doomgeneric/doomgeneric/doomgeneric_soso.c \
+              doomgeneric/doomgeneric/doomgeneric_sosox.c \
+              doomgeneric/doomgeneric/doomgeneric_win.c \
+              doomgeneric/doomgeneric/doomgeneric_xlib.c \
+              doomgeneric/doomgeneric/i_sdlmusic.c \
+              doomgeneric/doomgeneric/i_sdlsound.c \
+              doomgeneric/doomgeneric/i_allegromusic.c \
+              doomgeneric/doomgeneric/i_allegrosound.c \
+              doomgeneric/doomgeneric/icon.c
+DG_SRC := $(filter-out $(DG_EXCLUDE),$(wildcard doomgeneric/doomgeneric/*.c))
 DG_OBJ := $(DG_SRC:.c=.o)
 
 # AdrOS adapter
@@ -49,7 +64,7 @@ doom.elf: $(ALL_OBJ) $(ULIBC_LIB) $(CRT0)
 	@$(CC) $(LDFLAGS) -o $@ $(CRT0) $(ALL_OBJ) $(ULIBC_LIB) -lgcc
 	@echo "  LD      $@"
 
-doomgeneric/%.o: doomgeneric/%.c
+doomgeneric/doomgeneric/%.o: doomgeneric/doomgeneric/%.c
 	@$(CC) $(CFLAGS) -c $< -o $@
 	@echo "  CC      $<"
 
