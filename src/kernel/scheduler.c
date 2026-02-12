@@ -406,6 +406,7 @@ struct process* process_fork_create(uintptr_t child_as, const struct registers* 
     *--sp = 0;
     *--sp = (uint32_t)thread_wrapper;
     *--sp = 0; *--sp = 0; *--sp = 0; *--sp = 0;
+    *--sp = 0x202; /* EFLAGS: IF=1, reserved bit 1 */
     proc->sp = (uintptr_t)sp;
 
     proc->next = ready_queue_head;
@@ -559,6 +560,7 @@ struct process* process_clone_create(uint32_t clone_flags,
     *--sp = 0;
     *--sp = (uint32_t)thread_wrapper;
     *--sp = 0; *--sp = 0; *--sp = 0; *--sp = 0;
+    *--sp = 0x202; /* EFLAGS: IF=1, reserved bit 1 */
     proc->sp = (uintptr_t)sp;
 
     /* Insert into process list */
@@ -700,6 +702,7 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
     *--sp = 0;
     *--sp = (uint32_t)thread_wrapper;
     *--sp = 0; *--sp = 0; *--sp = 0; *--sp = 0;
+    *--sp = 0x202; /* EFLAGS: IF=1, reserved bit 1 */
     
     proc->sp = (uintptr_t)sp;
 
@@ -798,7 +801,8 @@ void schedule(void) {
 
     context_switch(&prev->sp, current_process->sp);
 
-    hal_cpu_enable_interrupts();
+    /* EFLAGS (including IF) is now restored by context_switch via popf,
+     * so we no longer force-enable interrupts here. */
 }
 
 void process_sleep(uint32_t ticks) {
