@@ -27,6 +27,8 @@ typedef struct fs_node {
     void (*close)(struct fs_node* node);
     struct fs_node* (*finddir)(struct fs_node* node, const char* name);
     int (*readdir)(struct fs_node* node, uint32_t* inout_index, void* buf, uint32_t buf_len);
+    int (*ioctl)(struct fs_node* node, uint32_t cmd, void* arg);
+    uintptr_t (*mmap)(struct fs_node* node, uintptr_t addr, uint32_t length, uint32_t prot, uint32_t offset);
 } fs_node_t;
 
 struct vfs_dirent {
