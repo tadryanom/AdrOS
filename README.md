@@ -31,10 +31,10 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **Kernel heap** — doubly-linked free list with coalescing, dynamic growth up to 64MB
 - **Slab allocator** — `slab_cache_t` with free-list-in-place and spinlock
 - **Shared memory** — System V IPC style (`shmget`/`shmat`/`shmdt`/`shmctl`)
-- **`mmap`/`munmap`** — anonymous mappings + shared memory backing
+- **`mmap`/`munmap`** — anonymous mappings, shared memory backing, and file-backed (fd) mappings
 - **SMEP** — Supervisor Mode Execution Prevention enabled in CR4
 - **W^X** — user `.text` segments marked read-only after ELF load; NX on data segments
-- **Guard pages** — 32KB user stack with unmapped guard page below (triggers SIGSEGV on overflow)
+- **Guard pages** — 32KB user stack with unmapped guard page below (triggers SIGSEGV on overflow); kernel stacks use dedicated guard-paged region at `0xC8000000`
 - **ASLR** — TSC-seeded xorshift32 PRNG randomizes user stack base by up to 1MB per `execve`
 - **vDSO** — kernel-updated shared page mapped read-only into every user process at `0x007FE000`
 
@@ -45,7 +45,7 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **TLS** — `set_thread_area` via GDT entry 22 (user GS segment, ring 3)
 - **Futex** — `FUTEX_WAIT`/`FUTEX_WAKE` with global waiter table for efficient thread synchronization
 - **Sessions & groups** — `setsid`, `setpgid`, `getpgrp`
-- **Permissions** — per-process `uid`/`gid`; `chmod`, `chown`, `setuid`, `setgid`, `access`, `umask`
+- **Permissions** — per-process `uid`/`gid`/`euid`/`egid`; `chmod`, `chown`, `setuid`, `setgid`, `seteuid`, `setegid`, `access`, `umask`; VFS permission enforcement on `open()`
 - **User heap** — `brk`/`sbrk` syscall
 - **Time** — `nanosleep`, `clock_gettime` (`CLOCK_REALTIME` via RTC, `CLOCK_MONOTONIC`), `alarm`/`SIGALRM`, `times` (CPU accounting)
 
@@ -53,7 +53,7 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **File I/O:** `open`, `openat`, `read`, `write`, `close`, `lseek`, `stat`, `fstat`, `fstatat`, `dup`, `dup2`, `dup3`, `pipe`, `pipe2`, `select`, `poll`, `ioctl`, `fcntl`, `getdents`, `pread`, `pwrite`, `readv`, `writev`, `truncate`, `ftruncate`, `fsync`, `fdatasync`
 - **Directory ops:** `mkdir`, `rmdir`, `unlink`, `unlinkat`, `rename`, `chdir`, `getcwd`, `link`, `symlink`, `readlink`, `chmod`, `chown`, `access`, `umask`
 - **Signals:** `sigaction` (`SA_SIGINFO`), `sigprocmask`, `kill`, `sigreturn` (full trampoline), `sigpending`, `sigsuspend`, `sigaltstack`
-- **Process:** `setuid`, `setgid`, `alarm`, `times`, `futex`
+- **Process:** `setuid`, `setgid`, `seteuid`, `setegid`, `getuid`, `getgid`, `geteuid`, `getegid`, `alarm`, `times`, `futex`
 - **FD flags:** `O_NONBLOCK`, `O_CLOEXEC`, `O_APPEND`, `FD_CLOEXEC` via `fcntl` (`F_GETFD`/`F_SETFD`/`F_GETFL`/`F_SETFL`)
 - **File locking:** `flock` (advisory, no-op stub)
 - **Shared memory:** `shmget`, `shmat`, `shmdt`, `shmctl`
@@ -74,7 +74,7 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 
 ### Filesystems (8 types)
 - **tmpfs** — in-memory filesystem
-- **devfs** — `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom`, `/dev/console`, `/dev/tty`, `/dev/ptmx`, `/dev/pts/N`
+- **devfs** — `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom`, `/dev/console`, `/dev/tty`, `/dev/ptmx`, `/dev/pts/N`, `/dev/fb0` (framebuffer), `/dev/kbd` (raw scancodes)
 - **overlayfs** — copy-up semantics
 - **diskfs** — hierarchical inode-based on-disk filesystem at `/disk` with symlinks and hard links
 - **persistfs** — minimal persistence at `/persist`
@@ -95,18 +95,19 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **LAPIC + IOAPIC** — replaces legacy PIC; ISA IRQ routing
 - **SMP** — 4 CPUs via INIT-SIPI-SIPI, per-CPU data via GS segment
 - **ACPI** — MADT parsing for CPU topology and IOAPIC discovery
-- **VBE framebuffer** — maps LFB, pixel drawing, font rendering
+- **VBE framebuffer** — maps LFB, pixel drawing, font rendering; `/dev/fb0` device with `ioctl`/`mmap` for userspace access
 - **UART**, **VGA text**, **PS/2 keyboard**, **PIT timer**, **LAPIC timer**
 - **RTC** — CMOS real-time clock driver for wall-clock time (`CLOCK_REALTIME`)
 - **E1000 NIC** — Intel 82540EM Ethernet controller
 - **MTRR** — write-combining support via variable-range MTRR programming
 
 ### Userland
-- **ulibc** — `printf`, `malloc`/`free`/`calloc`/`realloc`, `string.h`, `unistd.h`, `errno.h`, `pthread.h`, `signal.h`, `stdio.h` (buffered I/O), `sys/times.h`, `sys/uio.h`, `linux/futex.h`, `realpath()`
+- **ulibc** — `printf`, `malloc`/`free`/`calloc`/`realloc`, `string.h`, `unistd.h`, `errno.h`, `pthread.h`, `signal.h`, `stdio.h` (buffered I/O), `stdlib.h` (`atof`, `strtol`), `ctype.h`, `sys/mman.h` (`mmap`/`munmap`), `sys/ioctl.h`, `sys/times.h`, `sys/uio.h`, `sys/types.h`, `sys/stat.h`, `time.h` (`nanosleep`/`clock_gettime`), `math.h`, `assert.h`, `fcntl.h`, `strings.h`, `inttypes.h`, `linux/futex.h`, `realpath()`
 - **ELF32 loader** — secure with W^X + ASLR; supports `ET_EXEC` + `ET_DYN` + `PT_INTERP` (dynamic linking)
 - **Shell** — `/bin/sh` (POSIX sh-compatible with builtins, pipes, redirects, `$PATH` search)
 - **Core utilities** — `/bin/cat`, `/bin/ls`, `/bin/mkdir`, `/bin/rm`, `/bin/echo`
 - `/bin/init.elf` — comprehensive smoke test suite
+- `/bin/doom.elf` — DOOM (doomgeneric port) — runs on `/dev/fb0` + `/dev/kbd`
 - `/lib/ld.so` — stub dynamic linker (placeholder for future shared library support)
 
 ### Dynamic Linking (infrastructure)
@@ -155,7 +156,7 @@ QEMU debug helpers:
 
 See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for a detailed checklist.
 
-**All 31 planned POSIX implementation tasks are complete.** The kernel covers ~90% of the core POSIX interfaces needed for a practical Unix-like system.
+**All 31 planned POSIX implementation tasks are complete**, plus additional features including the DOOM game port, uid/gid/euid/egid permission enforcement, framebuffer device, raw keyboard device, fd-backed mmap, and kernel stack guard pages. The kernel covers **~93%** of the core POSIX interfaces needed for a practical Unix-like system.
 
 ### Remaining work for full POSIX compliance
 - **Full `ld.so`** — relocation processing for shared libraries (`dlopen`/`dlsym`)
@@ -163,20 +164,21 @@ See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for a detailed checklist.
 - **`sigqueue`** — queued real-time signals
 - **`setitimer`/`getitimer`** — interval timers
 - **ext2 filesystem** — standard on-disk filesystem
-- **File-backed `mmap`** — map file contents into memory
 - **Per-CPU scheduler runqueues** — SMP scalability
+- **SMAP** — Supervisor Mode Access Prevention
 - **Multi-arch bring-up** — ARM/RISC-V functional kernels
 
 ## Directory Structure
-- `src/kernel/` — Architecture-independent kernel (VFS, syscalls, scheduler, tmpfs, diskfs, devfs, overlayfs, procfs, FAT16, PTY, TTY, shm, signals, networking, threads, vDSO, KASLR)
+- `src/kernel/` — Architecture-independent kernel (VFS, syscalls, scheduler, tmpfs, diskfs, devfs, overlayfs, procfs, FAT16, PTY, TTY, shm, signals, networking, threads, vDSO, KASLR, permissions)
 - `src/arch/x86/` — x86-specific (boot, VMM, IDT, LAPIC, IOAPIC, SMP, ACPI, CPUID, SYSENTER, ELF loader, MTRR)
 - `src/hal/x86/` — HAL x86 (CPU, keyboard, timer, UART, PCI, ATA PIO/DMA, E1000 NIC, RTC)
 - `src/drivers/` — Device drivers (VBE, initrd, VGA, timer)
-- `src/mm/` — Memory management (PMM, heap, slab)
+- `src/mm/` — Memory management (PMM, heap, slab, arch-independent VMM wrappers)
 - `src/net/` — Networking (lwIP port, DNS resolver)
 - `include/` — Header files
 - `user/` — Userland programs (`init.c`, `echo.c`, `sh.c`, `cat.c`, `ls.c`, `mkdir.c`, `rm.c`, `ldso.c`)
-- `user/ulibc/` — Minimal C library (`printf`, `malloc`, `string.h`, `errno.h`, `pthread.h`, `signal.h`, `stdio.h`, `sys/uio.h`, `linux/futex.h`)
+- `user/doom/` — DOOM port (doomgeneric engine + AdrOS platform adapter)
+- `user/ulibc/` — Minimal C library (`printf`, `malloc`, `string.h`, `errno.h`, `pthread.h`, `signal.h`, `stdio.h`, `stdlib.h`, `ctype.h`, `math.h`, `sys/mman.h`, `sys/ioctl.h`, `sys/uio.h`, `time.h`, `linux/futex.h`)
 - `tests/` — Host unit tests, smoke tests, GDB scripted checks
 - `tools/` — Build tools (`mkinitrd`)
 - `docs/` — Documentation (POSIX roadmap, audit report, supplementary analysis, testing plan)
