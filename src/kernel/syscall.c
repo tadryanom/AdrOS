@@ -2272,7 +2272,7 @@ void syscall_handler(struct registers* regs) {
         return;
     }
 
-    if (syscall_no == SYSCALL_TIMES) {
+    if (syscall_no == SYSCALL_TIMES || syscall_no == SYSCALL_FUTEX) {
         posix_ext_syscall_dispatch(regs, syscall_no);
         return;
     }
@@ -2450,6 +2450,62 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
             if ((uint32_t)r < iov.iov_len) break;
         }
         regs->eax = total;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_FUTEX) {
+        #define FUTEX_WAIT 0
+        #define FUTEX_WAKE 1
+        #define FUTEX_MAX_WAITERS 32
+        static struct { uintptr_t addr; struct process* proc; } futex_waiters[FUTEX_MAX_WAITERS];
+        
+        uint32_t* uaddr = (uint32_t*)regs->ebx;
+        int op = (int)regs->ecx;
+        uint32_t val = regs->edx;
+        
+        if (!uaddr) { regs->eax = (uint32_t)-EFAULT; return; }
+        
+        if (op == FUTEX_WAIT) {
+            uint32_t cur = 0;
+            if (copy_from_user(&cur, uaddr, sizeof(cur)) < 0) {
+                regs->eax = (uint32_t)-EFAULT; return;
+            }
+            if (cur != val) { regs->eax = (uint32_t)-EAGAIN; return; }
+            /* Add to waiter list and sleep */
+            int slot = -1;
+            for (int i = 0; i < FUTEX_MAX_WAITERS; i++) {
+                if (!futex_waiters[i].proc) { slot = i; break; }
+            }
+            if (slot < 0) { regs->eax = (uint32_t)-ENOMEM; return; }
+            futex_waiters[slot].addr = (uintptr_t)uaddr;
+            futex_waiters[slot].proc = current_process;
+            extern void schedule(void);
+            current_process->state = PROCESS_SLEEPING;
+            current_process->wake_at_tick = get_tick_count() + 5000; /* 100s timeout */
+            schedule();
+            futex_waiters[slot].proc = 0;
+            futex_waiters[slot].addr = 0;
+            regs->eax = 0;
+            return;
+        }
+        
+        if (op == FUTEX_WAKE) {
+            int woken = 0;
+            int max_wake = (int)val;
+            if (max_wake <= 0) max_wake = 1;
+            for (int i = 0; i < FUTEX_MAX_WAITERS && woken < max_wake; i++) {
+                if (futex_waiters[i].proc && futex_waiters[i].addr == (uintptr_t)uaddr) {
+                    futex_waiters[i].proc->state = PROCESS_READY;
+                    futex_waiters[i].proc = 0;
+                    futex_waiters[i].addr = 0;
+                    woken++;
+                }
+            }
+            regs->eax = (uint32_t)woken;
+            return;
+        }
+        
+        regs->eax = (uint32_t)-ENOSYS;
         return;
     }
 
