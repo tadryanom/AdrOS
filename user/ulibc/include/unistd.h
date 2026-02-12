@@ -43,6 +43,11 @@ int     setgid(int gid);
 int     truncate(const char* path, int length);
 int     ftruncate(int fd, int length);
 unsigned int alarm(unsigned int seconds);
+#define LOCK_SH 1
+#define LOCK_EX 2
+#define LOCK_UN 8
+#define LOCK_NB 4
+int     flock(int fd, int operation);
 void*   brk(void* addr);
 
 void    _exit(int status) __attribute__((noreturn));

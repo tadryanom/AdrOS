@@ -2272,6 +2272,16 @@ void syscall_handler(struct registers* regs) {
         return;
     }
 
+    if (syscall_no == SYSCALL_FLOCK) {
+        int fd = (int)regs->ebx;
+        if (!current_process || fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd]) {
+            regs->eax = (uint32_t)-EBADF;
+        } else {
+            regs->eax = 0; /* advisory lock — no-op stub */
+        }
+        return;
+    }
+
     if (syscall_no == SYSCALL_SIGALTSTACK ||
         syscall_no == SYSCALL_TIMES || syscall_no == SYSCALL_FUTEX) {
         posix_ext_syscall_dispatch(regs, syscall_no);
