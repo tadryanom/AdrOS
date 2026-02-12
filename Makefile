@@ -45,7 +45,7 @@ ifeq ($(ARCH),x86)
     C_SOURCES += $(NET_SOURCES)
 
     # Mandatory Architecture Flags
-    ARCH_CFLAGS := -m32 -ffreestanding -fno-builtin -U_FORTIFY_SOURCE -Iinclude -Isrc/net/lwip_port -Ithird_party/lwip/src/include
+    ARCH_CFLAGS := -m32 -ffreestanding -fno-builtin -U_FORTIFY_SOURCE -Iinclude -Iinclude/net -Ithird_party/lwip/src/include
     ARCH_LDFLAGS := -m elf_i386 -T $(SRC_DIR)/arch/x86/linker.ld
     ARCH_ASFLAGS := --32
 
