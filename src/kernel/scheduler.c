@@ -130,7 +130,10 @@ static void process_reap_locked(struct process* p) {
     }
 
     if (p->addr_space && p->addr_space != kernel_as) {
-        vmm_as_destroy(p->addr_space);
+        /* Threads share addr_space with group leader; don't destroy it */
+        if (!(p->flags & PROCESS_FLAG_THREAD)) {
+            vmm_as_destroy(p->addr_space);
+        }
         p->addr_space = 0;
     }
 
@@ -377,6 +380,10 @@ struct process* process_fork_create(uintptr_t child_as, const struct registers* 
 
     proc->has_user_regs = 1;
     proc->user_regs = *child_regs;
+    proc->tgid = proc->pid;
+    proc->flags = 0;
+    proc->tls_base = 0;
+    proc->clear_child_tid = NULL;
 
     for (int i = 0; i < PROCESS_MAX_FILES; i++) {
         proc->files[i] = NULL;
@@ -411,6 +418,167 @@ struct process* process_fork_create(uintptr_t child_as, const struct registers* 
 
     spin_unlock_irqrestore(&sched_lock, flags);
     return proc;
+}
+
+static void clone_child_trampoline(void) {
+    if (!current_process || !current_process->has_user_regs) {
+        process_exit_notify(1);
+        schedule();
+        for (;;) hal_cpu_idle();
+    }
+
+    /* Activate the shared address space */
+    if (current_process->addr_space) {
+        vmm_as_activate(current_process->addr_space);
+    }
+
+    /* Load user TLS into GS if set */
+#if defined(__i386__)
+    if (current_process->tls_base) {
+        extern void gdt_set_gate_ext(int num, uint32_t base, uint32_t limit,
+                                      uint8_t access, uint8_t gran);
+        /* Use GDT entry 22 as the user TLS segment (ring 3, data RW) */
+        gdt_set_gate_ext(22, (uint32_t)current_process->tls_base, 0xFFFFF, 0xF2, 0xCF);
+        __asm__ volatile(
+            "mov $0xB3, %%ax\n"
+            "mov %%ax, %%gs\n" : : : "ax"
+        ); /* selector = 22*8 | RPL=3 = 0xB3 */
+    }
+#endif
+
+    hal_usermode_enter_regs(&current_process->user_regs);
+}
+
+struct process* process_clone_create(uint32_t clone_flags,
+                                     uintptr_t child_stack,
+                                     const struct registers* child_regs,
+                                     uintptr_t tls_base) {
+    if (!child_regs || !current_process) return NULL;
+
+    uintptr_t flags = spin_lock_irqsave(&sched_lock);
+
+    struct process* proc = (struct process*)kmalloc(sizeof(*proc));
+    if (!proc) {
+        spin_unlock_irqrestore(&sched_lock, flags);
+        return NULL;
+    }
+    memset(proc, 0, sizeof(*proc));
+
+    proc->pid = next_pid++;
+    proc->parent_pid = current_process->pid;
+    proc->session_id = current_process->session_id;
+    proc->pgrp_id = current_process->pgrp_id;
+    proc->priority = current_process->priority;
+    proc->nice = current_process->nice;
+    proc->state = PROCESS_READY;
+    proc->wake_at_tick = 0;
+    proc->exit_status = 0;
+    proc->waiting = 0;
+    proc->wait_pid = -1;
+    proc->wait_result_pid = -1;
+    proc->wait_result_status = 0;
+
+    /* CLONE_VM: share address space */
+    if (clone_flags & CLONE_VM) {
+        proc->addr_space = current_process->addr_space;
+        proc->flags |= PROCESS_FLAG_THREAD;
+    } else {
+        proc->addr_space = vmm_as_clone_user_cow(current_process->addr_space);
+        if (!proc->addr_space) {
+            kfree(proc);
+            spin_unlock_irqrestore(&sched_lock, flags);
+            return NULL;
+        }
+    }
+
+    /* CLONE_THREAD: same thread group */
+    if (clone_flags & CLONE_THREAD) {
+        proc->tgid = current_process->tgid;
+    } else {
+        proc->tgid = proc->pid;
+    }
+
+    /* CLONE_FS: share cwd */
+    strcpy(proc->cwd, current_process->cwd);
+
+    /* CLONE_FILES: share file descriptor table */
+    if (clone_flags & CLONE_FILES) {
+        for (int i = 0; i < PROCESS_MAX_FILES; i++) {
+            proc->files[i] = current_process->files[i];
+            if (proc->files[i]) {
+                __sync_fetch_and_add(&proc->files[i]->refcount, 1);
+            }
+            proc->fd_flags[i] = current_process->fd_flags[i];
+        }
+    }
+
+    /* CLONE_SIGHAND: share signal handlers */
+    if (clone_flags & CLONE_SIGHAND) {
+        for (int i = 0; i < PROCESS_MAX_SIG; i++) {
+            proc->sigactions[i] = current_process->sigactions[i];
+        }
+    }
+
+    /* CLONE_SETTLS: set TLS base */
+    if (clone_flags & CLONE_SETTLS) {
+        proc->tls_base = tls_base;
+    }
+
+    proc->uid = current_process->uid;
+    proc->gid = current_process->gid;
+    proc->heap_start = current_process->heap_start;
+    proc->heap_break = current_process->heap_break;
+
+    for (int i = 0; i < PROCESS_MAX_MMAPS; i++) {
+        proc->mmaps[i] = current_process->mmaps[i];
+    }
+
+    proc->has_user_regs = 1;
+    proc->user_regs = *child_regs;
+    proc->user_regs.eax = 0; /* child returns 0 */
+
+    /* If child_stack specified, override ESP */
+    if (child_stack) {
+        proc->user_regs.useresp = (uint32_t)child_stack;
+    }
+
+    /* Allocate kernel stack */
+    void* kstack = kmalloc(4096);
+    if (!kstack) {
+        if (!(clone_flags & CLONE_VM) && proc->addr_space) {
+            vmm_as_destroy(proc->addr_space);
+        }
+        kfree(proc);
+        spin_unlock_irqrestore(&sched_lock, flags);
+        return NULL;
+    }
+    proc->kernel_stack = (uint32_t*)kstack;
+
+    uint32_t* sp = (uint32_t*)((uint8_t*)kstack + 4096);
+    *--sp = (uint32_t)clone_child_trampoline;
+    *--sp = 0;
+    *--sp = (uint32_t)thread_wrapper;
+    *--sp = 0; *--sp = 0; *--sp = 0; *--sp = 0;
+    proc->sp = (uintptr_t)sp;
+
+    /* Insert into process list */
+    proc->next = ready_queue_head;
+    proc->prev = ready_queue_tail;
+    ready_queue_tail->next = proc;
+    ready_queue_head->prev = proc;
+    ready_queue_tail = proc;
+
+    rq_enqueue(rq_active, proc);
+
+    spin_unlock_irqrestore(&sched_lock, flags);
+    return proc;
+}
+
+struct process* process_find_by_pid(uint32_t pid) {
+    uintptr_t flags = spin_lock_irqsave(&sched_lock);
+    struct process* p = process_find_locked(pid);
+    spin_unlock_irqrestore(&sched_lock, flags);
+    return p;
 }
 
 void process_init(void) {
@@ -457,6 +625,11 @@ void process_init(void) {
         kernel_proc->mmaps[i].shmid = -1;
     }
     
+    kernel_proc->tgid = 0;
+    kernel_proc->flags = 0;
+    kernel_proc->tls_base = 0;
+    kernel_proc->clear_child_tid = NULL;
+
     current_process = kernel_proc;
     ready_queue_head = kernel_proc;
     ready_queue_tail = kernel_proc;
@@ -500,6 +673,10 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
     proc->wait_pid = -1;
     proc->wait_result_pid = -1;
     proc->wait_result_status = 0;
+    proc->tgid = proc->pid;
+    proc->flags = 0;
+    proc->tls_base = 0;
+    proc->clear_child_tid = NULL;
 
     for (int i = 0; i < PROCESS_MAX_FILES; i++) {
         proc->files[i] = NULL;

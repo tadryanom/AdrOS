@@ -48,6 +48,9 @@ enum {
     SYS_CLOCK_GETTIME = 43,
     SYS_MMAP = 44,
     SYS_MUNMAP = 45,
+    SYS_SET_THREAD_AREA = 57,
+    SYS_CLONE = 67,
+    SYS_GETTID = 68,
 };
 
 /* Raw syscall wrappers — up to 5 args via INT 0x80 */

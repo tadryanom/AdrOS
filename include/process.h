@@ -6,6 +6,21 @@
 #include "fs.h"
 #include "signal.h"
 
+/* clone() flags (Linux-compatible subset) */
+#define CLONE_VM        0x00000100  /* Share address space */
+#define CLONE_FS        0x00000200  /* Share cwd */
+#define CLONE_FILES     0x00000400  /* Share file descriptor table */
+#define CLONE_SIGHAND   0x00000800  /* Share signal handlers */
+#define CLONE_THREAD    0x00010000  /* Same thread group */
+#define CLONE_SETTLS    0x00080000  /* Set TLS for child */
+#define CLONE_PARENT_SETTID  0x00100000  /* Store child tid in parent */
+#define CLONE_CHILD_CLEARTID 0x00200000  /* Clear child tid on exit */
+
+/* Convenience: flags for a typical pthread_create */
+#define CLONE_THREAD_FLAGS  (CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SETTLS)
+
+#define PROCESS_FLAG_THREAD  0x01  /* This process is a thread (not group leader) */
+
 typedef enum {
     PROCESS_READY,
     PROCESS_RUNNING,
@@ -81,6 +96,12 @@ struct process {
 
     struct process* rq_next;    // O(1) runqueue per-priority list
     struct process* rq_prev;
+
+    /* Thread support */
+    uint32_t tgid;              /* Thread group ID (== pid for group leader) */
+    uint32_t flags;             /* PROCESS_FLAG_* */
+    uintptr_t tls_base;         /* User-space TLS base (set via SET_THREAD_AREA) */
+    uint32_t* clear_child_tid;  /* User address to clear + futex-wake on exit */
 };
 
 // Global pointer to the currently running process
@@ -124,5 +145,14 @@ int process_kill_pgrp(uint32_t pgrp, int sig);
 
 // Create a child process that will resume in usermode from a saved register frame.
 struct process* process_fork_create(uintptr_t child_as, const struct registers* child_regs);
+
+// Create a thread (clone) sharing the parent's address space.
+struct process* process_clone_create(uint32_t clone_flags,
+                                     uintptr_t child_stack,
+                                     const struct registers* child_regs,
+                                     uintptr_t tls_base);
+
+// Look up a process by PID (scheduler lock must NOT be held).
+struct process* process_find_by_pid(uint32_t pid);
 
 #endif

@@ -205,6 +205,31 @@ static int syscall_fork_impl(struct registers* regs) {
     return (int)child->pid;
 }
 
+__attribute__((noinline))
+static int syscall_clone_impl(struct registers* regs) {
+    if (!regs || !current_process) return -EINVAL;
+
+    uint32_t clone_flags = regs->ebx;
+    uintptr_t child_stack = (uintptr_t)regs->ecx;
+    uintptr_t tls_base = (uintptr_t)regs->esi;
+
+    struct process* child = process_clone_create(clone_flags, child_stack, regs, tls_base);
+    if (!child) return -ENOMEM;
+
+    /* CLONE_PARENT_SETTID: write child tid to parent user address */
+    if ((clone_flags & CLONE_PARENT_SETTID) && regs->edx) {
+        uint32_t tid = child->pid;
+        (void)copy_to_user((void*)(uintptr_t)regs->edx, &tid, sizeof(tid));
+    }
+
+    /* CLONE_CHILD_CLEARTID: store the address for the child to clear on exit */
+    if ((clone_flags & CLONE_CHILD_CLEARTID) && regs->edi) {
+        child->clear_child_tid = (uint32_t*)(uintptr_t)regs->edi;
+    }
+
+    return (int)child->pid;
+}
+
 struct pipe_state {
     uint8_t* buf;
     uint32_t cap;
@@ -2153,8 +2178,25 @@ void syscall_handler(struct registers* regs) {
     }
 
     if (syscall_no == SYSCALL_SET_THREAD_AREA) {
-        /* Stub: will be implemented when clone/threads are added */
-        regs->eax = (uint32_t)-ENOSYS;
+        uintptr_t base = (uintptr_t)regs->ebx;
+        if (!current_process) { regs->eax = (uint32_t)-EINVAL; return; }
+        current_process->tls_base = base;
+#if defined(__i386__)
+        extern void gdt_set_gate_ext(int num, uint32_t base, uint32_t limit,
+                                      uint8_t access, uint8_t gran);
+        gdt_set_gate_ext(22, (uint32_t)base, 0xFFFFF, 0xF2, 0xCF);
+#endif
+        regs->eax = 0;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_GETTID) {
+        regs->eax = current_process ? current_process->pid : 0;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_CLONE) {
+        regs->eax = (uint32_t)syscall_clone_impl(regs);
         return;
     }
 
