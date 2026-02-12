@@ -17,10 +17,10 @@ Notes:
 
 | Syscall | Status | Notes |
 |---------|--------|-------|
-| `open` | [x] | Supports `O_CREAT`, `O_TRUNC`; works on diskfs, devfs, tmpfs, overlayfs |
+| `open` | [x] | Supports `O_CREAT`, `O_TRUNC`, `O_APPEND`; works on diskfs, devfs, tmpfs, overlayfs |
 | `openat` | [x] | `AT_FDCWD` supported; other dirfd values return `ENOSYS` |
 | `read` | [x] | Files, pipes, TTY, PTY, sockets; `O_NONBLOCK` returns `EAGAIN` |
-| `write` | [x] | Files, pipes, TTY, PTY, sockets; `O_NONBLOCK` returns `EAGAIN` |
+| `write` | [x] | Files, pipes, TTY, PTY, sockets; `O_NONBLOCK` returns `EAGAIN`; `O_APPEND` support |
 | `close` | [x] | Refcounted file objects |
 | `lseek` | [x] | `SEEK_SET`, `SEEK_CUR`, `SEEK_END` |
 | `stat` | [x] | `struct stat` with mode/type/size/inode/uid/gid/nlink |
@@ -36,10 +36,10 @@ Notes:
 | `ioctl` | [x] | `TCGETS`, `TCSETS`, `TIOCGPGRP`, `TIOCSPGRP`, `TIOCGWINSZ`, `TIOCSWINSZ` |
 | `fcntl` | [x] | `F_GETFL`, `F_SETFL`, `F_GETFD`, `F_SETFD` |
 | `getdents` | [x] | Generic across all VFS (diskfs, tmpfs, devfs, overlayfs, procfs) |
-| `pread`/`pwrite` | [ ] | |
-| `readv`/`writev` | [ ] | |
-| `truncate`/`ftruncate` | [ ] | |
-| `fsync`/`fdatasync` | [ ] | No-op acceptable for now |
+| `pread`/`pwrite` | [x] | Atomic read/write at offset without changing file position |
+| `readv`/`writev` | [x] | Scatter/gather I/O via `struct iovec` |
+| `truncate`/`ftruncate` | [x] | Truncate file to given length |
+| `fsync`/`fdatasync` | [x] | No-op stubs (accepted — no write cache to flush) |
 
 ## 2. Syscalls — Directory & Path Operations
 
@@ -47,19 +47,19 @@ Notes:
 |---------|--------|-------|
 | `mkdir` | [x] | diskfs |
 | `rmdir` | [x] | diskfs; checks directory is empty (`ENOTEMPTY`) |
-| `unlink` | [x] | diskfs; returns `EISDIR` for directories |
+| `unlink` | [x] | diskfs; returns `EISDIR` for directories; respects hard link count |
 | `unlinkat` | [x] | `AT_FDCWD` supported |
 | `rename` | [x] | diskfs; handles same-type overwrite |
 | `chdir` | [x] | Per-process `cwd` |
 | `getcwd` | [x] | |
-| `link` | [x] | Hard links (stub — returns `ENOSYS` for cross-fs) |
+| `link` | [x] | Hard links in diskfs with `nlink` tracking and shared data blocks |
 | `symlink` | [x] | Symbolic links in diskfs |
 | `readlink` | [x] | |
 | `chmod` | [x] | Set mode bits on VFS nodes |
 | `chown` | [x] | Set uid/gid on VFS nodes |
-| `access` | [ ] | Permission checks |
-| `umask` | [ ] | |
-| `realpath` | [ ] | Userland (needs libc) |
+| `access` | [x] | Permission checks (`R_OK`, `W_OK`, `X_OK`, `F_OK`) |
+| `umask` | [x] | Per-process file creation mask |
+| `realpath` | [x] | Userland ulibc implementation (resolves `.`, `..`, normalizes) |
 
 ## 3. Syscalls — Process Management
 
@@ -76,15 +76,16 @@ Notes:
 | `setpgid` | [x] | |
 | `getpgrp` | [x] | |
 | `getuid`/`getgid` | [x] | Per-process uid/gid |
-| `setuid`/`setgid` | [ ] | |
+| `setuid`/`setgid` | [x] | Set process uid/gid |
 | `brk`/`sbrk` | [x] | `syscall_brk_impl()` — per-process heap break |
 | `mmap`/`munmap` | [x] | Anonymous mappings + shared memory |
 | `clone` | [x] | Thread creation with `CLONE_VM`/`CLONE_FILES`/`CLONE_THREAD`/`CLONE_SETTLS` |
 | `set_thread_area` | [x] | GDT-based TLS via GS segment (GDT entry 22, ring 3) |
 | `nanosleep`/`sleep` | [x] | `syscall_nanosleep_impl()` with tick-based sleep |
-| `clock_gettime` | [x] | `CLOCK_REALTIME` and `CLOCK_MONOTONIC` |
-| `alarm` | [ ] | |
-| `times`/`getrusage` | [ ] | |
+| `clock_gettime` | [x] | `CLOCK_REALTIME` (RTC-backed) and `CLOCK_MONOTONIC` (tick-based) |
+| `alarm` | [x] | Per-process alarm timer; delivers `SIGALRM` on expiry |
+| `times` | [x] | Returns `struct tms` with per-process `utime`/`stime` accounting |
+| `futex` | [x] | `FUTEX_WAIT`/`FUTEX_WAKE` with global waiter table |
 
 ## 4. Syscalls — Signals
 
@@ -94,12 +95,12 @@ Notes:
 | `sigprocmask` | [x] | Block/unblock signals |
 | `kill` | [x] | Send signal to process/group |
 | `sigreturn` | [x] | Trampoline-based return from signal handlers |
-| `raise` | [ ] | Userland (needs libc) |
-| `sigpending` | [ ] | |
-| `sigsuspend` | [ ] | |
+| `raise` | [x] | ulibc implementation (`kill(getpid(), sig)`) |
+| `sigpending` | [x] | Returns pending signal mask |
+| `sigsuspend` | [x] | Atomically set signal mask and wait |
+| `sigaltstack` | [x] | Alternate signal stack per-process (`ss_sp`/`ss_size`/`ss_flags`) |
 | `sigqueue` | [ ] | |
-| `sigaltstack` | [ ] | Alternate signal stack |
-| Signal defaults | [x] | `SIGKILL`/`SIGSEGV`/`SIGUSR1`/`SIGINT`/`SIGTSTP`/`SIGTTOU`/`SIGTTIN`/`SIGQUIT` handled |
+| Signal defaults | [x] | `SIGKILL`/`SIGSEGV`/`SIGUSR1`/`SIGINT`/`SIGTSTP`/`SIGTTOU`/`SIGTTIN`/`SIGQUIT`/`SIGALRM` handled |
 
 ## 5. File Descriptor Layer
 
@@ -110,9 +111,9 @@ Notes:
 | File offset tracking | [x] | |
 | `O_NONBLOCK` | [x] | Pipes, TTY, PTY, sockets via `fcntl` or `pipe2` |
 | `O_CLOEXEC` | [x] | Close-on-exec via `pipe2`, `open` flags |
-| `O_APPEND` | [ ] | |
+| `O_APPEND` | [x] | Append mode for `write()` — seeks to end before writing |
 | `FD_CLOEXEC` via `fcntl` | [x] | `F_GETFD`/`F_SETFD` implemented; `execve` closes marked FDs |
-| File locking (`flock`/`fcntl`) | [ ] | |
+| File locking (`flock`) | [x] | Advisory locking no-op stub (validates fd, always succeeds) |
 
 ## 6. Filesystem / VFS
 
@@ -125,13 +126,14 @@ Notes:
 | **tmpfs** | [x] | In-memory; dirs + files; `readdir` |
 | **overlayfs** | [x] | Copy-up; `readdir` delegates to upper/lower |
 | **devfs** | [x] | `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom`, `/dev/console`, `/dev/tty`, `/dev/ptmx`, `/dev/pts/N` |
-| **diskfs** (on-disk) | [x] | Hierarchical inodes; full POSIX ops; symlinks |
+| **diskfs** (on-disk) | [x] | Hierarchical inodes; full POSIX ops; symlinks; hard links with `nlink` tracking |
 | **persistfs** | [x] | Minimal persistence at `/persist` |
 | **procfs** | [x] | `/proc/meminfo` + per-process `/proc/[pid]/status`, `/proc/[pid]/maps` |
+| **FAT16** (read-only) | [x] | BPB parsing, FAT chain traversal, root dir finddir, VFS read |
 | Permissions (`uid`/`gid`/mode) | [x] | `chmod`, `chown`; mode bits stored in VFS nodes |
-| Hard links | [~] | `link` syscall exists (stub for cross-fs) |
+| Hard links | [x] | `diskfs_link()` with shared data blocks and `nlink` tracking |
 | Symbolic links | [x] | `symlink`, `readlink`; followed by VFS lookup |
-| ext2 / FAT support | [ ] | |
+| ext2 support | [ ] | |
 
 ## 7. TTY / PTY
 
@@ -157,6 +159,7 @@ Notes:
 | Feature | Status | Notes |
 |---------|--------|-------|
 | PMM (bitmap allocator) | [x] | Spinlock-protected, frame refcounting |
+| PMM contiguous block alloc | [x] | `pmm_alloc_blocks(count)` / `pmm_free_blocks()` for multi-page DMA |
 | VMM (x86 PAE paging) | [x] | Higher-half kernel, recursive page directory, PAE mode |
 | Per-process address spaces | [x] | PDPT + 4 PDs per process |
 | Kernel heap (`kmalloc`/`kfree`) | [x] | Dynamic growth up to 64MB |
@@ -168,8 +171,9 @@ Notes:
 | Shared memory (`shmget`/`shmat`/`shmdt`) | [x] | System V IPC style |
 | Copy-on-write (COW) fork | [x] | PTE bit 9 as CoW marker + page fault handler |
 | PAE + NX bit | [x] | PAE paging with NX (bit 63) on data segments |
-| Guard pages | [ ] | |
-| ASLR | [ ] | |
+| Guard pages | [x] | 32KB user stack with unmapped guard page below (triggers SIGSEGV on overflow) |
+| ASLR | [x] | TSC-seeded xorshift32 PRNG; randomizes user stack base by up to 1MB per `execve` |
+| vDSO shared page | [x] | Kernel-updated `tick_count` mapped read-only at `0x007FE000` in every user process |
 
 ## 9. Drivers & Hardware
 
@@ -181,7 +185,7 @@ Notes:
 | PIT timer | [x] | |
 | LAPIC timer | [x] | Calibrated, used when APIC available |
 | ATA PIO (IDE) | [x] | Primary master |
-| ATA DMA (Bus Master IDE) | [x] | Bounce buffer, PRDT, IRQ-coordinated |
+| ATA DMA (Bus Master IDE) | [x] | Bounce buffer + zero-copy direct DMA, PRDT, IRQ-coordinated |
 | PCI enumeration | [x] | Full bus/slot/func scan with BAR + IRQ |
 | ACPI (MADT parsing) | [x] | CPU topology + IOAPIC discovery |
 | LAPIC + IOAPIC | [x] | Replaces legacy PIC |
@@ -190,7 +194,8 @@ Notes:
 | VBE framebuffer | [x] | Maps LFB, pixel drawing, font rendering |
 | SYSENTER fast syscall | [x] | MSR setup + handler |
 | E1000 NIC (Intel 82540EM) | [x] | MMIO-based, IRQ-driven, lwIP integration |
-| RTC (real-time clock) | [ ] | |
+| RTC (real-time clock) | [x] | CMOS RTC driver; provides wall-clock time for `CLOCK_REALTIME` |
+| MTRR write-combining | [x] | `mtrr_init`/`mtrr_set_range` for variable-range MTRR programming |
 | Virtio-blk | [ ] | |
 
 ## 10. Networking
@@ -203,11 +208,11 @@ Notes:
 | `bind`/`listen`/`accept` | [x] | TCP server support |
 | `connect`/`send`/`recv` | [x] | TCP client support |
 | `sendto`/`recvfrom` | [x] | UDP support |
-| DNS resolver | [ ] | |
+| DNS resolver | [x] | lwIP DNS enabled; kernel `dns_resolve()` wrapper with async callback + timeout |
 | `/etc/hosts` | [ ] | |
 | `getaddrinfo` | [ ] | Userland (needs libc) |
 
-## 11. Threads & TLS
+## 11. Threads & Synchronization
 
 | Feature | Status | Notes |
 |---------|--------|-------|
@@ -220,7 +225,7 @@ Notes:
 | `CLONE_CHILD_CLEARTID` | [x] | Stores address for futex-wake on thread exit |
 | ulibc `pthread.h` | [x] | `pthread_create`, `pthread_join`, `pthread_exit`, `pthread_self` |
 | Per-thread errno | [x] | Via `set_thread_area` + TLS |
-| Futex | [ ] | Required for efficient pthread_join/mutex |
+| Futex | [x] | `FUTEX_WAIT`/`FUTEX_WAKE` with 32-entry global waiter table |
 
 ## 12. Dynamic Linking
 
@@ -232,58 +237,111 @@ Notes:
 | ELF auxiliary vector types | [x] | `AT_PHDR`, `AT_PHENT`, `AT_PHNUM`, `AT_ENTRY`, `AT_BASE`, `AT_PAGESZ` defined |
 | ELF relocation types | [x] | `R_386_RELATIVE`, `R_386_32`, `R_386_GLOB_DAT`, `R_386_JMP_SLOT` defined |
 | `Elf32_Dyn`/`Elf32_Rel`/`Elf32_Sym` | [x] | Full dynamic section structures in `elf.h` |
-| Userspace `ld.so` | [ ] | Stub; full relocation processing not yet implemented |
-| Shared libraries (.so) | [ ] | Requires `ld.so` + `dlopen`/`dlsym` |
+| Userspace `ld.so` | [~] | Stub placeholder built into initrd at `lib/ld.so`; full relocation processing not yet implemented |
+| Shared libraries (.so) | [ ] | Requires full `ld.so` + `dlopen`/`dlsym` |
 
 ## 13. Userland
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| ELF32 loader | [x] | Secure with W^X; supports `ET_EXEC` + `ET_DYN` + `PT_INTERP` |
+| ELF32 loader | [x] | Secure with W^X + ASLR; supports `ET_EXEC` + `ET_DYN` + `PT_INTERP` |
 | `/bin/init.elf` (smoke tests) | [x] | Comprehensive test suite (19+ checks) |
 | `/bin/echo` | [x] | argv/envp test |
-| `/bin/sh` | [x] | POSIX sh-compatible shell; builtins, pipes, redirects |
+| `/bin/sh` | [x] | POSIX sh-compatible shell; builtins, pipes, redirects, `$PATH` search |
 | `/bin/cat` | [x] | |
 | `/bin/ls` | [x] | Uses `getdents` |
 | `/bin/mkdir` | [x] | |
 | `/bin/rm` | [x] | |
-| Minimal libc (ulibc) | [x] | `printf`, `malloc`/`free`/`calloc`/`realloc`, `string.h`, `unistd.h`, `errno.h`, `pthread.h` |
-| `$PATH` search in `execve` | [ ] | Shell does VFS lookup directly |
+| `/lib/ld.so` | [~] | Stub dynamic linker (placeholder for future shared library support) |
+| Minimal libc (ulibc) | [x] | `printf`, `malloc`/`free`/`calloc`/`realloc`, `string.h`, `unistd.h`, `errno.h`, `pthread.h`, `signal.h`, `sys/times.h`, `sys/uio.h`, `linux/futex.h`, `stdio.h` (buffered I/O) |
+| `$PATH` search | [x] | Shell resolves commands via `$PATH` |
+
+## 14. Scheduler
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| O(1) bitmap scheduler | [x] | Bitmap + active/expired arrays, 32 priority levels |
+| Decay-based priority | [x] | Priority decay on time slice exhaustion; boost on sleep wake |
+| Per-process CPU time accounting | [x] | `utime`/`stime` fields incremented per scheduler tick |
+| Per-CPU runqueues | [ ] | Deferred — requires massive scheduler refactor for SMP |
 
 ---
 
-## Priority Roadmap (remaining work)
+## Implementation Progress
 
-### All 15 planned features are now implemented ✅
+### All 31 planned tasks completed ✅
 
-1. ~~`/dev/zero`, `/dev/random`, `/dev/urandom`, `/dev/console`~~ ✅
-2. ~~Multiple PTY pairs (dynamic `/dev/pts/N`)~~ ✅
-3. ~~VMIN/VTIME termios~~ ✅
-4. ~~Shell (`sh`-compatible)~~ ✅
-5. ~~Core utilities (`cat`, `ls`, `mkdir`, `rm`)~~ ✅
-6. ~~Generic wait queue abstraction~~ ✅
-7. ~~`/proc` per-process (`/proc/[pid]/status`, `/proc/[pid]/maps`)~~ ✅
-8. ~~Permissions (`chmod`, `chown`, `getuid`, `getgid`)~~ ✅
-9. ~~Symbolic links (`symlink`, `readlink`)~~ ✅
-10. ~~PAE + NX bit~~ ✅
-11. ~~Per-thread errno + `set_thread_area` stub~~ ✅
-12. ~~Networking (E1000 + lwIP + socket syscalls)~~ ✅
-13. ~~Socket syscalls (`socket`/`bind`/`listen`/`accept`/`connect`/`send`/`recv`/`sendto`/`recvfrom`)~~ ✅
-14. ~~Threads (`clone`/`pthread`)~~ ✅
-15. ~~Dynamic linking infrastructure (`PT_INTERP`, `ET_DYN`, ELF relocation types)~~ ✅
+**High Priority (8/8):**
+1. ~~`raise()` em ulibc~~ ✅
+2. ~~`fsync`/`fdatasync` no-op stubs~~ ✅
+3. ~~`O_APPEND` support in `write()` + `fcntl`~~ ✅
+4. ~~`sigpending()` syscall~~ ✅
+5. ~~`pread`/`pwrite` syscalls~~ ✅
+6. ~~`access()` syscall~~ ✅
+7. ~~`umask()` syscall~~ ✅
+8. ~~`setuid`/`setgid` syscalls~~ ✅
 
-### Future enhancements (beyond the 15 planned tasks)
-- **Userspace `ld.so`** — full dynamic linker with relocation processing
-- **Shared libraries (.so)** — `dlopen`/`dlsym`/`dlclose`
-- **Futex** — efficient thread synchronization primitive
-- **Multi-arch bring-up** — ARM/RISC-V functional kernels
-- **ext2/FAT** filesystem support
-- **ASLR** — address space layout randomization
-- **vDSO** — fast `clock_gettime` without syscall
-- **`O_APPEND`** — append mode for file writes
-- **File locking** — `flock`/`fcntl` advisory locks
-- **`pread`/`pwrite`/`readv`/`writev`** — scatter/gather I/O
-- **`sigaltstack`** — alternate signal stack
-- **DNS resolver** + `/etc/hosts`
-- **RTC driver** — real-time clock for wall-clock time
-- **`alarm`/`setitimer`** — timer signals
+**Medium Priority (13/13):**
+9. ~~`truncate`/`ftruncate`~~ ✅
+10. ~~`sigsuspend()`~~ ✅
+11. ~~`$PATH` search in shell~~ ✅
+12. ~~User-Buffered I/O (`stdio.h` em ulibc)~~ ✅
+13. ~~`realpath()` em ulibc~~ ✅
+14. ~~`readv`/`writev` syscalls~~ ✅
+15. ~~RTC driver + `CLOCK_REALTIME`~~ ✅
+16. ~~`alarm()` syscall + `SIGALRM` timer~~ ✅
+17. ~~Guard pages (32KB stack + unmapped guard)~~ ✅
+18. ~~PMM contiguous block alloc~~ ✅
+19. ~~Hard links (`diskfs_link()` with shared storage)~~ ✅
+20. ~~`times()` syscall — CPU time accounting~~ ✅
+21. ~~Futex — `FUTEX_WAIT`/`FUTEX_WAKE`~~ ✅
+
+**Low Priority (10/10):**
+22. ~~`sigaltstack`~~ ✅
+23. ~~File locking (`flock`)~~ ✅
+24. ~~Write-Combining MTRRs~~ ✅
+25. ~~Decay-based scheduler~~ ✅
+26. ~~vDSO shared page~~ ✅
+27. ~~DNS resolver~~ ✅
+28. ~~FAT16 filesystem~~ ✅
+29. ~~Zero-Copy DMA I/O~~ ✅
+30. ~~Userspace `ld.so` stub~~ ✅
+31. ~~ASLR~~ ✅
+
+---
+
+## Remaining Work for Full POSIX Compliance
+
+### Tier 1 — Core POSIX gaps
+
+| Gap | Impact | Effort |
+|-----|--------|--------|
+| **Full `ld.so`** — relocation processing (`R_386_*`) | No shared library support | Large |
+| **Shared libraries (.so)** — `dlopen`/`dlsym`/`dlclose` | Static linking only | Very Large |
+| **`getaddrinfo`** / `/etc/hosts` | No name-based network connections from userspace | Medium |
+| **`sigqueue`** — queued real-time signals | Missing POSIX.1b feature | Small |
+| **Per-CPU scheduler runqueues** | SMP processes all run on BSP | Very Large |
+| **`setitimer`/`getitimer`** — interval timers | No repeating timers | Medium |
+
+### Tier 2 — Extended POSIX / usability
+
+| Gap | Impact | Effort |
+|-----|--------|--------|
+| **ext2 filesystem** | No standard on-disk filesystem | Large |
+| **`mmap` file-backed** — map file contents into memory | Only anonymous/shm maps supported | Large |
+| **`pipe` capacity** — `F_GETPIPE_SZ`/`F_SETPIPE_SZ` | Fixed-size pipe buffer | Small |
+| **`waitid`** — extended wait | Missing POSIX interface | Small |
+| **`posix_spawn`** — efficient process creation | Missing POSIX interface | Medium |
+| **Virtio-blk driver** | Only ATA PIO/DMA disk access | Medium |
+| **SMAP** — Supervisor Mode Access Prevention | Missing hardware security feature | Small |
+
+### Tier 3 — Multi-arch & long-term
+
+| Gap | Impact | Effort |
+|-----|--------|--------|
+| **Multi-arch bring-up** — ARM/RISC-V functional kernels | x86-only | Very Large |
+| **DHCP client** | Static IP only | Medium |
+| **IPv6** | IPv4-only | Large |
+| **POSIX message queues** (`mq_*`) | Missing IPC mechanism | Medium |
+| **POSIX semaphores** (`sem_*`) | Only futex available | Medium |
+| **`select`/`poll` for regular files** | Only pipes/TTY/sockets | Small |
