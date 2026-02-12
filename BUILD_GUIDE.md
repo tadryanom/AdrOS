@@ -2,7 +2,7 @@
 
 This guide explains how to build and run AdrOS on your local machine (Linux/WSL).
 
-AdrOS is a Unix-like, POSIX-compatible OS kernel with threads, futex synchronization, networking (TCP/IP + DNS via lwIP), dynamic linking infrastructure, FAT16 filesystem, ASLR, vDSO, zero-copy DMA, and a POSIX shell. See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for the full compatibility checklist.
+AdrOS is a Unix-like, POSIX-compatible OS kernel with threads, futex synchronization, networking (TCP/IP + DNS via lwIP), dynamic linking infrastructure, FAT16 filesystem, ASLR, vDSO, zero-copy DMA, a POSIX shell, framebuffer graphics (`/dev/fb0`), raw keyboard input (`/dev/kbd`), uid/gid/euid/egid permission enforcement, and a working DOOM port. See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for the full compatibility checklist.
 
 ## 1. Dependencies
 
@@ -81,9 +81,10 @@ The following ELF binaries are bundled in the initrd:
 - `/bin/echo` — argv/envp test
 - `/bin/sh` — POSIX sh-compatible shell with `$PATH` search, pipes, redirects, builtins
 - `/bin/cat`, `/bin/ls`, `/bin/mkdir`, `/bin/rm` — core utilities
+- `/bin/doom.elf` — DOOM (doomgeneric port) — included in initrd if built (see below)
 - `/lib/ld.so` — stub dynamic linker (placeholder for future shared library support)
 
-The ulibc provides: `printf`, `malloc`/`free`/`calloc`/`realloc`, `string.h`, `unistd.h`, `errno.h`, `pthread.h`, `signal.h` (with `raise`, `sigaltstack`, `sigpending`, `sigsuspend`), `stdio.h` (buffered I/O with `fopen`/`fread`/`fwrite`/`fclose`), `sys/times.h`, `sys/uio.h`, `linux/futex.h`, and `realpath()`.
+The ulibc provides: `printf`, `malloc`/`free`/`calloc`/`realloc`, `string.h`, `unistd.h`, `errno.h`, `pthread.h`, `signal.h` (with `raise`, `sigaltstack`, `sigpending`, `sigsuspend`), `stdio.h` (buffered I/O with `fopen`/`fread`/`fwrite`/`fclose`), `stdlib.h` (`atof`, `strtol`, `getenv` stub, `system` stub), `ctype.h`, `sys/mman.h` (`mmap`/`munmap`), `sys/ioctl.h` (`ioctl`), `time.h` (`nanosleep`/`clock_gettime`), `sys/times.h`, `sys/uio.h`, `sys/types.h`, `sys/stat.h`, `math.h` (`fabs`), `assert.h`, `fcntl.h`, `strings.h`, `inttypes.h`, `linux/futex.h`, and `realpath()`.
 
 ### Smoke tests
 The init program (`/bin/init.elf`) runs a comprehensive suite of smoke tests on boot, covering:
@@ -144,7 +145,37 @@ Notes:
 - `QEMU_DEBUG=1` enables QEMU logging to `qemu.log` using `-d guest_errors,cpu_reset -D qemu.log`.
 - `QEMU_INT=1` appends `-d int` to QEMU debug flags.
 
-## 3. Building & Running (ARM64)
+## 3. Building DOOM
+
+The DOOM port uses the [doomgeneric](https://github.com/ozkl/doomgeneric) engine with an AdrOS-specific platform adapter.
+
+### Setup
+```bash
+cd user/doom
+git clone https://github.com/ozkl/doomgeneric.git
+make
+```
+
+This produces `user/doom/doom.elf` (\~450KB). The main `Makefile` will **automatically include** `doom.elf` in the initrd if it exists.
+
+### Running DOOM
+```bash
+make iso
+qemu-system-i386 -cdrom adros-x86.iso -m 128M -vga std \
+    -drive file=disk.img,if=ide,format=raw
+```
+
+From the AdrOS shell:
+```
+/bin/doom.elf -iwad /path/to/doom1.wad
+```
+
+DOOM requires:
+- A VBE framebuffer (`-vga std` in QEMU)
+- `doom1.wad` (shareware) accessible from the filesystem
+- Kernel support: `/dev/fb0` (mmap framebuffer), `/dev/kbd` (raw PS/2 scancodes), `nanosleep`, `clock_gettime`
+
+## 4. Building & Running (ARM64)
 
 ### Build
 ```bash
