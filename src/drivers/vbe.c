@@ -1,5 +1,9 @@
 #include "vbe.h"
 #include "vmm.h"
+#include "pmm.h"
+#include "devfs.h"
+#include "fb.h"
+#include "uaccess.h"
 #include "uart_console.h"
 #include "utils.h"
 
@@ -7,6 +11,7 @@
 
 static struct vbe_info g_vbe;
 static int g_vbe_ready = 0;
+static fs_node_t g_dev_fb0_node;
 
 int vbe_init(const struct boot_info* bi) {
     if (!bi || bi->fb_addr == 0 || bi->fb_width == 0 || bi->fb_height == 0 || bi->fb_bpp == 0) {
@@ -111,4 +116,88 @@ void vbe_fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t colo
 void vbe_clear(uint32_t color) {
     if (!g_vbe_ready) return;
     vbe_fill_rect(0, 0, g_vbe.width, g_vbe.height, color);
+}
+
+/* --- /dev/fb0 device callbacks --- */
+
+static uint32_t fb0_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
+    (void)node;
+    if (!g_vbe_ready || !buffer) return 0;
+    if (offset >= g_vbe.size) return 0;
+    uint32_t avail = g_vbe.size - offset;
+    if (size > avail) size = avail;
+    memcpy(buffer, (const uint8_t*)g_vbe.virt_addr + offset, size);
+    return size;
+}
+
+static uint32_t fb0_write(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer) {
+    (void)node;
+    if (!g_vbe_ready || !buffer) return 0;
+    if (offset >= g_vbe.size) return 0;
+    uint32_t avail = g_vbe.size - offset;
+    if (size > avail) size = avail;
+    memcpy((uint8_t*)g_vbe.virt_addr + offset, buffer, size);
+    return size;
+}
+
+static int fb0_ioctl(fs_node_t* node, uint32_t cmd, void* arg) {
+    (void)node;
+    if (!g_vbe_ready) return -1;
+    if (!arg) return -1;
+
+    if (cmd == FBIOGET_VSCREENINFO) {
+        if (user_range_ok(arg, sizeof(struct fb_var_screeninfo)) == 0) return -1;
+        struct fb_var_screeninfo v;
+        v.xres = g_vbe.width;
+        v.yres = g_vbe.height;
+        v.bits_per_pixel = g_vbe.bpp;
+        if (copy_to_user(arg, &v, sizeof(v)) < 0) return -1;
+        return 0;
+    }
+
+    if (cmd == FBIOGET_FSCREENINFO) {
+        if (user_range_ok(arg, sizeof(struct fb_fix_screeninfo)) == 0) return -1;
+        struct fb_fix_screeninfo f;
+        f.smem_start = (uint32_t)g_vbe.phys_addr;
+        f.smem_len = g_vbe.size;
+        f.line_length = g_vbe.pitch;
+        if (copy_to_user(arg, &f, sizeof(f)) < 0) return -1;
+        return 0;
+    }
+
+    return -1;
+}
+
+static uintptr_t fb0_mmap(fs_node_t* node, uintptr_t addr, uint32_t length, uint32_t prot, uint32_t offset) {
+    (void)node; (void)prot; (void)offset;
+    if (!g_vbe_ready) return 0;
+
+    uint32_t aligned_len = (length + 0xFFFU) & ~(uint32_t)0xFFFU;
+    if (aligned_len > ((g_vbe.size + 0xFFFU) & ~(uint32_t)0xFFFU))
+        aligned_len = (g_vbe.size + 0xFFFU) & ~(uint32_t)0xFFFU;
+
+    for (uint32_t i = 0; i < aligned_len; i += 0x1000U) {
+        vmm_map_page((uint64_t)(g_vbe.phys_addr + i),
+                     (uint64_t)(addr + i),
+                     VMM_FLAG_PRESENT | VMM_FLAG_RW | VMM_FLAG_USER | VMM_FLAG_NOCACHE);
+    }
+
+    return addr;
+}
+
+void vbe_register_devfs(void) {
+    if (!g_vbe_ready) return;
+
+    memset(&g_dev_fb0_node, 0, sizeof(g_dev_fb0_node));
+    strcpy(g_dev_fb0_node.name, "fb0");
+    g_dev_fb0_node.flags = FS_CHARDEVICE;
+    g_dev_fb0_node.inode = 20;
+    g_dev_fb0_node.length = g_vbe.size;
+    g_dev_fb0_node.read = &fb0_read;
+    g_dev_fb0_node.write = &fb0_write;
+    g_dev_fb0_node.ioctl = &fb0_ioctl;
+    g_dev_fb0_node.mmap = &fb0_mmap;
+    devfs_register_device(&g_dev_fb0_node);
+
+    uart_print("[VBE] Registered /dev/fb0\n");
 }

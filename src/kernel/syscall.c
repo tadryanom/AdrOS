@@ -1538,14 +1538,23 @@ static uintptr_t mmap_find_free(uint32_t length) {
     return 0;
 }
 
+__attribute__((noinline))
 static uintptr_t syscall_mmap_impl(uintptr_t addr, uint32_t length, uint32_t prot,
                                     uint32_t flags, int fd, uint32_t offset) {
-    (void)offset;
     if (!current_process) return (uintptr_t)-EINVAL;
     if (length == 0) return (uintptr_t)-EINVAL;
 
-    if (!(flags & MAP_ANONYMOUS)) return (uintptr_t)-ENOSYS;
-    if (fd != -1) return (uintptr_t)-EINVAL;
+    int is_anon = (flags & MAP_ANONYMOUS) != 0;
+
+    /* fd-backed mmap: the file's node must provide a mmap callback */
+    fs_node_t* mmap_node = NULL;
+    if (!is_anon) {
+        if (fd < 0) return (uintptr_t)-EBADF;
+        struct file* f = fd_get(fd);
+        if (!f || !f->node) return (uintptr_t)-EBADF;
+        if (!f->node->mmap) return (uintptr_t)-ENOSYS;
+        mmap_node = f->node;
+    }
 
     uint32_t aligned_len = (length + 0xFFFU) & ~(uint32_t)0xFFFU;
 
@@ -1565,14 +1574,22 @@ static uintptr_t syscall_mmap_impl(uintptr_t addr, uint32_t length, uint32_t pro
     }
     if (slot < 0) return (uintptr_t)-ENOMEM;
 
-    uint32_t vmm_flags = VMM_FLAG_PRESENT | VMM_FLAG_USER;
-    if (prot & PROT_WRITE) vmm_flags |= VMM_FLAG_RW;
+    if (mmap_node) {
+        /* Device-backed mmap: delegate to the node's mmap callback */
+        uintptr_t result = mmap_node->mmap(mmap_node, base, aligned_len, prot, offset);
+        if (!result) return (uintptr_t)-ENOMEM;
+        base = result;
+    } else {
+        /* Anonymous mmap: allocate fresh zeroed pages */
+        uint32_t vmm_flags = VMM_FLAG_PRESENT | VMM_FLAG_USER;
+        if (prot & PROT_WRITE) vmm_flags |= VMM_FLAG_RW;
 
-    for (uintptr_t va = base; va < base + aligned_len; va += 0x1000U) {
-        void* frame = pmm_alloc_page();
-        if (!frame) return (uintptr_t)-ENOMEM;
-        vmm_map_page((uint64_t)(uintptr_t)frame, (uint64_t)va, vmm_flags);
-        memset((void*)va, 0, 0x1000U);
+        for (uintptr_t va = base; va < base + aligned_len; va += 0x1000U) {
+            void* frame = pmm_alloc_page();
+            if (!frame) return (uintptr_t)-ENOMEM;
+            vmm_map_page((uint64_t)(uintptr_t)frame, (uint64_t)va, vmm_flags);
+            memset((void*)va, 0, 0x1000U);
+        }
     }
 
     current_process->mmaps[slot].base = base;
