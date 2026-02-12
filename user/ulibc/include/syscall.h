@@ -75,6 +75,7 @@ enum {
     SYS_SIGSUSPEND = 80,
     SYS_READV = 81,
     SYS_WRITEV = 82,
+    SYS_ALARM = 83,
 };
 
 /* Raw syscall wrappers — up to 5 args via INT 0x80 */
