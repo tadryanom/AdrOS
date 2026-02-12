@@ -1,5 +1,6 @@
 #include "tty.h"
 
+#include "devfs.h"
 #include "keyboard.h"
 #include "process.h"
 #include "waitqueue.h"
@@ -375,6 +376,25 @@ static void tty_keyboard_cb(char c) {
     tty_input_char(c);
 }
 
+/* --- DevFS VFS-compatible wrappers --- */
+
+static fs_node_t g_dev_console_node;
+static fs_node_t g_dev_tty_node;
+
+static uint32_t tty_devfs_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
+    (void)node; (void)offset;
+    int rc = tty_read_kbuf(buffer, size);
+    if (rc < 0) return 0;
+    return (uint32_t)rc;
+}
+
+static uint32_t tty_devfs_write(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer) {
+    (void)node; (void)offset;
+    int rc = tty_write_kbuf(buffer, size);
+    if (rc < 0) return 0;
+    return (uint32_t)rc;
+}
+
 void tty_init(void) {
     spinlock_init(&tty_lock);
     line_len = 0;
@@ -384,6 +404,24 @@ void tty_init(void) {
     tty_fg_pgrp = 0;
 
     keyboard_set_callback(tty_keyboard_cb);
+
+    /* Register /dev/console */
+    memset(&g_dev_console_node, 0, sizeof(g_dev_console_node));
+    strcpy(g_dev_console_node.name, "console");
+    g_dev_console_node.flags = FS_CHARDEVICE;
+    g_dev_console_node.inode = 10;
+    g_dev_console_node.read = &tty_devfs_read;
+    g_dev_console_node.write = &tty_devfs_write;
+    devfs_register_device(&g_dev_console_node);
+
+    /* Register /dev/tty */
+    memset(&g_dev_tty_node, 0, sizeof(g_dev_tty_node));
+    strcpy(g_dev_tty_node.name, "tty");
+    g_dev_tty_node.flags = FS_CHARDEVICE;
+    g_dev_tty_node.inode = 3;
+    g_dev_tty_node.read = &tty_devfs_read;
+    g_dev_tty_node.write = &tty_devfs_write;
+    devfs_register_device(&g_dev_tty_node);
 }
 
 int tty_write(const void* user_buf, uint32_t len) {

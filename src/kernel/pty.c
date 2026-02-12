@@ -1,5 +1,6 @@
 #include "pty.h"
 
+#include "devfs.h"
 #include "errno.h"
 #include "process.h"
 #include "waitqueue.h"
@@ -101,12 +102,106 @@ static void pty_init_pair(int idx) {
     p->slave_node.write = &pty_slave_write_fn;
 }
 
+/* --- DevFS pts directory callbacks --- */
+
+static fs_node_t g_dev_ptmx_node;
+static fs_node_t g_dev_pts_dir_node;
+
+static uint32_t pty_ptmx_read_fn(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
+    (void)offset;
+    int idx = pty_ino_to_idx(node->inode);
+    if (idx < 0) idx = 0;
+    int rc = pty_master_read_idx(idx, buffer, size);
+    if (rc < 0) return 0;
+    return (uint32_t)rc;
+}
+
+static uint32_t pty_ptmx_write_fn(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer) {
+    (void)offset;
+    int idx = pty_ino_to_idx(node->inode);
+    if (idx < 0) idx = 0;
+    int rc = pty_master_write_idx(idx, buffer, size);
+    if (rc < 0) return 0;
+    return (uint32_t)rc;
+}
+
+static struct fs_node* pty_pts_finddir(struct fs_node* node, const char* name) {
+    (void)node;
+    if (!name || name[0] == 0) return 0;
+    int count = pty_pair_count();
+    for (int i = 0; i < count; i++) {
+        char num[4];
+        num[0] = '0' + (char)i;
+        num[1] = '\0';
+        if (strcmp(name, num) == 0) {
+            return pty_get_slave_node(i);
+        }
+    }
+    return 0;
+}
+
+static int pty_pts_readdir(struct fs_node* node, uint32_t* inout_index, void* buf, uint32_t buf_len) {
+    (void)node;
+    if (!inout_index || !buf) return -1;
+    if (buf_len < sizeof(struct vfs_dirent)) return -1;
+
+    int count = pty_pair_count();
+    uint32_t idx = *inout_index;
+    uint32_t cap = buf_len / (uint32_t)sizeof(struct vfs_dirent);
+    struct vfs_dirent* ents = (struct vfs_dirent*)buf;
+    uint32_t written = 0;
+
+    while (written < cap) {
+        struct vfs_dirent e;
+        memset(&e, 0, sizeof(e));
+
+        if (idx == 0) {
+            e.d_ino = 5; e.d_type = FS_DIRECTORY; strcpy(e.d_name, ".");
+        } else if (idx == 1) {
+            e.d_ino = 1; e.d_type = FS_DIRECTORY; strcpy(e.d_name, "..");
+        } else {
+            int pi = (int)(idx - 2);
+            if (pi >= count) break;
+            e.d_ino = PTY_SLAVE_INO_BASE + (uint32_t)pi;
+            e.d_type = FS_CHARDEVICE;
+            e.d_name[0] = '0' + (char)pi;
+            e.d_name[1] = '\0';
+        }
+
+        e.d_reclen = (uint16_t)sizeof(e);
+        ents[written] = e;
+        written++;
+        idx++;
+    }
+
+    *inout_index = idx;
+    return (int)(written * (uint32_t)sizeof(struct vfs_dirent));
+}
+
 void pty_init(void) {
     spinlock_init(&pty_lock);
     memset(g_ptys, 0, sizeof(g_ptys));
     g_pty_count = 0;
     pty_init_pair(0);
     g_pty_count = 1;
+
+    /* Register /dev/ptmx */
+    memset(&g_dev_ptmx_node, 0, sizeof(g_dev_ptmx_node));
+    strcpy(g_dev_ptmx_node.name, "ptmx");
+    g_dev_ptmx_node.flags = FS_CHARDEVICE;
+    g_dev_ptmx_node.inode = PTY_MASTER_INO_BASE;
+    g_dev_ptmx_node.read = &pty_ptmx_read_fn;
+    g_dev_ptmx_node.write = &pty_ptmx_write_fn;
+    devfs_register_device(&g_dev_ptmx_node);
+
+    /* Register /dev/pts directory */
+    memset(&g_dev_pts_dir_node, 0, sizeof(g_dev_pts_dir_node));
+    strcpy(g_dev_pts_dir_node.name, "pts");
+    g_dev_pts_dir_node.flags = FS_DIRECTORY;
+    g_dev_pts_dir_node.inode = 5;
+    g_dev_pts_dir_node.finddir = &pty_pts_finddir;
+    g_dev_pts_dir_node.readdir = &pty_pts_readdir;
+    devfs_register_device(&g_dev_pts_dir_node);
 }
 
 int pty_alloc_pair(void) {
