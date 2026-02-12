@@ -39,7 +39,7 @@ static int elf32_validate(const elf32_ehdr_t* eh, size_t file_len) {
     if (eh->e_ident[4] != ELFCLASS32) return -EINVAL;
     if (eh->e_ident[5] != ELFDATA2LSB) return -EINVAL;
 
-    if (eh->e_type != ET_EXEC) return -EINVAL;
+    if (eh->e_type != ET_EXEC && eh->e_type != ET_DYN) return -EINVAL;
     if (eh->e_machine != EM_386) return -EINVAL;
 
     if (eh->e_phentsize != sizeof(elf32_phdr_t)) return -EINVAL;
@@ -102,6 +102,92 @@ static int elf32_map_user_range(uintptr_t as, uintptr_t vaddr, size_t len, uint3
     return 0;
 }
 
+/* Load ELF segments at base_offset (0 for ET_EXEC, non-zero for interpreter).
+ * Operates in the target address space (caller must have activated it).
+ * Returns 0 on success, fills highest_end. */
+static int elf32_load_segments(const uint8_t* file, uint32_t file_len,
+                               uintptr_t as, uintptr_t base_offset,
+                               uintptr_t* highest_end) {
+    const elf32_ehdr_t* eh = (const elf32_ehdr_t*)file;
+    const elf32_phdr_t* ph = (const elf32_phdr_t*)(file + eh->e_phoff);
+    uintptr_t seg_max = 0;
+
+    for (uint16_t i = 0; i < eh->e_phnum; i++) {
+        if (ph[i].p_type != PT_LOAD) continue;
+        if (ph[i].p_memsz == 0) continue;
+
+        uintptr_t vaddr = (uintptr_t)ph[i].p_vaddr + base_offset;
+        if (vaddr == 0 || vaddr >= hal_mm_kernel_virt_base()) return -EINVAL;
+
+        uint32_t seg_end = (uint32_t)vaddr + ph[i].p_memsz;
+        if (seg_end < vaddr || seg_end >= hal_mm_kernel_virt_base()) return -EINVAL;
+
+        if ((uint64_t)ph[i].p_offset + (uint64_t)ph[i].p_filesz > (uint64_t)file_len)
+            return -EINVAL;
+
+        int mrc = elf32_map_user_range(as, vaddr, (size_t)ph[i].p_memsz, VMM_FLAG_RW);
+        if (mrc < 0) return mrc;
+
+        if (ph[i].p_filesz)
+            memcpy((void*)vaddr, file + ph[i].p_offset, ph[i].p_filesz);
+        if (ph[i].p_memsz > ph[i].p_filesz)
+            memset((void*)(vaddr + ph[i].p_filesz), 0, ph[i].p_memsz - ph[i].p_filesz);
+
+        if (seg_end > seg_max) seg_max = seg_end;
+    }
+
+    if (highest_end) *highest_end = seg_max;
+    return 0;
+}
+
+/* Load an interpreter ELF (ld.so) at INTERP_BASE.
+ * Returns 0 on success, sets *interp_entry. */
+#define INTERP_BASE 0x40000000U
+
+static int elf32_load_interp(const char* interp_path, uintptr_t as,
+                              uintptr_t* interp_entry, uintptr_t* interp_base_out) {
+    if (!interp_path || !interp_entry) return -EINVAL;
+
+    fs_node_t* node = vfs_lookup(interp_path);
+    if (!node) {
+        uart_print("[ELF] interp not found: ");
+        uart_print(interp_path);
+        uart_print("\n");
+        return -ENOENT;
+    }
+
+    uint32_t flen = node->length;
+    if (flen < sizeof(elf32_ehdr_t)) return -EINVAL;
+
+    uint8_t* fbuf = (uint8_t*)kmalloc(flen);
+    if (!fbuf) return -ENOMEM;
+
+    if (vfs_read(node, 0, flen, fbuf) != flen) {
+        kfree(fbuf);
+        return -EIO;
+    }
+
+    const elf32_ehdr_t* eh = (const elf32_ehdr_t*)fbuf;
+    int vrc = elf32_validate(eh, flen);
+    if (vrc < 0) {
+        kfree(fbuf);
+        return vrc;
+    }
+
+    uintptr_t dummy = 0;
+    int rc = elf32_load_segments(fbuf, flen, as, INTERP_BASE, &dummy);
+    if (rc < 0) {
+        kfree(fbuf);
+        return rc;
+    }
+
+    *interp_entry = (uintptr_t)eh->e_entry + INTERP_BASE;
+    if (interp_base_out) *interp_base_out = INTERP_BASE;
+
+    kfree(fbuf);
+    return 0;
+}
+
 int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uintptr_t* user_stack_top_out, uintptr_t* addr_space_out, uintptr_t* heap_break_out) {
     if (!filename || !entry_out || !user_stack_top_out || !addr_space_out) return -EFAULT;
     if (!fs_root) return -EINVAL;
@@ -140,7 +226,6 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
         return -EIO;
     }
 
-    // Switch into the new address space only after the ELF image is fully buffered.
     vmm_as_activate(new_as);
 
     const elf32_ehdr_t* eh = (const elf32_ehdr_t*)file;
@@ -153,73 +238,44 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
         return vrc;
     }
 
-    const elf32_phdr_t* ph = (const elf32_phdr_t*)(file + eh->e_phoff);
     uintptr_t highest_seg_end = 0;
+    int lrc = elf32_load_segments(file, file_len, new_as, 0, &highest_seg_end);
+    if (lrc < 0) {
+        uart_print("[ELF] segment load failed\n");
+        kfree(file);
+        vmm_as_activate(old_as);
+        vmm_as_destroy(new_as);
+        return lrc;
+    }
+
+    /* Check for PT_INTERP — if present, load the dynamic linker */
+    const elf32_phdr_t* ph = (const elf32_phdr_t*)(file + eh->e_phoff);
+    uintptr_t real_entry = (uintptr_t)eh->e_entry;
+    int has_interp = 0;
 
     for (uint16_t i = 0; i < eh->e_phnum; i++) {
-        if (ph[i].p_type != PT_LOAD) continue;
+        if (ph[i].p_type == PT_INTERP) {
+            if (ph[i].p_filesz == 0 || ph[i].p_filesz > 256) break;
+            if (ph[i].p_offset + ph[i].p_filesz > file_len) break;
 
-        if (ph[i].p_memsz == 0) continue;
-        if (ph[i].p_vaddr == 0) {
-            uart_print("[ELF] PT_LOAD with vaddr=0 rejected\n");
-            kfree(file);
-            vmm_as_activate(old_as);
-            vmm_as_destroy(new_as);
-            return -EINVAL;
-        }
-        if (ph[i].p_vaddr >= hal_mm_kernel_virt_base()) {
-            uart_print("[ELF] PT_LOAD in kernel range rejected\n");
-            kfree(file);
-            vmm_as_activate(old_as);
-            vmm_as_destroy(new_as);
-            return -EINVAL;
-        }
+            char interp_path[256];
+            memcpy(interp_path, file + ph[i].p_offset, ph[i].p_filesz);
+            interp_path[ph[i].p_filesz - 1] = '\0';
 
-        uint32_t seg_end = ph[i].p_vaddr + ph[i].p_memsz;
-        if (seg_end < ph[i].p_vaddr) {
-            kfree(file);
-            vmm_as_activate(old_as);
-            vmm_as_destroy(new_as);
-            return -EINVAL;
-        }
-        if (seg_end >= hal_mm_kernel_virt_base()) {
-            kfree(file);
-            vmm_as_activate(old_as);
-            vmm_as_destroy(new_as);
-            return -EINVAL;
-        }
-
-        if ((uint64_t)ph[i].p_offset + (uint64_t)ph[i].p_filesz > (uint64_t)file_len) {
-            uart_print("[ELF] segment outside file\n");
-            kfree(file);
-            vmm_as_activate(old_as);
-            vmm_as_destroy(new_as);
-            return -EINVAL;
-        }
-
-        const uint32_t map_flags = VMM_FLAG_RW;
-
-        int mrc = elf32_map_user_range(new_as, (uintptr_t)ph[i].p_vaddr, (size_t)ph[i].p_memsz, map_flags);
-        if (mrc < 0) {
-            uart_print("[ELF] OOM mapping user segment\n");
-            kfree(file);
-            vmm_as_activate(old_as);
-            vmm_as_destroy(new_as);
-            return mrc;
-        }
-
-        if (ph[i].p_filesz) {
-            memcpy((void*)(uintptr_t)ph[i].p_vaddr, file + ph[i].p_offset, ph[i].p_filesz);
-        }
-
-        if (ph[i].p_memsz > ph[i].p_filesz) {
-            memset((void*)(uintptr_t)(ph[i].p_vaddr + ph[i].p_filesz), 0, ph[i].p_memsz - ph[i].p_filesz);
-        }
-
-        if (seg_end > highest_seg_end) {
-            highest_seg_end = seg_end;
+            uintptr_t interp_entry = 0;
+            uintptr_t interp_base = 0;
+            int irc = elf32_load_interp(interp_path, new_as, &interp_entry, &interp_base);
+            if (irc == 0) {
+                real_entry = interp_entry;
+                has_interp = 1;
+                uart_print("[ELF] loaded interp: ");
+                uart_print(interp_path);
+                uart_print("\n");
+            }
+            break;
         }
     }
+    (void)has_interp;
 
     const uintptr_t user_stack_base = 0x00800000U;
     const size_t user_stack_size = 0x1000;
@@ -233,7 +289,7 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
         return src2;
     }
 
-    *entry_out = (uintptr_t)eh->e_entry;
+    *entry_out = real_entry;
     *user_stack_top_out = user_stack_base + user_stack_size;
     *addr_space_out = new_as;
     if (heap_break_out) {
