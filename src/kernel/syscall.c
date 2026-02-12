@@ -1725,9 +1725,18 @@ static int syscall_readlink_impl(const char* user_path, char* user_buf, uint32_t
 }
 
 static int syscall_link_impl(const char* user_oldpath, const char* user_newpath) {
-    (void)user_oldpath;
-    (void)user_newpath;
-    return -ENOSYS;
+    if (!user_oldpath || !user_newpath) return -EFAULT;
+    char old_path[128], new_path[128];
+    int rc1 = path_resolve_user(user_oldpath, old_path, sizeof(old_path));
+    if (rc1 < 0) return rc1;
+    int rc2 = path_resolve_user(user_newpath, new_path, sizeof(new_path));
+    if (rc2 < 0) return rc2;
+    extern int diskfs_link(const char*, const char*);
+    const char* old_rel = old_path;
+    const char* new_rel = new_path;
+    if (memcmp(old_path, "/disk/", 6) == 0) old_rel = old_path + 6;
+    if (memcmp(new_path, "/disk/", 6) == 0) new_rel = new_path + 6;
+    return diskfs_link(old_rel, new_rel);
 }
 
 static int syscall_chmod_impl(const char* user_path, uint32_t mode) {
