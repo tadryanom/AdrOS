@@ -2,7 +2,7 @@
 
 This guide explains how to build and run AdrOS on your local machine (Linux/WSL).
 
-AdrOS is a Unix-like, POSIX-compatible OS kernel with threads, networking (TCP/IP via lwIP), dynamic linking infrastructure, and a POSIX shell. See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for the full compatibility checklist.
+AdrOS is a Unix-like, POSIX-compatible OS kernel with threads, futex synchronization, networking (TCP/IP + DNS via lwIP), dynamic linking infrastructure, FAT16 filesystem, ASLR, vDSO, zero-copy DMA, and a POSIX shell. See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for the full compatibility checklist.
 
 ## 1. Dependencies
 
@@ -79,8 +79,11 @@ Syscall return convention note:
 The following ELF binaries are bundled in the initrd:
 - `/bin/init.elf` — comprehensive smoke test suite (19+ checks)
 - `/bin/echo` — argv/envp test
-- `/bin/sh` — POSIX sh-compatible shell
+- `/bin/sh` — POSIX sh-compatible shell with `$PATH` search, pipes, redirects, builtins
 - `/bin/cat`, `/bin/ls`, `/bin/mkdir`, `/bin/rm` — core utilities
+- `/lib/ld.so` — stub dynamic linker (placeholder for future shared library support)
+
+The ulibc provides: `printf`, `malloc`/`free`/`calloc`/`realloc`, `string.h`, `unistd.h`, `errno.h`, `pthread.h`, `signal.h` (with `raise`, `sigaltstack`, `sigpending`, `sigsuspend`), `stdio.h` (buffered I/O with `fopen`/`fread`/`fwrite`/`fclose`), `sys/times.h`, `sys/uio.h`, `linux/futex.h`, and `realpath()`.
 
 ### Smoke tests
 The init program (`/bin/init.elf`) runs a comprehensive suite of smoke tests on boot, covering:
@@ -99,6 +102,8 @@ The init program (`/bin/init.elf`) runs a comprehensive suite of smoke tests on 
 - `fork` (100 children), `waitpid` (`WNOHANG`), `execve`
 - `SIGSEGV` handler
 - diskfs mkdir/unlink/getdents
+- Persistent counter (`/persist/counter`)
+- `/dev/tty` write test
 
 All tests print `[init] ... OK` on success. Any failure calls `sys_exit(1)`.
 
