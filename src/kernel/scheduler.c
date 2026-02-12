@@ -743,8 +743,10 @@ void schedule(void) {
     struct process* prev = current_process;
 
     // Put prev back into expired runqueue if it's still runnable.
+    // Priority decay: penalize CPU-bound processes that exhaust their slice.
     if (prev->state == PROCESS_RUNNING) {
         prev->state = PROCESS_READY;
+        if (prev->priority < SCHED_NUM_PRIOS - 1) prev->priority++;
         rq_enqueue(rq_expired, prev);
     }
 
@@ -846,6 +848,8 @@ void process_wake_check(uint32_t current_tick) {
         if (iter->state == PROCESS_SLEEPING) {
             if (current_tick >= iter->wake_at_tick) {
                 iter->state = PROCESS_READY;
+                /* Priority boost: reward I/O-bound processes that sleep */
+                if (iter->priority > 0) iter->priority--;
                 rq_enqueue(rq_active, iter);
             }
         }
