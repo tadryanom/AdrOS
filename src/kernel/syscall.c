@@ -67,6 +67,7 @@ static int fd_alloc(struct file* f);
 static int fd_close(int fd);
 static struct file* fd_get(int fd);
 static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no);
+static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_no);
 
 struct pollfd {
     int fd;
@@ -2205,6 +2206,18 @@ void syscall_handler(struct registers* regs) {
         return;
     }
 
+    if (syscall_no == SYSCALL_SIGPENDING) {
+        uint32_t* user_set = (uint32_t*)regs->ebx;
+        if (!current_process) { regs->eax = (uint32_t)-EINVAL; return; }
+        uint32_t pending = current_process->sig_pending_mask & current_process->sig_blocked_mask;
+        if (copy_to_user(user_set, &pending, sizeof(pending)) < 0) {
+            regs->eax = (uint32_t)-EFAULT;
+        } else {
+            regs->eax = 0;
+        }
+        return;
+    }
+
     if (syscall_no == SYSCALL_FSYNC || syscall_no == SYSCALL_FDATASYNC) {
         int fd = (int)regs->ebx;
         if (!current_process || fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd]) {
@@ -2215,11 +2228,109 @@ void syscall_handler(struct registers* regs) {
         return;
     }
 
+    if (syscall_no == SYSCALL_PREAD || syscall_no == SYSCALL_PWRITE ||
+        syscall_no == SYSCALL_ACCESS) {
+        posix_ext_syscall_dispatch(regs, syscall_no);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_UMASK) {
+        if (!current_process) { regs->eax = 0; return; }
+        uint32_t old = current_process->umask;
+        current_process->umask = regs->ebx & 0777;
+        regs->eax = old;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SETUID) {
+        if (!current_process) { regs->eax = (uint32_t)-EINVAL; return; }
+        current_process->uid = regs->ebx;
+        regs->eax = 0;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SETGID) {
+        if (!current_process) { regs->eax = (uint32_t)-EINVAL; return; }
+        current_process->gid = regs->ebx;
+        regs->eax = 0;
+        return;
+    }
+
     /* ---- Socket syscalls ---- */
     socket_syscall_dispatch(regs, syscall_no);
     /* If socket dispatch handled it, eax is set and we return.
        If not, it sets ENOSYS. Either way, return. */
     return;
+}
+
+/* Separate function to keep pread/pwrite/access locals off syscall_handler's stack */
+__attribute__((noinline))
+static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_no) {
+    if (syscall_no == SYSCALL_PREAD) {
+        int fd = (int)regs->ebx;
+        void* buf = (void*)regs->ecx;
+        uint32_t count = regs->edx;
+        uint32_t offset = regs->esi;
+        struct file* f = fd_get(fd);
+        if (!f || !f->node) { regs->eax = (uint32_t)-EBADF; return; }
+        if (!f->node->read) { regs->eax = (uint32_t)-ESPIPE; return; }
+        if (count > 1024 * 1024) { regs->eax = (uint32_t)-EINVAL; return; }
+        uint8_t kbuf[256];
+        uint32_t total = 0;
+        while (total < count) {
+            uint32_t chunk = count - total;
+            if (chunk > sizeof(kbuf)) chunk = (uint32_t)sizeof(kbuf);
+            uint32_t rd = vfs_read(f->node, offset + total, chunk, kbuf);
+            if (rd == 0) break;
+            if (copy_to_user((uint8_t*)buf + total, kbuf, rd) < 0) {
+                regs->eax = (uint32_t)-EFAULT; return;
+            }
+            total += rd;
+            if (rd < chunk) break;
+        }
+        regs->eax = total;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_PWRITE) {
+        int fd = (int)regs->ebx;
+        const void* buf = (const void*)regs->ecx;
+        uint32_t count = regs->edx;
+        uint32_t offset = regs->esi;
+        struct file* f = fd_get(fd);
+        if (!f || !f->node) { regs->eax = (uint32_t)-EBADF; return; }
+        if (!f->node->write) { regs->eax = (uint32_t)-ESPIPE; return; }
+        if (count > 1024 * 1024) { regs->eax = (uint32_t)-EINVAL; return; }
+        uint8_t kbuf[256];
+        uint32_t total = 0;
+        while (total < count) {
+            uint32_t chunk = count - total;
+            if (chunk > sizeof(kbuf)) chunk = (uint32_t)sizeof(kbuf);
+            if (copy_from_user(kbuf, (const uint8_t*)buf + total, chunk) < 0) {
+                regs->eax = (uint32_t)-EFAULT; return;
+            }
+            uint32_t wr = vfs_write(f->node, offset + total, chunk, kbuf);
+            if (wr == 0) break;
+            total += wr;
+            if (wr < chunk) break;
+        }
+        regs->eax = total;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_ACCESS) {
+        const char* user_path = (const char*)regs->ebx;
+        if (!user_path) { regs->eax = (uint32_t)-EFAULT; return; }
+        char path[128];
+        int prc = path_resolve_user(user_path, path, sizeof(path));
+        if (prc < 0) { regs->eax = (uint32_t)prc; return; }
+        fs_node_t* node = vfs_lookup(path);
+        if (!node) { regs->eax = (uint32_t)-ENOENT; return; }
+        regs->eax = 0;
+        return;
+    }
+
+    regs->eax = (uint32_t)-ENOSYS;
 }
 
 /* Separate function to keep socket locals off syscall_handler's stack frame */

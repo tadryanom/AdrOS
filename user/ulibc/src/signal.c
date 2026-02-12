@@ -13,3 +13,7 @@ int raise(int sig) {
 int sigprocmask(int how, const uint32_t* set, uint32_t* oldset) {
     return __syscall_ret(_syscall3(SYS_SIGPROCMASK, how, (int)set, (int)oldset));
 }
+
+int sigpending(uint32_t* set) {
+    return __syscall_ret(_syscall1(SYS_SIGPENDING, (int)set));
+}

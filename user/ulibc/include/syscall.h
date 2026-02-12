@@ -53,6 +53,13 @@ enum {
     SYS_GETTID = 68,
     SYS_FSYNC = 69,
     SYS_FDATASYNC = 70,
+    SYS_SIGPENDING = 71,
+    SYS_PREAD = 72,
+    SYS_PWRITE = 73,
+    SYS_ACCESS = 74,
+    SYS_UMASK = 75,
+    SYS_SETUID = 76,
+    SYS_SETGID = 77,
 };
 
 /* Raw syscall wrappers — up to 5 args via INT 0x80 */
