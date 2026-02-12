@@ -137,6 +137,39 @@ int fputs(const char* s, FILE* fp) {
 int feof(FILE* fp) { return fp ? (fp->flags & _STDIO_EOF) : 0; }
 int ferror(FILE* fp) { return fp ? (fp->flags & _STDIO_ERR) : 0; }
 
+int fseek(FILE* fp, long offset, int whence) {
+    if (!fp) return -1;
+    fflush(fp);
+    fp->buf_pos = 0;
+    fp->buf_len = 0;
+    fp->flags &= ~_STDIO_EOF;
+    int rc = lseek(fp->fd, (int)offset, whence);
+    return (rc < 0) ? -1 : 0;
+}
+
+long ftell(FILE* fp) {
+    if (!fp) return -1;
+    long pos = (long)lseek(fp->fd, 0, 1 /* SEEK_CUR */);
+    if (pos < 0) return -1;
+    if (fp->flags & _STDIO_READ) {
+        pos -= (long)(fp->buf_len - fp->buf_pos);
+    }
+    return pos;
+}
+
+void rewind(FILE* fp) {
+    if (fp) fseek(fp, 0, 0 /* SEEK_SET */);
+}
+
+int remove(const char* path) {
+    return unlink(path);
+}
+
+int rename(const char* oldpath, const char* newpath) {
+    (void)oldpath; (void)newpath;
+    return -1;
+}
+
 int vfprintf(FILE* fp, const char* fmt, va_list ap) {
     char buf[1024];
     int n = vsnprintf(buf, sizeof(buf), fmt, ap);
@@ -309,12 +342,65 @@ done:
 #undef PUTC
 }
 
+int sprintf(char* buf, const char* fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    int r = vsnprintf(buf, (size_t)0x7FFFFFFF, fmt, ap);
+    va_end(ap);
+    return r;
+}
+
 int snprintf(char* buf, size_t size, const char* fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
     int r = vsnprintf(buf, size, fmt, ap);
     va_end(ap);
     return r;
+}
+
+int sscanf(const char* str, const char* fmt, ...) {
+    /* Minimal sscanf: only supports %d and %s */
+    va_list ap;
+    va_start(ap, fmt);
+    int count = 0;
+    const char* s = str;
+    const char* f = fmt;
+    while (*f && *s) {
+        if (*f == '%') {
+            f++;
+            if (*f == 'd' || *f == 'i') {
+                f++;
+                int* out = va_arg(ap, int*);
+                int neg = 0;
+                while (*s == ' ') s++;
+                if (*s == '-') { neg = 1; s++; }
+                else if (*s == '+') { s++; }
+                if (*s < '0' || *s > '9') break;
+                int val = 0;
+                while (*s >= '0' && *s <= '9') { val = val * 10 + (*s - '0'); s++; }
+                *out = neg ? -val : val;
+                count++;
+            } else if (*f == 's') {
+                f++;
+                char* out = va_arg(ap, char*);
+                while (*s == ' ') s++;
+                int i = 0;
+                while (*s && *s != ' ' && *s != '\n' && *s != '\t') out[i++] = *s++;
+                out[i] = '\0';
+                count++;
+            } else {
+                break;
+            }
+        } else if (*f == ' ') {
+            f++;
+            while (*s == ' ') s++;
+        } else {
+            if (*f != *s) break;
+            f++; s++;
+        }
+    }
+    va_end(ap);
+    return count;
 }
 
 int vprintf(const char* fmt, va_list ap) {

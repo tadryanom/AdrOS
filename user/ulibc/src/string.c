@@ -91,3 +91,72 @@ char* strcat(char* dst, const char* src) {
     *p = 0;
     return dst;
 }
+
+char* strncat(char* dst, const char* src, size_t n) {
+    char* p = dst;
+    while (*p) p++;
+    size_t i = 0;
+    while (i < n && src[i]) { *p++ = src[i++]; }
+    *p = 0;
+    return dst;
+}
+
+char* strdup(const char* s) {
+    if (!s) return (void*)0;
+    size_t len = strlen(s) + 1;
+    extern void* malloc(size_t);
+    char* d = (char*)malloc(len);
+    if (d) memcpy(d, s, len);
+    return d;
+}
+
+static int tolower_impl(int c) {
+    return (c >= 'A' && c <= 'Z') ? c + 32 : c;
+}
+
+int strcasecmp(const char* a, const char* b) {
+    while (*a && tolower_impl((unsigned char)*a) == tolower_impl((unsigned char)*b)) { a++; b++; }
+    return tolower_impl((unsigned char)*a) - tolower_impl((unsigned char)*b);
+}
+
+int strncasecmp(const char* a, const char* b, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        int ca = tolower_impl((unsigned char)a[i]);
+        int cb = tolower_impl((unsigned char)b[i]);
+        if (ca != cb) return ca - cb;
+        if (a[i] == 0) break;
+    }
+    return 0;
+}
+
+char* strstr(const char* haystack, const char* needle) {
+    if (!*needle) return (char*)haystack;
+    size_t nlen = strlen(needle);
+    while (*haystack) {
+        if (strncmp(haystack, needle, nlen) == 0) return (char*)haystack;
+        haystack++;
+    }
+    return (void*)0;
+}
+
+void* memchr(const void* s, int c, size_t n) {
+    const uint8_t* p = (const uint8_t*)s;
+    for (size_t i = 0; i < n; i++) {
+        if (p[i] == (uint8_t)c) return (void*)(p + i);
+    }
+    return (void*)0;
+}
+
+static char* strtok_state = (void*)0;
+
+char* strtok(char* str, const char* delim) {
+    if (str) strtok_state = str;
+    if (!strtok_state) return (void*)0;
+    /* skip leading delimiters */
+    while (*strtok_state && strchr(delim, *strtok_state)) strtok_state++;
+    if (!*strtok_state) return (void*)0;
+    char* start = strtok_state;
+    while (*strtok_state && !strchr(delim, *strtok_state)) strtok_state++;
+    if (*strtok_state) *strtok_state++ = 0;
+    return start;
+}

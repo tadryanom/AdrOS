@@ -10,6 +10,10 @@ void*   realloc(void* ptr, size_t size);
 
 int     atoi(const char* s);
 char*   realpath(const char* path, char* resolved);
+char*   getenv(const char* name);
+int     abs(int x);
+long    labs(long x);
+
 void    exit(int status) __attribute__((noreturn));
 
 #ifndef NULL

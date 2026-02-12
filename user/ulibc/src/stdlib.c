@@ -106,6 +106,19 @@ char* realpath(const char* path, char* resolved) {
     return resolved;
 }
 
+char* getenv(const char* name) {
+    (void)name;
+    return (char*)0;
+}
+
+int abs(int x) {
+    return x < 0 ? -x : x;
+}
+
+long labs(long x) {
+    return x < 0 ? -x : x;
+}
+
 void exit(int status) {
     _exit(status);
 }
