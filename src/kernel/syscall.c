@@ -1346,10 +1346,7 @@ static int syscall_ioctl_impl(int fd, uint32_t cmd, void* user_arg) {
     if (!f || !f->node) return -EBADF;
 
     fs_node_t* n = f->node;
-    if (n->flags != FS_CHARDEVICE) return -ENOTTY;
-    if (n->inode == 3) return tty_ioctl(cmd, user_arg);
-    if (pty_is_slave_ino(n->inode)) return pty_slave_ioctl_idx(pty_ino_to_idx(n->inode), cmd, user_arg);
-    if (pty_is_master_ino(n->inode)) return -ENOTTY;
+    if (n->ioctl) return n->ioctl(n, cmd, user_arg);
     return -ENOTTY;
 }
 

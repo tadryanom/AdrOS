@@ -78,6 +78,7 @@ static uint32_t pty_master_read_fn(fs_node_t* node, uint32_t offset, uint32_t si
 static uint32_t pty_master_write_fn(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer);
 static uint32_t pty_slave_read_fn(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer);
 static uint32_t pty_slave_write_fn(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer);
+static int pty_slave_ioctl_fn(fs_node_t* node, uint32_t cmd, void* arg);
 
 static void pty_init_pair(int idx) {
     struct pty_pair* p = &g_ptys[idx];
@@ -100,6 +101,7 @@ static void pty_init_pair(int idx) {
     p->slave_node.inode = PTY_SLAVE_INO_BASE + (uint32_t)idx;
     p->slave_node.read = &pty_slave_read_fn;
     p->slave_node.write = &pty_slave_write_fn;
+    p->slave_node.ioctl = &pty_slave_ioctl_fn;
 }
 
 /* --- DevFS pts directory callbacks --- */
@@ -497,6 +499,12 @@ static uint32_t pty_slave_write_fn(fs_node_t* node, uint32_t offset, uint32_t si
     int rc = pty_slave_write_idx(idx, buffer, size);
     if (rc < 0) return 0;
     return (uint32_t)rc;
+}
+
+static int pty_slave_ioctl_fn(fs_node_t* node, uint32_t cmd, void* arg) {
+    int idx = pty_ino_to_idx(node->inode);
+    if (idx < 0) return -ENODEV;
+    return pty_slave_ioctl_idx(idx, cmd, arg);
 }
 
 int pty_master_can_read(void)  { return pty_master_can_read_idx(0); }

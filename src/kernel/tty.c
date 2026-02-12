@@ -395,6 +395,11 @@ static uint32_t tty_devfs_write(fs_node_t* node, uint32_t offset, uint32_t size,
     return (uint32_t)rc;
 }
 
+static int tty_devfs_ioctl(fs_node_t* node, uint32_t cmd, void* arg) {
+    (void)node;
+    return tty_ioctl(cmd, arg);
+}
+
 void tty_init(void) {
     spinlock_init(&tty_lock);
     line_len = 0;
@@ -412,6 +417,7 @@ void tty_init(void) {
     g_dev_console_node.inode = 10;
     g_dev_console_node.read = &tty_devfs_read;
     g_dev_console_node.write = &tty_devfs_write;
+    g_dev_console_node.ioctl = &tty_devfs_ioctl;
     devfs_register_device(&g_dev_console_node);
 
     /* Register /dev/tty */
@@ -421,6 +427,7 @@ void tty_init(void) {
     g_dev_tty_node.inode = 3;
     g_dev_tty_node.read = &tty_devfs_read;
     g_dev_tty_node.write = &tty_devfs_write;
+    g_dev_tty_node.ioctl = &tty_devfs_ioctl;
     devfs_register_device(&g_dev_tty_node);
 }
 
