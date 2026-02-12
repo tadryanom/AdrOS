@@ -86,6 +86,14 @@ int gettid(void) {
     return _syscall0(SYS_GETTID);
 }
 
+int fsync(int fd) {
+    return __syscall_ret(_syscall1(SYS_FSYNC, fd));
+}
+
+int fdatasync(int fd) {
+    return __syscall_ret(_syscall1(SYS_FDATASYNC, fd));
+}
+
 void* brk(void* addr) {
     return (void*)_syscall1(SYS_BRK, (int)addr);
 }

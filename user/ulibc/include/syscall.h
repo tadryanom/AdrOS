@@ -51,6 +51,8 @@ enum {
     SYS_SET_THREAD_AREA = 57,
     SYS_CLONE = 67,
     SYS_GETTID = 68,
+    SYS_FSYNC = 69,
+    SYS_FDATASYNC = 70,
 };
 
 /* Raw syscall wrappers — up to 5 args via INT 0x80 */
