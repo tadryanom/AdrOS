@@ -26,5 +26,13 @@
 #define ENAMETOOLONG 36
 #define ENOSYS 38
 #define ENOTEMPTY 39
+#define EAFNOSUPPORT 47
+#define EADDRINUSE 48
+#define ECONNREFUSED 61
+#define ENOTCONN 57
+#define EOPNOTSUPP 95
+#define EPROTONOSUPPORT 93
+#define ECONNRESET 54
+#define ETIMEDOUT 60
 
 #endif

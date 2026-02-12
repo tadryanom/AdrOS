@@ -78,6 +78,16 @@ enum {
     SYSCALL_READLINK = 56,
 
     SYSCALL_SET_THREAD_AREA = 57,
+
+    SYSCALL_SOCKET    = 58,
+    SYSCALL_BIND      = 59,
+    SYSCALL_LISTEN    = 60,
+    SYSCALL_ACCEPT    = 61,
+    SYSCALL_CONNECT   = 62,
+    SYSCALL_SEND      = 63,
+    SYSCALL_RECV      = 64,
+    SYSCALL_SENDTO    = 65,
+    SYSCALL_RECVFROM  = 66,
 };
 
 #endif
