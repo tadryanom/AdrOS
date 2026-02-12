@@ -101,6 +101,11 @@ enum {
     SYSCALL_UMASK     = 75,
     SYSCALL_SETUID    = 76,
     SYSCALL_SETGID    = 77,
+    SYSCALL_TRUNCATE  = 78,
+    SYSCALL_FTRUNCATE = 79,
+    SYSCALL_SIGSUSPEND = 80,
+    SYSCALL_READV     = 81,
+    SYSCALL_WRITEV    = 82,
 };
 
 #endif
