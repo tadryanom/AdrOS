@@ -2263,6 +2263,23 @@ void syscall_handler(struct registers* regs) {
         return;
     }
 
+    if (syscall_no == SYSCALL_ALARM) {
+        if (!current_process) { regs->eax = 0; return; }
+        uint32_t seconds = regs->ebx;
+        uint32_t now = get_tick_count();
+        uint32_t old_remaining = 0;
+        if (current_process->alarm_tick > now) {
+            old_remaining = (current_process->alarm_tick - now) / 50 + 1;
+        }
+        if (seconds == 0) {
+            current_process->alarm_tick = 0;
+        } else {
+            current_process->alarm_tick = now + seconds * 50;
+        }
+        regs->eax = old_remaining;
+        return;
+    }
+
     if (syscall_no == SYSCALL_SIGSUSPEND) {
         if (!current_process) { regs->eax = (uint32_t)-EINVAL; return; }
         uint32_t new_mask = 0;
