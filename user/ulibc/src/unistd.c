@@ -94,6 +94,26 @@ int fdatasync(int fd) {
     return __syscall_ret(_syscall1(SYS_FDATASYNC, fd));
 }
 
+int pread(int fd, void* buf, size_t count, int offset) {
+    return __syscall_ret(_syscall4(SYS_PREAD, fd, (int)buf, (int)count, offset));
+}
+
+int pwrite(int fd, const void* buf, size_t count, int offset) {
+    return __syscall_ret(_syscall4(SYS_PWRITE, fd, (int)buf, (int)count, offset));
+}
+
+int access(const char* path, int mode) {
+    return __syscall_ret(_syscall2(SYS_ACCESS, (int)path, mode));
+}
+
+int setuid(int uid) {
+    return __syscall_ret(_syscall1(SYS_SETUID, uid));
+}
+
+int setgid(int gid) {
+    return __syscall_ret(_syscall1(SYS_SETGID, gid));
+}
+
 void* brk(void* addr) {
     return (void*)_syscall1(SYS_BRK, (int)addr);
 }

@@ -35,6 +35,11 @@ int     getpgrp(void);
 int     gettid(void);
 int     fsync(int fd);
 int     fdatasync(int fd);
+int     pread(int fd, void* buf, size_t count, int offset);
+int     pwrite(int fd, const void* buf, size_t count, int offset);
+int     access(const char* path, int mode);
+int     setuid(int uid);
+int     setgid(int gid);
 void*   brk(void* addr);
 
 void    _exit(int status) __attribute__((noreturn));
