@@ -109,6 +109,7 @@ enum {
     SYSCALL_ALARM     = 83,
     SYSCALL_TIMES     = 84,
     SYSCALL_FUTEX     = 85,
+    SYSCALL_SIGALTSTACK = 86,
 };
 
 #endif

@@ -72,6 +72,9 @@ struct process {
     struct sigaction sigactions[PROCESS_MAX_SIG];
     uint32_t sig_blocked_mask;
     uint32_t sig_pending_mask;
+    uintptr_t ss_sp;            /* alternate signal stack pointer */
+    uint32_t  ss_size;          /* alternate signal stack size */
+    uint32_t  ss_flags;         /* SS_DISABLE etc. */
 
     // For SIGSEGV: last page fault address (CR2) captured in ring3.
     uintptr_t last_fault_addr;

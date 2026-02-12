@@ -68,6 +68,7 @@ enum {
     SYS_ALARM = 83,
     SYS_TIMES = 84,
     SYS_FUTEX = 85,
+    SYS_SIGALTSTACK = 86,
 };
 
 /* Raw syscall wrappers — up to 5 args via INT 0x80 */

@@ -2272,7 +2272,8 @@ void syscall_handler(struct registers* regs) {
         return;
     }
 
-    if (syscall_no == SYSCALL_TIMES || syscall_no == SYSCALL_FUTEX) {
+    if (syscall_no == SYSCALL_SIGALTSTACK ||
+        syscall_no == SYSCALL_TIMES || syscall_no == SYSCALL_FUTEX) {
         posix_ext_syscall_dispatch(regs, syscall_no);
         return;
     }
@@ -2450,6 +2451,41 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
             if ((uint32_t)r < iov.iov_len) break;
         }
         regs->eax = total;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SIGALTSTACK) {
+        if (!current_process) { regs->eax = (uint32_t)-EINVAL; return; }
+        #ifndef SS_DISABLE
+        #define SS_DISABLE 2
+        #endif
+        uint32_t* user_old = (uint32_t*)regs->ecx;
+        uint32_t* user_new = (uint32_t*)regs->ebx;
+        if (user_old) {
+            uint32_t old_ss[3];
+            old_ss[0] = (uint32_t)current_process->ss_sp;
+            old_ss[1] = current_process->ss_flags;
+            old_ss[2] = current_process->ss_size;
+            if (copy_to_user(user_old, old_ss, 12) < 0) {
+                regs->eax = (uint32_t)-EFAULT; return;
+            }
+        }
+        if (user_new) {
+            uint32_t new_ss[3];
+            if (copy_from_user(new_ss, user_new, 12) < 0) {
+                regs->eax = (uint32_t)-EFAULT; return;
+            }
+            if (new_ss[1] & SS_DISABLE) {
+                current_process->ss_sp = 0;
+                current_process->ss_size = 0;
+                current_process->ss_flags = SS_DISABLE;
+            } else {
+                current_process->ss_sp = (uintptr_t)new_ss[0];
+                current_process->ss_flags = new_ss[1];
+                current_process->ss_size = new_ss[2];
+            }
+        }
+        regs->eax = 0;
         return;
     }
 

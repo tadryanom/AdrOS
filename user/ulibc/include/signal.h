@@ -53,4 +53,13 @@ int sigprocmask(int how, const uint32_t* set, uint32_t* oldset);
 int sigpending(uint32_t* set);
 int sigsuspend(const uint32_t* mask);
 
+#define SS_DISABLE 2
+typedef struct {
+    void*    ss_sp;
+    int      ss_flags;
+    unsigned ss_size;
+} stack_t;
+
+int sigaltstack(const stack_t* ss, stack_t* old_ss);
+
 #endif

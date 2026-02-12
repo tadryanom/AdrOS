@@ -21,3 +21,7 @@ int sigpending(uint32_t* set) {
 int sigsuspend(const uint32_t* mask) {
     return __syscall_ret(_syscall1(SYS_SIGSUSPEND, (int)mask));
 }
+
+int sigaltstack(const stack_t* ss, stack_t* old_ss) {
+    return __syscall_ret(_syscall2(SYS_SIGALTSTACK, (int)ss, (int)old_ss));
+}
