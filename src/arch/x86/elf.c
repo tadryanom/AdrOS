@@ -292,6 +292,16 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
         return src2;
     }
 
+    /* Map vDSO shared page read-only into user address space */
+    {
+        extern uintptr_t vdso_get_phys(void);
+        uintptr_t vp = vdso_get_phys();
+        if (vp) {
+            vmm_map_page((uint64_t)vp, (uint64_t)0x007FE000U,
+                         VMM_FLAG_PRESENT | VMM_FLAG_USER);
+        }
+    }
+
     *entry_out = real_entry;
     *user_stack_top_out = user_stack_base + user_stack_size;
     *addr_space_out = new_as;
