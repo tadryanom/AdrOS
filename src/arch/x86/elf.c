@@ -277,8 +277,11 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
     }
     (void)has_interp;
 
+    /* 32 KB user stack with a 4 KB guard page below (unmapped).
+     * Guard page at 0x007FF000 is left unmapped so stack overflow
+     * triggers a page fault → SIGSEGV instead of silent corruption. */
     const uintptr_t user_stack_base = 0x00800000U;
-    const size_t user_stack_size = 0x1000;
+    const size_t user_stack_size = 0x8000;       /* 8 pages = 32 KB */
 
     int src2 = elf32_map_user_range(new_as, user_stack_base, user_stack_size, VMM_FLAG_RW);
     if (src2 < 0) {
