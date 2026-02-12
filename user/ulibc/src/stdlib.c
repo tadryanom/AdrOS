@@ -70,6 +70,42 @@ int atoi(const char* s) {
     return neg ? -n : n;
 }
 
+char* realpath(const char* path, char* resolved) {
+    if (!path || !resolved) return (void*)0;
+
+    char tmp[256];
+    int tpos = 0;
+
+    if (path[0] != '/') {
+        if (getcwd(tmp, sizeof(tmp)) < 0) return (void*)0;
+        tpos = (int)strlen(tmp);
+        if (tpos > 0 && tmp[tpos - 1] != '/') tmp[tpos++] = '/';
+    }
+
+    while (*path) {
+        if (*path == '/') { path++; continue; }
+        if (path[0] == '.' && (path[1] == '/' || path[1] == '\0')) {
+            path += 1; continue;
+        }
+        if (path[0] == '.' && path[1] == '.' && (path[2] == '/' || path[2] == '\0')) {
+            path += 2;
+            if (tpos > 1) {
+                tpos--;
+                while (tpos > 0 && tmp[tpos - 1] != '/') tpos--;
+            }
+            continue;
+        }
+        if (tpos > 0 && tmp[tpos - 1] != '/') tmp[tpos++] = '/';
+        while (*path && *path != '/' && tpos < 254) tmp[tpos++] = *path++;
+    }
+
+    if (tpos == 0) tmp[tpos++] = '/';
+    tmp[tpos] = '\0';
+
+    memcpy(resolved, tmp, (size_t)(tpos + 1));
+    return resolved;
+}
+
 void exit(int status) {
     _exit(status);
 }
