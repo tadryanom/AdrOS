@@ -111,6 +111,10 @@ enum {
     SYSCALL_FUTEX     = 85,
     SYSCALL_SIGALTSTACK = 86,
     SYSCALL_FLOCK     = 87,
+    SYSCALL_GETEUID   = 88,
+    SYSCALL_GETEGID   = 89,
+    SYSCALL_SETEUID   = 90,
+    SYSCALL_SETEGID   = 91,
 };
 
 #endif

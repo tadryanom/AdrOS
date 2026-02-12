@@ -106,12 +106,36 @@ int access(const char* path, int mode) {
     return __syscall_ret(_syscall2(SYS_ACCESS, (int)path, mode));
 }
 
+int getuid(void) {
+    return _syscall0(SYS_GETUID);
+}
+
+int getgid(void) {
+    return _syscall0(SYS_GETGID);
+}
+
+int geteuid(void) {
+    return _syscall0(SYS_GETEUID);
+}
+
+int getegid(void) {
+    return _syscall0(SYS_GETEGID);
+}
+
 int setuid(int uid) {
     return __syscall_ret(_syscall1(SYS_SETUID, uid));
 }
 
 int setgid(int gid) {
     return __syscall_ret(_syscall1(SYS_SETGID, gid));
+}
+
+int seteuid(int euid) {
+    return __syscall_ret(_syscall1(SYS_SETEUID, euid));
+}
+
+int setegid(int egid) {
+    return __syscall_ret(_syscall1(SYS_SETEGID, egid));
 }
 
 int truncate(const char* path, int length) {

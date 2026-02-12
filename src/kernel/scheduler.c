@@ -401,6 +401,10 @@ struct process* process_fork_create(uintptr_t child_as, const struct registers* 
     proc->parent_pid = current_process ? current_process->pid : 0;
     proc->session_id = current_process ? current_process->session_id : proc->pid;
     proc->pgrp_id = current_process ? current_process->pgrp_id : proc->pid;
+    proc->uid = current_process ? current_process->uid : 0;
+    proc->gid = current_process ? current_process->gid : 0;
+    proc->euid = current_process ? current_process->euid : 0;
+    proc->egid = current_process ? current_process->egid : 0;
     proc->priority = current_process ? current_process->priority : SCHED_DEFAULT_PRIO;
     proc->nice = current_process ? current_process->nice : 0;
     proc->state = PROCESS_READY;
@@ -559,6 +563,8 @@ struct process* process_clone_create(uint32_t clone_flags,
 
     proc->uid = current_process->uid;
     proc->gid = current_process->gid;
+    proc->euid = current_process->euid;
+    proc->egid = current_process->egid;
     proc->heap_start = current_process->heap_start;
     proc->heap_break = current_process->heap_break;
 

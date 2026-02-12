@@ -883,6 +883,31 @@ static int syscall_lseek_impl(int fd, int32_t offset, int whence) {
     return (int)f->offset;
 }
 
+/*
+ * Check if the current process has the requested access to a file node.
+ * want: bitmask of 4 (read), 2 (write), 1 (execute).
+ * Returns 0 if allowed, -EACCES if denied.
+ */
+static int vfs_check_permission(fs_node_t* node, int want) {
+    if (!current_process) return 0;       /* kernel context — allow all */
+    if (current_process->euid == 0) return 0;  /* root — allow all */
+    if (node->mode == 0) return 0;        /* mode not set — permissive */
+
+    uint32_t mode = node->mode;
+    uint32_t perm;
+
+    if (current_process->euid == node->uid) {
+        perm = (mode >> 6) & 7;  /* owner bits */
+    } else if (current_process->egid == node->gid) {
+        perm = (mode >> 3) & 7;  /* group bits */
+    } else {
+        perm = mode & 7;         /* other bits */
+    }
+
+    if ((want & perm) != (uint32_t)want) return -EACCES;
+    return 0;
+}
+
 static int syscall_open_impl(const char* user_path, uint32_t flags) {
     if (!user_path) return -EFAULT;
 
@@ -906,6 +931,16 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
     } else {
         node = vfs_lookup(path);
         if (!node) return -ENOENT;
+    }
+
+    /* Permission check based on open flags */
+    {
+        int want = 4; /* default: read */
+        uint32_t acc = flags & 3U; /* O_RDONLY=0, O_WRONLY=1, O_RDWR=2 */
+        if (acc == 1) want = 2;        /* write only */
+        else if (acc == 2) want = 6;   /* read + write */
+        int perm_rc = vfs_check_permission(node, want);
+        if (perm_rc < 0) return perm_rc;
     }
 
     struct file* f = (struct file*)kmalloc(sizeof(*f));
@@ -1763,6 +1798,12 @@ static int syscall_chmod_impl(const char* user_path, uint32_t mode) {
     fs_node_t* node = vfs_lookup(path);
     if (!node) return -ENOENT;
 
+    /* Only root or file owner can chmod */
+    if (current_process && current_process->euid != 0 &&
+        current_process->euid != node->uid) {
+        return -EPERM;
+    }
+
     node->mode = mode & 07777;
     return 0;
 }
@@ -1776,6 +1817,11 @@ static int syscall_chown_impl(const char* user_path, uint32_t uid, uint32_t gid)
 
     fs_node_t* node = vfs_lookup(path);
     if (!node) return -ENOENT;
+
+    /* Only root can chown */
+    if (current_process && current_process->euid != 0) {
+        return -EPERM;
+    }
 
     node->uid = uid;
     node->gid = gid;
@@ -2274,15 +2320,67 @@ void syscall_handler(struct registers* regs) {
 
     if (syscall_no == SYSCALL_SETUID) {
         if (!current_process) { regs->eax = (uint32_t)-EINVAL; return; }
-        current_process->uid = regs->ebx;
+        uint32_t new_uid = regs->ebx;
+        if (current_process->euid == 0) {
+            current_process->uid = new_uid;
+            current_process->euid = new_uid;
+        } else if (new_uid == current_process->uid) {
+            current_process->euid = new_uid;
+        } else {
+            regs->eax = (uint32_t)-EPERM;
+            return;
+        }
         regs->eax = 0;
         return;
     }
 
     if (syscall_no == SYSCALL_SETGID) {
         if (!current_process) { regs->eax = (uint32_t)-EINVAL; return; }
-        current_process->gid = regs->ebx;
+        uint32_t new_gid = regs->ebx;
+        if (current_process->euid == 0) {
+            current_process->gid = new_gid;
+            current_process->egid = new_gid;
+        } else if (new_gid == current_process->gid) {
+            current_process->egid = new_gid;
+        } else {
+            regs->eax = (uint32_t)-EPERM;
+            return;
+        }
         regs->eax = 0;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_GETEUID) {
+        regs->eax = current_process ? current_process->euid : 0;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_GETEGID) {
+        regs->eax = current_process ? current_process->egid : 0;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SETEUID) {
+        if (!current_process) { regs->eax = (uint32_t)-EINVAL; return; }
+        uint32_t new_euid = regs->ebx;
+        if (current_process->euid == 0 || new_euid == current_process->uid) {
+            current_process->euid = new_euid;
+            regs->eax = 0;
+        } else {
+            regs->eax = (uint32_t)-EPERM;
+        }
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SETEGID) {
+        if (!current_process) { regs->eax = (uint32_t)-EINVAL; return; }
+        uint32_t new_egid = regs->ebx;
+        if (current_process->euid == 0 || new_egid == current_process->gid) {
+            current_process->egid = new_egid;
+            regs->eax = 0;
+        } else {
+            regs->eax = (uint32_t)-EPERM;
+        }
         return;
     }
 
