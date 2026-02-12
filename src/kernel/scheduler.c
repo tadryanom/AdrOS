@@ -19,6 +19,47 @@ static uint32_t next_pid = 1;
 static spinlock_t sched_lock = {0};
 static uintptr_t kernel_as = 0;
 
+/*
+ * Kernel stack allocator with guard pages.
+ * Layout per slot: [guard page (unmapped)] [stack page (mapped)]
+ * Virtual region: 0xC8000000 .. 0xCFFFFFFF (128MB, up to 16384 stacks)
+ */
+#define KSTACK_REGION  0xC8000000U
+#define KSTACK_SLOT    (2 * 0x1000U)  /* guard + stack = 8KB per slot */
+#define KSTACK_MAX     16384
+
+static uint32_t kstack_next_slot = 0;
+static spinlock_t kstack_lock = {0};
+
+static void* kstack_alloc(void) {
+    uintptr_t flags = spin_lock_irqsave(&kstack_lock);
+    if (kstack_next_slot >= KSTACK_MAX) {
+        spin_unlock_irqrestore(&kstack_lock, flags);
+        return NULL;
+    }
+    uint32_t slot = kstack_next_slot++;
+    spin_unlock_irqrestore(&kstack_lock, flags);
+
+    uintptr_t base = KSTACK_REGION + slot * KSTACK_SLOT;
+    /* base+0x0000 = guard page (leave unmapped) */
+    /* base+0x1000 = actual stack page */
+    void* phys = pmm_alloc_page();
+    if (!phys) return NULL;
+    vmm_map_page((uint64_t)(uintptr_t)phys, (uint64_t)(base + 0x1000U),
+                 VMM_FLAG_PRESENT | VMM_FLAG_RW);
+    memset((void*)(base + 0x1000U), 0, 0x1000U);
+    return (void*)(base + 0x1000U);
+}
+
+static void kstack_free(void* stack) {
+    if (!stack) return;
+    uintptr_t addr = (uintptr_t)stack;
+    if (addr < KSTACK_REGION || addr >= KSTACK_REGION + KSTACK_MAX * KSTACK_SLOT)
+        return;
+    vmm_unmap_page((uint64_t)addr);
+    /* Note: slot is not recycled — acceptable for now */
+}
+
 /* ---------- O(1) runqueue ---------- */
 struct prio_queue {
     struct process* head;
@@ -125,7 +166,7 @@ static void process_reap_locked(struct process* p) {
     }
 
     if (p->kernel_stack) {
-        kfree(p->kernel_stack);
+        kstack_free(p->kernel_stack);
         p->kernel_stack = NULL;
     }
 
@@ -393,7 +434,7 @@ struct process* process_fork_create(uintptr_t child_as, const struct registers* 
                                          : (typeof(proc->mmaps[i])){0, 0, -1};
     }
 
-    void* stack = kmalloc(4096);
+    void* stack = kstack_alloc();
     if (!stack) {
         kfree(proc);
         spin_unlock_irqrestore(&sched_lock, flags);
@@ -535,7 +576,7 @@ struct process* process_clone_create(uint32_t clone_flags,
     }
 
     /* Allocate kernel stack */
-    void* kstack = kmalloc(4096);
+    void* kstack = kstack_alloc();
     if (!kstack) {
         if (!(clone_flags & CLONE_VM) && proc->addr_space) {
             vmm_as_destroy(proc->addr_space);
@@ -623,10 +664,8 @@ void process_init(void) {
     kernel_proc->tls_base = 0;
     kernel_proc->clear_child_tid = NULL;
 
-    /* Allocate a dedicated kernel stack for PID 0 on the heap.
-     * This avoids using the boot stack (which is not heap-managed)
-     * and ensures kfree safety and proper TSS esp0 updates. */
-    void* kstack0 = kmalloc(4096);
+    /* Allocate a dedicated kernel stack for PID 0 with guard page. */
+    void* kstack0 = kstack_alloc();
     if (!kstack0) {
         spin_unlock_irqrestore(&sched_lock, flags);
         uart_print("[SCHED] OOM allocating PID 0 kernel stack.\n");
@@ -688,7 +727,7 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
         proc->mmaps[i].shmid = -1;
     }
     
-    void* stack = kmalloc(4096);
+    void* stack = kstack_alloc();
     if (!stack) {
         kfree(proc);
         spin_unlock_irqrestore(&sched_lock, flags);
