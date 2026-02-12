@@ -48,6 +48,12 @@ void hal_cpu_idle(void) {
     __asm__ volatile("hlt");
 }
 
+uint64_t hal_cpu_read_timestamp(void) {
+    uint32_t lo, hi;
+    __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
+    return ((uint64_t)hi << 32) | lo;
+}
+
 #else
 
 uintptr_t hal_cpu_get_stack_pointer(void) {
@@ -73,6 +79,10 @@ void hal_cpu_disable_interrupts(void) {
 }
 
 void hal_cpu_idle(void) {
+}
+
+uint64_t hal_cpu_read_timestamp(void) {
+    return 0;
 }
 
 #endif

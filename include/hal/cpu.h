@@ -13,4 +13,6 @@ void hal_cpu_enable_interrupts(void);
 void hal_cpu_disable_interrupts(void);
 void hal_cpu_idle(void);
 
+uint64_t hal_cpu_read_timestamp(void);
+
 #endif
