@@ -25,7 +25,7 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **PAE paging with NX bit** — hardware W^X enforcement on data segments
 
 ### Memory Management
-- **PMM** — bitmap allocator with spinlock protection and frame reference counting
+- **PMM** — bitmap allocator with spinlock protection, frame reference counting, and contiguous block allocation
 - **VMM** — PAE recursive page directory, per-process address spaces (PDPT + 4 PDs), TLB flush
 - **Copy-on-Write (CoW) fork** — PTE bit 9 as CoW marker + page fault handler
 - **Kernel heap** — doubly-linked free list with coalescing, dynamic growth up to 64MB
@@ -34,24 +34,30 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **`mmap`/`munmap`** — anonymous mappings + shared memory backing
 - **SMEP** — Supervisor Mode Execution Prevention enabled in CR4
 - **W^X** — user `.text` segments marked read-only after ELF load; NX on data segments
+- **Guard pages** — 32KB user stack with unmapped guard page below (triggers SIGSEGV on overflow)
+- **ASLR** — TSC-seeded xorshift32 PRNG randomizes user stack base by up to 1MB per `execve`
+- **vDSO** — kernel-updated shared page mapped read-only into every user process at `0x007FE000`
 
 ### Process & Scheduling
-- **O(1) scheduler** — bitmap + active/expired arrays, 32 priority levels
+- **O(1) scheduler** — bitmap + active/expired arrays, 32 priority levels, decay-based priority adjustment
 - **Process model** — `fork` (CoW), `execve`, `exit`, `waitpid` (`WNOHANG`), `getpid`, `getppid`
 - **Threads** — `clone` syscall with `CLONE_VM`/`CLONE_FILES`/`CLONE_THREAD`/`CLONE_SETTLS`
 - **TLS** — `set_thread_area` via GDT entry 22 (user GS segment, ring 3)
+- **Futex** — `FUTEX_WAIT`/`FUTEX_WAKE` with global waiter table for efficient thread synchronization
 - **Sessions & groups** — `setsid`, `setpgid`, `getpgrp`
-- **Permissions** — per-process `uid`/`gid`; `chmod`, `chown`
+- **Permissions** — per-process `uid`/`gid`; `chmod`, `chown`, `setuid`, `setgid`, `access`, `umask`
 - **User heap** — `brk`/`sbrk` syscall
-- **Time** — `nanosleep`, `clock_gettime` (`CLOCK_REALTIME`, `CLOCK_MONOTONIC`)
+- **Time** — `nanosleep`, `clock_gettime` (`CLOCK_REALTIME` via RTC, `CLOCK_MONOTONIC`), `alarm`/`SIGALRM`, `times` (CPU accounting)
 
 ### Syscalls (x86, `int 0x80` + SYSENTER)
-- **File I/O:** `open`, `openat`, `read`, `write`, `close`, `lseek`, `stat`, `fstat`, `fstatat`, `dup`, `dup2`, `dup3`, `pipe`, `pipe2`, `select`, `poll`, `ioctl`, `fcntl`, `getdents`
-- **Directory ops:** `mkdir`, `rmdir`, `unlink`, `unlinkat`, `rename`, `chdir`, `getcwd`, `symlink`, `readlink`, `chmod`, `chown`
-- **Signals:** `sigaction` (`SA_SIGINFO`), `sigprocmask`, `kill`, `sigreturn` (full trampoline)
-- **FD flags:** `O_NONBLOCK`, `O_CLOEXEC`, `FD_CLOEXEC` via `fcntl` (`F_GETFD`/`F_SETFD`/`F_GETFL`/`F_SETFL`)
+- **File I/O:** `open`, `openat`, `read`, `write`, `close`, `lseek`, `stat`, `fstat`, `fstatat`, `dup`, `dup2`, `dup3`, `pipe`, `pipe2`, `select`, `poll`, `ioctl`, `fcntl`, `getdents`, `pread`, `pwrite`, `readv`, `writev`, `truncate`, `ftruncate`, `fsync`, `fdatasync`
+- **Directory ops:** `mkdir`, `rmdir`, `unlink`, `unlinkat`, `rename`, `chdir`, `getcwd`, `link`, `symlink`, `readlink`, `chmod`, `chown`, `access`, `umask`
+- **Signals:** `sigaction` (`SA_SIGINFO`), `sigprocmask`, `kill`, `sigreturn` (full trampoline), `sigpending`, `sigsuspend`, `sigaltstack`
+- **Process:** `setuid`, `setgid`, `alarm`, `times`, `futex`
+- **FD flags:** `O_NONBLOCK`, `O_CLOEXEC`, `O_APPEND`, `FD_CLOEXEC` via `fcntl` (`F_GETFD`/`F_SETFD`/`F_GETFL`/`F_SETFL`)
+- **File locking:** `flock` (advisory, no-op stub)
 - **Shared memory:** `shmget`, `shmat`, `shmdt`, `shmctl`
-- **Threads:** `clone`, `gettid`, `set_thread_area`
+- **Threads:** `clone`, `gettid`, `set_thread_area`, `futex`
 - **Networking:** `socket`, `bind`, `listen`, `accept`, `connect`, `send`, `recv`, `sendto`, `recvfrom`
 - Per-process fd table with atomic refcounted file objects
 - Centralized user-pointer access API (`user_range_ok`, `copy_from_user`, `copy_to_user`)
@@ -66,13 +72,14 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **termios** — `TCGETS`, `TCSETS`, `TIOCGPGRP`, `TIOCSPGRP`, `VMIN`/`VTIME`
 - **Wait queues** — generic `waitqueue_t` abstraction for blocking I/O
 
-### Filesystems (7 types)
+### Filesystems (8 types)
 - **tmpfs** — in-memory filesystem
 - **devfs** — `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom`, `/dev/console`, `/dev/tty`, `/dev/ptmx`, `/dev/pts/N`
 - **overlayfs** — copy-up semantics
-- **diskfs** — hierarchical inode-based on-disk filesystem at `/disk` with symlinks
+- **diskfs** — hierarchical inode-based on-disk filesystem at `/disk` with symlinks and hard links
 - **persistfs** — minimal persistence at `/persist`
 - **procfs** — `/proc/meminfo` + per-process `/proc/[pid]/status`, `/proc/[pid]/maps`
+- **FAT16** — read-only FAT16 driver with BPB parsing, FAT chain traversal, and VFS integration
 - Generic `readdir`/`getdents` across all VFS types; symlink following in path resolution
 
 ### Networking
@@ -80,40 +87,47 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **lwIP TCP/IP stack** — IPv4, static IP (10.0.2.15 via QEMU user-net)
 - **Socket API** — `socket`/`bind`/`listen`/`accept`/`connect`/`send`/`recv`/`sendto`/`recvfrom`
 - **Protocols** — TCP (`SOCK_STREAM`) + UDP (`SOCK_DGRAM`)
+- **DNS resolver** — lwIP-based with async callback and timeout; kernel `dns_resolve()` wrapper
 
 ### Drivers & Hardware
 - **PCI** — full bus/slot/func enumeration with BAR + IRQ
-- **ATA PIO + DMA** — Bus Master IDE with bounce buffer, PRDT, IRQ coordination
+- **ATA PIO + DMA** — Bus Master IDE with bounce buffer + zero-copy direct DMA, PRDT, IRQ coordination
 - **LAPIC + IOAPIC** — replaces legacy PIC; ISA IRQ routing
 - **SMP** — 4 CPUs via INIT-SIPI-SIPI, per-CPU data via GS segment
 - **ACPI** — MADT parsing for CPU topology and IOAPIC discovery
 - **VBE framebuffer** — maps LFB, pixel drawing, font rendering
 - **UART**, **VGA text**, **PS/2 keyboard**, **PIT timer**, **LAPIC timer**
+- **RTC** — CMOS real-time clock driver for wall-clock time (`CLOCK_REALTIME`)
 - **E1000 NIC** — Intel 82540EM Ethernet controller
+- **MTRR** — write-combining support via variable-range MTRR programming
 
 ### Userland
-- **ulibc** — `printf`, `malloc`/`free`/`calloc`/`realloc`, `string.h`, `unistd.h`, `errno.h`, `pthread.h`
-- **ELF32 loader** — secure with W^X; supports `ET_EXEC` + `ET_DYN` + `PT_INTERP` (dynamic linking)
-- **Shell** — `/bin/sh` (POSIX sh-compatible with builtins, pipes, redirects)
+- **ulibc** — `printf`, `malloc`/`free`/`calloc`/`realloc`, `string.h`, `unistd.h`, `errno.h`, `pthread.h`, `signal.h`, `stdio.h` (buffered I/O), `sys/times.h`, `sys/uio.h`, `linux/futex.h`, `realpath()`
+- **ELF32 loader** — secure with W^X + ASLR; supports `ET_EXEC` + `ET_DYN` + `PT_INTERP` (dynamic linking)
+- **Shell** — `/bin/sh` (POSIX sh-compatible with builtins, pipes, redirects, `$PATH` search)
 - **Core utilities** — `/bin/cat`, `/bin/ls`, `/bin/mkdir`, `/bin/rm`, `/bin/echo`
 - `/bin/init.elf` — comprehensive smoke test suite
+- `/lib/ld.so` — stub dynamic linker (placeholder for future shared library support)
 
 ### Dynamic Linking (infrastructure)
 - **Kernel-side** — `PT_INTERP` detection, interpreter loading at `0x40000000`, `ET_DYN` support
 - **ELF types** — `Elf32_Dyn`, `Elf32_Rel`, `Elf32_Sym`, auxiliary vector (`AT_PHDR`, `AT_ENTRY`, `AT_BASE`)
 - **Relocation types** — `R_386_RELATIVE`, `R_386_32`, `R_386_GLOB_DAT`, `R_386_JMP_SLOT`
-- Userspace `ld.so` not yet implemented (kernel infrastructure ready)
+- **Userspace `ld.so`** — stub built into initrd; full relocation processing is future work
 
-### Threads
+### Threads & Synchronization
 - **`clone` syscall** — `CLONE_VM`, `CLONE_FILES`, `CLONE_SIGHAND`, `CLONE_THREAD`, `CLONE_SETTLS`
 - **TLS via GDT** — `set_thread_area` sets GS-based TLS segment (GDT entry 22, ring 3)
 - **`gettid`** — per-thread unique ID
 - **ulibc `pthread.h`** — `pthread_create`, `pthread_join`, `pthread_exit`, `pthread_self`
+- **Futex** — `FUTEX_WAIT`/`FUTEX_WAKE` with 32-entry global waiter table
 - Thread-group IDs (tgid) for POSIX `getpid()` semantics
 
 ### Security
 - **SMEP** enabled (prevents kernel executing user-mapped pages)
 - **PAE + NX bit** — hardware W^X on data segments
+- **ASLR** — stack base randomized per-process via TSC-seeded xorshift32 PRNG
+- **Guard pages** — unmapped page below user stack catches overflows
 - **user_range_ok** hardened (rejects kernel addresses)
 - **sigreturn eflags** sanitized (clears IOPL, ensures IF)
 - **Atomic file refcounts** (`__sync_*` builtins)
@@ -137,32 +151,33 @@ QEMU debug helpers:
 - `make ARCH=x86 run QEMU_DEBUG=1`
 - `make ARCH=x86 run QEMU_DEBUG=1 QEMU_INT=1`
 
-## TODO
+## Status
 
 See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for a detailed checklist.
 
-All 15 planned implementation tasks are complete. Remaining future work:
+**All 31 planned POSIX implementation tasks are complete.** The kernel covers ~90% of the core POSIX interfaces needed for a practical Unix-like system.
 
-### Future enhancements
-- **Userspace `ld.so`** — full dynamic linker with relocation processing
-- **Shared libraries (.so)** — `dlopen`/`dlsym`/`dlclose`
-- **Futex** — efficient thread synchronization primitive
+### Remaining work for full POSIX compliance
+- **Full `ld.so`** — relocation processing for shared libraries (`dlopen`/`dlsym`)
+- **`getaddrinfo`** / `/etc/hosts` — userland name resolution
+- **`sigqueue`** — queued real-time signals
+- **`setitimer`/`getitimer`** — interval timers
+- **ext2 filesystem** — standard on-disk filesystem
+- **File-backed `mmap`** — map file contents into memory
+- **Per-CPU scheduler runqueues** — SMP scalability
 - **Multi-arch bring-up** — ARM/RISC-V functional kernels
-- **ext2/FAT** filesystem support
-- **ASLR** — address space layout randomization
-- **vDSO** — fast `clock_gettime` without syscall
-- **DNS resolver** + `/etc/hosts`
-- **RTC driver** — real-time clock
 
 ## Directory Structure
-- `src/kernel/` — Architecture-independent kernel (VFS, syscalls, scheduler, tmpfs, diskfs, devfs, overlayfs, PTY, TTY, shm, signals, networking, threads)
-- `src/arch/x86/` — x86-specific (boot, VMM, IDT, LAPIC, IOAPIC, SMP, ACPI, CPUID, SYSENTER, ELF loader)
-- `src/hal/x86/` — HAL x86 (CPU, keyboard, timer, UART, PCI, ATA PIO/DMA, E1000 NIC)
-- `src/drivers/` — Device drivers (VBE, initrd, VGA)
+- `src/kernel/` — Architecture-independent kernel (VFS, syscalls, scheduler, tmpfs, diskfs, devfs, overlayfs, procfs, FAT16, PTY, TTY, shm, signals, networking, threads, vDSO, KASLR)
+- `src/arch/x86/` — x86-specific (boot, VMM, IDT, LAPIC, IOAPIC, SMP, ACPI, CPUID, SYSENTER, ELF loader, MTRR)
+- `src/hal/x86/` — HAL x86 (CPU, keyboard, timer, UART, PCI, ATA PIO/DMA, E1000 NIC, RTC)
+- `src/drivers/` — Device drivers (VBE, initrd, VGA, timer)
 - `src/mm/` — Memory management (PMM, heap, slab)
+- `src/net/` — Networking (lwIP port, DNS resolver)
 - `include/` — Header files
-- `user/` — Userland programs (`init.c`, `echo.c`, `sh.c`, `cat.c`, `ls.c`, `mkdir.c`, `rm.c`)
-- `user/ulibc/` — Minimal C library (`printf`, `malloc`, `string.h`, `errno.h`, `pthread.h`)
+- `user/` — Userland programs (`init.c`, `echo.c`, `sh.c`, `cat.c`, `ls.c`, `mkdir.c`, `rm.c`, `ldso.c`)
+- `user/ulibc/` — Minimal C library (`printf`, `malloc`, `string.h`, `errno.h`, `pthread.h`, `signal.h`, `stdio.h`, `sys/uio.h`, `linux/futex.h`)
 - `tests/` — Host unit tests, smoke tests, GDB scripted checks
+- `tools/` — Build tools (`mkinitrd`)
 - `docs/` — Documentation (POSIX roadmap, audit report, supplementary analysis, testing plan)
 - `third_party/lwip/` — lwIP TCP/IP stack (vendored)
