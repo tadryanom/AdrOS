@@ -15,6 +15,7 @@ int diskfs_mkdir(const char* rel_path);
 int diskfs_unlink(const char* rel_path);
 int diskfs_rmdir(const char* rel_path);
 int diskfs_rename(const char* old_rel, const char* new_rel);
+int diskfs_link(const char* old_rel, const char* new_rel);
 
 // Writes fixed-size dirent records into out buffer.
 // Returns number of bytes written or negative errno.

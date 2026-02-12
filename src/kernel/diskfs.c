@@ -38,7 +38,7 @@ enum {
 
 struct diskfs_inode {
     uint8_t type;
-    uint8_t reserved0;
+    uint8_t nlink;          /* hard link count (0 or 1 = single link) */
     uint16_t parent;
     char name[DISKFS_NAME_MAX];
     uint32_t start_lba;
@@ -613,7 +613,71 @@ int diskfs_unlink(const char* rel_path) {
     if (sb.inodes[ino].type == DISKFS_INODE_DIR) return -EISDIR;
     if (sb.inodes[ino].type != DISKFS_INODE_FILE) return -ENOENT;
 
+    uint32_t shared_lba = sb.inodes[ino].start_lba;
     memset(&sb.inodes[ino], 0, sizeof(sb.inodes[ino]));
+
+    /* Check if any other inode still references the same data blocks */
+    int still_referenced = 0;
+    if (shared_lba != 0) {
+        for (uint16_t i = 0; i < DISKFS_MAX_INODES; i++) {
+            if (sb.inodes[i].type == DISKFS_INODE_FILE &&
+                sb.inodes[i].start_lba == shared_lba) {
+                still_referenced = 1;
+                break;
+            }
+        }
+    }
+    (void)still_referenced; /* data blocks are never reclaimed in current impl */
+
+    return diskfs_super_store(&sb);
+}
+
+int diskfs_link(const char* old_rel, const char* new_rel) {
+    if (!g_ready) return -ENODEV;
+    if (!old_rel || old_rel[0] == 0) return -EINVAL;
+    if (!new_rel || new_rel[0] == 0) return -EINVAL;
+
+    struct diskfs_super sb;
+    if (diskfs_super_load(&sb) < 0) return -EIO;
+
+    uint16_t old_ino = 0;
+    int rc = diskfs_lookup_path(&sb, old_rel, &old_ino, 0, 0, 0);
+    if (rc < 0) return rc;
+    if (old_ino >= DISKFS_MAX_INODES) return -EIO;
+    if (sb.inodes[old_ino].type != DISKFS_INODE_FILE) return -EPERM;
+
+    /* Find the new name's parent directory and base name */
+    const char* new_base = new_rel;
+    uint16_t new_parent = 0;
+    for (const char* p = new_rel; *p; p++) {
+        if (*p == '/') new_base = p + 1;
+    }
+    /* For simplicity, new link must be in root directory (parent=0) */
+
+    /* Check new name doesn't already exist */
+    uint16_t dummy = 0;
+    if (diskfs_lookup_path(&sb, new_rel, &dummy, 0, 0, 0) == 0) return -EEXIST;
+
+    /* Find a free inode slot */
+    uint16_t new_ino = 0;
+    for (uint16_t i = 1; i < DISKFS_MAX_INODES; i++) {
+        if (sb.inodes[i].type == DISKFS_INODE_FREE) { new_ino = i; break; }
+    }
+    if (new_ino == 0) return -ENOSPC;
+
+    /* Create new inode sharing same data blocks */
+    sb.inodes[new_ino].type = DISKFS_INODE_FILE;
+    sb.inodes[new_ino].nlink = 2;
+    sb.inodes[new_ino].parent = new_parent;
+    diskfs_strlcpy(sb.inodes[new_ino].name, new_base, DISKFS_NAME_MAX);
+    sb.inodes[new_ino].start_lba = sb.inodes[old_ino].start_lba;
+    sb.inodes[new_ino].size_bytes = sb.inodes[old_ino].size_bytes;
+    sb.inodes[new_ino].cap_sectors = sb.inodes[old_ino].cap_sectors;
+
+    /* Update old inode nlink */
+    if (sb.inodes[old_ino].nlink < 2) sb.inodes[old_ino].nlink = 2;
+    else sb.inodes[old_ino].nlink++;
+
     return diskfs_super_store(&sb);
 }
 
