@@ -2230,7 +2230,8 @@ void syscall_handler(struct registers* regs) {
 
     if (syscall_no == SYSCALL_PREAD || syscall_no == SYSCALL_PWRITE ||
         syscall_no == SYSCALL_ACCESS || syscall_no == SYSCALL_TRUNCATE ||
-        syscall_no == SYSCALL_FTRUNCATE) {
+        syscall_no == SYSCALL_FTRUNCATE || syscall_no == SYSCALL_READV ||
+        syscall_no == SYSCALL_WRITEV) {
         posix_ext_syscall_dispatch(regs, syscall_no);
         return;
     }
@@ -2371,6 +2372,48 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
         if (!(node->flags & FS_FILE)) { regs->eax = (uint32_t)-EISDIR; return; }
         node->length = length;
         regs->eax = 0;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_READV) {
+        int fd = (int)regs->ebx;
+        struct { void* iov_base; uint32_t iov_len; } iov;
+        const void* user_iov = (const void*)regs->ecx;
+        int iovcnt = (int)regs->edx;
+        if (iovcnt <= 0 || iovcnt > 16) { regs->eax = (uint32_t)-EINVAL; return; }
+        uint32_t total = 0;
+        for (int i = 0; i < iovcnt; i++) {
+            if (copy_from_user(&iov, (const char*)user_iov + i * 8, 8) < 0) {
+                regs->eax = (uint32_t)-EFAULT; return;
+            }
+            if (iov.iov_len == 0) continue;
+            int r = syscall_read_impl(fd, iov.iov_base, iov.iov_len);
+            if (r < 0) { if (total == 0) { regs->eax = (uint32_t)r; return; } break; }
+            total += (uint32_t)r;
+            if ((uint32_t)r < iov.iov_len) break;
+        }
+        regs->eax = total;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_WRITEV) {
+        int fd = (int)regs->ebx;
+        struct { const void* iov_base; uint32_t iov_len; } iov;
+        const void* user_iov = (const void*)regs->ecx;
+        int iovcnt = (int)regs->edx;
+        if (iovcnt <= 0 || iovcnt > 16) { regs->eax = (uint32_t)-EINVAL; return; }
+        uint32_t total = 0;
+        for (int i = 0; i < iovcnt; i++) {
+            if (copy_from_user(&iov, (const char*)user_iov + i * 8, 8) < 0) {
+                regs->eax = (uint32_t)-EFAULT; return;
+            }
+            if (iov.iov_len == 0) continue;
+            int r = syscall_write_impl(fd, iov.iov_base, iov.iov_len);
+            if (r < 0) { if (total == 0) { regs->eax = (uint32_t)r; return; } break; }
+            total += (uint32_t)r;
+            if ((uint32_t)r < iov.iov_len) break;
+        }
+        regs->eax = total;
         return;
     }
 
