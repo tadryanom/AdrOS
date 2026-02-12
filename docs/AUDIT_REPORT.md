@@ -259,7 +259,8 @@ between processes via kernel allocations).
 
 User stacks now have a 4KB unmapped guard page below the 32KB stack region.
 Stack overflow triggers a page fault → SIGSEGV instead of silent corruption.
-Kernel stacks (4KB) still lack guard pages — enhancement for the future.
+Kernel stacks now use a dedicated guard-paged region at `0xC8000000` with
+an unmapped page below each 4KB stack (`kstack_alloc()`).
 
 ---
 
@@ -308,7 +309,7 @@ If `name` exceeds 128 bytes (the size of `fs_node.name`), this overflows.
 | 2.7 | MODERATE | Logic | utils.c | itoa UB for INT_MIN | Open |
 | 3.5 | MODERATE | Security | syscall.c | fd bounds not always checked | Open |
 | 4.2 | MODERATE | Memory | heap.c | kfree doesn't zero | Open |
-| 4.3 | MODERATE | Memory | scheduler.c | No stack guard pages | **USER FIXED** (kernel stacks still open) |
+| 4.3 | MODERATE | Memory | scheduler.c | No stack guard pages | **FIXED** (user + kernel stacks) |
 
 ## 7. Fix Summary
 
@@ -318,7 +319,7 @@ PMM spinlock, file refcount atomics.
 **5 HIGH fixed**: slab uses kmalloc instead of phys_to_virt, execve sp bounds check,
 SMEP enabled via CR4, heap grows dynamically to 64MB, waitpid NULL guard.
 
-**1 MODERATE fixed**: User stack guard pages implemented (unmapped page below 32KB stack).
+**2 MODERATE fixed**: User stack guard pages (unmapped page below 32KB stack) and kernel stack guard pages (`kstack_alloc()` at `0xC8000000` with unmapped guard page per stack).
 
-**Remaining**: 1 CRITICAL (layer violation — arch refactor), 7 MODERATE (open).
-SMAP not yet enabled (SMEP is active). Kernel stacks still lack guard pages.
+**Remaining**: 1 CRITICAL (layer violation — arch refactor), 6 MODERATE (open).
+SMAP not yet enabled (SMEP is active).
