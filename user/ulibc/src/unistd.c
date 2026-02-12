@@ -114,6 +114,14 @@ int setgid(int gid) {
     return __syscall_ret(_syscall1(SYS_SETGID, gid));
 }
 
+int truncate(const char* path, int length) {
+    return __syscall_ret(_syscall2(SYS_TRUNCATE, (int)path, length));
+}
+
+int ftruncate(int fd, int length) {
+    return __syscall_ret(_syscall2(SYS_FTRUNCATE, fd, length));
+}
+
 void* brk(void* addr) {
     return (void*)_syscall1(SYS_BRK, (int)addr);
 }

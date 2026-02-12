@@ -60,6 +60,11 @@ enum {
     SYS_UMASK = 75,
     SYS_SETUID = 76,
     SYS_SETGID = 77,
+    SYS_TRUNCATE = 78,
+    SYS_FTRUNCATE = 79,
+    SYS_SIGSUSPEND = 80,
+    SYS_READV = 81,
+    SYS_WRITEV = 82,
 };
 
 /* Raw syscall wrappers — up to 5 args via INT 0x80 */

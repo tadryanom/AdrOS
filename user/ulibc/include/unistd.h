@@ -40,6 +40,8 @@ int     pwrite(int fd, const void* buf, size_t count, int offset);
 int     access(const char* path, int mode);
 int     setuid(int uid);
 int     setgid(int gid);
+int     truncate(const char* path, int length);
+int     ftruncate(int fd, int length);
 void*   brk(void* addr);
 
 void    _exit(int status) __attribute__((noreturn));

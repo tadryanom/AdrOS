@@ -2229,7 +2229,8 @@ void syscall_handler(struct registers* regs) {
     }
 
     if (syscall_no == SYSCALL_PREAD || syscall_no == SYSCALL_PWRITE ||
-        syscall_no == SYSCALL_ACCESS) {
+        syscall_no == SYSCALL_ACCESS || syscall_no == SYSCALL_TRUNCATE ||
+        syscall_no == SYSCALL_FTRUNCATE) {
         posix_ext_syscall_dispatch(regs, syscall_no);
         return;
     }
@@ -2326,6 +2327,32 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
         if (prc < 0) { regs->eax = (uint32_t)prc; return; }
         fs_node_t* node = vfs_lookup(path);
         if (!node) { regs->eax = (uint32_t)-ENOENT; return; }
+        regs->eax = 0;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_FTRUNCATE) {
+        int fd = (int)regs->ebx;
+        uint32_t length = regs->ecx;
+        struct file* f = fd_get(fd);
+        if (!f || !f->node) { regs->eax = (uint32_t)-EBADF; return; }
+        if (!(f->node->flags & FS_FILE)) { regs->eax = (uint32_t)-EINVAL; return; }
+        f->node->length = length;
+        regs->eax = 0;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_TRUNCATE) {
+        const char* user_path = (const char*)regs->ebx;
+        uint32_t length = regs->ecx;
+        if (!user_path) { regs->eax = (uint32_t)-EFAULT; return; }
+        char path[128];
+        int prc = path_resolve_user(user_path, path, sizeof(path));
+        if (prc < 0) { regs->eax = (uint32_t)prc; return; }
+        fs_node_t* node = vfs_lookup(path);
+        if (!node) { regs->eax = (uint32_t)-ENOENT; return; }
+        if (!(node->flags & FS_FILE)) { regs->eax = (uint32_t)-EISDIR; return; }
+        node->length = length;
         regs->eax = 0;
         return;
     }
