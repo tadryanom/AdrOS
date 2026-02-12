@@ -54,6 +54,15 @@ uint64_t hal_cpu_read_timestamp(void) {
     return ((uint64_t)hi << 32) | lo;
 }
 
+void hal_cpu_set_tls(uintptr_t base) {
+    /* GDT entry 22: user TLS segment (ring 3, data RW) */
+    gdt_set_gate_ext(22, (uint32_t)base, 0xFFFFF, 0xF2, 0xCF);
+    __asm__ volatile(
+        "mov $0xB3, %%ax\n"
+        "mov %%ax, %%gs\n" : : : "ax"
+    ); /* selector = 22*8 | RPL=3 = 0xB3 */
+}
+
 #else
 
 uintptr_t hal_cpu_get_stack_pointer(void) {
@@ -83,6 +92,10 @@ void hal_cpu_idle(void) {
 
 uint64_t hal_cpu_read_timestamp(void) {
     return 0;
+}
+
+void hal_cpu_set_tls(uintptr_t base) {
+    (void)base;
 }
 
 #endif

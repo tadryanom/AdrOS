@@ -15,4 +15,6 @@ void hal_cpu_idle(void);
 
 uint64_t hal_cpu_read_timestamp(void);
 
+void hal_cpu_set_tls(uintptr_t base);
+
 #endif

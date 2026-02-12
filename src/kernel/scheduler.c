@@ -434,18 +434,9 @@ static void clone_child_trampoline(void) {
     }
 
     /* Load user TLS into GS if set */
-#if defined(__i386__)
     if (current_process->tls_base) {
-        extern void gdt_set_gate_ext(int num, uint32_t base, uint32_t limit,
-                                      uint8_t access, uint8_t gran);
-        /* Use GDT entry 22 as the user TLS segment (ring 3, data RW) */
-        gdt_set_gate_ext(22, (uint32_t)current_process->tls_base, 0xFFFFF, 0xF2, 0xCF);
-        __asm__ volatile(
-            "mov $0xB3, %%ax\n"
-            "mov %%ax, %%gs\n" : : : "ax"
-        ); /* selector = 22*8 | RPL=3 = 0xB3 */
+        hal_cpu_set_tls(current_process->tls_base);
     }
-#endif
 
     hal_usermode_enter_regs(&current_process->user_regs);
 }
