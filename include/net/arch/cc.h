@@ -4,8 +4,14 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/* Define byte order for x86 (little-endian) */
+/* Define byte order based on target architecture */
+#if defined(__i386__) || defined(__x86_64__) || defined(__arm__) || defined(__aarch64__) || defined(__riscv)
 #define BYTE_ORDER LITTLE_ENDIAN
+#elif defined(__MIPSEB__) || defined(__ARMEB__)
+#define BYTE_ORDER BIG_ENDIAN
+#else
+#define BYTE_ORDER LITTLE_ENDIAN
+#endif
 
 /* Use GCC-style struct packing */
 #define PACK_STRUCT_FIELD(x) x
