@@ -632,15 +632,25 @@ void process_init(void) {
     kernel_proc->tls_base = 0;
     kernel_proc->clear_child_tid = NULL;
 
+    /* Allocate a dedicated kernel stack for PID 0 on the heap.
+     * This avoids using the boot stack (which is not heap-managed)
+     * and ensures kfree safety and proper TSS esp0 updates. */
+    void* kstack0 = kmalloc(4096);
+    if (!kstack0) {
+        spin_unlock_irqrestore(&sched_lock, flags);
+        uart_print("[SCHED] OOM allocating PID 0 kernel stack.\n");
+        for (;;) hal_cpu_idle();
+        __builtin_unreachable();
+    }
+    kernel_proc->kernel_stack = (uint32_t*)kstack0;
+
     current_process = kernel_proc;
     ready_queue_head = kernel_proc;
     ready_queue_tail = kernel_proc;
     kernel_proc->next = kernel_proc;
     kernel_proc->prev = kernel_proc;
 
-    // Best effort: set esp0 to current stack until we have a dedicated kernel stack for PID 0
-    uintptr_t cur_esp = hal_cpu_get_stack_pointer();
-    hal_cpu_set_kernel_stack(cur_esp);
+    hal_cpu_set_kernel_stack((uintptr_t)kstack0 + 4096);
 
     spin_unlock_irqrestore(&sched_lock, flags);
 }
