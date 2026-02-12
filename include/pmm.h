@@ -25,6 +25,12 @@ void pmm_arch_init(void* boot_info);
 // Allocate a single physical page
 void* pmm_alloc_page(void);
 
+// Allocate N contiguous physical pages (for DMA buffers etc.)
+void* pmm_alloc_blocks(uint32_t count);
+
+// Free N contiguous physical pages
+void pmm_free_blocks(void* ptr, uint32_t count);
+
 // Free a physical page (decrements refcount, frees at 0)
 void pmm_free_page(void* ptr);
 

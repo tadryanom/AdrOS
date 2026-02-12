@@ -157,6 +157,43 @@ void* pmm_alloc_page(void) {
     return NULL; // OOM
 }
 
+void* pmm_alloc_blocks(uint32_t count) {
+    if (count == 0) return NULL;
+    if (count == 1) return pmm_alloc_page();
+
+    uintptr_t flags = spin_lock_irqsave(&pmm_lock);
+
+    for (uint64_t start = 1; start + count <= max_frames; start++) {
+        int found = 1;
+        for (uint32_t j = 0; j < count; j++) {
+            if (bitmap_test(start + j)) {
+                start += j; /* skip ahead past the used frame */
+                found = 0;
+                break;
+            }
+        }
+        if (found) {
+            for (uint32_t j = 0; j < count; j++) {
+                bitmap_set(start + j);
+                frame_refcount[start + j] = 1;
+                used_memory += PAGE_SIZE;
+            }
+            spin_unlock_irqrestore(&pmm_lock, flags);
+            return (void*)(uintptr_t)(start * PAGE_SIZE);
+        }
+    }
+
+    spin_unlock_irqrestore(&pmm_lock, flags);
+    return NULL;
+}
+
+void pmm_free_blocks(void* ptr, uint32_t count) {
+    uintptr_t addr = (uintptr_t)ptr;
+    for (uint32_t i = 0; i < count; i++) {
+        pmm_free_page((void*)(addr + i * PAGE_SIZE));
+    }
+}
+
 void pmm_free_page(void* ptr) {
     uintptr_t addr = (uintptr_t)ptr;
     uint64_t frame = addr / PAGE_SIZE;
