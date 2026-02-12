@@ -1,16 +1,11 @@
 #include "kaslr.h"
+#include "hal/cpu.h"
 #include "uart_console.h"
 
 static uint32_t prng_state;
 
-static inline uint64_t rdtsc(void) {
-    uint32_t lo, hi;
-    __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
-    return ((uint64_t)hi << 32) | lo;
-}
-
 void kaslr_init(void) {
-    uint64_t tsc = rdtsc();
+    uint64_t tsc = hal_cpu_read_timestamp();
     prng_state = (uint32_t)(tsc ^ (tsc >> 32));
     if (prng_state == 0) prng_state = 0xDEADBEEF;
     uart_print("[KASLR] PRNG seeded from TSC\n");
