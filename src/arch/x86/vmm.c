@@ -178,34 +178,8 @@ void vmm_set_page_flags(uint64_t virt, uint32_t flags) {
     invlpg((uintptr_t)(uint32_t)virt);
 }
 
-void vmm_protect_range(uint64_t vaddr, uint64_t len, uint32_t flags) {
-    if (len == 0) return;
-    uint64_t start = vaddr & ~0xFFFULL;
-    uint64_t end = (vaddr + len - 1) & ~0xFFFULL;
-    for (uint64_t va = start;; va += 0x1000ULL) {
-        vmm_set_page_flags(va, flags | VMM_FLAG_PRESENT);
-        if (va == end) break;
-    }
-}
-
-/* --- Address space management --- */
-
-void vmm_as_activate(uintptr_t as) {
-    if (!as) return;
-    hal_cpu_set_address_space(as);
-}
-
-void vmm_as_map_page(uintptr_t as, uint64_t phys, uint64_t virt, uint32_t flags) {
-    if (!as) return;
-    uintptr_t old_as = hal_cpu_get_address_space();
-    if ((old_as & ~(uintptr_t)0x1FU) != (as & ~(uintptr_t)0x1FU)) {
-        vmm_as_activate(as);
-        vmm_map_page(phys, virt, flags);
-        vmm_as_activate(old_as);
-    } else {
-        vmm_map_page(phys, virt, flags);
-    }
-}
+/* vmm_protect_range, vmm_as_activate, vmm_as_map_page are
+ * architecture-independent and live in src/mm/vmm.c. */
 
 /*
  * Create a new address space (PDPT + 4 PDs) that shares all kernel mappings
