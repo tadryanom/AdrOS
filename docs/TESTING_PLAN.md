@@ -2,9 +2,13 @@
 
 ## Current State
 
-- **Smoke test**: `make run` + `grep serial.log` (manual, fragile)
-- **Static analysis**: `cppcheck` (basic warnings only)
-- **No unit tests, no automated regression, no structured test harness**
+All four testing layers are **implemented and operational**:
+
+- **Static analysis** (`make check`): cppcheck + sparse + gcc -fanalyzer (59 x86 C files)
+- **QEMU smoke tests** (`make test`): expect-based, 19 checks, 4-CPU SMP, 40s timeout
+- **Host unit tests** (`make test-host`): 47 tests — `test_utils.c` (28) + `test_security.c` (19)
+- **GDB scripted checks** (`make test-gdb`): heap/PMM/VGA integrity validation
+- **Full suite** (`make test-all`): runs check + test-host + test
 
 ## Available Tools (already installed)
 
