@@ -1,0 +1,62 @@
+# DOOM for AdrOS — Build system
+#
+# Prerequisites:
+#   1. Clone doomgeneric into this directory:
+#      git clone https://github.com/ozkl/doomgeneric.git
+#   2. Place DOOM1.WAD (shareware) in this directory
+#   3. Run: make
+#
+# The output is doom.elf which gets packaged into the AdrOS initrd.
+
+CC := i686-elf-gcc
+AR := i686-elf-ar
+
+ULIBC_DIR := ../ulibc
+ULIBC_INC := $(ULIBC_DIR)/include
+ULIBC_LIB := $(ULIBC_DIR)/libulibc.a
+CRT0      := $(ULIBC_DIR)/src/crt0.o
+LINKER    := ../linker.ld
+
+CFLAGS := -m32 -O2 -ffreestanding -fno-pie -no-pie -nostdlib \
+          -Wall -Wno-unused-parameter -Wno-sign-compare -Wno-pointer-sign \
+          -Wno-missing-field-initializers -Wno-implicit-fallthrough \
+          -I$(ULIBC_INC) -I. -Idoomgeneric \
+          -DNORMALUNIX -DLINUX
+
+LDFLAGS := -m32 -nostdlib -fno-pie -no-pie -Wl,-T,$(LINKER)
+
+# doomgeneric engine sources
+DG_SRC := $(wildcard doomgeneric/*.c)
+DG_OBJ := $(DG_SRC:.c=.o)
+
+# AdrOS adapter
+ADAPTER_OBJ := doomgeneric_adros.o
+
+ALL_OBJ := $(DG_OBJ) $(ADAPTER_OBJ)
+
+.PHONY: all clean check-doomgeneric
+
+all: check-doomgeneric doom.elf
+
+check-doomgeneric:
+	@if [ ! -d doomgeneric ]; then \
+		echo "ERROR: doomgeneric/ directory not found."; \
+		echo "Run: git clone https://github.com/ozkl/doomgeneric.git"; \
+		exit 1; \
+	fi
+
+doom.elf: $(ALL_OBJ) $(ULIBC_LIB) $(CRT0)
+	@$(CC) $(LDFLAGS) -o $@ $(CRT0) $(ALL_OBJ) $(ULIBC_LIB) -lgcc
+	@echo "  LD      $@"
+
+doomgeneric/%.o: doomgeneric/%.c
+	@$(CC) $(CFLAGS) -c $< -o $@
+	@echo "  CC      $<"
+
+%.o: %.c
+	@$(CC) $(CFLAGS) -c $< -o $@
+	@echo "  CC      $<"
+
+clean:
+	rm -f $(ALL_OBJ) doom.elf
+
