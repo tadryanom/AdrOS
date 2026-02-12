@@ -2257,6 +2257,23 @@ void syscall_handler(struct registers* regs) {
         return;
     }
 
+    if (syscall_no == SYSCALL_SIGSUSPEND) {
+        if (!current_process) { regs->eax = (uint32_t)-EINVAL; return; }
+        uint32_t new_mask = 0;
+        if (copy_from_user(&new_mask, (const void*)regs->ebx, sizeof(new_mask)) < 0) {
+            regs->eax = (uint32_t)-EFAULT; return;
+        }
+        uint32_t old_mask = current_process->sig_blocked_mask;
+        current_process->sig_blocked_mask = new_mask;
+        extern void schedule(void);
+        while ((current_process->sig_pending_mask & ~current_process->sig_blocked_mask) == 0) {
+            schedule();
+        }
+        current_process->sig_blocked_mask = old_mask;
+        regs->eax = (uint32_t)-EINTR;
+        return;
+    }
+
     /* ---- Socket syscalls ---- */
     socket_syscall_dispatch(regs, syscall_no);
     /* If socket dispatch handled it, eax is set and we return.

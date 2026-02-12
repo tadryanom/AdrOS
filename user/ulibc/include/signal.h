@@ -51,5 +51,6 @@ int sigaction(int signum, const struct sigaction* act,
               struct sigaction* oldact);
 int sigprocmask(int how, const uint32_t* set, uint32_t* oldset);
 int sigpending(uint32_t* set);
+int sigsuspend(const uint32_t* mask);
 
 #endif
