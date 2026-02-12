@@ -76,9 +76,11 @@ Notes:
 | `setpgid` | [x] | |
 | `getpgrp` | [x] | |
 | `getuid`/`getgid` | [x] | Per-process uid/gid |
-| `setuid`/`setgid` | [x] | Set process uid/gid |
+| `geteuid`/`getegid` | [x] | Effective uid/gid |
+| `setuid`/`setgid` | [x] | Set process uid/gid; permission checks (only root can set arbitrary) |
+| `seteuid`/`setegid` | [x] | Set effective uid/gid; permission checks |
 | `brk`/`sbrk` | [x] | `syscall_brk_impl()` — per-process heap break |
-| `mmap`/`munmap` | [x] | Anonymous mappings + shared memory |
+| `mmap`/`munmap` | [x] | Anonymous mappings, shared memory backing, and file-backed (fd) mappings |
 | `clone` | [x] | Thread creation with `CLONE_VM`/`CLONE_FILES`/`CLONE_THREAD`/`CLONE_SETTLS` |
 | `set_thread_area` | [x] | GDT-based TLS via GS segment (GDT entry 22, ring 3) |
 | `nanosleep`/`sleep` | [x] | `syscall_nanosleep_impl()` with tick-based sleep |
@@ -125,12 +127,12 @@ Notes:
 | `struct vfs_dirent` (generic) | [x] | Unified format across all FS |
 | **tmpfs** | [x] | In-memory; dirs + files; `readdir` |
 | **overlayfs** | [x] | Copy-up; `readdir` delegates to upper/lower |
-| **devfs** | [x] | `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom`, `/dev/console`, `/dev/tty`, `/dev/ptmx`, `/dev/pts/N` |
+| **devfs** | [x] | `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom`, `/dev/console`, `/dev/tty`, `/dev/ptmx`, `/dev/pts/N`, `/dev/fb0`, `/dev/kbd` |
 | **diskfs** (on-disk) | [x] | Hierarchical inodes; full POSIX ops; symlinks; hard links with `nlink` tracking |
 | **persistfs** | [x] | Minimal persistence at `/persist` |
 | **procfs** | [x] | `/proc/meminfo` + per-process `/proc/[pid]/status`, `/proc/[pid]/maps` |
 | **FAT16** (read-only) | [x] | BPB parsing, FAT chain traversal, root dir finddir, VFS read |
-| Permissions (`uid`/`gid`/mode) | [x] | `chmod`, `chown`; mode bits stored in VFS nodes |
+| Permissions (`uid`/`gid`/`euid`/`egid`/mode) | [x] | `chmod`, `chown` with permission checks; VFS `open()` enforces rwx bits vs process euid/egid and file uid/gid/mode |
 | Hard links | [x] | `diskfs_link()` with shared data blocks and `nlink` tracking |
 | Symbolic links | [x] | `symlink`, `readlink`; followed by VFS lookup |
 | ext2 support | [ ] | |
@@ -167,11 +169,11 @@ Notes:
 | W^X for user ELFs | [x] | Text segments read-only after load |
 | SMEP | [x] | Enabled in CR4 if CPU supports |
 | `brk`/`sbrk` | [x] | Per-process heap break |
-| `mmap`/`munmap` | [x] | Anonymous mappings, shared memory backing |
+| `mmap`/`munmap` | [x] | Anonymous mappings, shared memory backing, file-backed (fd) mappings |
 | Shared memory (`shmget`/`shmat`/`shmdt`) | [x] | System V IPC style |
 | Copy-on-write (COW) fork | [x] | PTE bit 9 as CoW marker + page fault handler |
 | PAE + NX bit | [x] | PAE paging with NX (bit 63) on data segments |
-| Guard pages | [x] | 32KB user stack with unmapped guard page below (triggers SIGSEGV on overflow) |
+| Guard pages | [x] | 32KB user stack with unmapped guard page below (triggers SIGSEGV on overflow); kernel stacks in guard-paged region at `0xC8000000` |
 | ASLR | [x] | TSC-seeded xorshift32 PRNG; randomizes user stack base by up to 1MB per `execve` |
 | vDSO shared page | [x] | Kernel-updated `tick_count` mapped read-only at `0x007FE000` in every user process |
 
@@ -191,7 +193,8 @@ Notes:
 | LAPIC + IOAPIC | [x] | Replaces legacy PIC |
 | SMP (multi-CPU boot) | [x] | 4 CPUs via INIT-SIPI-SIPI, per-CPU data via GS |
 | CPUID feature detection | [x] | Leaf 0/1/7/extended; SMEP/SMAP detection |
-| VBE framebuffer | [x] | Maps LFB, pixel drawing, font rendering |
+| VBE framebuffer | [x] | Maps LFB, pixel drawing, font rendering; `/dev/fb0` device with `ioctl`/`mmap` |
+| Raw keyboard (`/dev/kbd`) | [x] | PS/2 scancode ring buffer; non-blocking read for game input |
 | SYSENTER fast syscall | [x] | MSR setup + handler |
 | E1000 NIC (Intel 82540EM) | [x] | MMIO-based, IRQ-driven, lwIP integration |
 | RTC (real-time clock) | [x] | CMOS RTC driver; provides wall-clock time for `CLOCK_REALTIME` |
@@ -252,8 +255,9 @@ Notes:
 | `/bin/ls` | [x] | Uses `getdents` |
 | `/bin/mkdir` | [x] | |
 | `/bin/rm` | [x] | |
+| `/bin/doom.elf` | [x] | DOOM (doomgeneric port) running on `/dev/fb0` + `/dev/kbd` |
 | `/lib/ld.so` | [~] | Stub dynamic linker (placeholder for future shared library support) |
-| Minimal libc (ulibc) | [x] | `printf`, `malloc`/`free`/`calloc`/`realloc`, `string.h`, `unistd.h`, `errno.h`, `pthread.h`, `signal.h`, `sys/times.h`, `sys/uio.h`, `linux/futex.h`, `stdio.h` (buffered I/O) |
+| Minimal libc (ulibc) | [x] | `printf`, `malloc`, `string.h`, `unistd.h`, `errno.h`, `pthread.h`, `signal.h`, `stdio.h`, `stdlib.h`, `ctype.h`, `sys/mman.h`, `sys/ioctl.h`, `time.h`, `math.h`, `assert.h`, `fcntl.h`, `strings.h`, `inttypes.h`, `sys/types.h`, `sys/stat.h`, `sys/times.h`, `sys/uio.h`, `linux/futex.h` |
 | `$PATH` search | [x] | Shell resolves commands via `$PATH` |
 
 ## 14. Scheduler
@@ -269,7 +273,7 @@ Notes:
 
 ## Implementation Progress
 
-### All 31 planned tasks completed ✅
+### All 31 planned tasks completed ✅ + 7 additional features
 
 **High Priority (8/8):**
 1. ~~`raise()` em ulibc~~ ✅
@@ -308,6 +312,16 @@ Notes:
 30. ~~Userspace `ld.so` stub~~ ✅
 31. ~~ASLR~~ ✅
 
+**Additional Features (post-31 tasks):**
+32. ~~DevFS ↔ TTY/PTY decoupling (`devfs_register_device` API)~~ ✅
+33. ~~VMM arch separation (`src/mm/vmm.c` generic wrappers)~~ ✅
+34. ~~`/dev/fb0` framebuffer device (ioctl + mmap)~~ ✅
+35. ~~`/dev/kbd` raw scancode device~~ ✅
+36. ~~fd-backed `mmap` (file descriptor memory mapping)~~ ✅
+37. ~~Kernel stack guard pages (0xC8000000 region)~~ ✅
+38. ~~uid/gid/euid/egid with VFS permission enforcement~~ ✅
+39. ~~DOOM port (doomgeneric + AdrOS adapter, 450KB doom.elf)~~ ✅
+
 ---
 
 ## Remaining Work for Full POSIX Compliance
@@ -328,7 +342,6 @@ Notes:
 | Gap | Impact | Effort |
 |-----|--------|--------|
 | **ext2 filesystem** | No standard on-disk filesystem | Large |
-| **`mmap` file-backed** — map file contents into memory | Only anonymous/shm maps supported | Large |
 | **`pipe` capacity** — `F_GETPIPE_SZ`/`F_SETPIPE_SZ` | Fixed-size pipe buffer | Small |
 | **`waitid`** — extended wait | Missing POSIX interface | Small |
 | **`posix_spawn`** — efficient process creation | Missing POSIX interface | Medium |

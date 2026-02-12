@@ -37,12 +37,12 @@ Unix-like, POSIX-compatible operating system.
 | CPUID feature detection | ✅ `cpu_get_features()` for PAE/NX | ✅ Full CPUID leaf 0/1/7/extended; SMEP/SMAP detection | None |
 | SMEP | Not discussed | ✅ Enabled in CR4 if CPU supports | **AdrOS is ahead** |
 | Copy-on-Write (CoW) | ✅ Full implementation | ✅ `vmm_as_clone_user_cow()` + `vmm_handle_cow_fault()` | None |
-| `vmm_find_free_area()` | ✅ Scan user VA space for holes | ❌ Not implemented | Enhancement (mmap works with fixed addresses) |
+| `vmm_find_free_area()` | ✅ Scan user VA space for holes | ❌ Not implemented | Enhancement (mmap works with fixed/hint addresses) |
 | `vmm_map_dma_buffer()` | ✅ Map phys into user VA | ✅ `ata_dma_read_direct`/`ata_dma_write_direct` zero-copy DMA | None |
 | TLB flush | ✅ `invlpg` + full flush | ✅ `invlpg()` per page | None |
 | Spinlock on VMM ops | ✅ `vmm_kernel_lock` | ❌ No lock | Enhancement for SMP |
 
-**Summary:** AdrOS VMM is fully featured with CoW fork, recursive mapping, SMEP, PAE+NX hardware W^X, guard pages, ASLR, and vDSO shared page.
+**Summary:** AdrOS VMM is fully featured with CoW fork, recursive mapping, SMEP, PAE+NX hardware W^X, guard pages (user + kernel stacks), ASLR, vDSO shared page, and fd-backed mmap.
 
 ---
 
@@ -210,27 +210,28 @@ Unix-like, POSIX-compatible operating system.
 
 ## Part 2 — POSIX Compatibility Assessment
 
-### Overall Score: **~90% toward a practical Unix-like POSIX system**
+### Overall Score: **~93% toward a practical Unix-like POSIX system**
 
 This score reflects that AdrOS has a **mature and feature-rich kernel** with virtually
 all core POSIX subsystems implemented and working end-to-end. All 31 planned tasks
-have been completed, covering syscalls, signals, filesystem operations, threads,
-synchronization, networking, security hardening, and userland tooling.
+have been completed, plus 8 additional features including DOOM game port, uid/gid/euid/egid
+permission enforcement, framebuffer device (`/dev/fb0`), raw keyboard device (`/dev/kbd`),
+fd-backed mmap, kernel stack guard pages, VMM arch separation, and DevFS decoupling.
 
 ### What AdrOS Already Has (Strengths)
 
-1. **Process model** — `fork` (CoW), `execve`, `waitpid`, `exit`, `getpid`, `getppid`, `setsid`, `setpgid`, `getpgrp`, `brk`, `setuid`/`setgid`, `alarm`, `times`, `futex` — all working
+1. **Process model** — `fork` (CoW), `execve`, `waitpid`, `exit`, `getpid`, `getppid`, `setsid`, `setpgid`, `getpgrp`, `brk`, `setuid`/`setgid`/`seteuid`/`setegid`/`getuid`/`getgid`/`geteuid`/`getegid`, `alarm`, `times`, `futex` — all working
 2. **File I/O** — `open`, `read`, `write`, `close`, `lseek`, `stat`, `fstat`, `dup`, `dup2`, `dup3`, `pipe`, `pipe2`, `fcntl`, `getdents`, `pread`/`pwrite`, `readv`/`writev`, `truncate`/`ftruncate`, `fsync`, `O_CLOEXEC`, `O_APPEND`, `FD_CLOEXEC` — comprehensive
 3. **Signals** — `sigaction`, `sigprocmask`, `kill`, `sigreturn`, `raise`, `sigpending`, `sigsuspend`, `sigaltstack`, Ctrl+C/Z/D signal chars — **complete**
 4. **VFS** — 8 filesystem types (tmpfs, devfs, overlayfs, diskfs, persistfs, procfs, FAT16, initrd), mount table, path resolution, hard links — excellent
 5. **TTY/PTY** — Line discipline, raw mode, job control, signal chars, `TIOCGWINSZ`, PTY, VMIN/VTIME — very good
 6. **Select/Poll** — Working for pipes, TTY, PTY, `/dev/null`, sockets
-7. **Memory management** — PMM (spinlock + refcount + contiguous alloc), VMM (CoW, recursive PD, PAE+NX), heap (dynamic 64MB), slab allocator, SMEP, shared memory, guard pages, ASLR, vDSO
+7. **Memory management** — PMM (spinlock + refcount + contiguous alloc), VMM (CoW, recursive PD, PAE+NX), heap (dynamic 64MB), slab allocator, SMEP, shared memory, guard pages (user + kernel stacks), ASLR, vDSO, fd-backed mmap
 8. **Hardware** — PCI, ATA PIO+DMA (bounce + zero-copy), LAPIC/IOAPIC, SMP (4 CPUs), ACPI, VBE framebuffer, SYSENTER, CPUID, RTC, MTRR write-combining
 9. **Networking** — E1000 NIC, lwIP TCP/IP, socket API (TCP+UDP), DNS resolver
-10. **Userland** — ulibc (`printf`, `malloc`, `string.h`, `errno.h`, `pthread.h`, `signal.h`, `stdio.h`, `realpath`), ELF loader with W^X + ASLR, POSIX shell, core utilities, `ld.so` stub
+10. **Userland** — ulibc (`printf`, `malloc`, `string.h`, `errno.h`, `pthread.h`, `signal.h`, `stdio.h`, `stdlib.h`, `ctype.h`, `sys/mman.h`, `sys/ioctl.h`, `time.h`, `math.h`, `fcntl.h`, `realpath`), ELF loader with W^X + ASLR, POSIX shell, core utilities, DOOM port, `ld.so` stub
 11. **Testing** — 47 host unit tests, 19 smoke tests, cppcheck, sparse, gcc -fanalyzer, GDB scripted checks
-12. **Security** — SMEP, PAE+NX, ASLR, guard pages, user_range_ok hardened, sigreturn eflags sanitized, atomic file refcounts
+12. **Security** — SMEP, PAE+NX, ASLR, guard pages (user + kernel), user_range_ok hardened, sigreturn eflags sanitized, atomic file refcounts, VFS permission enforcement (uid/gid/euid/egid vs file mode)
 13. **Scheduler** — O(1) with bitmap + active/expired, 32 priority levels, decay-based priority, CPU time accounting
 14. **Threads** — `clone`, `gettid`, TLS via GDT, pthread in ulibc, futex synchronization
 
@@ -249,7 +250,6 @@ synchronization, networking, security hardening, and userland tooling.
 | Gap | Impact | Effort |
 |-----|--------|--------|
 | **ext2 filesystem** | No standard on-disk filesystem | Large |
-| **File-backed `mmap`** | Only anonymous/shm maps supported | Large |
 | **Per-CPU scheduler runqueues** | SMP processes all run on BSP | Very Large |
 | **SMAP** | Missing hardware security feature | Small |
 | **Virtio-blk driver** | Only ATA PIO/DMA disk access | Medium |
@@ -301,7 +301,7 @@ synchronization, networking, security hardening, and userland tooling.
 14. ~~PAE + NX~~ ✅ Hardware W^X
 15. ~~Networking (E1000 + lwIP + sockets)~~ ✅ TCP + UDP + DNS
 16. ~~Threads (`clone`/`pthread`)~~ ✅ + futex
-17. ~~Permissions (`chmod`/`chown`/`access`/`umask`/`setuid`/`setgid`)~~ ✅
+17. ~~Permissions (`chmod`/`chown`/`access`/`umask`/`setuid`/`setgid`/`seteuid`/`setegid`/`getuid`/`getgid`/`geteuid`/`getegid` + VFS enforcement)~~ ✅
 18. ~~Hard links~~ ✅ `diskfs_link()` with `nlink` tracking
 19. ~~`pread`/`pwrite`/`readv`/`writev`~~ ✅
 20. ~~`sigpending`/`sigsuspend`/`sigaltstack`~~ ✅
@@ -321,14 +321,13 @@ synchronization, networking, security hardening, and userland tooling.
 
 #### High Priority
 1. **Full `ld.so`** — relocation processing for shared libraries
-2. **File-backed `mmap`** — map file contents into memory
-3. **ext2 filesystem** — standard on-disk filesystem
+2. **ext2 filesystem** — standard on-disk filesystem
 
 #### Medium Priority
-4. **`getaddrinfo`** / `/etc/hosts` — userland name resolution
-5. **Per-CPU scheduler runqueues** — SMP scalability
-6. **`setitimer`/`getitimer`** — interval timers
-7. **SMAP** — Supervisor Mode Access Prevention
+3. **`getaddrinfo`** / `/etc/hosts` — userland name resolution
+4. **Per-CPU scheduler runqueues** — SMP scalability
+5. **`setitimer`/`getitimer`** — interval timers
+6. **SMAP** — Supervisor Mode Access Prevention
 
 #### Long-Term
 8. **Multi-arch bring-up** — ARM/RISC-V functional kernels
@@ -347,7 +346,7 @@ complete signal handling (including `sigaltstack`, `sigsuspend`, `sigpending`), 
 with ASLR and W^X, networking (TCP/UDP/DNS), futex synchronization, a POSIX shell with
 core utilities, and a comprehensive ulibc with buffered I/O.
 
-It is approximately **90% of the way** to a practical POSIX-compatible system.
+It is approximately **93% of the way** to a practical POSIX-compatible system.
 
 The supplementary material's architectural blueprints have been **fully realized and
 exceeded**: CoW memory, O(1) scheduling, slab allocator, PCI enumeration, CPUID detection,
@@ -357,5 +356,5 @@ TTY/PTY, driver support, networking, userland tooling, and security hardening (A
 guard pages, SMEP).
 
 The remaining gaps are primarily **shared library support** (full `ld.so` relocation
-processing), **file-backed mmap**, **ext2 filesystem**, and **SMP scheduler scalability**
-(per-CPU runqueues). These are non-trivial but well-defined engineering tasks.
+processing), **ext2 filesystem**, and **SMP scheduler scalability** (per-CPU runqueues).
+These are non-trivial but well-defined engineering tasks.
