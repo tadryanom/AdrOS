@@ -11,6 +11,7 @@
 #include "timer.h"
 #include "uart_console.h"
 #include "process.h" 
+#include "vdso.h"
 
 #include "hal/timer.h"
 
@@ -22,6 +23,7 @@ uint32_t get_tick_count(void) {
 
 static void hal_tick_bridge(void) {
     tick++;
+    vdso_update_tick(tick);
     process_wake_check(tick);
     schedule();
 }
