@@ -4,6 +4,41 @@
 #include <stddef.h>
 #include <stdarg.h>
 
+#define BUFSIZ      256
+#define EOF         (-1)
+#define FOPEN_MAX   16
+
+#define _STDIO_READ  0x01
+#define _STDIO_WRITE 0x02
+#define _STDIO_EOF   0x04
+#define _STDIO_ERR   0x08
+
+typedef struct _FILE {
+    int     fd;
+    int     flags;
+    char    buf[BUFSIZ];
+    int     buf_pos;
+    int     buf_len;
+} FILE;
+
+extern FILE* stdin;
+extern FILE* stdout;
+extern FILE* stderr;
+
+FILE*   fopen(const char* path, const char* mode);
+int     fclose(FILE* fp);
+size_t  fread(void* ptr, size_t size, size_t nmemb, FILE* fp);
+size_t  fwrite(const void* ptr, size_t size, size_t nmemb, FILE* fp);
+int     fflush(FILE* fp);
+int     fgetc(FILE* fp);
+char*   fgets(char* s, int size, FILE* fp);
+int     fputc(int c, FILE* fp);
+int     fputs(const char* s, FILE* fp);
+int     feof(FILE* fp);
+int     ferror(FILE* fp);
+int     fprintf(FILE* fp, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
+int     vfprintf(FILE* fp, const char* fmt, va_list ap);
+
 int     putchar(int c);
 int     puts(const char* s);
 int     printf(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
