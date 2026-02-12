@@ -106,6 +106,22 @@ char* realpath(const char* path, char* resolved) {
     return resolved;
 }
 
+double atof(const char* s) {
+    /* Minimal: parse integer part only (no FP hardware in AdrOS) */
+    int neg = 0;
+    while (*s == ' ' || *s == '\t') s++;
+    if (*s == '-') { neg = 1; s++; }
+    else if (*s == '+') { s++; }
+    double val = 0.0;
+    while (*s >= '0' && *s <= '9') { val = val * 10.0 + (*s - '0'); s++; }
+    if (*s == '.') {
+        s++;
+        double frac = 0.1;
+        while (*s >= '0' && *s <= '9') { val += (*s - '0') * frac; frac *= 0.1; s++; }
+    }
+    return neg ? -val : val;
+}
+
 long strtol(const char* nptr, char** endptr, int base) {
     const char* s = nptr;
     long result = 0;
@@ -149,6 +165,11 @@ int abs(int x) {
 
 long labs(long x) {
     return x < 0 ? -x : x;
+}
+
+int system(const char* cmd) {
+    (void)cmd;
+    return -1;
 }
 
 void exit(int status) {
