@@ -59,6 +59,12 @@ void kernel_main(const struct boot_info* bi) {
     // 5. Initialize Shared Memory IPC
     shm_init();
     
+    // 6b. Initialize KASLR PRNG
+    {
+        extern void kaslr_init(void);
+        kaslr_init();
+    }
+
     // 7. Initialize Multitasking
     kprintf("[AdrOS] Initializing Scheduler...\n");
     process_init();
