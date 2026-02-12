@@ -25,6 +25,7 @@
 #include "pci.h"
 #include "e1000.h"
 #include "net.h"
+#include "socket.h"
 #include "vbe.h"
 #include "uart_console.h"
 
@@ -83,6 +84,7 @@ int init_start(const struct boot_info* bi) {
     pci_init();
     e1000_init();
     net_init();
+    ksocket_init();
     vbe_init(bi);
 
     tty_init();
