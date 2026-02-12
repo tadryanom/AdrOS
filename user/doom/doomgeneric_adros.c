@@ -15,8 +15,8 @@
  * and clock_gettime/nanosleep for timing.
  */
 
-#include "doomgeneric/doomgeneric.h"
-#include "doomgeneric/doomkeys.h"
+#include "doomgeneric.h"
+#include "doomkeys.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -259,4 +259,12 @@ int DG_GetKey(int* pressed, unsigned char* doomKey) {
 
 void DG_SetWindowTitle(const char* title) {
     (void)title;
+}
+
+int main(int argc, char** argv) {
+    doomgeneric_Create(argc, argv);
+    for (;;) {
+        doomgeneric_Tick();
+    }
+    return 0;
 }
