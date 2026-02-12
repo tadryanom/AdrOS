@@ -836,6 +836,11 @@ void process_wake_check(uint32_t current_tick) {
         return;
     }
     
+    /* CPU time accounting: charge one tick to the running process */
+    if (current_process && current_process->state == PROCESS_RUNNING) {
+        current_process->utime++;
+    }
+
     struct process* start = iter;
     do {
         if (iter->state == PROCESS_SLEEPING) {
