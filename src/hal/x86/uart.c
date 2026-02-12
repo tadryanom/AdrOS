@@ -16,6 +16,7 @@ void hal_uart_init(void) {
 }
 
 void hal_uart_putc(char c) {
-    while ((inb(UART_BASE + 5) & 0x20) == 0) { }
+    int timeout = 100000;
+    while ((inb(UART_BASE + 5) & 0x20) == 0 && --timeout > 0) { }
     outb(UART_BASE, (uint8_t)c);
 }
