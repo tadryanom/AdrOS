@@ -126,6 +126,10 @@ unsigned int alarm(unsigned int seconds) {
     return (unsigned int)_syscall1(SYS_ALARM, (int)seconds);
 }
 
+int flock(int fd, int operation) {
+    return __syscall_ret(_syscall2(SYS_FLOCK, fd, operation));
+}
+
 void* brk(void* addr) {
     return (void*)_syscall1(SYS_BRK, (int)addr);
 }
