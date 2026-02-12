@@ -82,6 +82,10 @@ int getpgrp(void) {
     return __syscall_ret(_syscall0(SYS_GETPGRP));
 }
 
+int gettid(void) {
+    return _syscall0(SYS_GETTID);
+}
+
 void* brk(void* addr) {
     return (void*)_syscall1(SYS_BRK, (int)addr);
 }

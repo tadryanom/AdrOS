@@ -32,6 +32,7 @@ int     rmdir(const char* path);
 int     setsid(void);
 int     setpgid(int pid, int pgid);
 int     getpgrp(void);
+int     gettid(void);
 void*   brk(void* addr);
 
 void    _exit(int status) __attribute__((noreturn));

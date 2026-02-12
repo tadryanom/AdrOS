@@ -88,6 +88,9 @@ enum {
     SYSCALL_RECV      = 64,
     SYSCALL_SENDTO    = 65,
     SYSCALL_RECVFROM  = 66,
+
+    SYSCALL_CLONE     = 67,
+    SYSCALL_GETTID    = 68,
 };
 
 #endif
