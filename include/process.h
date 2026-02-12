@@ -58,6 +58,8 @@ struct process {
     process_state_t state;
     uint32_t wake_at_tick;
     uint32_t alarm_tick;
+    uint32_t utime;             /* ticks spent in user mode */
+    uint32_t stime;             /* ticks spent in kernel mode */
     int exit_status;
 
     int has_user_regs;

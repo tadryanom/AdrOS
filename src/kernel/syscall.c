@@ -2272,6 +2272,11 @@ void syscall_handler(struct registers* regs) {
         return;
     }
 
+    if (syscall_no == SYSCALL_TIMES) {
+        posix_ext_syscall_dispatch(regs, syscall_no);
+        return;
+    }
+
     if (syscall_no == SYSCALL_ALARM) {
         if (!current_process) { regs->eax = 0; return; }
         uint32_t seconds = regs->ebx;
@@ -2445,6 +2450,23 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
             if ((uint32_t)r < iov.iov_len) break;
         }
         regs->eax = total;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_TIMES) {
+        if (!current_process) { regs->eax = (uint32_t)-EINVAL; return; }
+        struct { uint32_t tms_utime; uint32_t tms_stime; uint32_t tms_cutime; uint32_t tms_cstime; } tms;
+        tms.tms_utime = current_process->utime;
+        tms.tms_stime = current_process->stime;
+        tms.tms_cutime = 0;
+        tms.tms_cstime = 0;
+        void* user_buf = (void*)regs->ebx;
+        if (user_buf) {
+            if (copy_to_user(user_buf, &tms, sizeof(tms)) < 0) {
+                regs->eax = (uint32_t)-EFAULT; return;
+            }
+        }
+        regs->eax = get_tick_count();
         return;
     }
 

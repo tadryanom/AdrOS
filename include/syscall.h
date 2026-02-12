@@ -107,6 +107,7 @@ enum {
     SYSCALL_READV     = 81,
     SYSCALL_WRITEV    = 82,
     SYSCALL_ALARM     = 83,
+    SYSCALL_TIMES     = 84,
 };
 
 #endif
