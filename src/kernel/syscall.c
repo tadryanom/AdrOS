@@ -1488,13 +1488,18 @@ static int syscall_clock_gettime_impl(uint32_t clk_id, struct timespec* user_tp)
 
     if (clk_id != CLOCK_REALTIME && clk_id != CLOCK_MONOTONIC) return -EINVAL;
 
-    uint32_t ticks = get_tick_count();
-    const uint32_t TICK_MS = 20;
-    uint32_t total_ms = ticks * TICK_MS;
-
     struct timespec tp;
-    tp.tv_sec = total_ms / 1000U;
-    tp.tv_nsec = (total_ms % 1000U) * 1000000U;
+    if (clk_id == CLOCK_REALTIME) {
+        extern uint32_t rtc_unix_timestamp(void);
+        tp.tv_sec = rtc_unix_timestamp();
+        tp.tv_nsec = 0;
+    } else {
+        uint32_t ticks = get_tick_count();
+        const uint32_t TICK_MS = 20;
+        uint32_t total_ms = ticks * TICK_MS;
+        tp.tv_sec = total_ms / 1000U;
+        tp.tv_nsec = (total_ms % 1000U) * 1000000U;
+    }
 
     if (copy_to_user(user_tp, &tp, sizeof(tp)) < 0) return -EFAULT;
     return 0;
