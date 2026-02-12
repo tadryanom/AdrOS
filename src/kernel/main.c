@@ -63,6 +63,12 @@ void kernel_main(const struct boot_info* bi) {
     kprintf("[AdrOS] Initializing Scheduler...\n");
     process_init();
     
+    // 7b. Initialize vDSO shared page
+    {
+        extern void vdso_init(void);
+        vdso_init();
+    }
+
     // 8. Start Timer (Preemption!) - 50Hz
     timer_init(50);
 
