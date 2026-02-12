@@ -35,7 +35,7 @@ ifeq ($(ARCH),x86)
         $(LWIPDIR)/core/netif.c $(LWIPDIR)/core/pbuf.c $(LWIPDIR)/core/raw.c \
         $(LWIPDIR)/core/stats.c $(LWIPDIR)/core/sys.c $(LWIPDIR)/core/tcp.c \
         $(LWIPDIR)/core/tcp_in.c $(LWIPDIR)/core/tcp_out.c $(LWIPDIR)/core/timeouts.c \
-        $(LWIPDIR)/core/udp.c
+        $(LWIPDIR)/core/udp.c $(LWIPDIR)/core/dns.c
     LWIP_IPV4 := $(LWIPDIR)/core/ipv4/etharp.c $(LWIPDIR)/core/ipv4/icmp.c \
         $(LWIPDIR)/core/ipv4/ip4.c $(LWIPDIR)/core/ipv4/ip4_addr.c \
         $(LWIPDIR)/core/ipv4/ip4_frag.c
