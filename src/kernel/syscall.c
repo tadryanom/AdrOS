@@ -15,6 +15,7 @@
 
 #include "errno.h"
 #include "shm.h"
+#include "socket.h"
 
 #if defined(__i386__)
 extern void x86_sysenter_init(void);
@@ -64,6 +65,7 @@ struct sigframe {
 static int fd_alloc(struct file* f);
 static int fd_close(int fd);
 static struct file* fd_get(int fd);
+static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no);
 
 struct pollfd {
     int fd;
@@ -582,7 +584,9 @@ static int fd_close(int fd) {
     current_process->files[fd] = NULL;
 
     if (__sync_sub_and_fetch(&f->refcount, 1) == 0) {
-        if (f->node) {
+        if (f->flags == 0x534F434BU && f->node == NULL) {
+            ksocket_close((int)f->offset);
+        } else if (f->node) {
             vfs_close(f->node);
         }
         kfree(f);
@@ -2151,6 +2155,180 @@ void syscall_handler(struct registers* regs) {
     if (syscall_no == SYSCALL_SET_THREAD_AREA) {
         /* Stub: will be implemented when clone/threads are added */
         regs->eax = (uint32_t)-ENOSYS;
+        return;
+    }
+
+    /* ---- Socket syscalls ---- */
+    socket_syscall_dispatch(regs, syscall_no);
+    /* If socket dispatch handled it, eax is set and we return.
+       If not, it sets ENOSYS. Either way, return. */
+    return;
+}
+
+/* Separate function to keep socket locals off syscall_handler's stack frame */
+__attribute__((noinline))
+static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no) {
+    if (syscall_no == SYSCALL_SOCKET) {
+        int domain   = (int)regs->ebx;
+        int type     = (int)regs->ecx;
+        int protocol = (int)regs->edx;
+        int sid = ksocket_create(domain, type, protocol);
+        if (sid < 0) { regs->eax = (uint32_t)sid; return; }
+        int fd = -1;
+        for (int i = 0; i < PROCESS_MAX_FILES; i++) {
+            if (!current_process->files[i]) { fd = i; break; }
+        }
+        if (fd < 0) { ksocket_close(sid); regs->eax = (uint32_t)-EMFILE; return; }
+        struct file* f = (struct file*)kmalloc(sizeof(struct file));
+        if (!f) { ksocket_close(sid); regs->eax = (uint32_t)-ENOMEM; return; }
+        f->node = NULL;
+        f->offset = (uint32_t)sid;
+        f->flags = 0x534F434BU;     /* magic 'SOCK' */
+        f->refcount = 1;
+        current_process->files[fd] = f;
+        regs->eax = (uint32_t)fd;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_BIND) {
+        int fd = (int)regs->ebx;
+        if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
+            current_process->files[fd]->flags != 0x534F434BU) {
+            regs->eax = (uint32_t)-EBADF; return;
+        }
+        struct sockaddr_in sa;
+        if (copy_from_user(&sa, (const void*)regs->ecx, sizeof(sa)) < 0) {
+            regs->eax = (uint32_t)-EFAULT; return;
+        }
+        int sid = (int)current_process->files[fd]->offset;
+        regs->eax = (uint32_t)ksocket_bind(sid, &sa);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_LISTEN) {
+        int fd = (int)regs->ebx;
+        if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
+            current_process->files[fd]->flags != 0x534F434BU) {
+            regs->eax = (uint32_t)-EBADF; return;
+        }
+        int sid = (int)current_process->files[fd]->offset;
+        regs->eax = (uint32_t)ksocket_listen(sid, (int)regs->ecx);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_ACCEPT) {
+        int fd = (int)regs->ebx;
+        if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
+            current_process->files[fd]->flags != 0x534F434BU) {
+            regs->eax = (uint32_t)-EBADF; return;
+        }
+        int sid = (int)current_process->files[fd]->offset;
+        struct sockaddr_in sa;
+        memset(&sa, 0, sizeof(sa));
+        int new_sid = ksocket_accept(sid, &sa);
+        if (new_sid < 0) { regs->eax = (uint32_t)new_sid; return; }
+        int new_fd = -1;
+        for (int i = 0; i < PROCESS_MAX_FILES; i++) {
+            if (!current_process->files[i]) { new_fd = i; break; }
+        }
+        if (new_fd < 0) { ksocket_close(new_sid); regs->eax = (uint32_t)-EMFILE; return; }
+        struct file* f = (struct file*)kmalloc(sizeof(struct file));
+        if (!f) { ksocket_close(new_sid); regs->eax = (uint32_t)-ENOMEM; return; }
+        f->node = NULL;
+        f->offset = (uint32_t)new_sid;
+        f->flags = 0x534F434BU;
+        f->refcount = 1;
+        current_process->files[new_fd] = f;
+        if (regs->ecx) {
+            (void)copy_to_user((void*)regs->ecx, &sa, sizeof(sa));
+        }
+        regs->eax = (uint32_t)new_fd;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_CONNECT) {
+        int fd = (int)regs->ebx;
+        if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
+            current_process->files[fd]->flags != 0x534F434BU) {
+            regs->eax = (uint32_t)-EBADF; return;
+        }
+        struct sockaddr_in sa;
+        if (copy_from_user(&sa, (const void*)regs->ecx, sizeof(sa)) < 0) {
+            regs->eax = (uint32_t)-EFAULT; return;
+        }
+        int sid = (int)current_process->files[fd]->offset;
+        regs->eax = (uint32_t)ksocket_connect(sid, &sa);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SEND) {
+        int fd = (int)regs->ebx;
+        if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
+            current_process->files[fd]->flags != 0x534F434BU) {
+            regs->eax = (uint32_t)-EBADF; return;
+        }
+        size_t len = (size_t)regs->edx;
+        if (!user_range_ok((const void*)regs->ecx, len)) {
+            regs->eax = (uint32_t)-EFAULT; return;
+        }
+        int sid = (int)current_process->files[fd]->offset;
+        regs->eax = (uint32_t)ksocket_send(sid, (const void*)regs->ecx, len, (int)regs->esi);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_RECV) {
+        int fd = (int)regs->ebx;
+        if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
+            current_process->files[fd]->flags != 0x534F434BU) {
+            regs->eax = (uint32_t)-EBADF; return;
+        }
+        size_t len = (size_t)regs->edx;
+        if (!user_range_ok((void*)regs->ecx, len)) {
+            regs->eax = (uint32_t)-EFAULT; return;
+        }
+        int sid = (int)current_process->files[fd]->offset;
+        regs->eax = (uint32_t)ksocket_recv(sid, (void*)regs->ecx, len, (int)regs->esi);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SENDTO) {
+        int fd = (int)regs->ebx;
+        if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
+            current_process->files[fd]->flags != 0x534F434BU) {
+            regs->eax = (uint32_t)-EBADF; return;
+        }
+        size_t len = (size_t)regs->edx;
+        if (!user_range_ok((const void*)regs->ecx, len)) {
+            regs->eax = (uint32_t)-EFAULT; return;
+        }
+        struct sockaddr_in dest;
+        if (copy_from_user(&dest, (const void*)regs->edi, sizeof(dest)) < 0) {
+            regs->eax = (uint32_t)-EFAULT; return;
+        }
+        int sid = (int)current_process->files[fd]->offset;
+        regs->eax = (uint32_t)ksocket_sendto(sid, (const void*)regs->ecx, len,
+                                              (int)regs->esi, &dest);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_RECVFROM) {
+        int fd = (int)regs->ebx;
+        if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
+            current_process->files[fd]->flags != 0x534F434BU) {
+            regs->eax = (uint32_t)-EBADF; return;
+        }
+        size_t len = (size_t)regs->edx;
+        if (!user_range_ok((void*)regs->ecx, len)) {
+            regs->eax = (uint32_t)-EFAULT; return;
+        }
+        struct sockaddr_in src;
+        memset(&src, 0, sizeof(src));
+        int sid = (int)current_process->files[fd]->offset;
+        int ret = ksocket_recvfrom(sid, (void*)regs->ecx, len, (int)regs->esi, &src);
+        if (ret > 0 && regs->edi) {
+            (void)copy_to_user((void*)regs->edi, &src, sizeof(src));
+        }
+        regs->eax = (uint32_t)ret;
         return;
     }
 
