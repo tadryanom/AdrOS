@@ -2,7 +2,7 @@
 
 This guide explains how to build and run AdrOS on your local machine (Linux/WSL).
 
-AdrOS is a Unix-like, POSIX-compatible OS kernel. See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for the full compatibility checklist.
+AdrOS is a Unix-like, POSIX-compatible OS kernel with threads, networking (TCP/IP via lwIP), dynamic linking infrastructure, and a POSIX shell. See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for the full compatibility checklist.
 
 ## 1. Dependencies
 
@@ -72,16 +72,23 @@ Generated outputs/artifacts:
 
 Syscall return convention note:
 - The kernel follows a Linux-style convention: syscalls return `0`/positive values on success, and `-errno` (negative) on failure.
-- Userland (`user/init.c`) uses a `__syscall_fix()` helper that converts negative returns to `-1` and sets a global `errno`.
-- A full libc-style per-thread `errno` is not yet implemented.
+- Userland ulibc uses a `__syscall_ret()` helper that converts negative returns to `-1` and sets a per-thread `errno`.
+- Per-thread `errno` is supported via `set_thread_area` + TLS.
 
-### Userland smoke tests
+### Userland programs
+The following ELF binaries are bundled in the initrd:
+- `/bin/init.elf` — comprehensive smoke test suite (19+ checks)
+- `/bin/echo` — argv/envp test
+- `/bin/sh` — POSIX sh-compatible shell
+- `/bin/cat`, `/bin/ls`, `/bin/mkdir`, `/bin/rm` — core utilities
+
+### Smoke tests
 The init program (`/bin/init.elf`) runs a comprehensive suite of smoke tests on boot, covering:
 - File I/O (`open`, `read`, `write`, `close`, `lseek`, `stat`, `fstat`)
 - Overlay copy-up, `dup2`, `pipe`, `select`, `poll`
 - TTY/ioctl, job control (`SIGTTIN`/`SIGTTOU`)
-- PTY (`/dev/ptmx` + `/dev/pts/0`)
-- Signals (`sigaction`, `kill`, `sigreturn`)
+- PTY (`/dev/ptmx` + `/dev/pts/N`)
+- Signals (`sigaction`, `kill`, `sigreturn`, `SA_SIGINFO`)
 - Session/process groups (`setsid`, `setpgid`, `getpgrp`)
 - `isatty`, `O_NONBLOCK` (pipes + PTY), `fcntl`
 - `pipe2`/`dup3` with flags
@@ -91,6 +98,7 @@ The init program (`/bin/init.elf`) runs a comprehensive suite of smoke tests on 
 - `getdents` across multiple FS types (diskfs, devfs, tmpfs)
 - `fork` (100 children), `waitpid` (`WNOHANG`), `execve`
 - `SIGSEGV` handler
+- diskfs mkdir/unlink/getdents
 
 All tests print `[init] ... OK` on success. Any failure calls `sys_exit(1)`.
 
