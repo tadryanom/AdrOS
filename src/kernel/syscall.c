@@ -32,6 +32,7 @@ extern void x86_sysenter_init(void);
 #include <stddef.h>
 
 enum {
+    O_APPEND   = 0x400,
     O_NONBLOCK = 0x800,
     O_CLOEXEC  = 0x80000,
 };
@@ -947,8 +948,8 @@ static int syscall_fcntl_impl(int fd, int cmd, uint32_t arg) {
         return (int)f->flags;
     }
     if (cmd == FCNTL_F_SETFL) {
-        uint32_t keep = f->flags & ~O_NONBLOCK;
-        uint32_t set = arg & O_NONBLOCK;
+        uint32_t keep = f->flags & ~(O_NONBLOCK | O_APPEND);
+        uint32_t set = arg & (O_NONBLOCK | O_APPEND);
         f->flags = keep | set;
         return 0;
     }
@@ -1315,6 +1316,10 @@ static int syscall_write_impl(int fd, const void* user_buf, uint32_t len) {
     }
     if (!f->node->write) return -ESPIPE;
     if (((f->node->flags & FS_FILE) == 0) && f->node->flags != FS_CHARDEVICE) return -ESPIPE;
+
+    if ((f->flags & O_APPEND) && (f->node->flags & FS_FILE)) {
+        f->offset = f->node->length;
+    }
 
     uint8_t kbuf[256];
     uint32_t total = 0;
