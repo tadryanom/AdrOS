@@ -85,6 +85,8 @@ int init_start(const struct boot_info* bi) {
         (void)vfs_mount("/dev", dev);
     }
 
+    vbe_register_devfs();
+
     fs_node_t* persist = persistfs_create_root();
     if (persist) {
         (void)vfs_mount("/persist", persist);
