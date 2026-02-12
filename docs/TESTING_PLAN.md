@@ -89,6 +89,16 @@ No need for Unity — a simple `assert()` + `main()` is sufficient for a kernel 
 3. **Layer 4** (host unit tests) — catches logic bugs in pure functions
 4. **Layer 3** (GDB scripted) — for deep debugging, lower priority
 
+## DOOM Smoke Test
+
+The DOOM port (`/bin/doom.elf`) serves as a heavyweight integration test:
+- Exercises `mmap` (fd-backed for `/dev/fb0`), `brk` (Z_Malloc heap), `nanosleep`, `clock_gettime`
+- Tests `/dev/fb0` ioctl (`FBIOGET_VSCREENINFO`, `FBIOGET_FSCREENINFO`) and framebuffer mmap
+- Tests `/dev/kbd` raw scancode reads (non-blocking)
+- Stresses the VFS, memory allocator, and process model simultaneously
+
+To run manually: boot AdrOS with `-vga std`, then execute `/bin/doom.elf` from the shell.
+
 ## Makefile Targets
 
 ```makefile
