@@ -42,7 +42,7 @@ after 1000
 # ---- Test definitions ----
 # Each test is {description pattern}
 set tests {
-    {"Heap init"            "\\[HEAP\\] 10MB Heap Ready."}
+    {"Heap init"            "\\[HEAP\\] 8MB Buddy Allocator Ready."}
     {"PCI enumeration"      "\\[PCI\\] Enumerated"}
     {"ATA DMA init"         "\\[ATA-DMA\\] Initialized"}
     {"ATA DMA mode"         "\\[ATA\\] Using DMA mode."}
