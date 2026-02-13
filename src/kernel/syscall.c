@@ -29,6 +29,7 @@ extern void x86_sysenter_init(void);
 #include "hal/cpu.h"
 #include "arch_signal.h"
 #include "arch_syscall.h"
+#include "arch_process.h"
 
 #include <stddef.h>
 
@@ -178,7 +179,7 @@ static int syscall_fork_impl(struct registers* regs) {
     if (!child_as) return -ENOMEM;
 
     struct registers child_regs = *regs;
-    child_regs.eax = 0;
+    arch_regs_set_retval(&child_regs, 0);
 
     struct process* child = process_fork_create(child_as, &child_regs);
     if (!child) {
