@@ -262,12 +262,15 @@ static int poll_wait_kfds(struct pollfd* kfds, uint32_t nfds, int32_t timeout) {
 
             fs_node_t* n = f->node;
 
-            if (n->poll) {
+            int (*fn_poll)(fs_node_t*, int) = NULL;
+            if (n->f_ops && n->f_ops->poll) fn_poll = n->f_ops->poll;
+            else if (n->poll) fn_poll = n->poll;
+            if (fn_poll) {
                 int vfs_events = 0;
                 if (kfds[i].events & POLLIN)  vfs_events |= VFS_POLL_IN;
                 if (kfds[i].events & POLLOUT) vfs_events |= VFS_POLL_OUT;
 
-                int vfs_rev = n->poll(n, vfs_events);
+                int vfs_rev = fn_poll(n, vfs_events);
 
                 if (vfs_rev & VFS_POLL_IN)  kfds[i].revents |= POLLIN;
                 if (vfs_rev & VFS_POLL_OUT) kfds[i].revents |= POLLOUT;
@@ -1137,14 +1140,17 @@ static int syscall_getdents_impl(int fd, void* user_buf, uint32_t len) {
     struct file* f = fd_get(fd);
     if (!f || !f->node) return -EBADF;
     if (f->node->flags != FS_DIRECTORY) return -ENOTDIR;
-    if (!f->node->readdir) return -ENOSYS;
+    int (*fn_readdir)(struct fs_node*, uint32_t*, void*, uint32_t) = NULL;
+    if (f->node->f_ops && f->node->f_ops->readdir) fn_readdir = f->node->f_ops->readdir;
+    else if (f->node->readdir) fn_readdir = f->node->readdir;
+    if (!fn_readdir) return -ENOSYS;
 
     uint8_t kbuf[256];
     uint32_t klen = len;
     if (klen > (uint32_t)sizeof(kbuf)) klen = (uint32_t)sizeof(kbuf);
 
     uint32_t idx = f->offset;
-    int rc = f->node->readdir(f->node, &idx, kbuf, klen);
+    int rc = fn_readdir(f->node, &idx, kbuf, klen);
     if (rc < 0) return rc;
     if (rc == 0) return 0;
 
@@ -1206,10 +1212,15 @@ static int syscall_read_impl(int fd, void* user_buf, uint32_t len) {
     if (!f || !f->node) return -EBADF;
 
     int nonblock = (f->flags & O_NONBLOCK) ? 1 : 0;
-    if (nonblock && f->node->poll) {
-        int rev = f->node->poll(f->node, VFS_POLL_IN);
-        if (!(rev & (VFS_POLL_IN | VFS_POLL_ERR | VFS_POLL_HUP)))
-            return -EAGAIN;
+    {
+        int (*fn_poll)(fs_node_t*, int) = NULL;
+        if (f->node->f_ops && f->node->f_ops->poll) fn_poll = f->node->f_ops->poll;
+        else if (f->node->poll) fn_poll = f->node->poll;
+        if (nonblock && fn_poll) {
+            int rev = fn_poll(f->node, VFS_POLL_IN);
+            if (!(rev & (VFS_POLL_IN | VFS_POLL_ERR | VFS_POLL_HUP)))
+                return -EAGAIN;
+        }
     }
 
     if (f->node->flags == FS_CHARDEVICE) {
@@ -1272,12 +1283,17 @@ static int syscall_write_impl(int fd, const void* user_buf, uint32_t len) {
     if (!f || !f->node) return -EBADF;
 
     int nonblock = (f->flags & O_NONBLOCK) ? 1 : 0;
-    if (nonblock && f->node->poll) {
-        int rev = f->node->poll(f->node, VFS_POLL_OUT);
-        if (!(rev & (VFS_POLL_OUT | VFS_POLL_ERR)))
-            return -EAGAIN;
+    {
+        int (*fn_poll)(fs_node_t*, int) = NULL;
+        if (f->node->f_ops && f->node->f_ops->poll) fn_poll = f->node->f_ops->poll;
+        else if (f->node->poll) fn_poll = f->node->poll;
+        if (nonblock && fn_poll) {
+            int rev = fn_poll(f->node, VFS_POLL_OUT);
+            if (!(rev & (VFS_POLL_OUT | VFS_POLL_ERR)))
+                return -EAGAIN;
+        }
     }
-    if (!f->node->write) return -ESPIPE;
+    if (!(f->node->f_ops && f->node->f_ops->write) && !f->node->write) return -ESPIPE;
     if (f->node->flags != FS_FILE && f->node->flags != FS_CHARDEVICE && f->node->flags != FS_SOCKET) return -ESPIPE;
 
     if ((f->flags & O_APPEND) && (f->node->flags & FS_FILE)) {
@@ -1308,6 +1324,7 @@ static int syscall_ioctl_impl(int fd, uint32_t cmd, void* user_arg) {
     if (!f || !f->node) return -EBADF;
 
     fs_node_t* n = f->node;
+    if (n->f_ops && n->f_ops->ioctl) return n->f_ops->ioctl(n, cmd, user_arg);
     if (n->ioctl) return n->ioctl(n, cmd, user_arg);
     return -ENOTTY;
 }
@@ -1490,7 +1507,7 @@ static uintptr_t syscall_mmap_impl(uintptr_t addr, uint32_t length, uint32_t pro
         if (fd < 0) return (uintptr_t)-EBADF;
         struct file* f = fd_get(fd);
         if (!f || !f->node) return (uintptr_t)-EBADF;
-        if (!f->node->mmap) return (uintptr_t)-ENOSYS;
+        if (!(f->node->f_ops && f->node->f_ops->mmap) && !f->node->mmap) return (uintptr_t)-ENOSYS;
         mmap_node = f->node;
     }
 
@@ -1514,7 +1531,10 @@ static uintptr_t syscall_mmap_impl(uintptr_t addr, uint32_t length, uint32_t pro
 
     if (mmap_node) {
         /* Device-backed mmap: delegate to the node's mmap callback */
-        uintptr_t result = mmap_node->mmap(mmap_node, base, aligned_len, prot, offset);
+        uintptr_t (*fn_mmap)(fs_node_t*, uintptr_t, uint32_t, uint32_t, uint32_t) = NULL;
+        if (mmap_node->f_ops && mmap_node->f_ops->mmap) fn_mmap = mmap_node->f_ops->mmap;
+        else fn_mmap = mmap_node->mmap;
+        uintptr_t result = fn_mmap(mmap_node, base, aligned_len, prot, offset);
         if (!result) return (uintptr_t)-ENOMEM;
         base = result;
     } else {
