@@ -12,7 +12,6 @@ void* memset(void* ptr, int value, size_t num);
 void* memcpy(void* dst, const void* src, size_t n);
 void* memmove(void* dst, const void* src, size_t n);
 int   memcmp(const void* a, const void* b, size_t n);
-char* strcpy(char* dest, const char* src);
 char* strncpy(char* dest, const char* src, size_t n);
 long  strtol(const char* nptr, char** endptr, int base);
 

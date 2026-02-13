@@ -1,6 +1,7 @@
 #include "keyboard.h"
 #include "devfs.h"
 #include "uart_console.h"
+#include "utils.h"
 #include <stddef.h>
 
 #include "hal/keyboard.h"

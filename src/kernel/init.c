@@ -17,6 +17,7 @@
 #include "net.h"
 #include "socket.h"
 #include "vbe.h"
+#include "keyboard.h"
 #include "uart_console.h"
 
 #include "hal/mm.h"
