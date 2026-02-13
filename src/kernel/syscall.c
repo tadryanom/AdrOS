@@ -399,6 +399,18 @@ static int pipe_poll(fs_node_t* n, int events) {
     return revents;
 }
 
+static const struct file_operations pipe_read_fops = {
+    .read  = pipe_read,
+    .close = pipe_close,
+    .poll  = pipe_poll,
+};
+
+static const struct file_operations pipe_write_fops = {
+    .write = pipe_write,
+    .close = pipe_close,
+    .poll  = pipe_poll,
+};
+
 static int pipe_node_create(struct pipe_state* ps, int is_read_end, fs_node_t** out_node) {
     if (!ps || !out_node) return -EINVAL;
     struct pipe_node* pn = (struct pipe_node*)kmalloc(sizeof(*pn));
@@ -409,18 +421,16 @@ static int pipe_node_create(struct pipe_state* ps, int is_read_end, fs_node_t** 
     pn->is_read_end = is_read_end ? 1U : 0U;
     pn->node.flags = FS_FILE;
     pn->node.length = 0;
-    pn->node.open = NULL;
-    pn->node.finddir = NULL;
     pn->node.close = pipe_close;
     pn->node.poll = pipe_poll;
     if (pn->is_read_end) {
         strcpy(pn->node.name, "pipe:r");
+        pn->node.f_ops = &pipe_read_fops;
         pn->node.read = pipe_read;
-        pn->node.write = NULL;
         ps->readers++;
     } else {
         strcpy(pn->node.name, "pipe:w");
-        pn->node.read = NULL;
+        pn->node.f_ops = &pipe_write_fops;
         pn->node.write = pipe_write;
         ps->writers++;
     }
@@ -2625,6 +2635,12 @@ static void sock_node_close(fs_node_t* node) {
     kfree(node);
 }
 
+static const struct file_operations sock_fops = {
+    .read  = sock_node_read,
+    .write = sock_node_write,
+    .close = sock_node_close,
+};
+
 static fs_node_t* sock_node_create(int sid) {
     fs_node_t* n = (fs_node_t*)kmalloc(sizeof(fs_node_t));
     if (!n) return NULL;
@@ -2632,6 +2648,7 @@ static fs_node_t* sock_node_create(int sid) {
     strcpy(n->name, "socket");
     n->flags = FS_SOCKET;
     n->inode = (uint32_t)sid;
+    n->f_ops = &sock_fops;
     n->read = sock_node_read;
     n->write = sock_node_write;
     n->close = sock_node_close;

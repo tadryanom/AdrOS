@@ -87,6 +87,17 @@ static uint32_t overlay_write_impl(fs_node_t* node, uint32_t offset, uint32_t si
     return wr;
 }
 
+static const struct file_operations overlay_file_ops = {
+    .read  = overlay_read_impl,
+    .write = overlay_write_impl,
+};
+
+static const struct file_operations overlay_dir_ops = {
+    .read    = overlay_read_impl,
+    .finddir = overlay_finddir_impl,
+    .readdir = overlay_readdir_impl,
+};
+
 static fs_node_t* overlay_wrap_child(struct overlay_node* parent, const char* name, fs_node_t* lower_child, fs_node_t* upper_child) {
     if (!parent || !parent->ofs || !name) return NULL;
     if (!lower_child && !upper_child) return NULL;
@@ -110,10 +121,13 @@ static fs_node_t* overlay_wrap_child(struct overlay_node* parent, const char* na
         c->vfs.length = lower_child->length;
     }
 
+    if (c->vfs.flags == FS_DIRECTORY) {
+        c->vfs.f_ops = &overlay_dir_ops;
+    } else {
+        c->vfs.f_ops = &overlay_file_ops;
+    }
     c->vfs.read = &overlay_read_impl;
     c->vfs.write = (c->vfs.flags == FS_FILE) ? &overlay_write_impl : 0;
-    c->vfs.open = 0;
-    c->vfs.close = 0;
     c->vfs.finddir = (c->vfs.flags == FS_DIRECTORY) ? &overlay_finddir_impl : 0;
     c->vfs.readdir = (c->vfs.flags == FS_DIRECTORY) ? &overlay_readdir_impl : 0;
 
@@ -153,8 +167,12 @@ static int overlay_readdir_impl(struct fs_node* node, uint32_t* inout_index, voi
 
     // Prefer upper layer readdir; fall back to lower.
     fs_node_t* src = dir->upper ? dir->upper : dir->lower;
-    if (!src || !src->readdir) return 0;
-    return src->readdir(src, inout_index, buf, buf_len);
+    if (!src) return 0;
+    if (src->f_ops && src->f_ops->readdir)
+        return src->f_ops->readdir(src, inout_index, buf, buf_len);
+    if (src->readdir)
+        return src->readdir(src, inout_index, buf, buf_len);
+    return 0;
 }
 
 static struct fs_node* overlay_finddir_impl(struct fs_node* node, const char* name) {
@@ -166,11 +184,17 @@ static struct fs_node* overlay_finddir_impl(struct fs_node* node, const char* na
     fs_node_t* upper_child = NULL;
     fs_node_t* lower_child = NULL;
 
-    if (dir->upper && dir->upper->finddir) {
-        upper_child = dir->upper->finddir(dir->upper, name);
+    if (dir->upper) {
+        if (dir->upper->f_ops && dir->upper->f_ops->finddir)
+            upper_child = dir->upper->f_ops->finddir(dir->upper, name);
+        else if (dir->upper->finddir)
+            upper_child = dir->upper->finddir(dir->upper, name);
     }
-    if (dir->lower && dir->lower->finddir) {
-        lower_child = dir->lower->finddir(dir->lower, name);
+    if (dir->lower) {
+        if (dir->lower->f_ops && dir->lower->f_ops->finddir)
+            lower_child = dir->lower->f_ops->finddir(dir->lower, name);
+        else if (dir->lower->finddir)
+            lower_child = dir->lower->finddir(dir->lower, name);
     }
 
     if (!upper_child && !lower_child) return 0;
@@ -200,10 +224,7 @@ fs_node_t* overlayfs_create_root(fs_node_t* lower_root, fs_node_t* upper_root) {
     root->vfs.flags = FS_DIRECTORY;
     root->vfs.inode = upper_root->inode;
     root->vfs.length = 0;
-    root->vfs.read = 0;
-    root->vfs.write = 0;
-    root->vfs.open = 0;
-    root->vfs.close = 0;
+    root->vfs.f_ops = &overlay_dir_ops;
     root->vfs.finddir = &overlay_finddir_impl;
     root->vfs.readdir = &overlay_readdir_impl;
 

@@ -481,6 +481,25 @@ static int fat_rmdir_impl(struct fs_node* dir, const char* name);
 static int fat_rename_impl(struct fs_node* old_dir, const char* old_name,
                             struct fs_node* new_dir, const char* new_name);
 static int fat_truncate_impl(struct fs_node* node, uint32_t length);
+static void fat_close_impl(fs_node_t* node);
+
+static const struct file_operations fat_file_fops = {
+    .read     = fat_file_read,
+    .write    = fat_file_write,
+    .close    = fat_close_impl,
+    .truncate = fat_truncate_impl,
+};
+
+static const struct file_operations fat_dir_fops = {
+    .close   = fat_close_impl,
+    .finddir = fat_finddir,
+    .readdir = fat_readdir_impl,
+    .create  = fat_create_impl,
+    .mkdir   = fat_mkdir_impl,
+    .unlink  = fat_unlink_impl,
+    .rmdir   = fat_rmdir_impl,
+    .rename  = fat_rename_impl,
+};
 
 static void fat_close_impl(fs_node_t* node) {
     if (!node) return;
@@ -513,11 +532,13 @@ static struct fat_node* fat_make_node(const struct fat_dirent* de, uint32_t pare
         fn->vfs.flags = FS_DIRECTORY;
         fn->vfs.length = 0;
         fn->vfs.inode = fn->first_cluster;
+        fn->vfs.f_ops = &fat_dir_fops;
         fat_set_dir_ops(&fn->vfs);
     } else {
         fn->vfs.flags = FS_FILE;
         fn->vfs.length = de->file_size;
         fn->vfs.inode = fn->first_cluster;
+        fn->vfs.f_ops = &fat_file_fops;
         fn->vfs.read = &fat_file_read;
         fn->vfs.write = &fat_file_write;
         fn->vfs.truncate = &fat_truncate_impl;

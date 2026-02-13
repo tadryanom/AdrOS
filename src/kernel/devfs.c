@@ -16,6 +16,40 @@ static fs_node_t g_dev_random;
 static fs_node_t g_dev_urandom;
 static uint32_t g_devfs_inited = 0;
 
+static struct fs_node* devfs_finddir_impl(struct fs_node* node, const char* name);
+static int devfs_readdir_impl(struct fs_node* node, uint32_t* inout_index, void* buf, uint32_t buf_len);
+static uint32_t dev_null_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer);
+static uint32_t dev_null_write(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer);
+static uint32_t dev_zero_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer);
+static uint32_t dev_zero_write(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer);
+static uint32_t dev_random_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer);
+static uint32_t dev_random_write(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer);
+static int dev_null_poll(fs_node_t* node, int events);
+static int dev_always_ready_poll(fs_node_t* node, int events);
+
+static const struct file_operations devfs_dir_ops = {
+    .finddir = devfs_finddir_impl,
+    .readdir = devfs_readdir_impl,
+};
+
+static const struct file_operations dev_null_ops = {
+    .read  = dev_null_read,
+    .write = dev_null_write,
+    .poll  = dev_null_poll,
+};
+
+static const struct file_operations dev_zero_ops = {
+    .read  = dev_zero_read,
+    .write = dev_zero_write,
+    .poll  = dev_always_ready_poll,
+};
+
+static const struct file_operations dev_random_ops = {
+    .read  = dev_random_read,
+    .write = dev_random_write,
+    .poll  = dev_always_ready_poll,
+};
+
 /* --- Device registry --- */
 static fs_node_t* g_registered[DEVFS_MAX_DEVICES];
 static int g_registered_count = 0;
@@ -189,48 +223,45 @@ static void devfs_init_once(void) {
     g_dev_root.vfs.flags = FS_DIRECTORY;
     g_dev_root.vfs.inode = 1;
     g_dev_root.vfs.length = 0;
-    g_dev_root.vfs.read = 0;
-    g_dev_root.vfs.write = 0;
-    g_dev_root.vfs.open = 0;
-    g_dev_root.vfs.close = 0;
-    g_dev_root.vfs.finddir = &devfs_finddir_impl;
-    g_dev_root.vfs.readdir = &devfs_readdir_impl;
+    g_dev_root.vfs.f_ops = &devfs_dir_ops;
+    g_dev_root.vfs.finddir = devfs_finddir_impl;
+    g_dev_root.vfs.readdir = devfs_readdir_impl;
 
     memset(&g_dev_null, 0, sizeof(g_dev_null));
     strcpy(g_dev_null.name, "null");
     g_dev_null.flags = FS_CHARDEVICE;
     g_dev_null.inode = 2;
-    g_dev_null.length = 0;
-    g_dev_null.read = &dev_null_read;
-    g_dev_null.write = &dev_null_write;
-    g_dev_null.poll = &dev_null_poll;
-    g_dev_null.open = 0;
-    g_dev_null.close = 0;
-    g_dev_null.finddir = 0;
+    g_dev_null.f_ops = &dev_null_ops;
+    g_dev_null.read = dev_null_read;
+    g_dev_null.write = dev_null_write;
+    g_dev_null.poll = dev_null_poll;
 
     memset(&g_dev_zero, 0, sizeof(g_dev_zero));
     strcpy(g_dev_zero.name, "zero");
     g_dev_zero.flags = FS_CHARDEVICE;
     g_dev_zero.inode = 7;
-    g_dev_zero.read = &dev_zero_read;
-    g_dev_zero.write = &dev_zero_write;
-    g_dev_zero.poll = &dev_always_ready_poll;
+    g_dev_zero.f_ops = &dev_zero_ops;
+    g_dev_zero.read = dev_zero_read;
+    g_dev_zero.write = dev_zero_write;
+    g_dev_zero.poll = dev_always_ready_poll;
 
     memset(&g_dev_random, 0, sizeof(g_dev_random));
     strcpy(g_dev_random.name, "random");
     g_dev_random.flags = FS_CHARDEVICE;
     g_dev_random.inode = 8;
-    g_dev_random.read = &dev_random_read;
-    g_dev_random.write = &dev_random_write;
-    g_dev_random.poll = &dev_always_ready_poll;
+    g_dev_random.f_ops = &dev_random_ops;
+    g_dev_random.read = dev_random_read;
+    g_dev_random.write = dev_random_write;
+    g_dev_random.poll = dev_always_ready_poll;
 
     memset(&g_dev_urandom, 0, sizeof(g_dev_urandom));
     strcpy(g_dev_urandom.name, "urandom");
     g_dev_urandom.flags = FS_CHARDEVICE;
     g_dev_urandom.inode = 9;
-    g_dev_urandom.read = &dev_random_read;
-    g_dev_urandom.write = &dev_random_write;
-    g_dev_urandom.poll = &dev_always_ready_poll;
+    g_dev_urandom.f_ops = &dev_random_ops;
+    g_dev_urandom.read = dev_random_read;
+    g_dev_urandom.write = dev_random_write;
+    g_dev_urandom.poll = dev_always_ready_poll;
 }
 
 fs_node_t* devfs_create_root(void) {

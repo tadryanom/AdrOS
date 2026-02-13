@@ -530,6 +530,26 @@ static int ext2_rename_impl(struct fs_node* old_dir, const char* old_name,
                              struct fs_node* new_dir, const char* new_name);
 static int ext2_truncate_impl(struct fs_node* node, uint32_t length);
 static int ext2_link_impl(struct fs_node* dir, const char* name, struct fs_node* target);
+static void ext2_close_impl(fs_node_t* node);
+
+static const struct file_operations ext2_file_fops = {
+    .read     = ext2_file_read,
+    .write    = ext2_file_write,
+    .close    = ext2_close_impl,
+    .truncate = ext2_truncate_impl,
+};
+
+static const struct file_operations ext2_dir_fops = {
+    .close   = ext2_close_impl,
+    .finddir = ext2_finddir,
+    .readdir = ext2_readdir_impl,
+    .create  = ext2_create_impl,
+    .mkdir   = ext2_mkdir_impl,
+    .unlink  = ext2_unlink_impl,
+    .rmdir   = ext2_rmdir_impl,
+    .rename  = ext2_rename_impl,
+    .link    = ext2_link_impl,
+};
 
 static void ext2_close_impl(fs_node_t* node) {
     if (!node) return;
@@ -569,6 +589,7 @@ static struct ext2_node* ext2_make_node(uint32_t ino, const struct ext2_inode* i
     if ((inode->i_mode & 0xF000) == EXT2_S_IFDIR) {
         en->vfs.flags = FS_DIRECTORY;
         en->vfs.length = inode->i_size;
+        en->vfs.f_ops = &ext2_dir_fops;
         ext2_set_dir_ops(&en->vfs);
     } else if ((inode->i_mode & 0xF000) == EXT2_S_IFLNK) {
         en->vfs.flags = FS_SYMLINK;
@@ -581,6 +602,7 @@ static struct ext2_node* ext2_make_node(uint32_t ino, const struct ext2_inode* i
     } else {
         en->vfs.flags = FS_FILE;
         en->vfs.length = inode->i_size;
+        en->vfs.f_ops = &ext2_file_fops;
         en->vfs.read = &ext2_file_read;
         en->vfs.write = &ext2_file_write;
         en->vfs.truncate = &ext2_truncate_impl;

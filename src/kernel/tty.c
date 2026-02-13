@@ -429,11 +429,19 @@ void tty_init(void) {
 
     keyboard_set_callback(tty_keyboard_cb);
 
+    static const struct file_operations tty_fops = {
+        .read  = tty_devfs_read,
+        .write = tty_devfs_write,
+        .ioctl = tty_devfs_ioctl,
+        .poll  = tty_devfs_poll,
+    };
+
     /* Register /dev/console */
     memset(&g_dev_console_node, 0, sizeof(g_dev_console_node));
     strcpy(g_dev_console_node.name, "console");
     g_dev_console_node.flags = FS_CHARDEVICE;
     g_dev_console_node.inode = 10;
+    g_dev_console_node.f_ops = &tty_fops;
     g_dev_console_node.read = &tty_devfs_read;
     g_dev_console_node.write = &tty_devfs_write;
     g_dev_console_node.ioctl = &tty_devfs_ioctl;
@@ -445,6 +453,7 @@ void tty_init(void) {
     strcpy(g_dev_tty_node.name, "tty");
     g_dev_tty_node.flags = FS_CHARDEVICE;
     g_dev_tty_node.inode = 3;
+    g_dev_tty_node.f_ops = &tty_fops;
     g_dev_tty_node.read = &tty_devfs_read;
     g_dev_tty_node.write = &tty_devfs_write;
     g_dev_tty_node.ioctl = &tty_devfs_ioctl;

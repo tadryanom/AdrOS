@@ -461,6 +461,33 @@ static int diskfs_readdir_impl(struct fs_node* node, uint32_t* inout_index, void
 
 static void diskfs_set_dir_ops(fs_node_t* vfs);
 static int diskfs_vfs_truncate(struct fs_node* node, uint32_t length);
+static struct fs_node* diskfs_root_finddir(struct fs_node* node, const char* name);
+static int diskfs_vfs_create(struct fs_node* dir, const char* name, uint32_t flags, struct fs_node** out);
+static int diskfs_vfs_mkdir(struct fs_node* dir, const char* name);
+static int diskfs_vfs_unlink(struct fs_node* dir, const char* name);
+static int diskfs_vfs_rmdir(struct fs_node* dir, const char* name);
+static int diskfs_vfs_rename(struct fs_node* old_dir, const char* old_name,
+                              struct fs_node* new_dir, const char* new_name);
+static int diskfs_vfs_link(struct fs_node* dir, const char* name, struct fs_node* target);
+
+static const struct file_operations diskfs_file_fops = {
+    .read     = diskfs_read_impl,
+    .write    = diskfs_write_impl,
+    .close    = diskfs_close_impl,
+    .truncate = diskfs_vfs_truncate,
+};
+
+static const struct file_operations diskfs_dir_fops = {
+    .close   = diskfs_close_impl,
+    .finddir = diskfs_root_finddir,
+    .readdir = diskfs_readdir_impl,
+    .create  = diskfs_vfs_create,
+    .mkdir   = diskfs_vfs_mkdir,
+    .unlink  = diskfs_vfs_unlink,
+    .rmdir   = diskfs_vfs_rmdir,
+    .rename  = diskfs_vfs_rename,
+    .link    = diskfs_vfs_link,
+};
 
 static struct fs_node* diskfs_root_finddir(struct fs_node* node, const char* name) {
     struct diskfs_node* parent = (struct diskfs_node*)node;
@@ -492,18 +519,17 @@ static struct fs_node* diskfs_root_finddir(struct fs_node* node, const char* nam
     if (sb.inodes[cino].type == DISKFS_INODE_DIR) {
         dn->vfs.flags = FS_DIRECTORY;
         dn->vfs.length = 0;
-        dn->vfs.read = 0;
-        dn->vfs.write = 0;
+        dn->vfs.f_ops = &diskfs_dir_fops;
         dn->vfs.finddir = &diskfs_root_finddir;
         dn->vfs.readdir = &diskfs_readdir_impl;
         diskfs_set_dir_ops(&dn->vfs);
     } else {
         dn->vfs.flags = FS_FILE;
         dn->vfs.length = sb.inodes[cino].size_bytes;
+        dn->vfs.f_ops = &diskfs_file_fops;
         dn->vfs.read = &diskfs_read_impl;
         dn->vfs.write = &diskfs_write_impl;
         dn->vfs.truncate = &diskfs_vfs_truncate;
-        dn->vfs.finddir = 0;
     }
 
     return &dn->vfs;
@@ -557,11 +583,10 @@ int diskfs_open_file(const char* rel_path, uint32_t flags, fs_node_t** out_node)
     dn->vfs.flags = FS_FILE;
     dn->vfs.inode = 100 + (uint32_t)ino;
     dn->vfs.length = sb.inodes[ino].size_bytes;
+    dn->vfs.f_ops = &diskfs_file_fops;
     dn->vfs.read = &diskfs_read_impl;
     dn->vfs.write = &diskfs_write_impl;
-    dn->vfs.open = 0;
     dn->vfs.close = &diskfs_close_impl;
-    dn->vfs.finddir = 0;
     dn->ino = ino;
 
     *out_node = &dn->vfs;
@@ -1068,10 +1093,7 @@ fs_node_t* diskfs_create_root(int drive) {
         g_root.vfs.flags = FS_DIRECTORY;
         g_root.vfs.inode = 100;
         g_root.vfs.length = 0;
-        g_root.vfs.read = 0;
-        g_root.vfs.write = 0;
-        g_root.vfs.open = 0;
-        g_root.vfs.close = 0;
+        g_root.vfs.f_ops = &diskfs_dir_fops;
         g_root.vfs.finddir = &diskfs_root_finddir;
         g_root.vfs.readdir = &diskfs_readdir_impl;
         diskfs_set_dir_ops(&g_root.vfs);

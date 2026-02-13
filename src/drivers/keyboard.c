@@ -113,10 +113,16 @@ void keyboard_init(void) {
 }
 
 void keyboard_register_devfs(void) {
+    static const struct file_operations kbd_fops = {
+        .read = kbd_dev_read,
+        .poll = kbd_dev_poll,
+    };
+
     memset(&g_dev_kbd_node, 0, sizeof(g_dev_kbd_node));
     strcpy(g_dev_kbd_node.name, "kbd");
     g_dev_kbd_node.flags = FS_CHARDEVICE;
     g_dev_kbd_node.inode = 21;
+    g_dev_kbd_node.f_ops = &kbd_fops;
     g_dev_kbd_node.read = &kbd_dev_read;
     g_dev_kbd_node.poll = &kbd_dev_poll;
     devfs_register_device(&g_dev_kbd_node);

@@ -180,11 +180,19 @@ static uintptr_t fb0_mmap(fs_node_t* node, uintptr_t addr, uint32_t length, uint
 void vbe_register_devfs(void) {
     if (!g_vbe_ready) return;
 
+    static const struct file_operations fb0_fops = {
+        .read  = fb0_read,
+        .write = fb0_write,
+        .ioctl = fb0_ioctl,
+        .mmap  = fb0_mmap,
+    };
+
     memset(&g_dev_fb0_node, 0, sizeof(g_dev_fb0_node));
     strcpy(g_dev_fb0_node.name, "fb0");
     g_dev_fb0_node.flags = FS_CHARDEVICE;
     g_dev_fb0_node.inode = 20;
     g_dev_fb0_node.length = g_vbe.size;
+    g_dev_fb0_node.f_ops = &fb0_fops;
     g_dev_fb0_node.read = &fb0_read;
     g_dev_fb0_node.write = &fb0_write;
     g_dev_fb0_node.ioctl = &fb0_ioctl;
