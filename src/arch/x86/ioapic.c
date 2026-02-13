@@ -10,6 +10,7 @@
 
 #include "arch/x86/ioapic.h"
 #include "arch/x86/lapic.h"
+#include "kernel_va_map.h"
 #include "vmm.h"
 #include "console.h"
 #include "utils.h"
@@ -43,7 +44,7 @@ int ioapic_init(void) {
     /* Map IOAPIC MMIO region.
      * Default base is 0xFEC00000. In the future, ACPI MADT will provide this. */
     uintptr_t phys_base = IOAPIC_DEFAULT_BASE;
-    uintptr_t ioapic_va = 0xC0201000U;  /* Fixed kernel VA, above _end */
+    uintptr_t ioapic_va = KVA_IOAPIC;
 
     vmm_map_page((uint64_t)phys_base, (uint64_t)ioapic_va,
                  VMM_FLAG_PRESENT | VMM_FLAG_RW | VMM_FLAG_NOCACHE);
