@@ -16,8 +16,9 @@ static int g_acpi_valid = 0;
 #define IDENTITY_LIMIT   0x01000000U  /* 16MB */
 
 /* Temporary VA window for mapping ACPI tables above the identity-mapped range.
- * We use up to 16 pages (64KB) starting at a fixed VA above LAPIC/IOAPIC. */
-#define ACPI_TMP_VA_BASE 0xC0202000U
+ * We use up to 16 pages (64KB) starting at a fixed VA well above BSS _end.
+ * BSS can grow past 0xC0200000 with lwIP memp pools + FAT driver statics. */
+#define ACPI_TMP_VA_BASE 0xC0300000U
 #define ACPI_TMP_VA_PAGES 16
 static uint32_t acpi_tmp_mapped = 0;  /* bitmask of which pages are mapped */
 
