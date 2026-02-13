@@ -1,4 +1,5 @@
 #include "vdso.h"
+#include "kernel_va_map.h"
 #include "pmm.h"
 #include "vmm.h"
 #include "utils.h"
@@ -15,9 +16,8 @@ void vdso_init(void) {
     }
     vdso_phys = (uintptr_t)page;
 
-    /* Map into kernel space at a fixed VA so we can write to it.
-     * Use 0xC0230000 (above ATA DMA bounce at 0xC0221000). */
-    uintptr_t kva = 0xC0230000U;
+    /* Map into kernel space at a fixed VA so we can write to it. */
+    uintptr_t kva = KVA_VDSO;
     vmm_map_page((uint64_t)vdso_phys, (uint64_t)kva,
                  VMM_FLAG_PRESENT | VMM_FLAG_RW);
 

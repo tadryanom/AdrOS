@@ -244,3 +244,15 @@ uint16_t pmm_get_refcount(uintptr_t paddr) {
     spin_unlock_irqrestore(&pmm_lock, flags);
     return rc;
 }
+
+void pmm_print_stats(void) {
+    uintptr_t flags = spin_lock_irqsave(&pmm_lock);
+    uint64_t total_kb = total_memory / 1024;
+    uint64_t used_kb  = used_memory / 1024;
+    uint64_t free_kb  = (total_memory > used_memory) ? (total_memory - used_memory) / 1024 : 0;
+    spin_unlock_irqrestore(&pmm_lock, flags);
+
+    kprintf("  Total RAM: %u KB (%u MB)\n", (unsigned)total_kb, (unsigned)(total_kb / 1024));
+    kprintf("  Used:      %u KB (%u MB)\n", (unsigned)used_kb, (unsigned)(used_kb / 1024));
+    kprintf("  Free:      %u KB (%u MB)\n", (unsigned)free_kb, (unsigned)(free_kb / 1024));
+}

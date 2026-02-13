@@ -12,14 +12,14 @@ static int g_acpi_valid = 0;
 /* The first 16MB is identity-mapped during early boot (boot.S maps 0-16MB).
  * For addresses < 16MB we can use phys + 0xC0000000.
  * For addresses >= 16MB we must temporarily map them via VMM. */
+#include "kernel_va_map.h"
+
 #define KERNEL_VIRT_BASE 0xC0000000U
 #define IDENTITY_LIMIT   0x01000000U  /* 16MB */
 
-/* Temporary VA window for mapping ACPI tables above the identity-mapped range.
- * We use up to 16 pages (64KB) starting at a fixed VA well above BSS _end.
- * BSS can grow past 0xC0200000 with lwIP memp pools + FAT driver statics. */
-#define ACPI_TMP_VA_BASE 0xC0300000U
-#define ACPI_TMP_VA_PAGES 16
+/* Temporary VA window for ACPI tables — see include/kernel_va_map.h */
+#define ACPI_TMP_VA_BASE KVA_ACPI_TMP_BASE
+#define ACPI_TMP_VA_PAGES KVA_ACPI_TMP_PAGES
 static uint32_t acpi_tmp_mapped = 0;  /* bitmask of which pages are mapped */
 
 /* Map a physical address and return a usable virtual pointer.

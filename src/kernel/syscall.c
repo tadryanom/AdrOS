@@ -2195,11 +2195,7 @@ void syscall_handler(struct registers* regs) {
         uintptr_t base = (uintptr_t)sc_arg0(regs);
         if (!current_process) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
         current_process->tls_base = base;
-#if defined(__i386__)
-        extern void gdt_set_gate_ext(int num, uint32_t base, uint32_t limit,
-                                      uint8_t access, uint8_t gran);
-        gdt_set_gate_ext(22, (uint32_t)base, 0xFFFFF, 0xF2, 0xCF);
-#endif
+        hal_cpu_set_tls(base);
         sc_ret(regs) = 0;
         return;
     }

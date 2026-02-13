@@ -12,6 +12,7 @@
 #include "lwip/tcpip.h"
 #include "lwip/sys.h"
 #include "netif/ethernet.h"
+#include "spinlock.h"
 
 #include "e1000.h"
 #include "console.h"
@@ -116,7 +117,7 @@ void net_init(void) {
     /* Start lwIP tcpip thread and poll until it signals ready */
     tcpip_init(net_init_done, NULL);
     while (!tcpip_ready) {
-        __asm__ volatile("pause" ::: "memory");
+        cpu_relax();
     }
 
     ip4_addr_t ipaddr, netmask, gw;

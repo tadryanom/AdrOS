@@ -3,6 +3,7 @@
 #include "utils.h"
 #include "fs.h"
 #include "heap.h"
+#include "pmm.h"
 #include "process.h"
 #include "arch/arch_platform.h"
 #include "hal/system.h"
@@ -72,7 +73,7 @@ static void kconsole_exec(const char* cmd) {
     }
     else if (strcmp(cmd, "mem") == 0) {
         kprintf("Memory Stats:\n");
-        kprintf("  Total RAM: [TODO] MB\n");
+        pmm_print_stats();
     }
     else if (strcmp(cmd, "dmesg") == 0) {
         char buf[4096];

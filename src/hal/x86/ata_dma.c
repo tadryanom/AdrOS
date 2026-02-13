@@ -1,4 +1,5 @@
 #include "ata_dma.h"
+#include "kernel_va_map.h"
 #include "pci.h"
 #include "io.h"
 #include "pmm.h"
@@ -134,10 +135,8 @@ int ata_dma_init(void) {
         return -ENOMEM;
     }
     prdt_phys = (uint32_t)(uintptr_t)prdt_page;
-    /* Map PRDT at a dedicated VA to avoid collisions with the heap.
-     * 0xC0320000 is above LAPIC(0xC0400000), IOAPIC(0xC0201000),
-     * and ACPI temp window (0xC0300000-0xC0310000). */
-    uintptr_t prdt_virt = 0xC0320000U;
+    /* Map PRDT at a dedicated VA — see include/kernel_va_map.h */
+    uintptr_t prdt_virt = KVA_ATA_DMA_PRDT;
     vmm_map_page((uint64_t)prdt_phys, (uint64_t)prdt_virt,
                  VMM_FLAG_PRESENT | VMM_FLAG_RW);
     prdt = (struct prd_entry*)prdt_virt;
@@ -151,7 +150,7 @@ int ata_dma_init(void) {
         return -ENOMEM;
     }
     dma_buf_phys = (uint32_t)(uintptr_t)buf_page;
-    uintptr_t buf_virt = 0xC0321000U;
+    uintptr_t buf_virt = KVA_ATA_DMA_BUF;
     vmm_map_page((uint64_t)dma_buf_phys, (uint64_t)buf_virt,
                  VMM_FLAG_PRESENT | VMM_FLAG_RW);
     dma_buf = (uint8_t*)buf_virt;

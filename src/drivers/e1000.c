@@ -1,4 +1,5 @@
 #include "e1000.h"
+#include "kernel_va_map.h"
 #include "pci.h"
 #include "vmm.h"
 #include "pmm.h"
@@ -9,20 +10,13 @@
 
 #include <stddef.h>
 
-/* ------------------------------------------------------------------ */
-/* Kernel VA layout for E1000 DMA buffers                             */
-/*   0xC0230000 .. 0xC024FFFF  E1000 MMIO (128 KB = 32 pages)        */
-/*   0xC0250000                TX descriptor ring (1 page)            */
-/*   0xC0251000                RX descriptor ring (1 page)            */
-/*   0xC0252000 .. 0xC0261FFF  TX buffers (32 x 2 KB = 16 pages)     */
-/*   0xC0262000 .. 0xC0271FFF  RX buffers (32 x 2 KB = 16 pages)     */
-/* ------------------------------------------------------------------ */
-#define E1000_MMIO_VA      0xC0230000U
-#define E1000_MMIO_PAGES   32
-#define E1000_TX_DESC_VA   0xC0250000U
-#define E1000_RX_DESC_VA   0xC0251000U
-#define E1000_TX_BUF_VA    0xC0252000U
-#define E1000_RX_BUF_VA    0xC0262000U
+/* Kernel VA layout for E1000 DMA buffers — see include/kernel_va_map.h */
+#define E1000_MMIO_VA      KVA_E1000_MMIO
+#define E1000_MMIO_PAGES   KVA_E1000_MMIO_PAGES
+#define E1000_TX_DESC_VA   KVA_E1000_TX_DESC
+#define E1000_RX_DESC_VA   KVA_E1000_RX_DESC
+#define E1000_TX_BUF_VA    KVA_E1000_TX_BUF
+#define E1000_RX_BUF_VA    KVA_E1000_RX_BUF
 
 static volatile uint32_t* e1000_mmio = 0;
 static uint8_t e1000_mac[6];
