@@ -7,6 +7,7 @@
 #include "spinlock.h"
 #include "uart_console.h"
 #include "hal/uart.h"
+#include "hal/cpu.h"
 #include "vga_console.h"
 #include "keyboard.h"
 
@@ -234,10 +235,16 @@ void kprintf(const char* fmt, ...) {
 }
 
 int kgetc(void) {
-    char c = 0;
-    int rd = keyboard_read_blocking(&c, 1);
-    if (rd <= 0) return -1;
-    return (int)(unsigned char)c;
+    for (;;) {
+        char c = 0;
+        int rd = keyboard_read_nonblock(&c, 1);
+        if (rd > 0) return (int)(unsigned char)c;
+
+        int sc = hal_uart_try_getc();
+        if (sc >= 0) return sc;
+
+        hal_cpu_idle();
+    }
 }
 
 size_t klog_read(char* out, size_t out_size) {

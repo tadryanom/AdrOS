@@ -11,3 +11,11 @@ void hal_uart_putc(char c) {
     while (uart[6] & (1 << 5)) { }
     uart[0] = (uint32_t)c;
 }
+
+int hal_uart_try_getc(void) {
+    volatile uint32_t* uart = (volatile uint32_t*)UART_BASE;
+    if (!(uart[6] & (1 << 4))) {
+        return (int)(uart[0] & 0xFF);
+    }
+    return -1;
+}

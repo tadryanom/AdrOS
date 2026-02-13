@@ -15,3 +15,10 @@ void hal_uart_putc(char c) {
     while ((mmio_read8(UART_BASE + 5) & 0x20) == 0) { }
     mmio_write8(UART_BASE, (uint8_t)c);
 }
+
+int hal_uart_try_getc(void) {
+    if (mmio_read8(UART_BASE + 5) & 0x01) {
+        return (int)mmio_read8(UART_BASE);
+    }
+    return -1;
+}

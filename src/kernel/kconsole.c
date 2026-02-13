@@ -1,28 +1,60 @@
 #include "kconsole.h"
 #include "console.h"
+#include "vga_console.h"
 #include "utils.h"
 #include "fs.h"
 #include "heap.h"
 #include "pmm.h"
 #include "process.h"
+#include "keyboard.h"
 #include "arch/arch_platform.h"
 #include "hal/system.h"
 #include "hal/cpu.h"
 
 #define KCMD_MAX 128
 
+static void kc_puts(const char* s) {
+    console_write(s);
+}
+
 static void kconsole_help(void) {
-    kprintf("kconsole commands:\n");
-    kprintf("  help        - Show this list\n");
-    kprintf("  clear       - Clear screen\n");
-    kprintf("  ls          - List files\n");
-    kprintf("  cat <file>  - Read file content\n");
-    kprintf("  mem         - Show memory stats\n");
-    kprintf("  dmesg       - Show kernel log buffer\n");
-    kprintf("  sleep <num> - Sleep for N ticks\n");
-    kprintf("  ring3       - Run usermode syscall test\n");
-    kprintf("  reboot      - Restart system\n");
-    kprintf("  halt        - Halt the CPU\n");
+    kc_puts("kconsole commands:\n");
+    kc_puts("  help        - Show this list\n");
+    kc_puts("  clear       - Clear screen\n");
+    kc_puts("  ls [path]   - List files in directory\n");
+    kc_puts("  cat <file>  - Read file content\n");
+    kc_puts("  mem         - Show memory stats\n");
+    kc_puts("  dmesg       - Show kernel log buffer\n");
+    kc_puts("  reboot      - Restart system\n");
+    kc_puts("  halt        - Halt the CPU\n");
+}
+
+static void kconsole_ls(const char* path) {
+    fs_node_t* dir = NULL;
+
+    if (!path || path[0] == '\0') {
+        dir = fs_root;
+    } else {
+        dir = vfs_lookup(path);
+    }
+
+    if (!dir) {
+        kprintf("ls: cannot access '%s': not found\n", path ? path : "/");
+        return;
+    }
+
+    if (!dir->readdir) {
+        kprintf("ls: not a directory\n");
+        return;
+    }
+
+    uint32_t idx = 0;
+    struct vfs_dirent ent;
+    while (1) {
+        int rc = dir->readdir(dir, &idx, &ent, sizeof(ent));
+        if (rc != 0) break;
+        kprintf("  %s\n", ent.d_name);
+    }
 }
 
 static void kconsole_exec(const char* cmd) {
@@ -30,45 +62,38 @@ static void kconsole_exec(const char* cmd) {
         kconsole_help();
     }
     else if (strcmp(cmd, "clear") == 0) {
-        kprintf("\033[2J\033[1;1H");
+        vga_clear();
     }
     else if (strcmp(cmd, "ls") == 0) {
-        if (!fs_root) {
-            kprintf("No filesystem mounted.\n");
-        } else {
-            kprintf("Filesystem Mounted (InitRD).\n");
-            kprintf("Try: cat test.txt\n");
-        }
+        kconsole_ls(NULL);
+    }
+    else if (strncmp(cmd, "ls ", 3) == 0) {
+        kconsole_ls(cmd + 3);
     }
     else if (strncmp(cmd, "cat ", 4) == 0) {
-        if (!fs_root) {
-            kprintf("No filesystem mounted.\n");
+        const char* fname = cmd + 4;
+        fs_node_t* file = NULL;
+        if (fname[0] == '/') {
+            file = vfs_lookup(fname);
         } else {
-            const char* fname = cmd + 4;
-            fs_node_t* file = NULL;
-            if (fname[0] == '/') {
-                file = vfs_lookup(fname);
+            char abs[132];
+            abs[0] = '/';
+            abs[1] = 0;
+            strcpy(abs + 1, fname);
+            file = vfs_lookup(abs);
+        }
+        if (file) {
+            uint8_t* buf = (uint8_t*)kmalloc(file->length + 1);
+            if (buf) {
+                uint32_t sz = vfs_read(file, 0, file->length, buf);
+                buf[sz] = 0;
+                kprintf("%s\n", (char*)buf);
+                kfree(buf);
             } else {
-                char abs[132];
-                abs[0] = '/';
-                abs[1] = 0;
-                strcpy(abs + 1, fname);
-                file = vfs_lookup(abs);
+                kprintf("cat: out of memory\n");
             }
-            if (file) {
-                kprintf("Reading %s...\n", fname);
-                uint8_t* buf = (uint8_t*)kmalloc(file->length + 1);
-                if (buf) {
-                    uint32_t sz = vfs_read(file, 0, file->length, buf);
-                    buf[sz] = 0;
-                    kprintf("%s\n", (char*)buf);
-                    kfree(buf);
-                } else {
-                    kprintf("OOM: File too big for heap.\n");
-                }
-            } else {
-                kprintf("File not found.\n");
-            }
+        } else {
+            kprintf("cat: %s: not found\n", fname);
         }
     }
     else if (strcmp(cmd, "mem") == 0) {
@@ -80,24 +105,16 @@ static void kconsole_exec(const char* cmd) {
         size_t n = klog_read(buf, sizeof(buf));
         if (n > 0) {
             console_write(buf);
+            console_write("\n");
         } else {
-            kprintf("(empty)\n");
+            kc_puts("(empty)\n");
         }
-    }
-    else if (strncmp(cmd, "sleep ", 6) == 0) {
-        int ticks = atoi(cmd + 6);
-        kprintf("Sleeping for %s ticks...\n", cmd + 6);
-        process_sleep(ticks);
-        kprintf("Woke up!\n");
-    }
-    else if (strcmp(cmd, "ring3") == 0) {
-        arch_platform_usermode_test_start();
     }
     else if (strcmp(cmd, "reboot") == 0) {
         hal_system_reboot();
     }
     else if (strcmp(cmd, "halt") == 0) {
-        kprintf("System halted.\n");
+        kc_puts("System halted.\n");
         hal_cpu_disable_interrupts();
         for (;;) hal_cpu_idle();
     }
@@ -107,14 +124,16 @@ static void kconsole_exec(const char* cmd) {
 }
 
 void kconsole_enter(void) {
-    kprintf("\n*** AdrOS Kernel Console (kconsole) ***\n");
-    kprintf("Type 'help' for available commands.\n");
+    keyboard_set_callback(0);
+
+    kc_puts("\n*** AdrOS Kernel Console (kconsole) ***\n");
+    kc_puts("Type 'help' for available commands.\n");
 
     char line[KCMD_MAX];
     int pos = 0;
 
     for (;;) {
-        kprintf("kconsole> ");
+        kc_puts("kconsole> ");
 
         pos = 0;
         while (pos < KCMD_MAX - 1) {
@@ -133,6 +152,8 @@ void kconsole_enter(void) {
                 }
                 continue;
             }
+
+            if (ch < ' ' || ch > '~') continue;
 
             line[pos++] = (char)ch;
             char echo[2] = { (char)ch, 0 };

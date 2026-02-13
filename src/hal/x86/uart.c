@@ -20,3 +20,10 @@ void hal_uart_putc(char c) {
     while ((inb(UART_BASE + 5) & 0x20) == 0 && --timeout > 0) { }
     outb(UART_BASE, (uint8_t)c);
 }
+
+int hal_uart_try_getc(void) {
+    if (inb(UART_BASE + 5) & 0x01) {
+        return (int)inb(UART_BASE);
+    }
+    return -1;
+}
