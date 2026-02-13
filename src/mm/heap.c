@@ -1,5 +1,5 @@
 #include "heap.h"
-#include "uart_console.h"
+#include "console.h"
 #include "pmm.h"
 #include "vmm.h"
 #include "spinlock.h"
@@ -91,7 +91,7 @@ static inline int size_to_order(size_t size) {
 /* ---- Public API ---- */
 
 void kheap_init(void) {
-    uart_print("[HEAP] Initializing Buddy Allocator...\n");
+    kprintf("[HEAP] Initializing Buddy Allocator...\n");
 
     uintptr_t flags = spin_lock_irqsave(&heap_lock);
 
@@ -105,7 +105,7 @@ void kheap_init(void) {
         void* phys = pmm_alloc_page();
         if (!phys) {
             spin_unlock_irqrestore(&heap_lock, flags);
-            uart_print("[HEAP] OOM during init!\n");
+            kprintf("[HEAP] OOM during init!\n");
             return;
         }
         vmm_map_page((uint64_t)(uintptr_t)phys, (uint64_t)va,
@@ -122,7 +122,7 @@ void kheap_init(void) {
     fl_add(&free_lists[BUDDY_MAX_ORDER - BUDDY_MIN_ORDER], blk_to_fn(root));
 
     spin_unlock_irqrestore(&heap_lock, flags);
-    uart_print("[HEAP] 8MB Buddy Allocator Ready.\n");
+    kprintf("[HEAP] 8MB Buddy Allocator Ready.\n");
 }
 
 void* kmalloc(size_t size) {
@@ -142,7 +142,7 @@ void* kmalloc(size_t size) {
 
     if (k > BUDDY_MAX_ORDER) {
         spin_unlock_irqrestore(&heap_lock, flags);
-        uart_print("[HEAP] OOM: kmalloc failed.\n");
+        kprintf("[HEAP] OOM: kmalloc failed.\n");
         return NULL;
     }
 
@@ -152,7 +152,7 @@ void* kmalloc(size_t size) {
 
     if (blk->magic != BUDDY_MAGIC || !blk->is_free) {
         spin_unlock_irqrestore(&heap_lock, flags);
-        uart_print("[HEAP] Corruption in kmalloc!\n");
+        kprintf("[HEAP] Corruption in kmalloc!\n");
         for (;;) hal_cpu_idle();
     }
 
@@ -185,19 +185,15 @@ void kfree(void* ptr) {
 
     if (blk->magic != BUDDY_MAGIC) {
         spin_unlock_irqrestore(&heap_lock, flags);
-        uart_print("[HEAP] Corruption in kfree! (bad magic)\n");
-        char a[11], m[11];
-        itoa_hex((uint32_t)(uintptr_t)blk, a);
-        itoa_hex(blk->magic, m);
-        uart_print("[HEAP] hdr="); uart_print(a);
-        uart_print(" magic=");    uart_print(m);
-        uart_print("\n");
+        kprintf("[HEAP] Corruption in kfree! (bad magic)\n");
+        kprintf("[HEAP] hdr=0x%x magic=0x%x\n",
+                (unsigned)(uintptr_t)blk, (unsigned)blk->magic);
         for (;;) hal_cpu_idle();
     }
 
     if (blk->is_free) {
         spin_unlock_irqrestore(&heap_lock, flags);
-        uart_print("[HEAP] Double free!\n");
+        kprintf("[HEAP] Double free!\n");
         for (;;) hal_cpu_idle();
     }
 

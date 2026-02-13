@@ -1,6 +1,6 @@
 #include "pmm.h"
 #include "arch/x86/multiboot2.h"
-#include "uart_console.h"
+#include "console.h"
 #include "utils.h"
 #include "hal/mm.h"
 
@@ -16,7 +16,7 @@ static uint64_t align_down_local(uint64_t value, uint64_t align) {
 
 void pmm_arch_init(void* boot_info) {
     if (!boot_info) {
-        uart_print("[PMM] Error: boot_info is NULL!\n");
+        kprintf("[PMM] Error: boot_info is NULL!\n");
         return;
     }
 
@@ -27,7 +27,7 @@ void pmm_arch_init(void* boot_info) {
     int saw_mmap = 0;
     uint64_t freed_frames = 0;
 
-    uart_print("[PMM] Parsing Multiboot2 info...\n");
+    kprintf("[PMM] Parsing Multiboot2 info...\n");
 
     // First pass: determine total memory size
     for (tag = (struct multiboot_tag *)((uint8_t *)boot_info + 8);
@@ -111,18 +111,11 @@ void pmm_arch_init(void* boot_info) {
     // Reserve low memory and frame 0
     pmm_mark_region(0, 0x00100000, 1);
 
-    uart_print("[PMM] total_memory bytes: ");
-    char tmp[11];
-    itoa_hex((uint32_t)total_memory, tmp);
-    uart_print(tmp);
-    uart_print("\n");
-    uart_print("[PMM] freed_frames: ");
-    itoa_hex((uint32_t)freed_frames, tmp);
-    uart_print(tmp);
-    uart_print("\n");
+    kprintf("[PMM] total_memory bytes: 0x%x\n", (unsigned)total_memory);
+    kprintf("[PMM] freed_frames: 0x%x\n", (unsigned)freed_frames);
 
     if (freed_frames == 0) {
-        uart_print("[PMM] WARN: no free frames detected (MMAP missing or parse failed).\n");
+        kprintf("[PMM] WARN: no free frames detected (MMAP missing or parse failed).\n");
     }
 
     // Protect Multiboot2 modules (e.g. initrd)

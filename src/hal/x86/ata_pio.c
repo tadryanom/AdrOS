@@ -4,7 +4,7 @@
 #include "errno.h"
 #include "io.h"
 #include "arch/x86/idt.h"
-#include "uart_console.h"
+#include "console.h"
 
 /* Basic IRQ 14 handler: read ATA status to deassert INTRQ.
  * Registered early so PIO IDENTIFY doesn't cause an IRQ storm. */
@@ -97,9 +97,9 @@ int ata_pio_init_primary_master(void) {
 
     // Try to upgrade to DMA mode
     if (ata_dma_init() == 0) {
-        uart_print("[ATA] Using DMA mode.\n");
+        kprintf("[ATA] Using DMA mode.\n");
     } else {
-        uart_print("[ATA] Using PIO mode (DMA unavailable).\n");
+        kprintf("[ATA] Using PIO mode (DMA unavailable).\n");
     }
 
     return 0;

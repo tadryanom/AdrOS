@@ -2,7 +2,7 @@
 #include "ata_pio.h"
 #include "heap.h"
 #include "utils.h"
-#include "uart_console.h"
+#include "console.h"
 #include "errno.h"
 
 #include <stddef.h>
@@ -160,18 +160,18 @@ static fs_node_t* fat16_finddir(fs_node_t* node, const char* name) {
 
 fs_node_t* fat16_mount(uint32_t partition_lba) {
     if (fat16_read_sector(partition_lba, g_sector_buf) < 0) {
-        uart_print("[FAT16] Failed to read BPB\n");
+        kprintf("[FAT16] Failed to read BPB\n");
         return NULL;
     }
 
     struct fat16_bpb* bpb = (struct fat16_bpb*)g_sector_buf;
 
     if (bpb->bytes_per_sector != 512) {
-        uart_print("[FAT16] Unsupported sector size\n");
+        kprintf("[FAT16] Unsupported sector size\n");
         return NULL;
     }
     if (bpb->fat_size_16 == 0 || bpb->num_fats == 0) {
-        uart_print("[FAT16] Invalid BPB\n");
+        kprintf("[FAT16] Invalid BPB\n");
         return NULL;
     }
 
@@ -193,19 +193,7 @@ fs_node_t* fat16_mount(uint32_t partition_lba) {
     g_fat_root.flags = FS_DIRECTORY;
     g_fat_root.finddir = fat16_finddir;
 
-    uart_print("[FAT16] Mounted at LBA ");
-    char buf[12];
-    int bi = 0;
-    uint32_t v = partition_lba;
-    if (v == 0) { buf[bi++] = '0'; }
-    else {
-        char tmp[12]; int ti = 0;
-        while (v) { tmp[ti++] = (char)('0' + v % 10); v /= 10; }
-        while (ti--) buf[bi++] = tmp[ti];
-    }
-    buf[bi] = '\0';
-    uart_print(buf);
-    uart_print("\n");
+    kprintf("[FAT16] Mounted at LBA %u\n", partition_lba);
 
     return &g_fat_root;
 }

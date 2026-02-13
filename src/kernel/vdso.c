@@ -2,7 +2,7 @@
 #include "pmm.h"
 #include "vmm.h"
 #include "utils.h"
-#include "uart_console.h"
+#include "console.h"
 
 static uintptr_t vdso_phys = 0;
 static volatile struct vdso_data* vdso_kptr = 0;
@@ -10,7 +10,7 @@ static volatile struct vdso_data* vdso_kptr = 0;
 void vdso_init(void) {
     void* page = pmm_alloc_page();
     if (!page) {
-        uart_print("[VDSO] OOM\n");
+        kprintf("[VDSO] OOM\n");
         return;
     }
     vdso_phys = (uintptr_t)page;
@@ -25,16 +25,7 @@ void vdso_init(void) {
     memset((void*)vdso_kptr, 0, PAGE_SIZE);
     vdso_kptr->tick_hz = 50;
 
-    uart_print("[VDSO] Initialized at phys=0x");
-    /* Simple hex print */
-    char hex[9];
-    for (int i = 7; i >= 0; i--) {
-        uint8_t nib = (uint8_t)((vdso_phys >> (i * 4)) & 0xF);
-        hex[7 - i] = (char)(nib < 10 ? '0' + nib : 'a' + nib - 10);
-    }
-    hex[8] = '\0';
-    uart_print(hex);
-    uart_print("\n");
+    kprintf("[VDSO] Initialized at phys=0x%x\n", (unsigned)vdso_phys);
 }
 
 void vdso_update_tick(uint32_t tick) {

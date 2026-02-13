@@ -3,7 +3,7 @@
 #include "errno.h"
 #include "process.h"
 #include "waitqueue.h"
-#include "uart_console.h"
+#include "console.h"
 #include "utils.h"
 
 #include "lwip/tcp.h"

@@ -1,5 +1,5 @@
 #include "pci.h"
-#include "uart_console.h"
+#include "console.h"
 #include "utils.h"
 #include "io.h"
 
@@ -99,24 +99,13 @@ void pci_init(void) {
         pci_scan_bus(0);
     }
 
-    uart_print("[PCI] Enumerated ");
-    char buf[8];
-    itoa(pci_device_count, buf, 10);
-    uart_print(buf);
-    uart_print(" device(s)\n");
+    kprintf("[PCI] Enumerated %d device(s)\n", pci_device_count);
 
     for (int i = 0; i < pci_device_count; i++) {
         struct pci_device* d = &pci_devices[i];
-        uart_print("  ");
-        char hex[12];
-        itoa_hex(d->vendor_id, hex); uart_print(hex);
-        uart_print(":");
-        itoa_hex(d->device_id, hex); uart_print(hex);
-        uart_print(" class=");
-        itoa_hex(d->class_code, hex); uart_print(hex);
-        uart_print(":");
-        itoa_hex(d->subclass, hex); uart_print(hex);
-        uart_print("\n");
+        kprintf("  %x:%x class=%x:%x\n",
+                (unsigned)d->vendor_id, (unsigned)d->device_id,
+                (unsigned)d->class_code, (unsigned)d->subclass);
     }
 }
 

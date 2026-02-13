@@ -5,7 +5,7 @@
 #include "vmm.h"
 #include "arch/x86/idt.h"
 #include "spinlock.h"
-#include "uart_console.h"
+#include "console.h"
 #include "utils.h"
 #include "errno.h"
 
@@ -104,20 +104,20 @@ int ata_dma_init(void) {
     /* Find IDE controller: PCI class 0x01 (Mass Storage), subclass 0x01 (IDE) */
     const struct pci_device* ide = pci_find_class(0x01, 0x01);
     if (!ide) {
-        uart_print("[ATA-DMA] No PCI IDE controller found.\n");
+        kprintf("[ATA-DMA] No PCI IDE controller found.\n");
         return -ENODEV;
     }
 
     /* BAR4 contains the Bus Master IDE I/O base */
     uint32_t bar4 = ide->bar[4];
     if ((bar4 & 1) == 0) {
-        uart_print("[ATA-DMA] BAR4 is not I/O space.\n");
+        kprintf("[ATA-DMA] BAR4 is not I/O space.\n");
         return -ENODEV;
     }
     bm_base = (uint16_t)(bar4 & 0xFFFC);
 
     if (bm_base == 0) {
-        uart_print("[ATA-DMA] BAR4 I/O base is zero.\n");
+        kprintf("[ATA-DMA] BAR4 I/O base is zero.\n");
         return -ENODEV;
     }
 
@@ -130,7 +130,7 @@ int ata_dma_init(void) {
      * We only need 1 PRD entry (8 bytes) but allocate a full page. */
     void* prdt_page = pmm_alloc_page();
     if (!prdt_page) {
-        uart_print("[ATA-DMA] Failed to allocate PRDT page.\n");
+        kprintf("[ATA-DMA] Failed to allocate PRDT page.\n");
         return -ENOMEM;
     }
     prdt_phys = (uint32_t)(uintptr_t)prdt_page;
@@ -146,7 +146,7 @@ int ata_dma_init(void) {
     /* Allocate DMA bounce buffer: one page for sector transfers */
     void* buf_page = pmm_alloc_page();
     if (!buf_page) {
-        uart_print("[ATA-DMA] Failed to allocate DMA buffer page.\n");
+        kprintf("[ATA-DMA] Failed to allocate DMA buffer page.\n");
         pmm_free_page(prdt_page);
         return -ENOMEM;
     }
@@ -170,11 +170,7 @@ int ata_dma_init(void) {
 
     dma_available = 1;
 
-    char tmp[12];
-    uart_print("[ATA-DMA] Initialized, BM I/O base=");
-    itoa_hex(bm_base, tmp);
-    uart_print(tmp);
-    uart_print("\n");
+    kprintf("[ATA-DMA] Initialized, BM I/O base=0x%x\n", (unsigned)bm_base);
 
     return 0;
 }
@@ -241,7 +237,7 @@ static int ata_dma_transfer(uint32_t lba, int is_write) {
         if (bm_stat & BM_STATUS_ERR) {
             outb((uint16_t)(bm_base + BM_CMD), 0);
             outb((uint16_t)(bm_base + BM_STATUS), BM_STATUS_IRQ | BM_STATUS_ERR);
-            uart_print("[ATA-DMA] Bus master error!\n");
+            kprintf("[ATA-DMA] Bus master error!\n");
             return -EIO;
         }
 
@@ -249,7 +245,7 @@ static int ata_dma_transfer(uint32_t lba, int is_write) {
         if (ata_stat & ATA_SR_ERR) {
             outb((uint16_t)(bm_base + BM_CMD), 0);
             outb((uint16_t)(bm_base + BM_STATUS), BM_STATUS_IRQ | BM_STATUS_ERR);
-            uart_print("[ATA-DMA] ATA error during DMA!\n");
+            kprintf("[ATA-DMA] ATA error during DMA!\n");
             return -EIO;
         }
 
@@ -269,7 +265,7 @@ static int ata_dma_transfer(uint32_t lba, int is_write) {
     __atomic_store_n(&dma_active, 0, __ATOMIC_SEQ_CST);
 
     if (!completed) {
-        uart_print("[ATA-DMA] Transfer timeout!\n");
+        kprintf("[ATA-DMA] Transfer timeout!\n");
         return -EIO;
     }
 

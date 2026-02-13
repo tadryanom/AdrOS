@@ -1,5 +1,5 @@
 #include "hal/cpu_features.h"
-#include "uart_console.h"
+#include "console.h"
 
 #include <stdint.h>
 
@@ -32,7 +32,7 @@ static int sysenter_enabled = 0;
 void x86_sysenter_init(void) {
     const struct cpu_features* f = hal_cpu_get_features();
     if (!f->has_sysenter) {
-        uart_print("[SYSENTER] CPU does not support SYSENTER/SYSEXIT.\n");
+        kprintf("[SYSENTER] CPU does not support SYSENTER/SYSEXIT.\n");
         return;
     }
 
@@ -48,7 +48,7 @@ void x86_sysenter_init(void) {
     wrmsr(IA32_SYSENTER_EIP, (uintptr_t)sysenter_entry);
 
     sysenter_enabled = 1;
-    uart_print("[SYSENTER] Fast syscall enabled.\n");
+    kprintf("[SYSENTER] Fast syscall enabled.\n");
 }
 
 void x86_sysenter_set_kernel_stack(uintptr_t esp0) {

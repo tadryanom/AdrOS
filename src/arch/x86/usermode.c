@@ -3,7 +3,7 @@
 
 #include "pmm.h"
 #include "vmm.h"
-#include "uart_console.h"
+#include "console.h"
 #include "utils.h"
  #include "arch/x86/usermode.h"
 #include "arch/x86/idt.h"
@@ -72,14 +72,8 @@ static void* pmm_alloc_page_low_16mb(void) {
 }
 
 __attribute__((noreturn)) void x86_enter_usermode(uintptr_t user_eip, uintptr_t user_esp) {
-    uart_print("[USER] enter ring3 eip=");
-    char tmp[16];
-    itoa_hex((uint32_t)user_eip, tmp);
-    uart_print(tmp);
-    uart_print(" esp=");
-    itoa_hex((uint32_t)user_esp, tmp);
-    uart_print(tmp);
-    uart_print("\n");
+    kprintf("[USER] enter ring3 eip=0x%x esp=0x%x\n",
+            (unsigned)user_eip, (unsigned)user_esp);
 
     __asm__ volatile(
         "cli\n"
@@ -144,7 +138,7 @@ __attribute__((noreturn)) void x86_enter_usermode_regs(const struct registers* r
 }
 
 void x86_usermode_test_start(void) {
-    uart_print("[USER] Starting ring3 test...\n");
+    kprintf("[USER] Starting ring3 test...\n");
 
     const uintptr_t user_code_vaddr = 0x00400000U;
     const uintptr_t user_stack_vaddr = 0x00800000U;
@@ -152,7 +146,7 @@ void x86_usermode_test_start(void) {
     void* code_phys = pmm_alloc_page_low_16mb();
     void* stack_phys = pmm_alloc_page_low_16mb();
     if (!code_phys || !stack_phys) {
-        uart_print("[USER] OOM allocating user pages.\n");
+        kprintf("[USER] OOM allocating user pages.\n");
         return;
     }
 

@@ -1,7 +1,7 @@
 #include "vmm.h"
 #include "pmm.h"
 #include "heap.h"
-#include "uart_console.h"
+#include "console.h"
 #include "utils.h"
 #include "hal/cpu.h"
 #include <stddef.h>
@@ -126,7 +126,7 @@ void vmm_map_page(uint64_t phys, uint64_t virt, uint32_t flags) {
     if ((pd[di] & X86_PTE_PRESENT) == 0) {
         uint32_t pt_phys = (uint32_t)(uintptr_t)pmm_alloc_page_low();
         if (!pt_phys) {
-            uart_print("[VMM] OOM allocating page table.\n");
+            kprintf("[VMM] OOM allocating page table.\n");
             return;
         }
 
@@ -436,11 +436,11 @@ int vmm_handle_cow_fault(uintptr_t fault_addr) {
 }
 
 void vmm_init(void) {
-    uart_print("[VMM] PAE paging active.\n");
+    kprintf("[VMM] PAE paging active.\n");
 
     g_kernel_as = hal_cpu_get_address_space();
 
     /* Test mapping */
     vmm_map_page(0xB8000, 0xC00B8000, VMM_FLAG_PRESENT | VMM_FLAG_RW);
-    uart_print("[VMM] Mapped VGA to 0xC00B8000.\n");
+    kprintf("[VMM] Mapped VGA to 0xC00B8000.\n");
 }

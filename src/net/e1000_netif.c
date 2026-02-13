@@ -14,7 +14,7 @@
 #include "netif/ethernet.h"
 
 #include "e1000.h"
-#include "uart_console.h"
+#include "console.h"
 #include "utils.h"
 
 #define E1000_NETIF_MTU  1500
@@ -109,7 +109,7 @@ static void net_init_done(void* arg) {
 
 void net_init(void) {
     if (!e1000_link_up()) {
-        uart_print("[NET] E1000 link down, skipping lwIP init.\n");
+        kprintf("[NET] E1000 link down, skipping lwIP init.\n");
         return;
     }
 
@@ -131,7 +131,7 @@ void net_init(void) {
 
     net_initialized = 1;
 
-    uart_print("[NET] lwIP initialized (threaded), IP=10.0.2.15\n");
+    kprintf("[NET] lwIP initialized (threaded), IP=10.0.2.15\n");
 }
 
 void net_poll(void) {

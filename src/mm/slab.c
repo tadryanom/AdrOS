@@ -2,7 +2,7 @@
 #include "pmm.h"
 #include "heap.h"
 #include "hal/mm.h"
-#include "uart_console.h"
+#include "console.h"
 
 #include <stddef.h>
 

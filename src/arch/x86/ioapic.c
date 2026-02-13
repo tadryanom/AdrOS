@@ -1,7 +1,7 @@
 #include "arch/x86/ioapic.h"
 #include "arch/x86/lapic.h"
 #include "vmm.h"
-#include "uart_console.h"
+#include "console.h"
 #include "utils.h"
 
 #include <stdint.h>
@@ -26,7 +26,7 @@ int ioapic_is_enabled(void) {
 
 int ioapic_init(void) {
     if (!lapic_is_enabled()) {
-        uart_print("[IOAPIC] LAPIC not enabled, skipping IOAPIC.\n");
+        kprintf("[IOAPIC] LAPIC not enabled, skipping IOAPIC.\n");
         return 0;
     }
 
@@ -53,14 +53,8 @@ int ioapic_init(void) {
 
     ioapic_active = 1;
 
-    uart_print("[IOAPIC] Enabled at phys=");
-    char tmp[12];
-    itoa_hex((uint32_t)phys_base, tmp);
-    uart_print(tmp);
-    uart_print(", max IRQs=");
-    itoa(ioapic_max_irqs, tmp, 10);
-    uart_print(tmp);
-    uart_print("\n");
+    kprintf("[IOAPIC] Enabled at phys=0x%x, max IRQs=%u\n",
+            (unsigned)phys_base, (unsigned)ioapic_max_irqs);
 
     return 1;
 }

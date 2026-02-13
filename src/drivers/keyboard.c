@@ -1,6 +1,6 @@
 #include "keyboard.h"
 #include "devfs.h"
-#include "uart_console.h"
+#include "console.h"
 #include "utils.h"
 #include <stddef.h>
 
@@ -88,7 +88,7 @@ static uint32_t kbd_dev_read(fs_node_t* node, uint32_t offset, uint32_t size, ui
 static fs_node_t g_dev_kbd_node;
 
 void keyboard_init(void) {
-    uart_print("[KBD] Initializing Keyboard Driver...\n");
+    kprintf("[KBD] Initializing Keyboard Driver...\n");
     spinlock_init(&kbd_lock);
     spinlock_init(&scan_lock);
     kbd_head = 0;

@@ -1,7 +1,7 @@
 #include "arch/x86/percpu.h"
 #include "arch/x86/smp.h"
 #include "arch/x86/gdt.h"
-#include "uart_console.h"
+#include "console.h"
 #include "utils.h"
 
 #include <stdint.h>
@@ -40,11 +40,7 @@ void percpu_init(void) {
         set_percpu_gdt_entry(PERCPU_GDT_BASE + i, (uint32_t)(uintptr_t)&g_percpu[i]);
     }
 
-    char tmp[12];
-    uart_print("[PERCPU] Initialized for ");
-    itoa(ncpus, tmp, 10);
-    uart_print(tmp);
-    uart_print(" CPU(s).\n");
+    kprintf("[PERCPU] Initialized for %u CPU(s).\n", (unsigned)ncpus);
 }
 
 void percpu_setup_gs(uint32_t cpu_index) {

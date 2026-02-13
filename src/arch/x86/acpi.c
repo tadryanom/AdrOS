@@ -1,5 +1,5 @@
 #include "arch/x86/acpi.h"
-#include "uart_console.h"
+#include "console.h"
 #include "utils.h"
 #include "vmm.h"
 
@@ -35,7 +35,7 @@ static const void* acpi_map_phys(uintptr_t phys, size_t len) {
     uint32_t num_pages = (uint32_t)((page_end - page_start) >> 12);
 
     if (num_pages > ACPI_TMP_VA_PAGES) {
-        uart_print("[ACPI] Table too large to map.\n");
+        kprintf("[ACPI] Table too large to map.\n");
         return NULL;
     }
 
@@ -148,15 +148,11 @@ int acpi_init(void) {
 
     const struct acpi_rsdp* rsdp = find_rsdp();
     if (!rsdp) {
-        uart_print("[ACPI] RSDP not found.\n");
+        kprintf("[ACPI] RSDP not found.\n");
         return -1;
     }
 
-    uart_print("[ACPI] RSDP found, revision=");
-    char tmp[12];
-    itoa(rsdp->revision, tmp, 10);
-    uart_print(tmp);
-    uart_print("\n");
+    kprintf("[ACPI] RSDP found, revision=%d\n", (int)rsdp->revision);
 
     /* Get RSDT (ACPI 1.0 — 32-bit pointers).
      * The RSDT may be above the 16MB identity-mapped range, so use acpi_map_phys. */
@@ -166,7 +162,7 @@ int acpi_init(void) {
     const struct acpi_sdt_header* rsdt_hdr =
         (const struct acpi_sdt_header*)acpi_map_phys(rsdt_phys, sizeof(struct acpi_sdt_header));
     if (!rsdt_hdr) {
-        uart_print("[ACPI] Cannot map RSDT header.\n");
+        kprintf("[ACPI] Cannot map RSDT header.\n");
         return -1;
     }
     uint32_t rsdt_len = rsdt_hdr->length;
@@ -176,12 +172,12 @@ int acpi_init(void) {
     const struct acpi_rsdt* rsdt =
         (const struct acpi_rsdt*)acpi_map_phys(rsdt_phys, rsdt_len);
     if (!rsdt) {
-        uart_print("[ACPI] Cannot map full RSDT.\n");
+        kprintf("[ACPI] Cannot map full RSDT.\n");
         return -1;
     }
 
     if (!acpi_checksum(rsdt, rsdt_len)) {
-        uart_print("[ACPI] RSDT checksum failed.\n");
+        kprintf("[ACPI] RSDT checksum failed.\n");
         acpi_unmap_all();
         return -1;
     }
@@ -211,7 +207,7 @@ int acpi_init(void) {
     acpi_unmap_all();
 
     if (!madt_phys) {
-        uart_print("[ACPI] MADT not found.\n");
+        kprintf("[ACPI] MADT not found.\n");
         return -1;
     }
 
@@ -219,7 +215,7 @@ int acpi_init(void) {
     const struct acpi_sdt_header* madt_hdr =
         (const struct acpi_sdt_header*)acpi_map_phys(madt_phys, sizeof(struct acpi_sdt_header));
     if (!madt_hdr) {
-        uart_print("[ACPI] Cannot map MADT header.\n");
+        kprintf("[ACPI] Cannot map MADT header.\n");
         return -1;
     }
     uint32_t madt_len = madt_hdr->length;
@@ -228,18 +224,18 @@ int acpi_init(void) {
     const struct acpi_madt* madt =
         (const struct acpi_madt*)acpi_map_phys(madt_phys, madt_len);
     if (!madt) {
-        uart_print("[ACPI] Cannot map full MADT.\n");
+        kprintf("[ACPI] Cannot map full MADT.\n");
         return -1;
     }
 
     if (!acpi_checksum(madt, madt_len)) {
-        uart_print("[ACPI] MADT checksum failed.\n");
+        kprintf("[ACPI] MADT checksum failed.\n");
         acpi_unmap_all();
         return -1;
     }
 
     if (parse_madt(madt) < 0) {
-        uart_print("[ACPI] MADT parse failed.\n");
+        kprintf("[ACPI] MADT parse failed.\n");
         acpi_unmap_all();
         return -1;
     }
@@ -248,26 +244,15 @@ int acpi_init(void) {
     g_acpi_valid = 1;
 
     /* Print summary */
-    uart_print("[ACPI] MADT: ");
-    itoa(g_acpi_info.num_cpus, tmp, 10);
-    uart_print(tmp);
-    uart_print(" CPU(s), LAPIC=");
-    itoa_hex(g_acpi_info.lapic_address, tmp);
-    uart_print(tmp);
-    uart_print(", IOAPIC=");
-    itoa_hex(g_acpi_info.ioapic_address, tmp);
-    uart_print(tmp);
-    uart_print("\n");
+    kprintf("[ACPI] MADT: %u CPU(s), LAPIC=0x%x, IOAPIC=0x%x\n",
+            (unsigned)g_acpi_info.num_cpus,
+            (unsigned)g_acpi_info.lapic_address,
+            (unsigned)g_acpi_info.ioapic_address);
 
     for (uint8_t i = 0; i < g_acpi_info.num_cpus; i++) {
-        uart_print("[ACPI]   CPU ");
-        itoa(i, tmp, 10);
-        uart_print(tmp);
-        uart_print(": LAPIC ID=");
-        itoa(g_acpi_info.cpu_lapic_ids[i], tmp, 10);
-        uart_print(tmp);
-        uart_print(g_acpi_info.cpu_enabled[i] ? " (enabled)" : " (disabled)");
-        uart_print("\n");
+        kprintf("[ACPI]   CPU %u: LAPIC ID=%u%s\n",
+                (unsigned)i, (unsigned)g_acpi_info.cpu_lapic_ids[i],
+                g_acpi_info.cpu_enabled[i] ? " (enabled)" : " (disabled)");
     }
 
     return 0;

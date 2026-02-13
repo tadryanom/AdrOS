@@ -1,7 +1,7 @@
 #include "arch/x86/idt.h"
 #include "arch/x86/lapic.h"
 #include "io.h"
-#include "uart_console.h"
+#include "console.h"
 #include "process.h"
 #include "spinlock.h"
 #include "uaccess.h"
@@ -210,7 +210,7 @@ void pic_remap(void) {
 }
 
 void idt_init(void) {
-    uart_print("[IDT] Initializing Interrupts...\n");
+    kprintf("[IDT] Initializing Interrupts...\n");
     
     idtp.limit = (sizeof(struct idt_entry) * IDT_ENTRIES) - 1;
     idtp.base  = (uint32_t)&idt;
@@ -290,7 +290,7 @@ void idt_init(void) {
     // Load IDT
     __asm__ volatile("lidt %0" : : "m"(idtp));
 
-    uart_print("[IDT] Loaded.\n");
+    kprintf("[IDT] Loaded.\n");
 }
 
 void register_interrupt_handler(uint8_t n, isr_handler_t handler) {
@@ -304,12 +304,7 @@ void register_interrupt_handler(uint8_t n, isr_handler_t handler) {
 // ... imports ...
 
 void print_reg(const char* name, uint32_t val) {
-    char buf[16];
-    uart_print(name);
-    uart_print(": ");
-    itoa_hex(val, buf);
-    uart_print(buf);
-    uart_print("  ");
+    kprintf("%s: %x  ", name, val);
 }
 
 // The Main Handler called by assembly
@@ -372,33 +367,25 @@ void isr_handler(struct registers* regs) {
 
             __asm__ volatile("cli"); // Stop everything
             
-            uart_print("\n\n!!! KERNEL PANIC !!!\n");
-            uart_print("Exception Number: ");
-            char num_buf[16];
-            itoa(regs->int_no, num_buf, 10);
-            uart_print(num_buf);
-            uart_print("\n");
+            kprintf("\n\n!!! KERNEL PANIC !!!\n");
+            kprintf("Exception Number: %u\n", (unsigned)regs->int_no);
             
-            uart_print("registers:\n");
+            kprintf("registers:\n");
             print_reg("EAX", regs->eax); print_reg("EBX", regs->ebx); print_reg("ECX", regs->ecx); print_reg("EDX", regs->edx);
-            uart_print("\n");
+            kprintf("\n");
             print_reg("ESI", regs->esi); print_reg("EDI", regs->edi); print_reg("EBP", regs->ebp); print_reg("ESP", regs->esp);
-            uart_print("\n");
+            kprintf("\n");
             print_reg("EIP", regs->eip); print_reg("CS ", regs->cs);  print_reg("EFLAGS", regs->eflags);
-            uart_print("\n");
+            kprintf("\n");
 
             // Print Page Fault specifics
             if (regs->int_no == 14) {
                 uint32_t cr2;
                 __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
-                uart_print("\nPAGE FAULT at address: ");
-                char cr2_buf[16];
-                itoa_hex(cr2, cr2_buf);
-                uart_print(cr2_buf);
-                uart_print("\n");
+                kprintf("\nPAGE FAULT at address: 0x%x\n", cr2);
             }
             
-            uart_print("\nSystem Halted.\n");
+            kprintf("\nSystem Halted.\n");
             for(;;) __asm__("hlt");
         }
     }

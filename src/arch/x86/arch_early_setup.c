@@ -5,6 +5,7 @@
 #include "arch/x86/gdt.h"
 #include "arch/x86/idt.h"
 #include "uart_console.h"
+#include "console.h"
 
 #include "arch/x86/multiboot2.h"
 
@@ -15,21 +16,21 @@ static uint32_t multiboot_copy_size;
 
  void arch_early_setup(const struct arch_boot_args* args) {
     uart_init();
-    uart_print("\n[AdrOS] Booting...\n");
+    kprintf("\n[AdrOS] Booting...\n");
 
     uint32_t magic = (uint32_t)(args ? args->a0 : 0);
     uintptr_t mbi_phys = (uintptr_t)(args ? args->a1 : 0);
 
     if (magic != 0x36d76289) {
-        uart_print("[ERR] Invalid Multiboot2 Magic!\n");
+        kprintf("[ERR] Invalid Multiboot2 Magic!\n");
     } else {
-        uart_print("[OK] Multiboot2 Magic Confirmed.\n");
+        kprintf("[OK] Multiboot2 Magic Confirmed.\n");
     }
 
-    uart_print("[AdrOS] Initializing GDT/TSS...\n");
+    kprintf("[AdrOS] Initializing GDT/TSS...\n");
     gdt_init();
 
-    uart_print("[AdrOS] Initializing IDT...\n");
+    kprintf("[AdrOS] Initializing IDT...\n");
     idt_init();
 
     struct boot_info bi;
@@ -49,7 +50,7 @@ static uint32_t multiboot_copy_size;
         if (total_size >= 8) {
             multiboot_copy_size = total_size;
             if (multiboot_copy_size > sizeof(multiboot_copy)) {
-                uart_print("[WARN] Multiboot2 info too large, truncating copy.\n");
+                kprintf("[WARN] Multiboot2 info too large, truncating copy.\n");
                 multiboot_copy_size = sizeof(multiboot_copy);
             }
 

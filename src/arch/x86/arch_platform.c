@@ -5,7 +5,6 @@
 #include "keyboard.h"
 #include "syscall.h"
 #include "timer.h"
-#include "uart_console.h"
 #include "console.h"
 #include "uaccess.h"
 #include "vga_console.h"
@@ -35,7 +34,7 @@ static uint8_t ring0_trap_stack[16384] __attribute__((aligned(16)));
 #if defined(__i386__)
 static void userspace_init_thread(void) {
     if (!fs_root) {
-        uart_print("[ELF] fs_root missing\n");
+        kprintf("[ELF] fs_root missing\n");
         process_exit_notify(1);
         schedule();
         for (;;) hal_cpu_idle();
@@ -56,18 +55,16 @@ static void userspace_init_thread(void) {
     current_process->heap_break = heap_brk;
     vmm_as_activate(user_as);
 
-    uart_print("[ELF] starting /bin/init.elf\n");
+    kprintf("[ELF] starting /bin/init.elf\n");
 
-    uart_print("[ELF] user_range_ok(entry)=");
-    uart_put_char(user_range_ok((const void*)entry, 1) ? '1' : '0');
-    uart_print(" user_range_ok(stack)=");
-    uart_put_char(user_range_ok((const void*)(user_sp - 16), 16) ? '1' : '0');
-    uart_print("\n");
+    kprintf("[ELF] user_range_ok(entry)=%c user_range_ok(stack)=%c\n",
+            user_range_ok((const void*)entry, 1) ? '1' : '0',
+            user_range_ok((const void*)(user_sp - 16), 16) ? '1' : '0');
 
     hal_cpu_set_kernel_stack((uintptr_t)&ring0_trap_stack[sizeof(ring0_trap_stack)]);
 
     if (hal_usermode_enter(entry, user_sp) < 0) {
-        uart_print("[USER] usermode enter not supported on this architecture.\n");
+        kprintf("[USER] usermode enter not supported on this architecture.\n");
         process_exit_notify(1);
         schedule();
         for (;;) hal_cpu_idle();

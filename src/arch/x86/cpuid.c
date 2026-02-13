@@ -1,5 +1,5 @@
 #include "arch/x86/cpuid.h"
-#include "uart_console.h"
+#include "console.h"
 #include "utils.h"
 
 #include <stddef.h>
@@ -99,49 +99,39 @@ void x86_cpuid_detect(struct x86_cpu_features* out) {
 }
 
 void x86_cpuid_print(const struct x86_cpu_features* f) {
-    uart_print("[CPUID] Vendor: ");
-    uart_print(f->vendor);
-    uart_print("\n");
+    kprintf("[CPUID] Vendor: %s\n", f->vendor);
 
     if (f->brand[0]) {
-        uart_print("[CPUID] Brand:  ");
-        uart_print(f->brand);
-        uart_print("\n");
+        kprintf("[CPUID] Brand:  %s\n", f->brand);
     }
 
-    uart_print("[CPUID] Features:");
-    if (f->fpu)   uart_print(" FPU");
-    if (f->tsc)   uart_print(" TSC");
-    if (f->msr)   uart_print(" MSR");
-    if (f->pae)   uart_print(" PAE");
-    if (f->apic)  uart_print(" APIC");
-    if (f->sep)   uart_print(" SEP");
-    if (f->pge)   uart_print(" PGE");
-    if (f->mmx)   uart_print(" MMX");
-    if (f->fxsr)  uart_print(" FXSR");
-    if (f->sse)   uart_print(" SSE");
-    if (f->sse2)  uart_print(" SSE2");
-    if (f->sse3)  uart_print(" SSE3");
-    if (f->ssse3) uart_print(" SSSE3");
-    if (f->sse41) uart_print(" SSE4.1");
-    if (f->sse42) uart_print(" SSE4.2");
-    if (f->avx)   uart_print(" AVX");
-    if (f->htt)   uart_print(" HTT");
-    if (f->nx)    uart_print(" NX");
-    if (f->lm)    uart_print(" LM");
-    if (f->x2apic) uart_print(" x2APIC");
-    if (f->hypervisor) uart_print(" HYPERVISOR");
-    if (f->syscall) uart_print(" SYSCALL");
-    if (f->smep) uart_print(" SMEP");
-    if (f->smap) uart_print(" SMAP");
-    uart_print("\n");
+    kprintf("[CPUID] Features:");
+    if (f->fpu)   kprintf(" FPU");
+    if (f->tsc)   kprintf(" TSC");
+    if (f->msr)   kprintf(" MSR");
+    if (f->pae)   kprintf(" PAE");
+    if (f->apic)  kprintf(" APIC");
+    if (f->sep)   kprintf(" SEP");
+    if (f->pge)   kprintf(" PGE");
+    if (f->mmx)   kprintf(" MMX");
+    if (f->fxsr)  kprintf(" FXSR");
+    if (f->sse)   kprintf(" SSE");
+    if (f->sse2)  kprintf(" SSE2");
+    if (f->sse3)  kprintf(" SSE3");
+    if (f->ssse3) kprintf(" SSSE3");
+    if (f->sse41) kprintf(" SSE4.1");
+    if (f->sse42) kprintf(" SSE4.2");
+    if (f->avx)   kprintf(" AVX");
+    if (f->htt)   kprintf(" HTT");
+    if (f->nx)    kprintf(" NX");
+    if (f->lm)    kprintf(" LM");
+    if (f->x2apic) kprintf(" x2APIC");
+    if (f->hypervisor) kprintf(" HYPERVISOR");
+    if (f->syscall) kprintf(" SYSCALL");
+    if (f->smep) kprintf(" SMEP");
+    if (f->smap) kprintf(" SMAP");
+    kprintf("\n");
 
-    uart_print("[CPUID] APIC ID: ");
-    char tmp[12];
-    itoa(f->initial_apic_id, tmp, 10);
-    uart_print(tmp);
-    uart_print(", Logical CPUs: ");
-    itoa(f->logical_cpus, tmp, 10);
-    uart_print(tmp);
-    uart_print("\n");
+    kprintf("[CPUID] APIC ID: %u, Logical CPUs: %u\n",
+            (unsigned)f->initial_apic_id, (unsigned)f->logical_cpus);
 }

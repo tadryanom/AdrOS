@@ -3,7 +3,7 @@
 #include "fs.h"
 #include "heap.h"
 #include "pmm.h"
-#include "uart_console.h"
+#include "console.h"
 #include "utils.h"
 #include "vmm.h"
 
@@ -150,9 +150,7 @@ static int elf32_load_interp(const char* interp_path, uintptr_t as,
 
     fs_node_t* node = vfs_lookup(interp_path);
     if (!node) {
-        uart_print("[ELF] interp not found: ");
-        uart_print(interp_path);
-        uart_print("\n");
+        kprintf("[ELF] interp not found: %s\n", interp_path);
         return -ENOENT;
     }
 
@@ -199,9 +197,7 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
 
     fs_node_t* node = vfs_lookup(filename);
     if (!node) {
-        uart_print("[ELF] file not found: ");
-        uart_print(filename);
-        uart_print("\n");
+        kprintf("[ELF] file not found: %s\n", filename);
         vmm_as_destroy(new_as);
         return -ENOENT;
     }
@@ -231,7 +227,7 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
     const elf32_ehdr_t* eh = (const elf32_ehdr_t*)file;
     int vrc = elf32_validate(eh, file_len);
     if (vrc < 0) {
-        uart_print("[ELF] invalid ELF header\n");
+        kprintf("[ELF] invalid ELF header\n");
         kfree(file);
         vmm_as_activate(old_as);
         vmm_as_destroy(new_as);
@@ -241,7 +237,7 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
     uintptr_t highest_seg_end = 0;
     int lrc = elf32_load_segments(file, file_len, new_as, 0, &highest_seg_end);
     if (lrc < 0) {
-        uart_print("[ELF] segment load failed\n");
+        kprintf("[ELF] segment load failed\n");
         kfree(file);
         vmm_as_activate(old_as);
         vmm_as_destroy(new_as);
@@ -268,9 +264,7 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
             if (irc == 0) {
                 real_entry = interp_entry;
                 has_interp = 1;
-                uart_print("[ELF] loaded interp: ");
-                uart_print(interp_path);
-                uart_print("\n");
+                kprintf("[ELF] loaded interp: %s\n", interp_path);
             }
             break;
         }
@@ -288,7 +282,7 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
 
     int src2 = elf32_map_user_range(new_as, user_stack_base, user_stack_size, VMM_FLAG_RW);
     if (src2 < 0) {
-        uart_print("[ELF] OOM mapping user stack\n");
+        kprintf("[ELF] OOM mapping user stack\n");
         kfree(file);
         vmm_as_activate(old_as);
         vmm_as_destroy(new_as);

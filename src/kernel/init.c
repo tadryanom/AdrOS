@@ -18,7 +18,7 @@
 #include "socket.h"
 #include "vbe.h"
 #include "keyboard.h"
-#include "uart_console.h"
+#include "console.h"
 
 #include "hal/mm.h"
 
@@ -51,7 +51,7 @@ int init_start(const struct boot_info* bi) {
                                       HAL_MM_MAP_RW, &initrd_virt) == 0) {
             fs_root = initrd_init((uint32_t)initrd_virt);
         } else {
-            uart_print("[INITRD] Failed to map initrd physical range.\n");
+            kprintf("[INITRD] Failed to map initrd physical range.\n");
         }
     }
 

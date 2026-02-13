@@ -1,6 +1,6 @@
 #include "kaslr.h"
 #include "hal/cpu.h"
-#include "uart_console.h"
+#include "console.h"
 
 static uint32_t prng_state;
 
@@ -8,7 +8,7 @@ void kaslr_init(void) {
     uint64_t tsc = hal_cpu_read_timestamp();
     prng_state = (uint32_t)(tsc ^ (tsc >> 32));
     if (prng_state == 0) prng_state = 0xDEADBEEF;
-    uart_print("[KASLR] PRNG seeded from TSC\n");
+    kprintf("[KASLR] PRNG seeded from TSC\n");
 }
 
 uint32_t kaslr_rand(void) {

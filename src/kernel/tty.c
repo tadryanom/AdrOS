@@ -5,6 +5,7 @@
 #include "process.h"
 #include "waitqueue.h"
 #include "spinlock.h"
+#include "console.h"
 #include "uart_console.h"
 #include "uaccess.h"
 #include "errno.h"
@@ -276,7 +277,7 @@ void tty_input_char(char c) {
         if (c == 0x03) {
             spin_unlock_irqrestore(&tty_lock, flags);
             if (lflag & TTY_ECHO) {
-                uart_print("^C\n");
+                kprintf("^C\n");
             }
             if (tty_fg_pgrp != 0) {
                 process_kill_pgrp(tty_fg_pgrp, SIGINT_NUM);
@@ -287,7 +288,7 @@ void tty_input_char(char c) {
         if (c == 0x1C) {
             spin_unlock_irqrestore(&tty_lock, flags);
             if (lflag & TTY_ECHO) {
-                uart_print("^\\\n");
+                kprintf("^\\\n");
             }
             if (tty_fg_pgrp != 0) {
                 process_kill_pgrp(tty_fg_pgrp, SIGQUIT_NUM);
@@ -298,7 +299,7 @@ void tty_input_char(char c) {
         if (c == 0x1A) {
             spin_unlock_irqrestore(&tty_lock, flags);
             if (lflag & TTY_ECHO) {
-                uart_print("^Z\n");
+                kprintf("^Z\n");
             }
             if (tty_fg_pgrp != 0) {
                 process_kill_pgrp(tty_fg_pgrp, SIGTSTP_NUM);
@@ -309,7 +310,7 @@ void tty_input_char(char c) {
 
     if (c == 0x04 && (lflag & TTY_ICANON)) {
         if (lflag & TTY_ECHO) {
-            uart_print("^D");
+            kprintf("^D");
         }
         for (uint32_t i = 0; i < line_len; i++) {
             canon_push(line_buf[i]);
@@ -335,7 +336,7 @@ void tty_input_char(char c) {
         if (line_len > 0) {
             line_len--;
             if (lflag & TTY_ECHO) {
-                uart_print("\b \b");
+                kprintf("\b \b");
             }
         }
         spin_unlock_irqrestore(&tty_lock, flags);

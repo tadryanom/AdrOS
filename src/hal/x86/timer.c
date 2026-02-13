@@ -4,7 +4,7 @@
 #include "arch/x86/idt.h"
 #include "arch/x86/lapic.h"
 #include "io.h"
-#include "uart_console.h"
+#include "console.h"
 
 static hal_timer_tick_cb_t g_tick_cb = 0;
 

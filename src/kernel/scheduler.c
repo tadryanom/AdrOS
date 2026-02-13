@@ -2,7 +2,7 @@
 #include "pmm.h"
 #include "vmm.h"
 #include "heap.h"
-#include "uart_console.h"
+#include "console.h"
 #include "timer.h" // Need access to current tick usually, but we pass it in wake_check
 #include "spinlock.h"
 #include "utils.h"
@@ -619,7 +619,7 @@ struct process* process_find_by_pid(uint32_t pid) {
 }
 
 void process_init(void) {
-    uart_print("[SCHED] Initializing Multitasking...\n");
+    kprintf("[SCHED] Initializing Multitasking...\n");
 
     uintptr_t flags = spin_lock_irqsave(&sched_lock);
 
@@ -627,7 +627,7 @@ void process_init(void) {
     struct process* kernel_proc = (struct process*)kmalloc(sizeof(*kernel_proc));
     if (!kernel_proc) {
         spin_unlock_irqrestore(&sched_lock, flags);
-        uart_print("[SCHED] OOM allocating kernel process struct.\n");
+        kprintf("[SCHED] OOM allocating kernel process struct.\n");
         for(;;) hal_cpu_idle();
         __builtin_unreachable();
     }
@@ -671,7 +671,7 @@ void process_init(void) {
     void* kstack0 = kstack_alloc();
     if (!kstack0) {
         spin_unlock_irqrestore(&sched_lock, flags);
-        uart_print("[SCHED] OOM allocating PID 0 kernel stack.\n");
+        kprintf("[SCHED] OOM allocating PID 0 kernel stack.\n");
         for (;;) hal_cpu_idle();
         __builtin_unreachable();
     }

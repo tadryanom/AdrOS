@@ -1,6 +1,6 @@
 #include "pmm.h"
 #include "utils.h"
-#include "uart_console.h"
+#include "console.h"
 #include "hal/cpu.h"
 #include "hal/mm.h"
 #include "spinlock.h"
@@ -84,7 +84,7 @@ void pmm_set_limits(uint64_t total_mem, uint64_t max_fr) {
 __attribute__((weak))
 void pmm_arch_init(void* boot_info) {
     (void)boot_info;
-    uart_print("[PMM] No arch-specific memory init. Assuming 16MB.\n");
+    kprintf("[PMM] No arch-specific memory init. Assuming 16MB.\n");
     pmm_set_limits(16 * 1024 * 1024, 0);
 }
 
@@ -126,7 +126,7 @@ void pmm_init(void* boot_info) {
 
     pmm_mark_region(phys_start_aligned, kernel_size, 1);
 
-    uart_print("[PMM] Initialized.\n");
+    kprintf("[PMM] Initialized.\n");
 }
 
 void* pmm_alloc_page(void) {

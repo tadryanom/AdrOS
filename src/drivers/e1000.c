@@ -3,7 +3,7 @@
 #include "vmm.h"
 #include "pmm.h"
 #include "interrupts.h"
-#include "uart_console.h"
+#include "console.h"
 #include "utils.h"
 #include "io.h"
 
@@ -215,7 +215,7 @@ static void e1000_irq_handler(struct registers* regs) {
 int e1000_init(void) {
     const struct pci_device* dev = pci_find_device(E1000_VENDOR_ID, E1000_DEVICE_ID);
     if (!dev) {
-        uart_print("[E1000] Device not found.\n");
+        kprintf("[E1000] Device not found.\n");
         return -1;
     }
 
@@ -226,7 +226,7 @@ int e1000_init(void) {
     /* Read BAR0 (MMIO base) */
     uint32_t bar0 = dev->bar[0];
     if (bar0 & 1) {
-        uart_print("[E1000] BAR0 is I/O (unsupported).\n");
+        kprintf("[E1000] BAR0 is I/O (unsupported).\n");
         return -1;
     }
     uint32_t mmio_phys = bar0 & 0xFFFFFFF0U;
@@ -261,24 +261,18 @@ int e1000_init(void) {
     /* Read MAC address from EEPROM */
     e1000_read_mac();
 
-    uart_print("[E1000] MAC: ");
-    char hex[4];
-    for (int i = 0; i < 6; i++) {
-        if (i) uart_print(":");
-        hex[0] = "0123456789ABCDEF"[(e1000_mac[i] >> 4) & 0xF];
-        hex[1] = "0123456789ABCDEF"[e1000_mac[i] & 0xF];
-        hex[2] = '\0';
-        uart_print(hex);
-    }
-    uart_print("\n");
+    kprintf("[E1000] MAC: %x:%x:%x:%x:%x:%x\n",
+            (unsigned)e1000_mac[0], (unsigned)e1000_mac[1],
+            (unsigned)e1000_mac[2], (unsigned)e1000_mac[3],
+            (unsigned)e1000_mac[4], (unsigned)e1000_mac[5]);
 
     /* Init TX and RX rings */
     if (e1000_init_tx() < 0) {
-        uart_print("[E1000] Failed to init TX ring.\n");
+        kprintf("[E1000] Failed to init TX ring.\n");
         return -1;
     }
     if (e1000_init_rx() < 0) {
-        uart_print("[E1000] Failed to init RX ring.\n");
+        kprintf("[E1000] Failed to init RX ring.\n");
         return -1;
     }
 
@@ -294,14 +288,8 @@ int e1000_init(void) {
 
     e1000_ready = 1;
 
-    char buf[12];
-    uart_print("[E1000] Initialized, IRQ=");
-    itoa(irq, buf, 10);
-    uart_print(buf);
-    uart_print(", MMIO=");
-    itoa_hex(mmio_phys, buf);
-    uart_print(buf);
-    uart_print("\n");
+    kprintf("[E1000] Initialized, IRQ=%u, MMIO=0x%x\n",
+            (unsigned)irq, (unsigned)mmio_phys);
 
     return 0;
 }

@@ -2,7 +2,7 @@
 #include "hal/cpu_features.h"
 #include "vmm.h"
 #include "io.h"
-#include "uart_console.h"
+#include "console.h"
 #include "utils.h"
 
 #include <stdint.h>
@@ -71,11 +71,11 @@ void pic_disable(void) {
 int lapic_init(void) {
     const struct cpu_features* f = hal_cpu_get_features();
     if (!f->has_apic) {
-        uart_print("[LAPIC] CPU does not support APIC.\n");
+        kprintf("[LAPIC] CPU does not support APIC.\n");
         return 0;
     }
     if (!f->has_msr) {
-        uart_print("[LAPIC] CPU does not support MSR.\n");
+        kprintf("[LAPIC] CPU does not support MSR.\n");
         return 0;
     }
 
@@ -123,14 +123,8 @@ int lapic_init(void) {
 
     lapic_active = 1;
 
-    uart_print("[LAPIC] Enabled at phys=");
-    char tmp[12];
-    itoa_hex((uint32_t)phys_base, tmp);
-    uart_print(tmp);
-    uart_print(", ID=");
-    itoa(lapic_get_id(), tmp, 10);
-    uart_print(tmp);
-    uart_print("\n");
+    kprintf("[LAPIC] Enabled at phys=0x%x, ID=%u\n",
+            (unsigned)phys_base, (unsigned)lapic_get_id());
 
     return 1;
 }
@@ -179,14 +173,8 @@ void lapic_timer_start(uint32_t frequency_hz) {
     lapic_write(LAPIC_TIMER_DCR, LAPIC_TIMER_DIV_16);
     lapic_write(LAPIC_TIMER_ICR, ticks_per_interrupt);
 
-    uart_print("[LAPIC] Timer started at ");
-    char tmp[12];
-    itoa((int)frequency_hz, tmp, 10);
-    uart_print(tmp);
-    uart_print("Hz (ticks=");
-    itoa_hex(ticks_per_interrupt, tmp);
-    uart_print(tmp);
-    uart_print(")\n");
+    kprintf("[LAPIC] Timer started at %uHz (ticks=0x%x)\n",
+            (unsigned)frequency_hz, ticks_per_interrupt);
 }
 
 void lapic_timer_stop(void) {

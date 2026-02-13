@@ -4,7 +4,7 @@
 #include "devfs.h"
 #include "fb.h"
 #include "uaccess.h"
-#include "uart_console.h"
+#include "console.h"
 #include "utils.h"
 
 #include <stddef.h>
@@ -15,7 +15,7 @@ static fs_node_t g_dev_fb0_node;
 
 int vbe_init(const struct boot_info* bi) {
     if (!bi || bi->fb_addr == 0 || bi->fb_width == 0 || bi->fb_height == 0 || bi->fb_bpp == 0) {
-        uart_print("[VBE] No framebuffer provided by bootloader.\n");
+        kprintf("[VBE] No framebuffer provided by bootloader.\n");
         return -1;
     }
 
@@ -38,18 +38,10 @@ int vbe_init(const struct boot_info* bi) {
     g_vbe.virt_addr = (volatile uint8_t*)virt_base;
     g_vbe_ready = 1;
 
-    uart_print("[VBE] Framebuffer ");
-    char buf[16];
-    itoa(g_vbe.width, buf, 10); uart_print(buf);
-    uart_print("x");
-    itoa(g_vbe.height, buf, 10); uart_print(buf);
-    uart_print("x");
-    itoa(g_vbe.bpp, buf, 10); uart_print(buf);
-    uart_print(" @ 0x");
-    itoa_hex(g_vbe.phys_addr, buf); uart_print(buf);
-    uart_print(" mapped to 0x");
-    itoa_hex(virt_base, buf); uart_print(buf);
-    uart_print("\n");
+    kprintf("[VBE] Framebuffer %ux%ux%u @ 0x%x mapped to 0x%x\n",
+            (unsigned)g_vbe.width, (unsigned)g_vbe.height,
+            (unsigned)g_vbe.bpp, (unsigned)g_vbe.phys_addr,
+            (unsigned)virt_base);
 
     return 0;
 }
@@ -199,5 +191,5 @@ void vbe_register_devfs(void) {
     g_dev_fb0_node.mmap = &fb0_mmap;
     devfs_register_device(&g_dev_fb0_node);
 
-    uart_print("[VBE] Registered /dev/fb0\n");
+    kprintf("[VBE] Registered /dev/fb0\n");
 }

@@ -1,7 +1,7 @@
 #include "initrd.h"
 #include "utils.h"
 #include "heap.h"
-#include "uart_console.h"
+#include "console.h"
 #include "errno.h"
 
 #define TAR_BLOCK 512
@@ -294,10 +294,7 @@ fs_node_t* initrd_init(uint32_t location) {
 
     initrd_finalize_nodes();
 
-    uart_print("[INITRD] Found ");
-    char buf[16]; itoa(files, buf, 10);
-    uart_print(buf);
-    uart_print(" files.\n");
+    kprintf("[INITRD] Found %d files.\n", files);
 
     return &nodes[root];
 }

@@ -1,5 +1,5 @@
 #include "mtrr.h"
-#include "uart_console.h"
+#include "console.h"
 
 #define IA32_MTRRCAP       0xFE
 #define IA32_MTRR_DEF_TYPE 0x2FF
@@ -25,26 +25,20 @@ void mtrr_init(void) {
     /* Check MTRR support: CPUID.1:EDX bit 12 */
     __asm__ volatile("cpuid" : "=a"(eax), "=d"(edx) : "a"(1) : "ebx", "ecx");
     if (!(edx & (1U << 12))) {
-        uart_print("[MTRR] Not supported by CPU\n");
+        kprintf("[MTRR] Not supported by CPU\n");
         return;
     }
 
     uint64_t cap = rdmsr(IA32_MTRRCAP);
     mtrr_count = (uint8_t)(cap & 0xFF);
     if (mtrr_count == 0) {
-        uart_print("[MTRR] No variable-range MTRRs available\n");
+        kprintf("[MTRR] No variable-range MTRRs available\n");
         return;
     }
 
     mtrr_enabled = 1;
-    uart_print("[MTRR] Initialized, ");
-    /* Simple decimal print for count */
-    char buf[4];
-    buf[0] = (char)('0' + mtrr_count / 10);
-    buf[1] = (char)('0' + mtrr_count % 10);
-    buf[2] = '\0';
-    uart_print(buf);
-    uart_print(" variable-range registers\n");
+    kprintf("[MTRR] Initialized, %u variable-range registers\n",
+            (unsigned)mtrr_count);
 }
 
 int mtrr_set_range(uint64_t base, uint64_t size, uint8_t type) {

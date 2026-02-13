@@ -2,7 +2,6 @@
 #include <stddef.h>
 #include "console.h"
 #include "vga_console.h"
-#include "uart_console.h"
 #include "pmm.h"
 #include "vmm.h"
 #include "process.h"

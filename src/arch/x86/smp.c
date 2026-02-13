@@ -4,7 +4,7 @@
 #include "arch/x86/percpu.h"
 #include "arch/x86/idt.h"
 #include "arch/x86/gdt.h"
-#include "uart_console.h"
+#include "console.h"
 #include "utils.h"
 #include "io.h"
 #include "hal/cpu.h"
@@ -90,7 +90,7 @@ int smp_enumerate(void) {
         g_cpus[0].cpu_index = 0;
         g_cpus[0].started = 1;
         g_cpus[0].kernel_stack = 0;
-        uart_print("[SMP] Single CPU enumerated.\n");
+        kprintf("[SMP] Single CPU enumerated.\n");
         return 1;
     }
 
@@ -104,11 +104,7 @@ int smp_enumerate(void) {
         g_cpus[i].kernel_stack = (uint32_t)(uintptr_t)&ap_stacks[i][AP_STACK_SIZE];
     }
 
-    char tmp[12];
-    uart_print("[SMP] Enumerated ");
-    itoa(g_cpu_count, tmp, 10);
-    uart_print(tmp);
-    uart_print(" CPU(s).\n");
+    kprintf("[SMP] Enumerated %u CPU(s).\n", (unsigned)g_cpu_count);
 
     return (int)g_cpu_count;
 }
@@ -155,11 +151,7 @@ int smp_start_aps(void) {
     *cr3_ptr = cr3_val;
     *entry_ptr = (uint32_t)(uintptr_t)ap_entry;
 
-    uart_print("[SMP] Starting ");
-    char tmp[12];
-    itoa(g_cpu_count - 1, tmp, 10);
-    uart_print(tmp);
-    uart_print(" AP(s)...\n");
+    kprintf("[SMP] Starting %u AP(s)...\n", (unsigned)(g_cpu_count - 1));
 
     uint8_t sipi_vector = (uint8_t)(AP_TRAMPOLINE_PHYS >> 12);
 
@@ -193,15 +185,9 @@ int smp_start_aps(void) {
         }
 
         if (g_cpus[i].started) {
-            uart_print("[SMP] CPU ");
-            itoa(g_cpus[i].lapic_id, tmp, 10);
-            uart_print(tmp);
-            uart_print(" started.\n");
+            kprintf("[SMP] CPU %u started.\n", (unsigned)g_cpus[i].lapic_id);
         } else {
-            uart_print("[SMP] CPU ");
-            itoa(g_cpus[i].lapic_id, tmp, 10);
-            uart_print(tmp);
-            uart_print(" failed to start!\n");
+            kprintf("[SMP] CPU %u failed to start!\n", (unsigned)g_cpus[i].lapic_id);
         }
     }
 
@@ -210,10 +196,7 @@ int smp_start_aps(void) {
         if (g_cpus[i].started) started++;
     }
 
-    uart_print("[SMP] ");
-    itoa(started, tmp, 10);
-    uart_print(tmp);
-    uart_print(" CPU(s) active.\n");
+    kprintf("[SMP] %u CPU(s) active.\n", (unsigned)started);
 
     return (int)started;
 }
