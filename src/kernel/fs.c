@@ -153,3 +153,94 @@ static fs_node_t* vfs_lookup_depth(const char* path, int depth) {
 
     return cur;
 }
+
+/* Split path into dirname + basename.  Returns the parent directory node. */
+fs_node_t* vfs_lookup_parent(const char* path, char* name_out, size_t name_sz) {
+    if (!path || !name_out || name_sz == 0) return NULL;
+    name_out[0] = 0;
+
+    /* Find last '/' separator */
+    const char* last_slash = NULL;
+    for (const char* p = path; *p; p++) {
+        if (*p == '/') last_slash = p;
+    }
+
+    if (!last_slash) return NULL; /* no slash = relative, not supported */
+
+    /* Build parent path */
+    char parent_path[128];
+    size_t plen = (size_t)(last_slash - path);
+    if (plen == 0) plen = 1; /* root "/" */
+    if (plen >= sizeof(parent_path)) plen = sizeof(parent_path) - 1;
+    memcpy(parent_path, path, plen);
+    parent_path[plen] = 0;
+
+    /* Extract basename */
+    const char* base = last_slash + 1;
+    size_t blen = strlen(base);
+    if (blen == 0) return NULL; /* trailing slash, no basename */
+    if (blen >= name_sz) blen = name_sz - 1;
+    memcpy(name_out, base, blen);
+    name_out[blen] = 0;
+
+    return vfs_lookup(parent_path);
+}
+
+int vfs_create(const char* path, uint32_t flags, fs_node_t** out) {
+    if (!path || !out) return -EINVAL;
+    char name[128];
+    fs_node_t* parent = vfs_lookup_parent(path, name, sizeof(name));
+    if (!parent) return -ENOENT;
+    if (parent->flags != FS_DIRECTORY) return -ENOTDIR;
+    if (!parent->create) return -ENOSYS;
+    return parent->create(parent, name, flags, out);
+}
+
+int vfs_mkdir(const char* path) {
+    if (!path) return -EINVAL;
+    char name[128];
+    fs_node_t* parent = vfs_lookup_parent(path, name, sizeof(name));
+    if (!parent) return -ENOENT;
+    if (parent->flags != FS_DIRECTORY) return -ENOTDIR;
+    if (!parent->mkdir) return -ENOSYS;
+    return parent->mkdir(parent, name);
+}
+
+int vfs_unlink(const char* path) {
+    if (!path) return -EINVAL;
+    char name[128];
+    fs_node_t* parent = vfs_lookup_parent(path, name, sizeof(name));
+    if (!parent) return -ENOENT;
+    if (parent->flags != FS_DIRECTORY) return -ENOTDIR;
+    if (!parent->unlink) return -ENOSYS;
+    return parent->unlink(parent, name);
+}
+
+int vfs_rmdir(const char* path) {
+    if (!path) return -EINVAL;
+    char name[128];
+    fs_node_t* parent = vfs_lookup_parent(path, name, sizeof(name));
+    if (!parent) return -ENOENT;
+    if (parent->flags != FS_DIRECTORY) return -ENOTDIR;
+    if (!parent->rmdir) return -ENOSYS;
+    return parent->rmdir(parent, name);
+}
+
+int vfs_rename(const char* old_path, const char* new_path) {
+    if (!old_path || !new_path) return -EINVAL;
+    char old_name[128], new_name[128];
+    fs_node_t* old_parent = vfs_lookup_parent(old_path, old_name, sizeof(old_name));
+    fs_node_t* new_parent = vfs_lookup_parent(new_path, new_name, sizeof(new_name));
+    if (!old_parent || !new_parent) return -ENOENT;
+    if (!old_parent->rename) return -ENOSYS;
+    return old_parent->rename(old_parent, old_name, new_parent, new_name);
+}
+
+int vfs_truncate(const char* path, uint32_t length) {
+    if (!path) return -EINVAL;
+    fs_node_t* node = vfs_lookup(path);
+    if (!node) return -ENOENT;
+    if (node->flags != FS_FILE) return -EISDIR;
+    if (!node->truncate) return -ENOSYS;
+    return node->truncate(node, length);
+}

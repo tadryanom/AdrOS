@@ -10,7 +10,6 @@
 #include "heap.h"
 #include "tty.h"
 #include "pty.h"
-#include "diskfs.h"
 #include "tmpfs.h"
 
 #include "errno.h"
@@ -908,22 +907,19 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
     int prc = path_resolve_user(user_path, path, sizeof(path));
     if (prc < 0) return prc;
 
-    fs_node_t* node = NULL;
-    if (path[0] == '/' && path[1] == 'd' && path[2] == 'i' && path[3] == 's' && path[4] == 'k' && path[5] == '/') {
-        // With hierarchical diskfs, /disk may contain directories.
-        // Use diskfs_open_file only when creation/truncation is requested.
-        if ((flags & 0x40U) != 0U || (flags & 0x200U) != 0U) {
-            const char* rel = path + 6;
-            if (rel[0] == 0) return -ENOENT;
-            int rc = diskfs_open_file(rel, flags, &node);
-            if (rc < 0) return rc;
-        } else {
-            node = vfs_lookup(path);
-            if (!node) return -ENOENT;
+    fs_node_t* node = vfs_lookup(path);
+    if (!node && (flags & 0x40U) != 0U) {
+        /* O_CREAT: create file through VFS */
+        int rc = vfs_create(path, flags, &node);
+        if (rc < 0) return rc;
+    } else if (!node) {
+        return -ENOENT;
+    } else if ((flags & 0x200U) != 0U && node->flags == FS_FILE) {
+        /* O_TRUNC on existing file */
+        if (node->truncate) {
+            node->truncate(node, 0);
+            node->length = 0;
         }
-    } else {
-        node = vfs_lookup(path);
-        if (!node) return -ENOENT;
     }
 
     /* Permission check based on open flags */
@@ -1142,13 +1138,7 @@ static int syscall_mkdir_impl(const char* user_path) {
     int prc = path_resolve_user(user_path, path, sizeof(path));
     if (prc < 0) return prc;
 
-    if (path[0] == '/' && path[1] == 'd' && path[2] == 'i' && path[3] == 's' && path[4] == 'k' && path[5] == '/') {
-        const char* rel = path + 6;
-        if (rel[0] == 0) return -EINVAL;
-        return diskfs_mkdir(rel);
-    }
-
-    return -ENOSYS;
+    return vfs_mkdir(path);
 }
 
 static int syscall_getdents_impl(int fd, void* user_buf, uint32_t len) {
@@ -1182,13 +1172,7 @@ static int syscall_unlink_impl(const char* user_path) {
     int prc = path_resolve_user(user_path, path, sizeof(path));
     if (prc < 0) return prc;
 
-    if (path[0] == '/' && path[1] == 'd' && path[2] == 'i' && path[3] == 's' && path[4] == 'k' && path[5] == '/') {
-        const char* rel = path + 6;
-        if (rel[0] == 0) return -EINVAL;
-        return diskfs_unlink(rel);
-    }
-
-    return -ENOSYS;
+    return vfs_unlink(path);
 }
 
 static int syscall_unlinkat_impl(int dirfd, const char* user_path, uint32_t flags) {
@@ -1204,13 +1188,7 @@ static int syscall_rmdir_impl(const char* user_path) {
     int prc = path_resolve_user(user_path, path, sizeof(path));
     if (prc < 0) return prc;
 
-    if (path[0] == '/' && path[1] == 'd' && path[2] == 'i' && path[3] == 's' && path[4] == 'k' && path[5] == '/') {
-        const char* rel = path + 6;
-        if (rel[0] == 0) return -EINVAL;
-        return diskfs_rmdir(rel);
-    }
-
-    return -ENOSYS;
+    return vfs_rmdir(path);
 }
 
 static int syscall_rename_impl(const char* user_old, const char* user_new) {
@@ -1223,16 +1201,7 @@ static int syscall_rename_impl(const char* user_old, const char* user_new) {
     rc = path_resolve_user(user_new, newp, sizeof(newp));
     if (rc < 0) return rc;
 
-    // Both must be under /disk/
-    if (oldp[0] == '/' && oldp[1] == 'd' && oldp[2] == 'i' && oldp[3] == 's' && oldp[4] == 'k' && oldp[5] == '/' &&
-        newp[0] == '/' && newp[1] == 'd' && newp[2] == 'i' && newp[3] == 's' && newp[4] == 'k' && newp[5] == '/') {
-        const char* old_rel = oldp + 6;
-        const char* new_rel = newp + 6;
-        if (old_rel[0] == 0 || new_rel[0] == 0) return -EINVAL;
-        return diskfs_rename(old_rel, new_rel);
-    }
-
-    return -ENOSYS;
+    return vfs_rename(oldp, newp);
 }
 
 static int syscall_read_impl(int fd, void* user_buf, uint32_t len) {

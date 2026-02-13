@@ -457,6 +457,9 @@ static int diskfs_readdir_impl(struct fs_node* node, uint32_t* inout_index, void
     return (int)(nents * (uint32_t)sizeof(struct vfs_dirent));
 }
 
+static void diskfs_set_dir_ops(fs_node_t* vfs);
+static int diskfs_vfs_truncate(struct fs_node* node, uint32_t length);
+
 static struct fs_node* diskfs_root_finddir(struct fs_node* node, const char* name) {
     struct diskfs_node* parent = (struct diskfs_node*)node;
     if (!g_ready) return 0;
@@ -491,11 +494,13 @@ static struct fs_node* diskfs_root_finddir(struct fs_node* node, const char* nam
         dn->vfs.write = 0;
         dn->vfs.finddir = &diskfs_root_finddir;
         dn->vfs.readdir = &diskfs_readdir_impl;
+        diskfs_set_dir_ops(&dn->vfs);
     } else {
         dn->vfs.flags = FS_FILE;
         dn->vfs.length = sb.inodes[cino].size_bytes;
         dn->vfs.read = &diskfs_read_impl;
         dn->vfs.write = &diskfs_write_impl;
+        dn->vfs.truncate = &diskfs_vfs_truncate;
         dn->vfs.finddir = 0;
     }
 
@@ -806,6 +811,205 @@ int diskfs_getdents(uint16_t dir_ino, uint32_t* inout_index, void* out, uint32_t
     return (int)(written * (uint32_t)sizeof(struct diskfs_kdirent));
 }
 
+/* ---- VFS callback wrappers ---- */
+
+static int diskfs_vfs_create(struct fs_node* dir, const char* name, uint32_t flags, struct fs_node** out) {
+    if (!dir || !name || !out) return -EINVAL;
+    *out = 0;
+    if (!g_ready) return -ENODEV;
+
+    struct diskfs_node* parent = (struct diskfs_node*)dir;
+    uint16_t parent_ino = parent->ino;
+
+    struct diskfs_super sb;
+    if (diskfs_super_load(&sb) < 0) return -EIO;
+    if (parent_ino >= DISKFS_MAX_INODES) return -EIO;
+    if (sb.inodes[parent_ino].type != DISKFS_INODE_DIR) return -ENOTDIR;
+
+    /* Check if it already exists */
+    int existing = diskfs_find_child(&sb, parent_ino, name);
+    if (existing >= 0) {
+        uint16_t ino = (uint16_t)existing;
+        if (sb.inodes[ino].type != DISKFS_INODE_FILE) return -EISDIR;
+
+        if ((flags & 0x200U) != 0U) { /* O_TRUNC */
+            sb.inodes[ino].size_bytes = 0;
+            if (diskfs_super_store(&sb) < 0) return -EIO;
+        }
+
+        struct diskfs_node* dn = (struct diskfs_node*)kmalloc(sizeof(*dn));
+        if (!dn) return -ENOMEM;
+        memset(dn, 0, sizeof(*dn));
+        diskfs_strlcpy(dn->vfs.name, name, sizeof(dn->vfs.name));
+        dn->vfs.flags = FS_FILE;
+        dn->vfs.inode = 100 + (uint32_t)ino;
+        dn->vfs.length = sb.inodes[ino].size_bytes;
+        dn->vfs.read = &diskfs_read_impl;
+        dn->vfs.write = &diskfs_write_impl;
+        dn->vfs.close = &diskfs_close_impl;
+        dn->ino = ino;
+        *out = &dn->vfs;
+        return 0;
+    }
+
+    /* Create new file */
+    if ((flags & 0x40U) == 0U) return -ENOENT; /* O_CREAT not set */
+
+    uint16_t new_ino = 0;
+    int rc = diskfs_alloc_inode_file(&sb, parent_ino, name, DISKFS_DEFAULT_CAP_SECTORS, &new_ino);
+    if (rc < 0) return rc;
+    if (diskfs_super_store(&sb) < 0) return -EIO;
+
+    struct diskfs_node* dn = (struct diskfs_node*)kmalloc(sizeof(*dn));
+    if (!dn) return -ENOMEM;
+    memset(dn, 0, sizeof(*dn));
+    diskfs_strlcpy(dn->vfs.name, name, sizeof(dn->vfs.name));
+    dn->vfs.flags = FS_FILE;
+    dn->vfs.inode = 100 + (uint32_t)new_ino;
+    dn->vfs.length = 0;
+    dn->vfs.read = &diskfs_read_impl;
+    dn->vfs.write = &diskfs_write_impl;
+    dn->vfs.close = &diskfs_close_impl;
+    dn->ino = new_ino;
+    *out = &dn->vfs;
+    return 0;
+}
+
+static int diskfs_vfs_mkdir(struct fs_node* dir, const char* name) {
+    if (!dir || !name || name[0] == 0) return -EINVAL;
+    if (!g_ready) return -ENODEV;
+
+    struct diskfs_node* parent = (struct diskfs_node*)dir;
+    uint16_t parent_ino = parent->ino;
+
+    struct diskfs_super sb;
+    if (diskfs_super_load(&sb) < 0) return -EIO;
+    if (parent_ino >= DISKFS_MAX_INODES) return -EIO;
+    if (sb.inodes[parent_ino].type != DISKFS_INODE_DIR) return -ENOTDIR;
+
+    if (diskfs_find_child(&sb, parent_ino, name) >= 0) return -EEXIST;
+
+    for (uint16_t i = 1; i < DISKFS_MAX_INODES; i++) {
+        if (sb.inodes[i].type != DISKFS_INODE_FREE) continue;
+        sb.inodes[i].type = DISKFS_INODE_DIR;
+        sb.inodes[i].parent = parent_ino;
+        memset(sb.inodes[i].name, 0, sizeof(sb.inodes[i].name));
+        diskfs_strlcpy(sb.inodes[i].name, name, sizeof(sb.inodes[i].name));
+        sb.inodes[i].start_lba = 0;
+        sb.inodes[i].size_bytes = 0;
+        sb.inodes[i].cap_sectors = 0;
+        return diskfs_super_store(&sb);
+    }
+
+    return -ENOSPC;
+}
+
+static int diskfs_vfs_unlink(struct fs_node* dir, const char* name) {
+    if (!dir || !name || name[0] == 0) return -EINVAL;
+    if (!g_ready) return -ENODEV;
+
+    struct diskfs_node* parent = (struct diskfs_node*)dir;
+    uint16_t parent_ino = parent->ino;
+
+    struct diskfs_super sb;
+    if (diskfs_super_load(&sb) < 0) return -EIO;
+
+    int child = diskfs_find_child(&sb, parent_ino, name);
+    if (child < 0) return -ENOENT;
+    uint16_t ino = (uint16_t)child;
+    if (ino == 0) return -EPERM;
+
+    if (sb.inodes[ino].type == DISKFS_INODE_DIR) return -EISDIR;
+    if (sb.inodes[ino].type != DISKFS_INODE_FILE) return -ENOENT;
+
+    memset(&sb.inodes[ino], 0, sizeof(sb.inodes[ino]));
+    return diskfs_super_store(&sb);
+}
+
+static int diskfs_vfs_rmdir(struct fs_node* dir, const char* name) {
+    if (!dir || !name || name[0] == 0) return -EINVAL;
+    if (!g_ready) return -ENODEV;
+
+    struct diskfs_node* parent = (struct diskfs_node*)dir;
+    uint16_t parent_ino = parent->ino;
+
+    struct diskfs_super sb;
+    if (diskfs_super_load(&sb) < 0) return -EIO;
+
+    int child = diskfs_find_child(&sb, parent_ino, name);
+    if (child < 0) return -ENOENT;
+    uint16_t ino = (uint16_t)child;
+    if (ino == 0) return -EPERM;
+    if (sb.inodes[ino].type != DISKFS_INODE_DIR) return -ENOTDIR;
+
+    /* Check directory is empty */
+    for (uint16_t i = 0; i < DISKFS_MAX_INODES; i++) {
+        if (sb.inodes[i].type == DISKFS_INODE_FREE) continue;
+        if (sb.inodes[i].parent == ino && i != ino) return -ENOTEMPTY;
+    }
+
+    memset(&sb.inodes[ino], 0, sizeof(sb.inodes[ino]));
+    return diskfs_super_store(&sb);
+}
+
+static int diskfs_vfs_rename(struct fs_node* old_dir, const char* old_name,
+                              struct fs_node* new_dir, const char* new_name) {
+    if (!old_dir || !old_name || !new_dir || !new_name) return -EINVAL;
+    if (!g_ready) return -ENODEV;
+
+    struct diskfs_node* odir = (struct diskfs_node*)old_dir;
+    struct diskfs_node* ndir = (struct diskfs_node*)new_dir;
+
+    struct diskfs_super sb;
+    if (diskfs_super_load(&sb) < 0) return -EIO;
+
+    int src = diskfs_find_child(&sb, odir->ino, old_name);
+    if (src < 0) return -ENOENT;
+    uint16_t src_ino = (uint16_t)src;
+    if (src_ino == 0) return -EPERM;
+
+    /* Check if destination exists */
+    int dst = diskfs_find_child(&sb, ndir->ino, new_name);
+    if (dst >= 0) {
+        uint16_t dst_ino = (uint16_t)dst;
+        if (sb.inodes[dst_ino].type != sb.inodes[src_ino].type) return -EINVAL;
+        if (dst_ino == src_ino) return 0;
+        memset(&sb.inodes[dst_ino], 0, sizeof(sb.inodes[dst_ino]));
+    }
+
+    sb.inodes[src_ino].parent = ndir->ino;
+    memset(sb.inodes[src_ino].name, 0, sizeof(sb.inodes[src_ino].name));
+    diskfs_strlcpy(sb.inodes[src_ino].name, new_name, sizeof(sb.inodes[src_ino].name));
+
+    return diskfs_super_store(&sb);
+}
+
+static int diskfs_vfs_truncate(struct fs_node* node, uint32_t length) {
+    if (!node) return -EINVAL;
+    if (!g_ready) return -ENODEV;
+
+    struct diskfs_node* dn = (struct diskfs_node*)node;
+    struct diskfs_super sb;
+    if (diskfs_super_load(&sb) < 0) return -EIO;
+    if (dn->ino >= DISKFS_MAX_INODES) return -EIO;
+    if (sb.inodes[dn->ino].type != DISKFS_INODE_FILE) return -EISDIR;
+
+    if (length < sb.inodes[dn->ino].size_bytes) {
+        sb.inodes[dn->ino].size_bytes = length;
+    }
+    node->length = sb.inodes[dn->ino].size_bytes;
+    return diskfs_super_store(&sb);
+}
+
+static void diskfs_set_dir_ops(fs_node_t* vfs) {
+    if (!vfs) return;
+    vfs->create = &diskfs_vfs_create;
+    vfs->mkdir = &diskfs_vfs_mkdir;
+    vfs->unlink = &diskfs_vfs_unlink;
+    vfs->rmdir = &diskfs_vfs_rmdir;
+    vfs->rename = &diskfs_vfs_rename;
+}
+
 fs_node_t* diskfs_create_root(void) {
     if (!g_ready) {
         if (ata_pio_init_primary_master() == 0) {
@@ -825,6 +1029,7 @@ fs_node_t* diskfs_create_root(void) {
         g_root.vfs.close = 0;
         g_root.vfs.finddir = &diskfs_root_finddir;
         g_root.vfs.readdir = &diskfs_readdir_impl;
+        diskfs_set_dir_ops(&g_root.vfs);
         g_root.ino = 0;
 
         if (g_ready) {

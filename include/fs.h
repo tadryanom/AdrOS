@@ -29,6 +29,15 @@ typedef struct fs_node {
     int (*readdir)(struct fs_node* node, uint32_t* inout_index, void* buf, uint32_t buf_len);
     int (*ioctl)(struct fs_node* node, uint32_t cmd, void* arg);
     uintptr_t (*mmap)(struct fs_node* node, uintptr_t addr, uint32_t length, uint32_t prot, uint32_t offset);
+
+    // Directory mutation operations (called on the parent directory node)
+    int (*create)(struct fs_node* dir, const char* name, uint32_t flags, struct fs_node** out);
+    int (*mkdir)(struct fs_node* dir, const char* name);
+    int (*unlink)(struct fs_node* dir, const char* name);
+    int (*rmdir)(struct fs_node* dir, const char* name);
+    int (*rename)(struct fs_node* old_dir, const char* old_name,
+                  struct fs_node* new_dir, const char* new_name);
+    int (*truncate)(struct fs_node* node, uint32_t length);
 } fs_node_t;
 
 struct vfs_dirent {
@@ -45,6 +54,17 @@ void vfs_open(fs_node_t* node);
 void vfs_close(fs_node_t* node);
 
 fs_node_t* vfs_lookup(const char* path);
+
+// Resolve path to (parent_dir, basename).  Returns parent node or NULL.
+fs_node_t* vfs_lookup_parent(const char* path, char* name_out, size_t name_sz);
+
+// Directory mutation wrappers — route through mount points transparently
+int vfs_create(const char* path, uint32_t flags, fs_node_t** out);
+int vfs_mkdir(const char* path);
+int vfs_unlink(const char* path);
+int vfs_rmdir(const char* path);
+int vfs_rename(const char* old_path, const char* new_path);
+int vfs_truncate(const char* path, uint32_t length);
 
 int vfs_mount(const char* mountpoint, fs_node_t* root);
 
