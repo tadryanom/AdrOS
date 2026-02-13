@@ -28,6 +28,7 @@ extern void x86_sysenter_init(void);
 
 #include "hal/cpu.h"
 #include "arch_signal.h"
+#include "arch_syscall.h"
 
 #include <stddef.h>
 
@@ -203,22 +204,22 @@ __attribute__((noinline))
 static int syscall_clone_impl(struct registers* regs) {
     if (!regs || !current_process) return -EINVAL;
 
-    uint32_t clone_flags = regs->ebx;
-    uintptr_t child_stack = (uintptr_t)regs->ecx;
-    uintptr_t tls_base = (uintptr_t)regs->esi;
+    uint32_t clone_flags = sc_arg0(regs);
+    uintptr_t child_stack = (uintptr_t)sc_arg1(regs);
+    uintptr_t tls_base = (uintptr_t)sc_arg3(regs);
 
     struct process* child = process_clone_create(clone_flags, child_stack, regs, tls_base);
     if (!child) return -ENOMEM;
 
     /* CLONE_PARENT_SETTID: write child tid to parent user address */
-    if ((clone_flags & CLONE_PARENT_SETTID) && regs->edx) {
+    if ((clone_flags & CLONE_PARENT_SETTID) && sc_arg2(regs)) {
         uint32_t tid = child->pid;
-        (void)copy_to_user((void*)(uintptr_t)regs->edx, &tid, sizeof(tid));
+        (void)copy_to_user((void*)(uintptr_t)sc_arg2(regs), &tid, sizeof(tid));
     }
 
     /* CLONE_CHILD_CLEARTID: store the address for the child to clear on exit */
-    if ((clone_flags & CLONE_CHILD_CLEARTID) && regs->edi) {
-        child->clear_child_tid = (uint32_t*)(uintptr_t)regs->edi;
+    if ((clone_flags & CLONE_CHILD_CLEARTID) && sc_arg4(regs)) {
+        child->clear_child_tid = (uint32_t*)(uintptr_t)sc_arg4(regs);
     }
 
     return (int)child->pid;
@@ -767,9 +768,9 @@ static int syscall_execve_impl(struct registers* regs, const char* user_path, co
         vmm_as_destroy(old_as);
     }
 
-    regs->eip = (uint32_t)entry;
-    regs->useresp = (uint32_t)sp;
-    regs->eax = 0;
+    sc_ip(regs) = (uint32_t)entry;
+    sc_usp(regs) = (uint32_t)sp;
+    sc_ret(regs) = 0;
     ret = 0;
     goto out;
 
@@ -1762,72 +1763,72 @@ static int syscall_chown_impl(const char* user_path, uint32_t uid, uint32_t gid)
 }
 
 void syscall_handler(struct registers* regs) {
-    uint32_t syscall_no = regs->eax;
+    uint32_t syscall_no = sc_num(regs);
 
     if (syscall_no == SYSCALL_WRITE) {
-        uint32_t fd = regs->ebx;
-        const char* buf = (const char*)regs->ecx;
-        uint32_t len = regs->edx;
+        uint32_t fd = sc_arg0(regs);
+        const char* buf = (const char*)sc_arg1(regs);
+        uint32_t len = sc_arg2(regs);
 
-        regs->eax = (uint32_t)syscall_write_impl((int)fd, buf, len);
+        sc_ret(regs) = (uint32_t)syscall_write_impl((int)fd, buf, len);
         return;
     }
 
     if (syscall_no == SYSCALL_GETPID) {
-        regs->eax = current_process ? current_process->pid : 0;
+        sc_ret(regs) = current_process ? current_process->pid : 0;
         return;
     }
 
     if (syscall_no == SYSCALL_GETPPID) {
-        regs->eax = current_process ? current_process->parent_pid : 0;
+        sc_ret(regs) = current_process ? current_process->parent_pid : 0;
         return;
     }
 
     if (syscall_no == SYSCALL_OPEN) {
-        const char* path = (const char*)regs->ebx;
-        uint32_t flags = regs->ecx;
-        regs->eax = (uint32_t)syscall_open_impl(path, flags);
+        const char* path = (const char*)sc_arg0(regs);
+        uint32_t flags = sc_arg1(regs);
+        sc_ret(regs) = (uint32_t)syscall_open_impl(path, flags);
         return;
     }
 
     if (syscall_no == SYSCALL_OPENAT) {
-        int dirfd = (int)regs->ebx;
-        const char* path = (const char*)regs->ecx;
-        uint32_t flags = (uint32_t)regs->edx;
-        uint32_t mode = (uint32_t)regs->esi;
-        regs->eax = (uint32_t)syscall_openat_impl(dirfd, path, flags, mode);
+        int dirfd = (int)sc_arg0(regs);
+        const char* path = (const char*)sc_arg1(regs);
+        uint32_t flags = (uint32_t)sc_arg2(regs);
+        uint32_t mode = (uint32_t)sc_arg3(regs);
+        sc_ret(regs) = (uint32_t)syscall_openat_impl(dirfd, path, flags, mode);
         return;
     }
 
     if (syscall_no == SYSCALL_CHDIR) {
-        const char* path = (const char*)regs->ebx;
-        regs->eax = (uint32_t)syscall_chdir_impl(path);
+        const char* path = (const char*)sc_arg0(regs);
+        sc_ret(regs) = (uint32_t)syscall_chdir_impl(path);
         return;
     }
 
     if (syscall_no == SYSCALL_GETCWD) {
-        char* buf = (char*)regs->ebx;
-        uint32_t size = (uint32_t)regs->ecx;
-        regs->eax = (uint32_t)syscall_getcwd_impl(buf, size);
+        char* buf = (char*)sc_arg0(regs);
+        uint32_t size = (uint32_t)sc_arg1(regs);
+        sc_ret(regs) = (uint32_t)syscall_getcwd_impl(buf, size);
         return;
     }
 
     if (syscall_no == SYSCALL_READ) {
-        int fd = (int)regs->ebx;
-        void* buf = (void*)regs->ecx;
-        uint32_t len = regs->edx;
-        regs->eax = (uint32_t)syscall_read_impl(fd, buf, len);
+        int fd = (int)sc_arg0(regs);
+        void* buf = (void*)sc_arg1(regs);
+        uint32_t len = sc_arg2(regs);
+        sc_ret(regs) = (uint32_t)syscall_read_impl(fd, buf, len);
         return;
     }
 
     if (syscall_no == SYSCALL_CLOSE) {
-        int fd = (int)regs->ebx;
-        regs->eax = (uint32_t)fd_close(fd);
+        int fd = (int)sc_arg0(regs);
+        sc_ret(regs) = (uint32_t)fd_close(fd);
         return;
     }
 
     if (syscall_no == SYSCALL_EXIT) {
-        int status = (int)regs->ebx;
+        int status = (int)sc_arg0(regs);
 
         for (int fd = 0; fd < PROCESS_MAX_FILES; fd++) {
             if (current_process && current_process->files[fd]) {
@@ -1846,391 +1847,391 @@ void syscall_handler(struct registers* regs) {
     }
 
     if (syscall_no == SYSCALL_WAITPID) {
-        int pid = (int)regs->ebx;
-        int* user_status = (int*)regs->ecx;
-        uint32_t options = regs->edx;
+        int pid = (int)sc_arg0(regs);
+        int* user_status = (int*)sc_arg1(regs);
+        uint32_t options = sc_arg2(regs);
 
         if (user_status && user_range_ok(user_status, sizeof(int)) == 0) {
-            regs->eax = (uint32_t)-EFAULT;
+            sc_ret(regs) = (uint32_t)-EFAULT;
             return;
         }
 
         int status = 0;
         int retpid = process_waitpid(pid, &status, options);
         if (retpid < 0) {
-            regs->eax = (uint32_t)retpid;
+            sc_ret(regs) = (uint32_t)retpid;
             return;
         }
 
         if (retpid == 0) {
-            regs->eax = 0;
+            sc_ret(regs) = 0;
             return;
         }
 
         if (user_status) {
             if (copy_to_user(user_status, &status, sizeof(status)) < 0) {
-                regs->eax = (uint32_t)-EFAULT;
+                sc_ret(regs) = (uint32_t)-EFAULT;
                 return;
             }
         }
 
-        regs->eax = (uint32_t)retpid;
+        sc_ret(regs) = (uint32_t)retpid;
         return;
     }
 
     if (syscall_no == SYSCALL_LSEEK) {
-        int fd = (int)regs->ebx;
-        int32_t off = (int32_t)regs->ecx;
-        int whence = (int)regs->edx;
-        regs->eax = (uint32_t)syscall_lseek_impl(fd, off, whence);
+        int fd = (int)sc_arg0(regs);
+        int32_t off = (int32_t)sc_arg1(regs);
+        int whence = (int)sc_arg2(regs);
+        sc_ret(regs) = (uint32_t)syscall_lseek_impl(fd, off, whence);
         return;
     }
 
     if (syscall_no == SYSCALL_FSTAT) {
-        int fd = (int)regs->ebx;
-        struct stat* st = (struct stat*)regs->ecx;
-        regs->eax = (uint32_t)syscall_fstat_impl(fd, st);
+        int fd = (int)sc_arg0(regs);
+        struct stat* st = (struct stat*)sc_arg1(regs);
+        sc_ret(regs) = (uint32_t)syscall_fstat_impl(fd, st);
         return;
     }
 
     if (syscall_no == SYSCALL_STAT) {
-        const char* path = (const char*)regs->ebx;
-        struct stat* user_st = (struct stat*)regs->ecx;
-        regs->eax = (uint32_t)syscall_stat_impl(path, user_st);
+        const char* path = (const char*)sc_arg0(regs);
+        struct stat* user_st = (struct stat*)sc_arg1(regs);
+        sc_ret(regs) = (uint32_t)syscall_stat_impl(path, user_st);
         return;
     }
 
     if (syscall_no == SYSCALL_FSTATAT) {
-        int dirfd = (int)regs->ebx;
-        const char* path = (const char*)regs->ecx;
-        struct stat* user_st = (struct stat*)regs->edx;
-        uint32_t flags = (uint32_t)regs->esi;
-        regs->eax = (uint32_t)syscall_fstatat_impl(dirfd, path, user_st, flags);
+        int dirfd = (int)sc_arg0(regs);
+        const char* path = (const char*)sc_arg1(regs);
+        struct stat* user_st = (struct stat*)sc_arg2(regs);
+        uint32_t flags = (uint32_t)sc_arg3(regs);
+        sc_ret(regs) = (uint32_t)syscall_fstatat_impl(dirfd, path, user_st, flags);
         return;
     }
 
     if (syscall_no == SYSCALL_DUP) {
-        int oldfd = (int)regs->ebx;
-        regs->eax = (uint32_t)syscall_dup_impl(oldfd);
+        int oldfd = (int)sc_arg0(regs);
+        sc_ret(regs) = (uint32_t)syscall_dup_impl(oldfd);
         return;
     }
 
     if (syscall_no == SYSCALL_DUP2) {
-        int oldfd = (int)regs->ebx;
-        int newfd = (int)regs->ecx;
-        regs->eax = (uint32_t)syscall_dup2_impl(oldfd, newfd);
+        int oldfd = (int)sc_arg0(regs);
+        int newfd = (int)sc_arg1(regs);
+        sc_ret(regs) = (uint32_t)syscall_dup2_impl(oldfd, newfd);
         return;
     }
 
     if (syscall_no == SYSCALL_DUP3) {
-        int oldfd = (int)regs->ebx;
-        int newfd = (int)regs->ecx;
-        uint32_t flags = (uint32_t)regs->edx;
-        regs->eax = (uint32_t)syscall_dup3_impl(oldfd, newfd, flags);
+        int oldfd = (int)sc_arg0(regs);
+        int newfd = (int)sc_arg1(regs);
+        uint32_t flags = (uint32_t)sc_arg2(regs);
+        sc_ret(regs) = (uint32_t)syscall_dup3_impl(oldfd, newfd, flags);
         return;
     }
 
     if (syscall_no == SYSCALL_PIPE) {
-        int* user_fds = (int*)regs->ebx;
-        regs->eax = (uint32_t)syscall_pipe_impl(user_fds);
+        int* user_fds = (int*)sc_arg0(regs);
+        sc_ret(regs) = (uint32_t)syscall_pipe_impl(user_fds);
         return;
     }
 
     if (syscall_no == SYSCALL_PIPE2) {
-        int* user_fds = (int*)regs->ebx;
-        uint32_t flags = (uint32_t)regs->ecx;
-        regs->eax = (uint32_t)syscall_pipe2_impl(user_fds, flags);
+        int* user_fds = (int*)sc_arg0(regs);
+        uint32_t flags = (uint32_t)sc_arg1(regs);
+        sc_ret(regs) = (uint32_t)syscall_pipe2_impl(user_fds, flags);
         return;
     }
 
     if (syscall_no == SYSCALL_EXECVE) {
-        const char* path = (const char*)regs->ebx;
-        const char* const* argv = (const char* const*)regs->ecx;
-        const char* const* envp = (const char* const*)regs->edx;
-        regs->eax = (uint32_t)syscall_execve_impl(regs, path, argv, envp);
+        const char* path = (const char*)sc_arg0(regs);
+        const char* const* argv = (const char* const*)sc_arg1(regs);
+        const char* const* envp = (const char* const*)sc_arg2(regs);
+        sc_ret(regs) = (uint32_t)syscall_execve_impl(regs, path, argv, envp);
         return;
     }
 
     if (syscall_no == SYSCALL_FORK) {
-        regs->eax = (uint32_t)syscall_fork_impl(regs);
+        sc_ret(regs) = (uint32_t)syscall_fork_impl(regs);
         return;
     }
 
     if (syscall_no == SYSCALL_POLL) {
-        struct pollfd* fds = (struct pollfd*)regs->ebx;
-        uint32_t nfds = regs->ecx;
-        int32_t timeout = (int32_t)regs->edx;
-        regs->eax = (uint32_t)syscall_poll_impl(fds, nfds, timeout);
+        struct pollfd* fds = (struct pollfd*)sc_arg0(regs);
+        uint32_t nfds = sc_arg1(regs);
+        int32_t timeout = (int32_t)sc_arg2(regs);
+        sc_ret(regs) = (uint32_t)syscall_poll_impl(fds, nfds, timeout);
         return;
     }
 
     if (syscall_no == SYSCALL_KILL) {
-        uint32_t pid = regs->ebx;
-        int sig = (int)regs->ecx;
-        regs->eax = (uint32_t)process_kill(pid, sig);
+        uint32_t pid = sc_arg0(regs);
+        int sig = (int)sc_arg1(regs);
+        sc_ret(regs) = (uint32_t)process_kill(pid, sig);
         return;
     }
 
     if (syscall_no == SYSCALL_SELECT) {
-        uint32_t nfds = regs->ebx;
-        uint64_t* readfds = (uint64_t*)regs->ecx;
-        uint64_t* writefds = (uint64_t*)regs->edx;
-        uint64_t* exceptfds = (uint64_t*)regs->esi;
-        int32_t timeout = (int32_t)regs->edi;
-        regs->eax = (uint32_t)syscall_select_impl(nfds, readfds, writefds, exceptfds, timeout);
+        uint32_t nfds = sc_arg0(regs);
+        uint64_t* readfds = (uint64_t*)sc_arg1(regs);
+        uint64_t* writefds = (uint64_t*)sc_arg2(regs);
+        uint64_t* exceptfds = (uint64_t*)sc_arg3(regs);
+        int32_t timeout = (int32_t)sc_arg4(regs);
+        sc_ret(regs) = (uint32_t)syscall_select_impl(nfds, readfds, writefds, exceptfds, timeout);
         return;
     }
 
     if (syscall_no == SYSCALL_IOCTL) {
-        int fd = (int)regs->ebx;
-        uint32_t cmd = (uint32_t)regs->ecx;
-        void* arg = (void*)regs->edx;
-        regs->eax = (uint32_t)syscall_ioctl_impl(fd, cmd, arg);
+        int fd = (int)sc_arg0(regs);
+        uint32_t cmd = (uint32_t)sc_arg1(regs);
+        void* arg = (void*)sc_arg2(regs);
+        sc_ret(regs) = (uint32_t)syscall_ioctl_impl(fd, cmd, arg);
         return;
     }
 
     if (syscall_no == SYSCALL_SETSID) {
-        regs->eax = (uint32_t)syscall_setsid_impl();
+        sc_ret(regs) = (uint32_t)syscall_setsid_impl();
         return;
     }
 
     if (syscall_no == SYSCALL_SETPGID) {
-        int pid = (int)regs->ebx;
-        int pgid = (int)regs->ecx;
-        regs->eax = (uint32_t)syscall_setpgid_impl(pid, pgid);
+        int pid = (int)sc_arg0(regs);
+        int pgid = (int)sc_arg1(regs);
+        sc_ret(regs) = (uint32_t)syscall_setpgid_impl(pid, pgid);
         return;
     }
 
     if (syscall_no == SYSCALL_GETPGRP) {
-        regs->eax = (uint32_t)syscall_getpgrp_impl();
+        sc_ret(regs) = (uint32_t)syscall_getpgrp_impl();
         return;
     }
 
     if (syscall_no == SYSCALL_SIGACTION) {
-        int sig = (int)regs->ebx;
-        const struct sigaction* act = (const struct sigaction*)regs->ecx;
-        struct sigaction* oldact = (struct sigaction*)regs->edx;
-        regs->eax = (uint32_t)syscall_sigaction_impl(sig, act, oldact);
+        int sig = (int)sc_arg0(regs);
+        const struct sigaction* act = (const struct sigaction*)sc_arg1(regs);
+        struct sigaction* oldact = (struct sigaction*)sc_arg2(regs);
+        sc_ret(regs) = (uint32_t)syscall_sigaction_impl(sig, act, oldact);
         return;
     }
 
     if (syscall_no == SYSCALL_SIGPROCMASK) {
-        uint32_t how = regs->ebx;
-        uint32_t mask = regs->ecx;
-        uint32_t* old_out = (uint32_t*)regs->edx;
-        regs->eax = (uint32_t)syscall_sigprocmask_impl(how, mask, old_out);
+        uint32_t how = sc_arg0(regs);
+        uint32_t mask = sc_arg1(regs);
+        uint32_t* old_out = (uint32_t*)sc_arg2(regs);
+        sc_ret(regs) = (uint32_t)syscall_sigprocmask_impl(how, mask, old_out);
         return;
     }
 
     if (syscall_no == SYSCALL_SIGRETURN) {
-        const void* user_frame = (const void*)(uintptr_t)regs->ebx;
-        regs->eax = (uint32_t)arch_sigreturn(regs, user_frame);
+        const void* user_frame = (const void*)(uintptr_t)sc_arg0(regs);
+        sc_ret(regs) = (uint32_t)arch_sigreturn(regs, user_frame);
         return;
     }
 
     if (syscall_no == SYSCALL_FCNTL) {
-        int fd = (int)regs->ebx;
-        int cmd = (int)regs->ecx;
-        uint32_t arg = (uint32_t)regs->edx;
-        regs->eax = (uint32_t)syscall_fcntl_impl(fd, cmd, arg);
+        int fd = (int)sc_arg0(regs);
+        int cmd = (int)sc_arg1(regs);
+        uint32_t arg = (uint32_t)sc_arg2(regs);
+        sc_ret(regs) = (uint32_t)syscall_fcntl_impl(fd, cmd, arg);
         return;
     }
 
     if (syscall_no == SYSCALL_MKDIR) {
-        const char* path = (const char*)regs->ebx;
-        regs->eax = (uint32_t)syscall_mkdir_impl(path);
+        const char* path = (const char*)sc_arg0(regs);
+        sc_ret(regs) = (uint32_t)syscall_mkdir_impl(path);
         return;
     }
 
     if (syscall_no == SYSCALL_UNLINK) {
-        const char* path = (const char*)regs->ebx;
-        regs->eax = (uint32_t)syscall_unlink_impl(path);
+        const char* path = (const char*)sc_arg0(regs);
+        sc_ret(regs) = (uint32_t)syscall_unlink_impl(path);
         return;
     }
 
     if (syscall_no == SYSCALL_UNLINKAT) {
-        int dirfd = (int)regs->ebx;
-        const char* path = (const char*)regs->ecx;
-        uint32_t flags = (uint32_t)regs->edx;
-        regs->eax = (uint32_t)syscall_unlinkat_impl(dirfd, path, flags);
+        int dirfd = (int)sc_arg0(regs);
+        const char* path = (const char*)sc_arg1(regs);
+        uint32_t flags = (uint32_t)sc_arg2(regs);
+        sc_ret(regs) = (uint32_t)syscall_unlinkat_impl(dirfd, path, flags);
         return;
     }
 
     if (syscall_no == SYSCALL_GETDENTS) {
-        int fd = (int)regs->ebx;
-        void* buf = (void*)regs->ecx;
-        uint32_t len = (uint32_t)regs->edx;
-        regs->eax = (uint32_t)syscall_getdents_impl(fd, buf, len);
+        int fd = (int)sc_arg0(regs);
+        void* buf = (void*)sc_arg1(regs);
+        uint32_t len = (uint32_t)sc_arg2(regs);
+        sc_ret(regs) = (uint32_t)syscall_getdents_impl(fd, buf, len);
         return;
     }
 
     if (syscall_no == SYSCALL_RENAME) {
-        const char* oldpath = (const char*)regs->ebx;
-        const char* newpath = (const char*)regs->ecx;
-        regs->eax = (uint32_t)syscall_rename_impl(oldpath, newpath);
+        const char* oldpath = (const char*)sc_arg0(regs);
+        const char* newpath = (const char*)sc_arg1(regs);
+        sc_ret(regs) = (uint32_t)syscall_rename_impl(oldpath, newpath);
         return;
     }
 
     if (syscall_no == SYSCALL_RMDIR) {
-        const char* path = (const char*)regs->ebx;
-        regs->eax = (uint32_t)syscall_rmdir_impl(path);
+        const char* path = (const char*)sc_arg0(regs);
+        sc_ret(regs) = (uint32_t)syscall_rmdir_impl(path);
         return;
     }
 
     if (syscall_no == SYSCALL_BRK) {
-        uintptr_t addr = (uintptr_t)regs->ebx;
-        regs->eax = (uint32_t)syscall_brk_impl(addr);
+        uintptr_t addr = (uintptr_t)sc_arg0(regs);
+        sc_ret(regs) = (uint32_t)syscall_brk_impl(addr);
         return;
     }
 
     if (syscall_no == SYSCALL_NANOSLEEP) {
-        const struct timespec* req = (const struct timespec*)regs->ebx;
-        struct timespec* rem = (struct timespec*)regs->ecx;
-        regs->eax = (uint32_t)syscall_nanosleep_impl(req, rem);
+        const struct timespec* req = (const struct timespec*)sc_arg0(regs);
+        struct timespec* rem = (struct timespec*)sc_arg1(regs);
+        sc_ret(regs) = (uint32_t)syscall_nanosleep_impl(req, rem);
         return;
     }
 
     if (syscall_no == SYSCALL_CLOCK_GETTIME) {
-        uint32_t clk_id = regs->ebx;
-        struct timespec* tp = (struct timespec*)regs->ecx;
-        regs->eax = (uint32_t)syscall_clock_gettime_impl(clk_id, tp);
+        uint32_t clk_id = sc_arg0(regs);
+        struct timespec* tp = (struct timespec*)sc_arg1(regs);
+        sc_ret(regs) = (uint32_t)syscall_clock_gettime_impl(clk_id, tp);
         return;
     }
 
     if (syscall_no == SYSCALL_MMAP) {
-        uintptr_t addr = (uintptr_t)regs->ebx;
-        uint32_t length = regs->ecx;
-        uint32_t prot = regs->edx;
-        uint32_t mflags = regs->esi;
-        int fd = (int)regs->edi;
-        regs->eax = (uint32_t)syscall_mmap_impl(addr, length, prot, mflags, fd, 0);
+        uintptr_t addr = (uintptr_t)sc_arg0(regs);
+        uint32_t length = sc_arg1(regs);
+        uint32_t prot = sc_arg2(regs);
+        uint32_t mflags = sc_arg3(regs);
+        int fd = (int)sc_arg4(regs);
+        sc_ret(regs) = (uint32_t)syscall_mmap_impl(addr, length, prot, mflags, fd, 0);
         return;
     }
 
     if (syscall_no == SYSCALL_MUNMAP) {
-        uintptr_t addr = (uintptr_t)regs->ebx;
-        uint32_t length = regs->ecx;
-        regs->eax = (uint32_t)syscall_munmap_impl(addr, length);
+        uintptr_t addr = (uintptr_t)sc_arg0(regs);
+        uint32_t length = sc_arg1(regs);
+        sc_ret(regs) = (uint32_t)syscall_munmap_impl(addr, length);
         return;
     }
 
     if (syscall_no == SYSCALL_SHMGET) {
-        uint32_t key = regs->ebx;
-        uint32_t size = regs->ecx;
-        int flags = (int)regs->edx;
-        regs->eax = (uint32_t)shm_get(key, size, flags);
+        uint32_t key = sc_arg0(regs);
+        uint32_t size = sc_arg1(regs);
+        int flags = (int)sc_arg2(regs);
+        sc_ret(regs) = (uint32_t)shm_get(key, size, flags);
         return;
     }
 
     if (syscall_no == SYSCALL_SHMAT) {
-        int shmid = (int)regs->ebx;
-        uintptr_t shmaddr = (uintptr_t)regs->ecx;
-        regs->eax = (uint32_t)(uintptr_t)shm_at(shmid, shmaddr);
+        int shmid = (int)sc_arg0(regs);
+        uintptr_t shmaddr = (uintptr_t)sc_arg1(regs);
+        sc_ret(regs) = (uint32_t)(uintptr_t)shm_at(shmid, shmaddr);
         return;
     }
 
     if (syscall_no == SYSCALL_SHMDT) {
-        const void* shmaddr = (const void*)regs->ebx;
-        regs->eax = (uint32_t)shm_dt(shmaddr);
+        const void* shmaddr = (const void*)sc_arg0(regs);
+        sc_ret(regs) = (uint32_t)shm_dt(shmaddr);
         return;
     }
 
     if (syscall_no == SYSCALL_SHMCTL) {
-        int shmid = (int)regs->ebx;
-        int cmd = (int)regs->ecx;
-        struct shmid_ds* buf = (struct shmid_ds*)regs->edx;
-        regs->eax = (uint32_t)shm_ctl(shmid, cmd, buf);
+        int shmid = (int)sc_arg0(regs);
+        int cmd = (int)sc_arg1(regs);
+        struct shmid_ds* buf = (struct shmid_ds*)sc_arg2(regs);
+        sc_ret(regs) = (uint32_t)shm_ctl(shmid, cmd, buf);
         return;
     }
 
     if (syscall_no == SYSCALL_LINK) {
-        const char* oldpath = (const char*)regs->ebx;
-        const char* newpath = (const char*)regs->ecx;
-        regs->eax = (uint32_t)syscall_link_impl(oldpath, newpath);
+        const char* oldpath = (const char*)sc_arg0(regs);
+        const char* newpath = (const char*)sc_arg1(regs);
+        sc_ret(regs) = (uint32_t)syscall_link_impl(oldpath, newpath);
         return;
     }
 
     if (syscall_no == SYSCALL_SYMLINK) {
-        const char* target = (const char*)regs->ebx;
-        const char* linkpath = (const char*)regs->ecx;
-        regs->eax = (uint32_t)syscall_symlink_impl(target, linkpath);
+        const char* target = (const char*)sc_arg0(regs);
+        const char* linkpath = (const char*)sc_arg1(regs);
+        sc_ret(regs) = (uint32_t)syscall_symlink_impl(target, linkpath);
         return;
     }
 
     if (syscall_no == SYSCALL_READLINK) {
-        const char* path = (const char*)regs->ebx;
-        char* buf = (char*)regs->ecx;
-        uint32_t bufsz = regs->edx;
-        regs->eax = (uint32_t)syscall_readlink_impl(path, buf, bufsz);
+        const char* path = (const char*)sc_arg0(regs);
+        char* buf = (char*)sc_arg1(regs);
+        uint32_t bufsz = sc_arg2(regs);
+        sc_ret(regs) = (uint32_t)syscall_readlink_impl(path, buf, bufsz);
         return;
     }
 
     if (syscall_no == SYSCALL_CHMOD) {
-        const char* path = (const char*)regs->ebx;
-        uint32_t mode = regs->ecx;
-        regs->eax = (uint32_t)syscall_chmod_impl(path, mode);
+        const char* path = (const char*)sc_arg0(regs);
+        uint32_t mode = sc_arg1(regs);
+        sc_ret(regs) = (uint32_t)syscall_chmod_impl(path, mode);
         return;
     }
 
     if (syscall_no == SYSCALL_CHOWN) {
-        const char* path = (const char*)regs->ebx;
-        uint32_t uid = regs->ecx;
-        uint32_t gid = regs->edx;
-        regs->eax = (uint32_t)syscall_chown_impl(path, uid, gid);
+        const char* path = (const char*)sc_arg0(regs);
+        uint32_t uid = sc_arg1(regs);
+        uint32_t gid = sc_arg2(regs);
+        sc_ret(regs) = (uint32_t)syscall_chown_impl(path, uid, gid);
         return;
     }
 
     if (syscall_no == SYSCALL_GETUID) {
-        regs->eax = current_process ? current_process->uid : 0;
+        sc_ret(regs) = current_process ? current_process->uid : 0;
         return;
     }
 
     if (syscall_no == SYSCALL_GETGID) {
-        regs->eax = current_process ? current_process->gid : 0;
+        sc_ret(regs) = current_process ? current_process->gid : 0;
         return;
     }
 
     if (syscall_no == SYSCALL_SET_THREAD_AREA) {
-        uintptr_t base = (uintptr_t)regs->ebx;
-        if (!current_process) { regs->eax = (uint32_t)-EINVAL; return; }
+        uintptr_t base = (uintptr_t)sc_arg0(regs);
+        if (!current_process) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
         current_process->tls_base = base;
 #if defined(__i386__)
         extern void gdt_set_gate_ext(int num, uint32_t base, uint32_t limit,
                                       uint8_t access, uint8_t gran);
         gdt_set_gate_ext(22, (uint32_t)base, 0xFFFFF, 0xF2, 0xCF);
 #endif
-        regs->eax = 0;
+        sc_ret(regs) = 0;
         return;
     }
 
     if (syscall_no == SYSCALL_GETTID) {
-        regs->eax = current_process ? current_process->pid : 0;
+        sc_ret(regs) = current_process ? current_process->pid : 0;
         return;
     }
 
     if (syscall_no == SYSCALL_CLONE) {
-        regs->eax = (uint32_t)syscall_clone_impl(regs);
+        sc_ret(regs) = (uint32_t)syscall_clone_impl(regs);
         return;
     }
 
     if (syscall_no == SYSCALL_SIGPENDING) {
-        uint32_t* user_set = (uint32_t*)regs->ebx;
-        if (!current_process) { regs->eax = (uint32_t)-EINVAL; return; }
+        uint32_t* user_set = (uint32_t*)sc_arg0(regs);
+        if (!current_process) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
         uint32_t pending = current_process->sig_pending_mask & current_process->sig_blocked_mask;
         if (copy_to_user(user_set, &pending, sizeof(pending)) < 0) {
-            regs->eax = (uint32_t)-EFAULT;
+            sc_ret(regs) = (uint32_t)-EFAULT;
         } else {
-            regs->eax = 0;
+            sc_ret(regs) = 0;
         }
         return;
     }
 
     if (syscall_no == SYSCALL_FSYNC || syscall_no == SYSCALL_FDATASYNC) {
-        int fd = (int)regs->ebx;
+        int fd = (int)sc_arg0(regs);
         if (!current_process || fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd]) {
-            regs->eax = (uint32_t)-EBADF;
+            sc_ret(regs) = (uint32_t)-EBADF;
         } else {
-            regs->eax = 0;
+            sc_ret(regs) = 0;
         }
         return;
     }
@@ -2244,85 +2245,85 @@ void syscall_handler(struct registers* regs) {
     }
 
     if (syscall_no == SYSCALL_UMASK) {
-        if (!current_process) { regs->eax = 0; return; }
+        if (!current_process) { sc_ret(regs) = 0; return; }
         uint32_t old = current_process->umask;
-        current_process->umask = regs->ebx & 0777;
-        regs->eax = old;
+        current_process->umask = sc_arg0(regs) & 0777;
+        sc_ret(regs) = old;
         return;
     }
 
     if (syscall_no == SYSCALL_SETUID) {
-        if (!current_process) { regs->eax = (uint32_t)-EINVAL; return; }
-        uint32_t new_uid = regs->ebx;
+        if (!current_process) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
+        uint32_t new_uid = sc_arg0(regs);
         if (current_process->euid == 0) {
             current_process->uid = new_uid;
             current_process->euid = new_uid;
         } else if (new_uid == current_process->uid) {
             current_process->euid = new_uid;
         } else {
-            regs->eax = (uint32_t)-EPERM;
+            sc_ret(regs) = (uint32_t)-EPERM;
             return;
         }
-        regs->eax = 0;
+        sc_ret(regs) = 0;
         return;
     }
 
     if (syscall_no == SYSCALL_SETGID) {
-        if (!current_process) { regs->eax = (uint32_t)-EINVAL; return; }
-        uint32_t new_gid = regs->ebx;
+        if (!current_process) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
+        uint32_t new_gid = sc_arg0(regs);
         if (current_process->euid == 0) {
             current_process->gid = new_gid;
             current_process->egid = new_gid;
         } else if (new_gid == current_process->gid) {
             current_process->egid = new_gid;
         } else {
-            regs->eax = (uint32_t)-EPERM;
+            sc_ret(regs) = (uint32_t)-EPERM;
             return;
         }
-        regs->eax = 0;
+        sc_ret(regs) = 0;
         return;
     }
 
     if (syscall_no == SYSCALL_GETEUID) {
-        regs->eax = current_process ? current_process->euid : 0;
+        sc_ret(regs) = current_process ? current_process->euid : 0;
         return;
     }
 
     if (syscall_no == SYSCALL_GETEGID) {
-        regs->eax = current_process ? current_process->egid : 0;
+        sc_ret(regs) = current_process ? current_process->egid : 0;
         return;
     }
 
     if (syscall_no == SYSCALL_SETEUID) {
-        if (!current_process) { regs->eax = (uint32_t)-EINVAL; return; }
-        uint32_t new_euid = regs->ebx;
+        if (!current_process) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
+        uint32_t new_euid = sc_arg0(regs);
         if (current_process->euid == 0 || new_euid == current_process->uid) {
             current_process->euid = new_euid;
-            regs->eax = 0;
+            sc_ret(regs) = 0;
         } else {
-            regs->eax = (uint32_t)-EPERM;
+            sc_ret(regs) = (uint32_t)-EPERM;
         }
         return;
     }
 
     if (syscall_no == SYSCALL_SETEGID) {
-        if (!current_process) { regs->eax = (uint32_t)-EINVAL; return; }
-        uint32_t new_egid = regs->ebx;
+        if (!current_process) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
+        uint32_t new_egid = sc_arg0(regs);
         if (current_process->euid == 0 || new_egid == current_process->gid) {
             current_process->egid = new_egid;
-            regs->eax = 0;
+            sc_ret(regs) = 0;
         } else {
-            regs->eax = (uint32_t)-EPERM;
+            sc_ret(regs) = (uint32_t)-EPERM;
         }
         return;
     }
 
     if (syscall_no == SYSCALL_FLOCK) {
-        int fd = (int)regs->ebx;
+        int fd = (int)sc_arg0(regs);
         if (!current_process || fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd]) {
-            regs->eax = (uint32_t)-EBADF;
+            sc_ret(regs) = (uint32_t)-EBADF;
         } else {
-            regs->eax = 0; /* advisory lock — no-op stub */
+            sc_ret(regs) = 0; /* advisory lock — no-op stub */
         }
         return;
     }
@@ -2334,8 +2335,8 @@ void syscall_handler(struct registers* regs) {
     }
 
     if (syscall_no == SYSCALL_ALARM) {
-        if (!current_process) { regs->eax = 0; return; }
-        uint32_t seconds = regs->ebx;
+        if (!current_process) { sc_ret(regs) = 0; return; }
+        uint32_t seconds = sc_arg0(regs);
         uint32_t now = get_tick_count();
         uint32_t old_remaining = 0;
         if (current_process->alarm_tick > now) {
@@ -2346,15 +2347,15 @@ void syscall_handler(struct registers* regs) {
         } else {
             current_process->alarm_tick = now + seconds * 50;
         }
-        regs->eax = old_remaining;
+        sc_ret(regs) = old_remaining;
         return;
     }
 
     if (syscall_no == SYSCALL_SIGSUSPEND) {
-        if (!current_process) { regs->eax = (uint32_t)-EINVAL; return; }
+        if (!current_process) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
         uint32_t new_mask = 0;
-        if (copy_from_user(&new_mask, (const void*)regs->ebx, sizeof(new_mask)) < 0) {
-            regs->eax = (uint32_t)-EFAULT; return;
+        if (copy_from_user(&new_mask, (const void*)sc_arg0(regs), sizeof(new_mask)) < 0) {
+            sc_ret(regs) = (uint32_t)-EFAULT; return;
         }
         uint32_t old_mask = current_process->sig_blocked_mask;
         current_process->sig_blocked_mask = new_mask;
@@ -2363,7 +2364,7 @@ void syscall_handler(struct registers* regs) {
             schedule();
         }
         current_process->sig_blocked_mask = old_mask;
-        regs->eax = (uint32_t)-EINTR;
+        sc_ret(regs) = (uint32_t)-EINTR;
         return;
     }
 
@@ -2378,14 +2379,14 @@ void syscall_handler(struct registers* regs) {
 __attribute__((noinline))
 static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_no) {
     if (syscall_no == SYSCALL_PREAD) {
-        int fd = (int)regs->ebx;
-        void* buf = (void*)regs->ecx;
-        uint32_t count = regs->edx;
-        uint32_t offset = regs->esi;
+        int fd = (int)sc_arg0(regs);
+        void* buf = (void*)sc_arg1(regs);
+        uint32_t count = sc_arg2(regs);
+        uint32_t offset = sc_arg3(regs);
         struct file* f = fd_get(fd);
-        if (!f || !f->node) { regs->eax = (uint32_t)-EBADF; return; }
-        if (!f->node->read) { regs->eax = (uint32_t)-ESPIPE; return; }
-        if (count > 1024 * 1024) { regs->eax = (uint32_t)-EINVAL; return; }
+        if (!f || !f->node) { sc_ret(regs) = (uint32_t)-EBADF; return; }
+        if (!f->node->read) { sc_ret(regs) = (uint32_t)-ESPIPE; return; }
+        if (count > 1024 * 1024) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
         uint8_t kbuf[256];
         uint32_t total = 0;
         while (total < count) {
@@ -2394,141 +2395,141 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
             uint32_t rd = vfs_read(f->node, offset + total, chunk, kbuf);
             if (rd == 0) break;
             if (copy_to_user((uint8_t*)buf + total, kbuf, rd) < 0) {
-                regs->eax = (uint32_t)-EFAULT; return;
+                sc_ret(regs) = (uint32_t)-EFAULT; return;
             }
             total += rd;
             if (rd < chunk) break;
         }
-        regs->eax = total;
+        sc_ret(regs) = total;
         return;
     }
 
     if (syscall_no == SYSCALL_PWRITE) {
-        int fd = (int)regs->ebx;
-        const void* buf = (const void*)regs->ecx;
-        uint32_t count = regs->edx;
-        uint32_t offset = regs->esi;
+        int fd = (int)sc_arg0(regs);
+        const void* buf = (const void*)sc_arg1(regs);
+        uint32_t count = sc_arg2(regs);
+        uint32_t offset = sc_arg3(regs);
         struct file* f = fd_get(fd);
-        if (!f || !f->node) { regs->eax = (uint32_t)-EBADF; return; }
-        if (!f->node->write) { regs->eax = (uint32_t)-ESPIPE; return; }
-        if (count > 1024 * 1024) { regs->eax = (uint32_t)-EINVAL; return; }
+        if (!f || !f->node) { sc_ret(regs) = (uint32_t)-EBADF; return; }
+        if (!f->node->write) { sc_ret(regs) = (uint32_t)-ESPIPE; return; }
+        if (count > 1024 * 1024) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
         uint8_t kbuf[256];
         uint32_t total = 0;
         while (total < count) {
             uint32_t chunk = count - total;
             if (chunk > sizeof(kbuf)) chunk = (uint32_t)sizeof(kbuf);
             if (copy_from_user(kbuf, (const uint8_t*)buf + total, chunk) < 0) {
-                regs->eax = (uint32_t)-EFAULT; return;
+                sc_ret(regs) = (uint32_t)-EFAULT; return;
             }
             uint32_t wr = vfs_write(f->node, offset + total, chunk, kbuf);
             if (wr == 0) break;
             total += wr;
             if (wr < chunk) break;
         }
-        regs->eax = total;
+        sc_ret(regs) = total;
         return;
     }
 
     if (syscall_no == SYSCALL_ACCESS) {
-        const char* user_path = (const char*)regs->ebx;
-        if (!user_path) { regs->eax = (uint32_t)-EFAULT; return; }
+        const char* user_path = (const char*)sc_arg0(regs);
+        if (!user_path) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
         char path[128];
         int prc = path_resolve_user(user_path, path, sizeof(path));
-        if (prc < 0) { regs->eax = (uint32_t)prc; return; }
+        if (prc < 0) { sc_ret(regs) = (uint32_t)prc; return; }
         fs_node_t* node = vfs_lookup(path);
-        if (!node) { regs->eax = (uint32_t)-ENOENT; return; }
-        regs->eax = 0;
+        if (!node) { sc_ret(regs) = (uint32_t)-ENOENT; return; }
+        sc_ret(regs) = 0;
         return;
     }
 
     if (syscall_no == SYSCALL_FTRUNCATE) {
-        int fd = (int)regs->ebx;
-        uint32_t length = regs->ecx;
+        int fd = (int)sc_arg0(regs);
+        uint32_t length = sc_arg1(regs);
         struct file* f = fd_get(fd);
-        if (!f || !f->node) { regs->eax = (uint32_t)-EBADF; return; }
-        if (!(f->node->flags & FS_FILE)) { regs->eax = (uint32_t)-EINVAL; return; }
+        if (!f || !f->node) { sc_ret(regs) = (uint32_t)-EBADF; return; }
+        if (!(f->node->flags & FS_FILE)) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
         f->node->length = length;
-        regs->eax = 0;
+        sc_ret(regs) = 0;
         return;
     }
 
     if (syscall_no == SYSCALL_TRUNCATE) {
-        const char* user_path = (const char*)regs->ebx;
-        uint32_t length = regs->ecx;
-        if (!user_path) { regs->eax = (uint32_t)-EFAULT; return; }
+        const char* user_path = (const char*)sc_arg0(regs);
+        uint32_t length = sc_arg1(regs);
+        if (!user_path) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
         char path[128];
         int prc = path_resolve_user(user_path, path, sizeof(path));
-        if (prc < 0) { regs->eax = (uint32_t)prc; return; }
+        if (prc < 0) { sc_ret(regs) = (uint32_t)prc; return; }
         fs_node_t* node = vfs_lookup(path);
-        if (!node) { regs->eax = (uint32_t)-ENOENT; return; }
-        if (!(node->flags & FS_FILE)) { regs->eax = (uint32_t)-EISDIR; return; }
+        if (!node) { sc_ret(regs) = (uint32_t)-ENOENT; return; }
+        if (!(node->flags & FS_FILE)) { sc_ret(regs) = (uint32_t)-EISDIR; return; }
         node->length = length;
-        regs->eax = 0;
+        sc_ret(regs) = 0;
         return;
     }
 
     if (syscall_no == SYSCALL_READV) {
-        int fd = (int)regs->ebx;
+        int fd = (int)sc_arg0(regs);
         struct { void* iov_base; uint32_t iov_len; } iov;
-        const void* user_iov = (const void*)regs->ecx;
-        int iovcnt = (int)regs->edx;
-        if (iovcnt <= 0 || iovcnt > 16) { regs->eax = (uint32_t)-EINVAL; return; }
+        const void* user_iov = (const void*)sc_arg1(regs);
+        int iovcnt = (int)sc_arg2(regs);
+        if (iovcnt <= 0 || iovcnt > 16) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
         uint32_t total = 0;
         for (int i = 0; i < iovcnt; i++) {
             if (copy_from_user(&iov, (const char*)user_iov + i * 8, 8) < 0) {
-                regs->eax = (uint32_t)-EFAULT; return;
+                sc_ret(regs) = (uint32_t)-EFAULT; return;
             }
             if (iov.iov_len == 0) continue;
             int r = syscall_read_impl(fd, iov.iov_base, iov.iov_len);
-            if (r < 0) { if (total == 0) { regs->eax = (uint32_t)r; return; } break; }
+            if (r < 0) { if (total == 0) { sc_ret(regs) = (uint32_t)r; return; } break; }
             total += (uint32_t)r;
             if ((uint32_t)r < iov.iov_len) break;
         }
-        regs->eax = total;
+        sc_ret(regs) = total;
         return;
     }
 
     if (syscall_no == SYSCALL_WRITEV) {
-        int fd = (int)regs->ebx;
+        int fd = (int)sc_arg0(regs);
         struct { const void* iov_base; uint32_t iov_len; } iov;
-        const void* user_iov = (const void*)regs->ecx;
-        int iovcnt = (int)regs->edx;
-        if (iovcnt <= 0 || iovcnt > 16) { regs->eax = (uint32_t)-EINVAL; return; }
+        const void* user_iov = (const void*)sc_arg1(regs);
+        int iovcnt = (int)sc_arg2(regs);
+        if (iovcnt <= 0 || iovcnt > 16) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
         uint32_t total = 0;
         for (int i = 0; i < iovcnt; i++) {
             if (copy_from_user(&iov, (const char*)user_iov + i * 8, 8) < 0) {
-                regs->eax = (uint32_t)-EFAULT; return;
+                sc_ret(regs) = (uint32_t)-EFAULT; return;
             }
             if (iov.iov_len == 0) continue;
             int r = syscall_write_impl(fd, iov.iov_base, iov.iov_len);
-            if (r < 0) { if (total == 0) { regs->eax = (uint32_t)r; return; } break; }
+            if (r < 0) { if (total == 0) { sc_ret(regs) = (uint32_t)r; return; } break; }
             total += (uint32_t)r;
             if ((uint32_t)r < iov.iov_len) break;
         }
-        regs->eax = total;
+        sc_ret(regs) = total;
         return;
     }
 
     if (syscall_no == SYSCALL_SIGALTSTACK) {
-        if (!current_process) { regs->eax = (uint32_t)-EINVAL; return; }
+        if (!current_process) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
         #ifndef SS_DISABLE
         #define SS_DISABLE 2
         #endif
-        uint32_t* user_old = (uint32_t*)regs->ecx;
-        uint32_t* user_new = (uint32_t*)regs->ebx;
+        uint32_t* user_old = (uint32_t*)sc_arg1(regs);
+        uint32_t* user_new = (uint32_t*)sc_arg0(regs);
         if (user_old) {
             uint32_t old_ss[3];
             old_ss[0] = (uint32_t)current_process->ss_sp;
             old_ss[1] = current_process->ss_flags;
             old_ss[2] = current_process->ss_size;
             if (copy_to_user(user_old, old_ss, 12) < 0) {
-                regs->eax = (uint32_t)-EFAULT; return;
+                sc_ret(regs) = (uint32_t)-EFAULT; return;
             }
         }
         if (user_new) {
             uint32_t new_ss[3];
             if (copy_from_user(new_ss, user_new, 12) < 0) {
-                regs->eax = (uint32_t)-EFAULT; return;
+                sc_ret(regs) = (uint32_t)-EFAULT; return;
             }
             if (new_ss[1] & SS_DISABLE) {
                 current_process->ss_sp = 0;
@@ -2540,7 +2541,7 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
                 current_process->ss_size = new_ss[2];
             }
         }
-        regs->eax = 0;
+        sc_ret(regs) = 0;
         return;
     }
 
@@ -2550,24 +2551,24 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
         #define FUTEX_MAX_WAITERS 32
         static struct { uintptr_t addr; struct process* proc; } futex_waiters[FUTEX_MAX_WAITERS];
         
-        uint32_t* uaddr = (uint32_t*)regs->ebx;
-        int op = (int)regs->ecx;
-        uint32_t val = regs->edx;
+        uint32_t* uaddr = (uint32_t*)sc_arg0(regs);
+        int op = (int)sc_arg1(regs);
+        uint32_t val = sc_arg2(regs);
         
-        if (!uaddr) { regs->eax = (uint32_t)-EFAULT; return; }
+        if (!uaddr) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
         
         if (op == FUTEX_WAIT) {
             uint32_t cur = 0;
             if (copy_from_user(&cur, uaddr, sizeof(cur)) < 0) {
-                regs->eax = (uint32_t)-EFAULT; return;
+                sc_ret(regs) = (uint32_t)-EFAULT; return;
             }
-            if (cur != val) { regs->eax = (uint32_t)-EAGAIN; return; }
+            if (cur != val) { sc_ret(regs) = (uint32_t)-EAGAIN; return; }
             /* Add to waiter list and sleep */
             int slot = -1;
             for (int i = 0; i < FUTEX_MAX_WAITERS; i++) {
                 if (!futex_waiters[i].proc) { slot = i; break; }
             }
-            if (slot < 0) { regs->eax = (uint32_t)-ENOMEM; return; }
+            if (slot < 0) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
             futex_waiters[slot].addr = (uintptr_t)uaddr;
             futex_waiters[slot].proc = current_process;
             extern void schedule(void);
@@ -2576,7 +2577,7 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
             schedule();
             futex_waiters[slot].proc = 0;
             futex_waiters[slot].addr = 0;
-            regs->eax = 0;
+            sc_ret(regs) = 0;
             return;
         }
         
@@ -2592,202 +2593,202 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
                     woken++;
                 }
             }
-            regs->eax = (uint32_t)woken;
+            sc_ret(regs) = (uint32_t)woken;
             return;
         }
         
-        regs->eax = (uint32_t)-ENOSYS;
+        sc_ret(regs) = (uint32_t)-ENOSYS;
         return;
     }
 
     if (syscall_no == SYSCALL_TIMES) {
-        if (!current_process) { regs->eax = (uint32_t)-EINVAL; return; }
+        if (!current_process) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
         struct { uint32_t tms_utime; uint32_t tms_stime; uint32_t tms_cutime; uint32_t tms_cstime; } tms;
         tms.tms_utime = current_process->utime;
         tms.tms_stime = current_process->stime;
         tms.tms_cutime = 0;
         tms.tms_cstime = 0;
-        void* user_buf = (void*)regs->ebx;
+        void* user_buf = (void*)sc_arg0(regs);
         if (user_buf) {
             if (copy_to_user(user_buf, &tms, sizeof(tms)) < 0) {
-                regs->eax = (uint32_t)-EFAULT; return;
+                sc_ret(regs) = (uint32_t)-EFAULT; return;
             }
         }
-        regs->eax = get_tick_count();
+        sc_ret(regs) = get_tick_count();
         return;
     }
 
-    regs->eax = (uint32_t)-ENOSYS;
+    sc_ret(regs) = (uint32_t)-ENOSYS;
 }
 
 /* Separate function to keep socket locals off syscall_handler's stack frame */
 __attribute__((noinline))
 static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no) {
     if (syscall_no == SYSCALL_SOCKET) {
-        int domain   = (int)regs->ebx;
-        int type     = (int)regs->ecx;
-        int protocol = (int)regs->edx;
+        int domain   = (int)sc_arg0(regs);
+        int type     = (int)sc_arg1(regs);
+        int protocol = (int)sc_arg2(regs);
         int sid = ksocket_create(domain, type, protocol);
-        if (sid < 0) { regs->eax = (uint32_t)sid; return; }
+        if (sid < 0) { sc_ret(regs) = (uint32_t)sid; return; }
         int fd = -1;
         for (int i = 0; i < PROCESS_MAX_FILES; i++) {
             if (!current_process->files[i]) { fd = i; break; }
         }
-        if (fd < 0) { ksocket_close(sid); regs->eax = (uint32_t)-EMFILE; return; }
+        if (fd < 0) { ksocket_close(sid); sc_ret(regs) = (uint32_t)-EMFILE; return; }
         struct file* f = (struct file*)kmalloc(sizeof(struct file));
-        if (!f) { ksocket_close(sid); regs->eax = (uint32_t)-ENOMEM; return; }
+        if (!f) { ksocket_close(sid); sc_ret(regs) = (uint32_t)-ENOMEM; return; }
         f->node = NULL;
         f->offset = (uint32_t)sid;
         f->flags = 0x534F434BU;     /* magic 'SOCK' */
         f->refcount = 1;
         current_process->files[fd] = f;
-        regs->eax = (uint32_t)fd;
+        sc_ret(regs) = (uint32_t)fd;
         return;
     }
 
     if (syscall_no == SYSCALL_BIND) {
-        int fd = (int)regs->ebx;
+        int fd = (int)sc_arg0(regs);
         if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
             current_process->files[fd]->flags != 0x534F434BU) {
-            regs->eax = (uint32_t)-EBADF; return;
+            sc_ret(regs) = (uint32_t)-EBADF; return;
         }
         struct sockaddr_in sa;
-        if (copy_from_user(&sa, (const void*)regs->ecx, sizeof(sa)) < 0) {
-            regs->eax = (uint32_t)-EFAULT; return;
+        if (copy_from_user(&sa, (const void*)sc_arg1(regs), sizeof(sa)) < 0) {
+            sc_ret(regs) = (uint32_t)-EFAULT; return;
         }
         int sid = (int)current_process->files[fd]->offset;
-        regs->eax = (uint32_t)ksocket_bind(sid, &sa);
+        sc_ret(regs) = (uint32_t)ksocket_bind(sid, &sa);
         return;
     }
 
     if (syscall_no == SYSCALL_LISTEN) {
-        int fd = (int)regs->ebx;
+        int fd = (int)sc_arg0(regs);
         if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
             current_process->files[fd]->flags != 0x534F434BU) {
-            regs->eax = (uint32_t)-EBADF; return;
+            sc_ret(regs) = (uint32_t)-EBADF; return;
         }
         int sid = (int)current_process->files[fd]->offset;
-        regs->eax = (uint32_t)ksocket_listen(sid, (int)regs->ecx);
+        sc_ret(regs) = (uint32_t)ksocket_listen(sid, (int)sc_arg1(regs));
         return;
     }
 
     if (syscall_no == SYSCALL_ACCEPT) {
-        int fd = (int)regs->ebx;
+        int fd = (int)sc_arg0(regs);
         if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
             current_process->files[fd]->flags != 0x534F434BU) {
-            regs->eax = (uint32_t)-EBADF; return;
+            sc_ret(regs) = (uint32_t)-EBADF; return;
         }
         int sid = (int)current_process->files[fd]->offset;
         struct sockaddr_in sa;
         memset(&sa, 0, sizeof(sa));
         int new_sid = ksocket_accept(sid, &sa);
-        if (new_sid < 0) { regs->eax = (uint32_t)new_sid; return; }
+        if (new_sid < 0) { sc_ret(regs) = (uint32_t)new_sid; return; }
         int new_fd = -1;
         for (int i = 0; i < PROCESS_MAX_FILES; i++) {
             if (!current_process->files[i]) { new_fd = i; break; }
         }
-        if (new_fd < 0) { ksocket_close(new_sid); regs->eax = (uint32_t)-EMFILE; return; }
+        if (new_fd < 0) { ksocket_close(new_sid); sc_ret(regs) = (uint32_t)-EMFILE; return; }
         struct file* f = (struct file*)kmalloc(sizeof(struct file));
-        if (!f) { ksocket_close(new_sid); regs->eax = (uint32_t)-ENOMEM; return; }
+        if (!f) { ksocket_close(new_sid); sc_ret(regs) = (uint32_t)-ENOMEM; return; }
         f->node = NULL;
         f->offset = (uint32_t)new_sid;
         f->flags = 0x534F434BU;
         f->refcount = 1;
         current_process->files[new_fd] = f;
-        if (regs->ecx) {
-            (void)copy_to_user((void*)regs->ecx, &sa, sizeof(sa));
+        if (sc_arg1(regs)) {
+            (void)copy_to_user((void*)sc_arg1(regs), &sa, sizeof(sa));
         }
-        regs->eax = (uint32_t)new_fd;
+        sc_ret(regs) = (uint32_t)new_fd;
         return;
     }
 
     if (syscall_no == SYSCALL_CONNECT) {
-        int fd = (int)regs->ebx;
+        int fd = (int)sc_arg0(regs);
         if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
             current_process->files[fd]->flags != 0x534F434BU) {
-            regs->eax = (uint32_t)-EBADF; return;
+            sc_ret(regs) = (uint32_t)-EBADF; return;
         }
         struct sockaddr_in sa;
-        if (copy_from_user(&sa, (const void*)regs->ecx, sizeof(sa)) < 0) {
-            regs->eax = (uint32_t)-EFAULT; return;
+        if (copy_from_user(&sa, (const void*)sc_arg1(regs), sizeof(sa)) < 0) {
+            sc_ret(regs) = (uint32_t)-EFAULT; return;
         }
         int sid = (int)current_process->files[fd]->offset;
-        regs->eax = (uint32_t)ksocket_connect(sid, &sa);
+        sc_ret(regs) = (uint32_t)ksocket_connect(sid, &sa);
         return;
     }
 
     if (syscall_no == SYSCALL_SEND) {
-        int fd = (int)regs->ebx;
+        int fd = (int)sc_arg0(regs);
         if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
             current_process->files[fd]->flags != 0x534F434BU) {
-            regs->eax = (uint32_t)-EBADF; return;
+            sc_ret(regs) = (uint32_t)-EBADF; return;
         }
-        size_t len = (size_t)regs->edx;
-        if (!user_range_ok((const void*)regs->ecx, len)) {
-            regs->eax = (uint32_t)-EFAULT; return;
+        size_t len = (size_t)sc_arg2(regs);
+        if (!user_range_ok((const void*)sc_arg1(regs), len)) {
+            sc_ret(regs) = (uint32_t)-EFAULT; return;
         }
         int sid = (int)current_process->files[fd]->offset;
-        regs->eax = (uint32_t)ksocket_send(sid, (const void*)regs->ecx, len, (int)regs->esi);
+        sc_ret(regs) = (uint32_t)ksocket_send(sid, (const void*)sc_arg1(regs), len, (int)sc_arg3(regs));
         return;
     }
 
     if (syscall_no == SYSCALL_RECV) {
-        int fd = (int)regs->ebx;
+        int fd = (int)sc_arg0(regs);
         if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
             current_process->files[fd]->flags != 0x534F434BU) {
-            regs->eax = (uint32_t)-EBADF; return;
+            sc_ret(regs) = (uint32_t)-EBADF; return;
         }
-        size_t len = (size_t)regs->edx;
-        if (!user_range_ok((void*)regs->ecx, len)) {
-            regs->eax = (uint32_t)-EFAULT; return;
+        size_t len = (size_t)sc_arg2(regs);
+        if (!user_range_ok((void*)sc_arg1(regs), len)) {
+            sc_ret(regs) = (uint32_t)-EFAULT; return;
         }
         int sid = (int)current_process->files[fd]->offset;
-        regs->eax = (uint32_t)ksocket_recv(sid, (void*)regs->ecx, len, (int)regs->esi);
+        sc_ret(regs) = (uint32_t)ksocket_recv(sid, (void*)sc_arg1(regs), len, (int)sc_arg3(regs));
         return;
     }
 
     if (syscall_no == SYSCALL_SENDTO) {
-        int fd = (int)regs->ebx;
+        int fd = (int)sc_arg0(regs);
         if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
             current_process->files[fd]->flags != 0x534F434BU) {
-            regs->eax = (uint32_t)-EBADF; return;
+            sc_ret(regs) = (uint32_t)-EBADF; return;
         }
-        size_t len = (size_t)regs->edx;
-        if (!user_range_ok((const void*)regs->ecx, len)) {
-            regs->eax = (uint32_t)-EFAULT; return;
+        size_t len = (size_t)sc_arg2(regs);
+        if (!user_range_ok((const void*)sc_arg1(regs), len)) {
+            sc_ret(regs) = (uint32_t)-EFAULT; return;
         }
         struct sockaddr_in dest;
-        if (copy_from_user(&dest, (const void*)regs->edi, sizeof(dest)) < 0) {
-            regs->eax = (uint32_t)-EFAULT; return;
+        if (copy_from_user(&dest, (const void*)sc_arg4(regs), sizeof(dest)) < 0) {
+            sc_ret(regs) = (uint32_t)-EFAULT; return;
         }
         int sid = (int)current_process->files[fd]->offset;
-        regs->eax = (uint32_t)ksocket_sendto(sid, (const void*)regs->ecx, len,
-                                              (int)regs->esi, &dest);
+        sc_ret(regs) = (uint32_t)ksocket_sendto(sid, (const void*)sc_arg1(regs), len,
+                                              (int)sc_arg3(regs), &dest);
         return;
     }
 
     if (syscall_no == SYSCALL_RECVFROM) {
-        int fd = (int)regs->ebx;
+        int fd = (int)sc_arg0(regs);
         if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
             current_process->files[fd]->flags != 0x534F434BU) {
-            regs->eax = (uint32_t)-EBADF; return;
+            sc_ret(regs) = (uint32_t)-EBADF; return;
         }
-        size_t len = (size_t)regs->edx;
-        if (!user_range_ok((void*)regs->ecx, len)) {
-            regs->eax = (uint32_t)-EFAULT; return;
+        size_t len = (size_t)sc_arg2(regs);
+        if (!user_range_ok((void*)sc_arg1(regs), len)) {
+            sc_ret(regs) = (uint32_t)-EFAULT; return;
         }
         struct sockaddr_in src;
         memset(&src, 0, sizeof(src));
         int sid = (int)current_process->files[fd]->offset;
-        int ret = ksocket_recvfrom(sid, (void*)regs->ecx, len, (int)regs->esi, &src);
-        if (ret > 0 && regs->edi) {
-            (void)copy_to_user((void*)regs->edi, &src, sizeof(src));
+        int ret = ksocket_recvfrom(sid, (void*)sc_arg1(regs), len, (int)sc_arg3(regs), &src);
+        if (ret > 0 && sc_arg4(regs)) {
+            (void)copy_to_user((void*)sc_arg4(regs), &src, sizeof(src));
         }
-        regs->eax = (uint32_t)ret;
+        sc_ret(regs) = (uint32_t)ret;
         return;
     }
 
-    regs->eax = (uint32_t)-ENOSYS;
+    sc_ret(regs) = (uint32_t)-ENOSYS;
 }
 
 void syscall_init(void) {
