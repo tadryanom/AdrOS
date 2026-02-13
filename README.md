@@ -67,9 +67,12 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **Canonical + raw mode** — `ICANON` clearable via `TCSETS`
 - **Signal characters** — Ctrl+C→SIGINT, Ctrl+Z→SIGTSTP, Ctrl+D→EOF, Ctrl+\\→SIGQUIT
 - **Job control** — `SIGTTIN`/`SIGTTOU` enforcement for background process groups
-- **PTY** — `/dev/ptmx` + `/dev/pts/N` (up to 8 dynamic pairs) with non-blocking I/O
+- **OPOST output processing** — `ONLCR` (`\n` → `\r\n`) on TTY and PTY slave output; `c_oflag` exposed via `TCGETS`/`TCSETS`
+- **Console output routing** — userspace `write(fd 1/2)` goes through VFS → `/dev/console` → TTY line discipline → UART + VGA (industry-standard path matching Linux)
+- **fd 0/1/2 init** — kernel opens `/dev/console` as fd 0, 1, 2 before exec init (mirrors Linux `kernel_init`)
+- **PTY** — `/dev/ptmx` + `/dev/pts/N` (up to 8 dynamic pairs) with non-blocking I/O, per-PTY `c_oflag` and OPOST/ONLCR line discipline
 - **Window size** — `TIOCGWINSZ`/`TIOCSWINSZ`
-- **termios** — `TCGETS`, `TCSETS`, `TIOCGPGRP`, `TIOCSPGRP`, `VMIN`/`VTIME`
+- **termios** — `TCGETS`, `TCSETS`, `TIOCGPGRP`, `TIOCSPGRP`, `VMIN`/`VTIME`, `c_oflag`
 - **Wait queues** — generic `waitqueue_t` abstraction for blocking I/O
 
 ### Filesystems (10 types)
@@ -103,7 +106,7 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **MTRR** — write-combining support via variable-range MTRR programming
 
 ### Userland
-- **ulibc** — `printf`, `malloc`/`free`/`calloc`/`realloc`, `string.h`, `unistd.h`, `errno.h`, `pthread.h`, `signal.h`, `stdio.h` (buffered I/O), `stdlib.h` (`atof`, `strtol`), `ctype.h`, `sys/mman.h` (`mmap`/`munmap`), `sys/ioctl.h`, `sys/times.h`, `sys/uio.h`, `sys/types.h`, `sys/stat.h`, `time.h` (`nanosleep`/`clock_gettime`), `math.h`, `assert.h`, `fcntl.h`, `strings.h`, `inttypes.h`, `linux/futex.h`, `realpath()`
+- **ulibc** — `printf`, `malloc`/`free`/`calloc`/`realloc`, `string.h`, `unistd.h`, `errno.h`, `pthread.h`, `signal.h`, `stdio.h` (buffered I/O with line-buffered stdout, unbuffered stderr, `setvbuf`/`setbuf`, `isatty`), `stdlib.h` (`atof`, `strtol`), `ctype.h`, `sys/mman.h` (`mmap`/`munmap`), `sys/ioctl.h`, `sys/times.h`, `sys/uio.h`, `sys/types.h`, `sys/stat.h`, `time.h` (`nanosleep`/`clock_gettime`), `math.h`, `assert.h`, `fcntl.h`, `strings.h`, `inttypes.h`, `linux/futex.h`, `realpath()`
 - **ELF32 loader** — secure with W^X + ASLR; supports `ET_EXEC` + `ET_DYN` + `PT_INTERP` (dynamic linking)
 - **Shell** — `/bin/sh` (POSIX sh-compatible with builtins, pipes, redirects, `$PATH` search)
 - **Core utilities** — `/bin/cat`, `/bin/ls`, `/bin/mkdir`, `/bin/rm`, `/bin/echo`
