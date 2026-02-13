@@ -6,6 +6,7 @@
 
 #include "spinlock.h"
 #include "uart_console.h"
+#include "hal/uart.h"
 #include "vga_console.h"
 #include "keyboard.h"
 
@@ -59,6 +60,19 @@ void console_write(const char* s) {
     }
     if (g_console_vga_enabled) {
         vga_print(s);
+    }
+
+    spin_unlock_irqrestore(&g_console_lock, flags);
+}
+
+void console_put_char(char c) {
+    uintptr_t flags = spin_lock_irqsave(&g_console_lock);
+
+    if (g_console_uart_enabled) {
+        hal_uart_putc(c);
+    }
+    if (g_console_vga_enabled) {
+        vga_put_char(c);
     }
 
     spin_unlock_irqrestore(&g_console_lock, flags);

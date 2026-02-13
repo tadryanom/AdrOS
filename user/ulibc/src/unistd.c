@@ -158,6 +158,14 @@ void* brk(void* addr) {
     return (void*)_syscall1(SYS_BRK, (int)addr);
 }
 
+int isatty(int fd) {
+    /* POSIX: isatty() returns 1 if fd refers to a terminal, 0 otherwise.
+     * Implementation: try TCGETS ioctl; if it succeeds, fd is a tty. */
+    struct { uint32_t a,b,c,d; uint8_t e[8]; } t;
+    int rc = _syscall3(SYS_IOCTL, fd, 0x5401 /* TCGETS */, (int)&t);
+    return (rc == 0) ? 1 : 0;
+}
+
 void _exit(int status) {
     _syscall1(SYS_EXIT, status);
     /* If exit syscall somehow returns, loop forever.

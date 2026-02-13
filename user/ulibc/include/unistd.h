@@ -54,6 +54,7 @@ unsigned int alarm(unsigned int seconds);
 #define LOCK_UN 8
 #define LOCK_NB 4
 int     flock(int fd, int operation);
+int     isatty(int fd);
 void*   brk(void* addr);
 
 void    _exit(int status) __attribute__((noreturn));

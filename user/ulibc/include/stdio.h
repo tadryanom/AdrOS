@@ -12,6 +12,8 @@
 #define _STDIO_WRITE 0x02
 #define _STDIO_EOF   0x04
 #define _STDIO_ERR   0x08
+#define _STDIO_LBUF  0x10  /* line-buffered (flush on \n) */
+#define _STDIO_UNBUF 0x20  /* unbuffered (flush every write) */
 
 typedef struct _FILE {
     int     fd;
@@ -58,5 +60,12 @@ int     vsnprintf(char* buf, size_t size, const char* fmt, va_list ap);
 int     sscanf(const char* str, const char* fmt, ...);
 int     remove(const char* path);
 int     rename(const char* oldpath, const char* newpath);
+
+/* Buffering modes for setvbuf (POSIX values) */
+#define _IOFBF 0  /* fully buffered */
+#define _IOLBF 1  /* line buffered */
+#define _IONBF 2  /* unbuffered */
+int     setvbuf(FILE* fp, char* buf, int mode, size_t size);
+void    setbuf(FILE* fp, char* buf);
 
 #endif

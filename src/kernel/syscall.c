@@ -1320,7 +1320,7 @@ static int syscall_write_impl(int fd, const void* user_buf, uint32_t len) {
         f->offset = f->node->length;
     }
 
-    uint8_t kbuf[256];
+    uint8_t kbuf[1024];
     uint32_t total = 0;
     while (total < len) {
         uint32_t chunk = len - total;

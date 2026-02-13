@@ -28,6 +28,7 @@ static uint32_t canon_tail = 0;
 static waitqueue_t tty_wq;
 
 static uint32_t tty_lflag = TTY_ICANON | TTY_ECHO | TTY_ISIG;
+static uint32_t tty_oflag = TTY_OPOST | TTY_ONLCR;
 static uint8_t tty_cc[NCCS] = {0, 0, 0, 0, 1, 0, 0, 0};
 
 static struct winsize tty_winsize = { 24, 80, 0, 0 };
@@ -49,6 +50,14 @@ static int canon_empty(void) {
 
 static uint32_t canon_count(void);
 
+/* Output a single character with OPOST processing to all console backends. */
+static void tty_output_char(char c) {
+    if ((tty_oflag & TTY_OPOST) && (tty_oflag & TTY_ONLCR) && c == '\n') {
+        console_put_char('\r');
+    }
+    console_put_char(c);
+}
+
 int tty_write_kbuf(const void* kbuf, uint32_t len) {
     if (!kbuf) return -EFAULT;
     if (len > 1024 * 1024) return -EINVAL;
@@ -62,7 +71,7 @@ int tty_write_kbuf(const void* kbuf, uint32_t len) {
 
     const char* p = (const char*)kbuf;
     for (uint32_t i = 0; i < len; i++) {
-        uart_put_char(p[i]);
+        tty_output_char(p[i]);
     }
     return (int)len;
 }
@@ -236,6 +245,7 @@ int tty_ioctl(uint32_t cmd, void* user_arg) {
         memset(&t, 0, sizeof(t));
         uintptr_t flags = spin_lock_irqsave(&tty_lock);
         t.c_lflag = tty_lflag;
+        t.c_oflag = tty_oflag;
         for (int i = 0; i < NCCS; i++) t.c_cc[i] = tty_cc[i];
         spin_unlock_irqrestore(&tty_lock, flags);
         if (copy_to_user(user_arg, &t, sizeof(t)) < 0) return -EFAULT;
@@ -247,6 +257,7 @@ int tty_ioctl(uint32_t cmd, void* user_arg) {
         if (copy_from_user(&t, user_arg, sizeof(t)) < 0) return -EFAULT;
         uintptr_t flags = spin_lock_irqsave(&tty_lock);
         tty_lflag = t.c_lflag & (TTY_ICANON | TTY_ECHO | TTY_ISIG);
+        tty_oflag = t.c_oflag & (TTY_OPOST | TTY_ONLCR);
         for (int i = 0; i < NCCS; i++) tty_cc[i] = t.c_cc[i];
         spin_unlock_irqrestore(&tty_lock, flags);
         return 0;
@@ -326,7 +337,7 @@ void tty_input_char(char c) {
         canon_push(c);
         wq_wake_one(&tty_wq);
         if (lflag & TTY_ECHO) {
-            uart_put_char(c);
+            tty_output_char(c);
         }
         spin_unlock_irqrestore(&tty_lock, flags);
         return;
@@ -347,7 +358,7 @@ void tty_input_char(char c) {
 
     if (c == '\n') {
         if (lflag & TTY_ECHO) {
-            uart_put_char('\n');
+            tty_output_char('\n');
         }
 
         for (uint32_t i = 0; i < line_len; i++) {
@@ -365,7 +376,7 @@ void tty_input_char(char c) {
         if (line_len + 1 < sizeof(line_buf)) {
             line_buf[line_len++] = c;
             if (lflag & TTY_ECHO) {
-                uart_put_char(c);
+                tty_output_char(c);
             }
         }
     }
@@ -455,7 +466,7 @@ int tty_write(const void* user_buf, uint32_t len) {
         if (copy_from_user(kbuf, (const void*)up, (size_t)chunk) < 0) return -EFAULT;
 
         for (uint32_t i = 0; i < chunk; i++) {
-            uart_put_char(kbuf[i]);
+            tty_output_char(kbuf[i]);
         }
 
         up += chunk;

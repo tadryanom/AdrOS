@@ -4,8 +4,8 @@
 #include <stdarg.h>
 
 static FILE _stdin_file  = { .fd = 0, .flags = _STDIO_READ };
-static FILE _stdout_file = { .fd = 1, .flags = _STDIO_WRITE };
-static FILE _stderr_file = { .fd = 2, .flags = _STDIO_WRITE };
+static FILE _stdout_file = { .fd = 1, .flags = _STDIO_WRITE | _STDIO_LBUF };
+static FILE _stderr_file = { .fd = 2, .flags = _STDIO_WRITE | _STDIO_UNBUF };
 
 FILE* stdin  = &_stdin_file;
 FILE* stdout = &_stdout_file;
@@ -91,6 +91,17 @@ size_t fwrite(const void* ptr, size_t size, size_t nmemb, FILE* fp) {
     size_t total = size * nmemb;
     const char* src = (const char*)ptr;
     size_t done = 0;
+
+    /* Unbuffered: write directly, bypass buffer */
+    if (fp->flags & _STDIO_UNBUF) {
+        while (done < total) {
+            int w = write(fp->fd, src + done, total - done);
+            if (w <= 0) break;
+            done += (size_t)w;
+        }
+        return done / size;
+    }
+
     while (done < total) {
         int space = BUFSIZ - fp->buf_pos;
         int want = (int)(total - done);
@@ -99,6 +110,16 @@ size_t fwrite(const void* ptr, size_t size, size_t nmemb, FILE* fp) {
         fp->buf_pos += chunk;
         done += (size_t)chunk;
         if (fp->buf_pos >= BUFSIZ) fflush(fp);
+    }
+
+    /* Line-buffered: flush if the written data contains a newline */
+    if ((fp->flags & _STDIO_LBUF) && fp->buf_pos > 0) {
+        for (size_t i = 0; i < total; i++) {
+            if (src[i] == '\n') {
+                fflush(fp);
+                break;
+            }
+        }
     }
     return done / size;
 }
@@ -170,6 +191,21 @@ int rename(const char* oldpath, const char* newpath) {
     return -1;
 }
 
+int setvbuf(FILE* fp, char* buf, int mode, size_t size) {
+    (void)buf; (void)size; /* we use internal buffer only */
+    if (!fp) return -1;
+    fp->flags &= ~(_STDIO_LBUF | _STDIO_UNBUF);
+    if (mode == 1 /* _IOLBF */) fp->flags |= _STDIO_LBUF;
+    else if (mode == 2 /* _IONBF */) fp->flags |= _STDIO_UNBUF;
+    /* _IOFBF (0): fully buffered — no extra flag needed */
+    return 0;
+}
+
+void setbuf(FILE* fp, char* buf) {
+    if (!buf) setvbuf(fp, (char*)0, 2 /* _IONBF */, 0);
+    else setvbuf(fp, buf, 0 /* _IOFBF */, BUFSIZ);
+}
+
 int vfprintf(FILE* fp, const char* fmt, va_list ap) {
     char buf[1024];
     int n = vsnprintf(buf, sizeof(buf), fmt, ap);
@@ -190,15 +226,15 @@ int fprintf(FILE* fp, const char* fmt, ...) {
 }
 
 int putchar(int c) {
-    char ch = (char)c;
-    write(STDOUT_FILENO, &ch, 1);
+    unsigned char ch = (unsigned char)c;
+    fwrite(&ch, 1, 1, stdout);
     return c;
 }
 
 int puts(const char* s) {
     int len = (int)strlen(s);
-    write(STDOUT_FILENO, s, (size_t)len);
-    write(STDOUT_FILENO, "\n", 1);
+    fwrite(s, 1, (size_t)len, stdout);
+    fwrite("\n", 1, 1, stdout);
     return len + 1;
 }
 
@@ -404,14 +440,7 @@ int sscanf(const char* str, const char* fmt, ...) {
 }
 
 int vprintf(const char* fmt, va_list ap) {
-    char buf[1024];
-    int n = vsnprintf(buf, sizeof(buf), fmt, ap);
-    if (n > 0) {
-        int w = n;
-        if (w > (int)(sizeof(buf) - 1)) w = (int)(sizeof(buf) - 1);
-        write(STDOUT_FILENO, buf, (size_t)w);
-    }
-    return n;
+    return vfprintf(stdout, fmt, ap);
 }
 
 int printf(const char* fmt, ...) {

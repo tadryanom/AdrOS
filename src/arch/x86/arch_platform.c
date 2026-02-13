@@ -11,6 +11,7 @@
 #include "vmm.h"
 
 #include "process.h"
+#include "heap.h"
 
 #include "hal/cpu.h"
 #include "hal/usermode.h"
@@ -54,6 +55,28 @@ static void userspace_init_thread(void) {
     current_process->heap_start = heap_brk;
     current_process->heap_break = heap_brk;
     vmm_as_activate(user_as);
+
+    /* Open /dev/console as fd 0, 1, 2 — mirrors Linux kernel_init:
+     *   sys_open("/dev/console", O_RDWR, 0);
+     *   sys_dup(0); sys_dup(0);                                     */
+    {
+        fs_node_t* con = vfs_lookup("/dev/console");
+        if (con) {
+            struct file* f = (struct file*)kmalloc(sizeof(*f));
+            if (f) {
+                f->node = con;
+                f->offset = 0;
+                f->flags = 2; /* O_RDWR */
+                f->refcount = 3;
+                current_process->files[0] = f;
+                current_process->files[1] = f;
+                current_process->files[2] = f;
+                kprintf("[INIT] opened /dev/console as fd 0/1/2\n");
+            }
+        } else {
+            kprintf("[INIT] WARNING: /dev/console not found\n");
+        }
+    }
 
     kprintf("[ELF] starting /bin/init.elf\n");
 

@@ -9,6 +9,7 @@ void console_enable_uart(int enabled);
 void console_enable_vga(int enabled);
 
 void console_write(const char* s);
+void console_put_char(char c);
 
 int kvsnprintf(char* out, size_t out_size, const char* fmt, va_list ap);
 int ksnprintf(char* out, size_t out_size, const char* fmt, ...);

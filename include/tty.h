@@ -29,6 +29,12 @@ enum {
     TTY_ISIG   = 0x0001,
 };
 
+/* c_oflag bits (POSIX) */
+enum {
+    TTY_OPOST = 0x0001,
+    TTY_ONLCR = 0x0004,
+};
+
 void tty_init(void);
 
 int tty_read(void* user_buf, uint32_t len);
