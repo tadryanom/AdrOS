@@ -15,7 +15,6 @@
 #include "waitqueue.h"
 #include "spinlock.h"
 #include "console.h"
-#include "uart_console.h"
 #include "uaccess.h"
 #include "errno.h"
 
