@@ -10,14 +10,9 @@
 #include "signal.h"
 #include <stddef.h>
 
+#include "arch/x86/signal.h"
+
 #define IDT_ENTRIES 256
-
-static const uint32_t SIGFRAME_MAGIC = 0x53494746U; // 'SIGF'
-
-struct sigframe {
-    uint32_t magic;
-    struct registers saved;
-};
 
 struct idt_entry idt[IDT_ENTRIES];
 struct idt_ptr idtp;

@@ -28,6 +28,7 @@ extern void x86_sysenter_init(void);
 #include "hal/mm.h"
 
 #include "hal/cpu.h"
+#include "arch_signal.h"
 
 #include <stddef.h>
 
@@ -54,14 +55,6 @@ enum {
 };
 
 static int path_resolve_user(const char* user_path, char* out, size_t out_sz);
-
-#if defined(__i386__)
-static const uint32_t SIGFRAME_MAGIC = 0x53494746U; // 'SIGF'
-struct sigframe {
-    uint32_t magic;
-    struct registers saved;
-};
-#endif
 
 static int fd_alloc(struct file* f);
 static int fd_close(int fd);
@@ -1452,30 +1445,6 @@ static int syscall_sigprocmask_impl(uint32_t how, uint32_t mask, uint32_t* old_o
     return -EINVAL;
 }
 
-static int syscall_sigreturn_impl(struct registers* regs, const struct sigframe* user_frame) {
-    if (!regs) return -EINVAL;
-    if (!current_process) return -EINVAL;
-    if ((regs->cs & 3U) != 3U) return -EPERM;
-    if (!user_frame) return -EFAULT;
-
-    if (user_range_ok(user_frame, sizeof(*user_frame)) == 0) { return -EFAULT; }
-
-    struct sigframe f;
-    if (copy_from_user(&f, user_frame, sizeof(f)) < 0) return -EFAULT;
-    if (f.magic != SIGFRAME_MAGIC) { return -EINVAL; }
-
-    if ((f.saved.cs & 3U) != 3U) return -EPERM;
-    if ((f.saved.ss & 3U) != 3U) return -EPERM;
-
-    // Sanitize eflags: clear IOPL (bits 12-13) to prevent privilege escalation,
-    // ensure IF (bit 9) is set so interrupts remain enabled in usermode.
-    f.saved.eflags = (f.saved.eflags & ~0x3000U) | 0x200U;
-
-    // Restore the full saved trapframe. The interrupt stub will pop these regs and iret.
-    *regs = f.saved;
-    return 0;
-}
-
 struct timespec {
     uint32_t tv_sec;
     uint32_t tv_nsec;
@@ -2090,8 +2059,8 @@ void syscall_handler(struct registers* regs) {
     }
 
     if (syscall_no == SYSCALL_SIGRETURN) {
-        const struct sigframe* user_frame = (const struct sigframe*)regs->ebx;
-        regs->eax = (uint32_t)syscall_sigreturn_impl(regs, user_frame);
+        const void* user_frame = (const void*)(uintptr_t)regs->ebx;
+        regs->eax = (uint32_t)arch_sigreturn(regs, user_frame);
         return;
     }
 
