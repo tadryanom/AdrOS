@@ -868,42 +868,26 @@ void schedule(void) {
 }
 
 void process_sleep(uint32_t ticks) {
-    // We need current tick count. 
-    // For simplicity, let's just use a extern or pass it.
-    // But usually sleep() is called by process logic.
-    // Let's assume we read the global tick from timer.h accessor (TODO)
-    // Or we just add 'ticks' to current.
-    
-    // Quick fix: declare extern tick from timer.c
     extern uint32_t get_tick_count(void);
-    
     uint32_t current_tick = get_tick_count();
 
     uintptr_t flags = spin_lock_irqsave(&sched_lock);
     current_process->wake_at_tick = current_tick + ticks;
     current_process->state = PROCESS_SLEEPING;
-    
     spin_unlock_irqrestore(&sched_lock, flags);
 
-    // Force switch immediately. Since current state is SLEEPING, schedule() will pick someone else.
     schedule();
-
-    // When we return here, we woke up!
 }
 
 void process_wake_check(uint32_t current_tick) {
-    // Called by Timer ISR
     uintptr_t flags = spin_lock_irqsave(&sched_lock);
     struct process* iter = ready_queue_head;
-    
-    // Iterate all processes (Circular list)
-    // Warning: O(N) inside ISR. Not ideal for 1000 processes.
-    
+
     if (!iter) {
         spin_unlock_irqrestore(&sched_lock, flags);
         return;
     }
-    
+
     /* CPU time accounting: charge one tick to the running process */
     if (current_process && current_process->state == PROCESS_RUNNING) {
         current_process->utime++;
