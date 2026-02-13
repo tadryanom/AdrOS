@@ -127,6 +127,37 @@ static void rq_remove_if_queued(struct process* p) {
     }
 }
 
+/* ---------- Sorted sleep queue (by wake_at_tick) ---------- */
+static struct process* sleep_head = NULL;
+
+static void sleep_queue_insert(struct process* p) {
+    p->in_sleep_queue = 1;
+    if (!sleep_head || p->wake_at_tick <= sleep_head->wake_at_tick) {
+        p->sleep_prev = NULL;
+        p->sleep_next = sleep_head;
+        if (sleep_head) sleep_head->sleep_prev = p;
+        sleep_head = p;
+        return;
+    }
+    struct process* cur = sleep_head;
+    while (cur->sleep_next && cur->sleep_next->wake_at_tick < p->wake_at_tick)
+        cur = cur->sleep_next;
+    p->sleep_next = cur->sleep_next;
+    p->sleep_prev = cur;
+    if (cur->sleep_next) cur->sleep_next->sleep_prev = p;
+    cur->sleep_next = p;
+}
+
+static void sleep_queue_remove(struct process* p) {
+    if (!p->in_sleep_queue) return;
+    if (p->sleep_prev) p->sleep_prev->sleep_next = p->sleep_next;
+    else               sleep_head = p->sleep_next;
+    if (p->sleep_next) p->sleep_next->sleep_prev = p->sleep_prev;
+    p->sleep_prev = NULL;
+    p->sleep_next = NULL;
+    p->in_sleep_queue = 0;
+}
+
 static struct process* rq_pick_next(void) {
     if (rq_active->bitmap) {
         uint32_t prio = bsf32(rq_active->bitmap);
@@ -146,6 +177,7 @@ static struct process* rq_pick_next(void) {
 void sched_enqueue_ready(struct process* p) {
     if (!p) return;
     uintptr_t flags = spin_lock_irqsave(&sched_lock);
+    sleep_queue_remove(p);
     if (p->state == PROCESS_READY) {
         rq_enqueue(rq_active, p);
     }
@@ -171,8 +203,9 @@ static void process_reap_locked(struct process* p) {
     if (!p) return;
     if (p->pid == 0) return;
 
-    /* Safety net: ensure process is not in any runqueue before freeing */
+    /* Safety net: ensure process is not in any runqueue/sleep queue before freeing */
     rq_remove_if_queued(p);
+    sleep_queue_remove(p);
 
     if (p == ready_queue_head && p == ready_queue_tail) {
         return;
@@ -250,12 +283,11 @@ int process_kill(uint32_t pid, int sig) {
     }
 
     if (sig == SIG_KILL) {
-        /* Remove from runqueue BEFORE marking ZOMBIE to prevent
-         * rq_pick_next() from returning a stale/freed pointer
-         * after the parent reaps this process. */
+        /* Remove from runqueue/sleep queue BEFORE marking ZOMBIE */
         if (p->state == PROCESS_READY) {
             rq_remove_if_queued(p);
         }
+        sleep_queue_remove(p);
         process_close_all_files_locked(p);
         p->exit_status = 128 + sig;
         p->state = PROCESS_ZOMBIE;
@@ -274,6 +306,7 @@ int process_kill(uint32_t pid, int sig) {
     } else {
         p->sig_pending_mask |= (1U << (uint32_t)sig);
         if (p->state == PROCESS_BLOCKED || p->state == PROCESS_SLEEPING) {
+            sleep_queue_remove(p);
             p->state = PROCESS_READY;
             rq_enqueue(rq_active, p);
         }
@@ -297,6 +330,7 @@ int process_kill_pgrp(uint32_t pgrp, int sig) {
             if (it->pgrp_id == pgrp && it->pid != 0 && it->state != PROCESS_ZOMBIE) {
                 it->sig_pending_mask |= (1U << (uint32_t)sig);
                 if (it->state == PROCESS_BLOCKED || it->state == PROCESS_SLEEPING) {
+                    sleep_queue_remove(it);
                     it->state = PROCESS_READY;
                     rq_enqueue(rq_active, it);
                 }
@@ -802,6 +836,12 @@ void schedule(void) {
         prev->state = PROCESS_READY;
         if (prev->priority < SCHED_NUM_PRIOS - 1) prev->priority++;
         rq_enqueue(rq_expired, prev);
+    } else if (prev->state == PROCESS_SLEEPING && !prev->in_sleep_queue) {
+        /* Deferred sleep queue insertion: the caller set SLEEPING + wake_at_tick
+         * under its own lock (e.g. semaphore), then called schedule().
+         * We insert here under sched_lock — no preemption window. */
+        sleep_queue_remove(prev); /* defensive */
+        sleep_queue_insert(prev);
     }
 
     // Pick highest-priority READY process from runqueues (O(1) bitmap).
@@ -867,6 +907,11 @@ void schedule(void) {
     spin_unlock_irqrestore(&sched_lock, irq_flags);
 }
 
+void sched_sleep_enqueue_self(void) {
+    /* No-op: schedule() now handles deferred sleep queue insertion
+     * atomically under sched_lock, eliminating preemption windows. */
+}
+
 void process_sleep(uint32_t ticks) {
     extern uint32_t get_tick_count(void);
     uint32_t current_tick = get_tick_count();
@@ -874,6 +919,8 @@ void process_sleep(uint32_t ticks) {
     uintptr_t flags = spin_lock_irqsave(&sched_lock);
     current_process->wake_at_tick = current_tick + ticks;
     current_process->state = PROCESS_SLEEPING;
+    sleep_queue_remove(current_process); /* defensive: remove stale entry if present */
+    sleep_queue_insert(current_process);
     spin_unlock_irqrestore(&sched_lock, flags);
 
     schedule();
@@ -893,16 +940,20 @@ void process_wake_check(uint32_t current_tick) {
         current_process->utime++;
     }
 
+    /* O(1) sleep queue: pop expired entries from the sorted head */
+    while (sleep_head && current_tick >= sleep_head->wake_at_tick) {
+        struct process* p = sleep_head;
+        sleep_queue_remove(p);
+        if (p->state == PROCESS_SLEEPING) {
+            p->state = PROCESS_READY;
+            if (p->priority > 0) p->priority--;
+            rq_enqueue(rq_active, p);
+        }
+    }
+
+    /* O(N) alarm scan — alarms are rare so this is acceptable */
     struct process* start = iter;
     do {
-        if (iter->state == PROCESS_SLEEPING) {
-            if (current_tick >= iter->wake_at_tick) {
-                iter->state = PROCESS_READY;
-                /* Priority boost: reward I/O-bound processes that sleep */
-                if (iter->priority > 0) iter->priority--;
-                rq_enqueue(rq_active, iter);
-            }
-        }
         if (iter->alarm_tick != 0 && current_tick >= iter->alarm_tick) {
             iter->alarm_tick = 0;
             iter->sig_pending_mask |= (1U << 14); /* SIGALRM */

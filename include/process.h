@@ -106,6 +106,10 @@ struct process {
     struct process* rq_next;    // O(1) runqueue per-priority list
     struct process* rq_prev;
 
+    struct process* sleep_next;  // sorted sleep queue (by wake_at_tick)
+    struct process* sleep_prev;
+    int in_sleep_queue;
+
     /* Thread support */
     uint32_t tgid;              /* Thread group ID (== pid for group leader) */
     uint32_t flags;             /* PROCESS_FLAG_* */
@@ -165,5 +169,10 @@ struct process* process_clone_create(uint32_t clone_flags,
 
 // Look up a process by PID (scheduler lock must NOT be held).
 struct process* process_find_by_pid(uint32_t pid);
+
+// Insert current_process into the sorted sleep queue under sched_lock.
+// Safe to call after releasing any other lock (e.g. semaphore lock).
+// Skips insertion if the process is no longer PROCESS_SLEEPING.
+void sched_sleep_enqueue_self(void);
 
 #endif
