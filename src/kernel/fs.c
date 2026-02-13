@@ -244,3 +244,17 @@ int vfs_truncate(const char* path, uint32_t length) {
     if (!node->truncate) return -ENOSYS;
     return node->truncate(node, length);
 }
+
+int vfs_link(const char* old_path, const char* new_path) {
+    if (!old_path || !new_path) return -EINVAL;
+    fs_node_t* target = vfs_lookup(old_path);
+    if (!target) return -ENOENT;
+    if (target->flags != FS_FILE) return -EPERM;
+
+    char name[128];
+    fs_node_t* parent = vfs_lookup_parent(new_path, name, sizeof(name));
+    if (!parent) return -ENOENT;
+    if (parent->flags != FS_DIRECTORY) return -ENOTDIR;
+    if (!parent->link) return -ENOSYS;
+    return parent->link(parent, name, target);
+}

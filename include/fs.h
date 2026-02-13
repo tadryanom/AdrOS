@@ -38,6 +38,7 @@ typedef struct fs_node {
     int (*rename)(struct fs_node* old_dir, const char* old_name,
                   struct fs_node* new_dir, const char* new_name);
     int (*truncate)(struct fs_node* node, uint32_t length);
+    int (*link)(struct fs_node* dir, const char* name, struct fs_node* target);
 } fs_node_t;
 
 struct vfs_dirent {
@@ -65,6 +66,7 @@ int vfs_unlink(const char* path);
 int vfs_rmdir(const char* path);
 int vfs_rename(const char* old_path, const char* new_path);
 int vfs_truncate(const char* path, uint32_t length);
+int vfs_link(const char* old_path, const char* new_path);
 
 int vfs_mount(const char* mountpoint, fs_node_t* root);
 

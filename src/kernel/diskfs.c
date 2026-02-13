@@ -1001,6 +1001,47 @@ static int diskfs_vfs_truncate(struct fs_node* node, uint32_t length) {
     return diskfs_super_store(&sb);
 }
 
+static int diskfs_vfs_link(struct fs_node* dir, const char* name, struct fs_node* target) {
+    if (!dir || !name || name[0] == 0 || !target) return -EINVAL;
+    if (!g_ready) return -ENODEV;
+
+    struct diskfs_node* parent = (struct diskfs_node*)dir;
+    struct diskfs_node* src = (struct diskfs_node*)target;
+
+    struct diskfs_super sb;
+    if (diskfs_super_load(&sb) < 0) return -EIO;
+
+    uint16_t src_ino = src->ino;
+    if (src_ino >= DISKFS_MAX_INODES) return -EIO;
+    if (sb.inodes[src_ino].type != DISKFS_INODE_FILE) return -EPERM;
+
+    /* Check new name doesn't already exist */
+    if (diskfs_find_child(&sb, parent->ino, name) >= 0) return -EEXIST;
+
+    /* Find a free inode slot */
+    uint16_t new_ino = 0;
+    for (uint16_t i = 1; i < DISKFS_MAX_INODES; i++) {
+        if (sb.inodes[i].type == DISKFS_INODE_FREE) { new_ino = i; break; }
+    }
+    if (new_ino == 0) return -ENOSPC;
+
+    /* Create new inode sharing same data blocks */
+    sb.inodes[new_ino].type = DISKFS_INODE_FILE;
+    sb.inodes[new_ino].nlink = 2;
+    sb.inodes[new_ino].parent = parent->ino;
+    memset(sb.inodes[new_ino].name, 0, sizeof(sb.inodes[new_ino].name));
+    diskfs_strlcpy(sb.inodes[new_ino].name, name, sizeof(sb.inodes[new_ino].name));
+    sb.inodes[new_ino].start_lba = sb.inodes[src_ino].start_lba;
+    sb.inodes[new_ino].size_bytes = sb.inodes[src_ino].size_bytes;
+    sb.inodes[new_ino].cap_sectors = sb.inodes[src_ino].cap_sectors;
+
+    /* Update source inode nlink */
+    if (sb.inodes[src_ino].nlink < 2) sb.inodes[src_ino].nlink = 2;
+    else sb.inodes[src_ino].nlink++;
+
+    return diskfs_super_store(&sb);
+}
+
 static void diskfs_set_dir_ops(fs_node_t* vfs) {
     if (!vfs) return;
     vfs->create = &diskfs_vfs_create;
@@ -1008,6 +1049,7 @@ static void diskfs_set_dir_ops(fs_node_t* vfs) {
     vfs->unlink = &diskfs_vfs_unlink;
     vfs->rmdir = &diskfs_vfs_rmdir;
     vfs->rename = &diskfs_vfs_rename;
+    vfs->link = &diskfs_vfs_link;
 }
 
 fs_node_t* diskfs_create_root(void) {

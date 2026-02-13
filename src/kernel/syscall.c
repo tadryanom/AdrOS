@@ -1718,12 +1718,7 @@ static int syscall_link_impl(const char* user_oldpath, const char* user_newpath)
     if (rc1 < 0) return rc1;
     int rc2 = path_resolve_user(user_newpath, new_path, sizeof(new_path));
     if (rc2 < 0) return rc2;
-    extern int diskfs_link(const char*, const char*);
-    const char* old_rel = old_path;
-    const char* new_rel = new_path;
-    if (memcmp(old_path, "/disk/", 6) == 0) old_rel = old_path + 6;
-    if (memcmp(new_path, "/disk/", 6) == 0) new_rel = new_path + 6;
-    return diskfs_link(old_rel, new_rel);
+    return vfs_link(old_path, new_path);
 }
 
 static int syscall_chmod_impl(const char* user_path, uint32_t mode) {
