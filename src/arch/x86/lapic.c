@@ -91,7 +91,7 @@ int lapic_init(void) {
 
     /* Map LAPIC MMIO region into kernel virtual address space.
      * Use a fixed kernel VA for the LAPIC page. */
-    uintptr_t lapic_va = 0xC0200000U;  /* Fixed kernel VA, above _end */
+    uintptr_t lapic_va = 0xC0400000U;  /* Fixed kernel VA, well above _end */
     vmm_map_page((uint64_t)phys_base, (uint64_t)lapic_va,
                  VMM_FLAG_PRESENT | VMM_FLAG_RW | VMM_FLAG_NOCACHE);
     lapic_base = (volatile uint32_t*)lapic_va;

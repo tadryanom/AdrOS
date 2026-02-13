@@ -9,6 +9,8 @@
 #include "lwip/ip4_addr.h"
 #include "lwip/init.h"
 #include "lwip/timeouts.h"
+#include "lwip/tcpip.h"
+#include "lwip/sys.h"
 #include "netif/ethernet.h"
 
 #include "e1000.h"
@@ -98,13 +100,24 @@ void e1000_netif_poll(struct netif* netif) {
 static struct netif e1000_nif;
 static int net_initialized = 0;
 
+static volatile int tcpip_ready = 0;
+
+static void net_init_done(void* arg) {
+    (void)arg;
+    tcpip_ready = 1;
+}
+
 void net_init(void) {
     if (!e1000_link_up()) {
         uart_print("[NET] E1000 link down, skipping lwIP init.\n");
         return;
     }
 
-    lwip_init();
+    /* Start lwIP tcpip thread and poll until it signals ready */
+    tcpip_init(net_init_done, NULL);
+    while (!tcpip_ready) {
+        __asm__ volatile("pause" ::: "memory");
+    }
 
     ip4_addr_t ipaddr, netmask, gw;
     IP4_ADDR(&ipaddr,  10, 0, 2, 15);   /* QEMU user-mode default */
@@ -112,19 +125,18 @@ void net_init(void) {
     IP4_ADDR(&gw,      10, 0, 2, 2);    /* QEMU user-mode gateway */
 
     netif_add(&e1000_nif, &ipaddr, &netmask, &gw, NULL,
-              e1000_netif_init, ethernet_input);
+              e1000_netif_init, tcpip_input);
     netif_set_default(&e1000_nif);
     netif_set_up(&e1000_nif);
 
     net_initialized = 1;
 
-    uart_print("[NET] lwIP initialized, IP=10.0.2.15\n");
+    uart_print("[NET] lwIP initialized (threaded), IP=10.0.2.15\n");
 }
 
 void net_poll(void) {
     if (!net_initialized) return;
     e1000_netif_poll(&e1000_nif);
-    sys_check_timeouts();
 }
 
 struct netif* net_get_netif(void) {

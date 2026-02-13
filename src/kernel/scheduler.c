@@ -22,12 +22,14 @@ static uintptr_t kernel_as = 0;
 
 /*
  * Kernel stack allocator with guard pages.
- * Layout per slot: [guard page (unmapped)] [stack page (mapped)]
- * Virtual region: 0xC8000000 .. 0xCFFFFFFF (128MB, up to 16384 stacks)
+ * Layout per slot: [guard page (unmapped)] [2 stack pages (mapped)]
+ * Virtual region: 0xC8000000 .. 0xCFFFFFFF (128MB, up to 10922 stacks)
  */
 #define KSTACK_REGION  0xC8000000U
-#define KSTACK_SLOT    (2 * 0x1000U)  /* guard + stack = 8KB per slot */
-#define KSTACK_MAX     16384
+#define KSTACK_PAGES   2              /* 8KB usable stack per thread */
+#define KSTACK_SIZE    (KSTACK_PAGES * 0x1000U)
+#define KSTACK_SLOT    (0x1000U + KSTACK_SIZE)  /* guard + stack */
+#define KSTACK_MAX     10922
 
 static uint32_t kstack_next_slot = 0;
 static spinlock_t kstack_lock = {0};
@@ -43,12 +45,15 @@ static void* kstack_alloc(void) {
 
     uintptr_t base = KSTACK_REGION + slot * KSTACK_SLOT;
     /* base+0x0000 = guard page (leave unmapped) */
-    /* base+0x1000 = actual stack page */
-    void* phys = pmm_alloc_page();
-    if (!phys) return NULL;
-    vmm_map_page((uint64_t)(uintptr_t)phys, (uint64_t)(base + 0x1000U),
-                 VMM_FLAG_PRESENT | VMM_FLAG_RW);
-    memset((void*)(base + 0x1000U), 0, 0x1000U);
+    /* base+0x1000 .. base+0x1000+KSTACK_SIZE = actual stack pages */
+    for (uint32_t i = 0; i < KSTACK_PAGES; i++) {
+        void* phys = pmm_alloc_page();
+        if (!phys) return NULL;
+        vmm_map_page((uint64_t)(uintptr_t)phys,
+                     (uint64_t)(base + 0x1000U + i * 0x1000U),
+                     VMM_FLAG_PRESENT | VMM_FLAG_RW);
+    }
+    memset((void*)(base + 0x1000U), 0, KSTACK_SIZE);
     return (void*)(base + 0x1000U);
 }
 
@@ -57,7 +62,8 @@ static void kstack_free(void* stack) {
     uintptr_t addr = (uintptr_t)stack;
     if (addr < KSTACK_REGION || addr >= KSTACK_REGION + KSTACK_MAX * KSTACK_SLOT)
         return;
-    vmm_unmap_page((uint64_t)addr);
+    for (uint32_t i = 0; i < KSTACK_PAGES; i++)
+        vmm_unmap_page((uint64_t)(addr + i * 0x1000U));
     /* Note: slot is not recycled — acceptable for now */
 }
 
@@ -447,7 +453,7 @@ struct process* process_fork_create(uintptr_t child_as, const struct registers* 
     }
     proc->kernel_stack = (uint32_t*)stack;
 
-    proc->sp = arch_kstack_init((uint8_t*)stack + 4096,
+    proc->sp = arch_kstack_init((uint8_t*)stack + KSTACK_SIZE,
                                   thread_wrapper, fork_child_trampoline);
 
     proc->next = ready_queue_head;
@@ -589,7 +595,7 @@ struct process* process_clone_create(uint32_t clone_flags,
     }
     proc->kernel_stack = (uint32_t*)kstack;
 
-    proc->sp = arch_kstack_init((uint8_t*)kstack + 4096,
+    proc->sp = arch_kstack_init((uint8_t*)kstack + KSTACK_SIZE,
                                   thread_wrapper, clone_child_trampoline);
 
     /* Insert into process list */
@@ -677,7 +683,7 @@ void process_init(void) {
     kernel_proc->next = kernel_proc;
     kernel_proc->prev = kernel_proc;
 
-    hal_cpu_set_kernel_stack((uintptr_t)kstack0 + 4096);
+    hal_cpu_set_kernel_stack((uintptr_t)kstack0 + KSTACK_SIZE);
 
     spin_unlock_irqrestore(&sched_lock, flags);
 }
@@ -733,7 +739,7 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
 
     proc->kernel_stack = (uint32_t*)stack;
     
-    proc->sp = arch_kstack_init((uint8_t*)stack + 4096,
+    proc->sp = arch_kstack_init((uint8_t*)stack + KSTACK_SIZE,
                                   thread_wrapper, entry_point);
 
     proc->next = ready_queue_head;
@@ -824,7 +830,7 @@ void schedule(void) {
     }
 
     if (current_process->kernel_stack) {
-        hal_cpu_set_kernel_stack((uintptr_t)current_process->kernel_stack + 4096);
+        hal_cpu_set_kernel_stack((uintptr_t)current_process->kernel_stack + KSTACK_SIZE);
     }
 
     spin_unlock_irqrestore(&sched_lock, irq_flags);

@@ -1,11 +1,21 @@
 #ifndef LWIPOPTS_H
 #define LWIPOPTS_H
 
-/* ---- NO_SYS mode (raw API, no threads) ---- */
-#define NO_SYS                  1
+/* ---- Threaded mode (full API with threads) ---- */
+#define NO_SYS                  0
 #define LWIP_SOCKET             0
-#define LWIP_NETCONN            0
+#define LWIP_NETCONN            1
 #define LWIP_NETIF_API          0
+#define LWIP_COMPAT_MUTEX       0
+#define LWIP_TCPIP_CORE_LOCKING 0
+#define TCPIP_THREAD_STACKSIZE  4096
+#define TCPIP_THREAD_PRIO       1
+#define TCPIP_MBOX_SIZE         16
+#define DEFAULT_THREAD_STACKSIZE 4096
+#define DEFAULT_ACCEPTMBOX_SIZE 8
+#define DEFAULT_RAW_RECVMBOX_SIZE 8
+#define DEFAULT_UDP_RECVMBOX_SIZE 8
+#define DEFAULT_TCP_RECVMBOX_SIZE 8
 
 /* ---- Memory settings ---- */
 #define MEM_ALIGNMENT           4
@@ -63,7 +73,7 @@
 #define LWIP_PROVIDE_ERRNO      0
 #define LWIP_RAND()             ((u32_t)0x12345678)  /* TODO: proper RNG */
 #define LWIP_TIMERS             1
-#define SYS_LIGHTWEIGHT_PROT    0
+#define SYS_LIGHTWEIGHT_PROT    1
 #define LWIP_DONT_PROVIDE_BYTEORDER_FUNCTIONS 1
 
 /* ---- Raw API callbacks ---- */
