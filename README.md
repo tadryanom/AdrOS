@@ -28,7 +28,7 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **PMM** — bitmap allocator with spinlock protection, frame reference counting, and contiguous block allocation
 - **VMM** — PAE recursive page directory, per-process address spaces (PDPT + 4 PDs), TLB flush
 - **Copy-on-Write (CoW) fork** — PTE bit 9 as CoW marker + page fault handler
-- **Kernel heap** — doubly-linked free list with coalescing, dynamic growth up to 64MB
+- **Kernel heap** — 8MB Buddy Allocator (power-of-2 blocks 32B–8MB, circular free lists, buddy coalescing, corruption detection)
 - **Slab allocator** — `slab_cache_t` with free-list-in-place and spinlock
 - **Shared memory** — System V IPC style (`shmget`/`shmat`/`shmdt`/`shmctl`)
 - **`mmap`/`munmap`** — anonymous mappings, shared memory backing, and file-backed (fd) mappings
@@ -87,23 +87,31 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - Generic `readdir`/`getdents` across all VFS types; symlink following in path resolution
 
 ### Networking
-- **E1000 NIC** — Intel 82540EM driver (MMIO, IRQ via IOAPIC)
-- **lwIP TCP/IP stack** — IPv4, static IP (10.0.2.15 via QEMU user-net)
+- **E1000 NIC** — Intel 82540EM driver (MMIO, IRQ 11 via IOAPIC level-triggered, interrupt-driven RX)
+- **lwIP TCP/IP stack** — NO_SYS=0 threaded mode, IPv4, static IP (10.0.2.15 via QEMU user-net)
 - **Socket API** — `socket`/`bind`/`listen`/`accept`/`connect`/`send`/`recv`/`sendto`/`recvfrom`
-- **Protocols** — TCP (`SOCK_STREAM`) + UDP (`SOCK_DGRAM`)
+- **Protocols** — TCP (`SOCK_STREAM`) + UDP (`SOCK_DGRAM`) + ICMP
+- **ICMP ping** — kernel-level ping test to QEMU gateway (10.0.2.2) during boot
 - **DNS resolver** — lwIP-based with async callback and timeout; kernel `dns_resolve()` wrapper
 
 ### Drivers & Hardware
 - **PCI** — full bus/slot/func enumeration with BAR + IRQ
-- **ATA PIO + DMA** — Bus Master IDE with bounce buffer + zero-copy direct DMA, PRDT, IRQ coordination
-- **LAPIC + IOAPIC** — replaces legacy PIC; ISA IRQ routing
+- **ATA PIO + DMA** — Bus Master IDE with bounce buffer + zero-copy direct DMA, PRDT, IRQ coordination; multi-drive support (4 drives: hda/hdb/hdc/hdd across 2 channels)
+- **LAPIC + IOAPIC** — replaces legacy PIC; ISA edge-triggered + PCI level-triggered IRQ routing
 - **SMP** — 4 CPUs via INIT-SIPI-SIPI, per-CPU data via GS segment
 - **ACPI** — MADT parsing for CPU topology and IOAPIC discovery
 - **VBE framebuffer** — maps LFB, pixel drawing, font rendering; `/dev/fb0` device with `ioctl`/`mmap` for userspace access
 - **UART**, **VGA text**, **PS/2 keyboard**, **PIT timer**, **LAPIC timer**
+- **Kernel console (kconsole)** — interactive debug shell with readline, scrollback, command history
 - **RTC** — CMOS real-time clock driver for wall-clock time (`CLOCK_REALTIME`)
 - **E1000 NIC** — Intel 82540EM Ethernet controller
 - **MTRR** — write-combining support via variable-range MTRR programming
+
+### Boot & Kernel Infrastructure
+- **Kernel command line** — Linux-like parser (`init=`, `root=`, `console=`, `ring3`, `quiet`, `noapic`, `nosmp`); unknown tokens forwarded to init as argv/envp
+- **`/proc/cmdline`** — exposes raw kernel command line to userspace
+- **`root=` parameter** — auto-detect and mount filesystem from specified ATA device at `/disk`
+- **Kernel synchronization** — counting semaphores (`ksem_t`), mutexes (`kmutex_t`), mailboxes (`kmbox_t`) with IRQ-safe signaling
 
 ### Userland
 - **ulibc** — `printf`, `malloc`/`free`/`calloc`/`realloc`, `string.h`, `unistd.h`, `errno.h`, `pthread.h`, `signal.h`, `stdio.h` (buffered I/O with line-buffered stdout, unbuffered stderr, `setvbuf`/`setbuf`, `isatty`), `stdlib.h` (`atof`, `strtol`), `ctype.h`, `sys/mman.h` (`mmap`/`munmap`), `sys/ioctl.h`, `sys/times.h`, `sys/uio.h`, `sys/types.h`, `sys/stat.h`, `time.h` (`nanosleep`/`clock_gettime`), `math.h`, `assert.h`, `fcntl.h`, `strings.h`, `inttypes.h`, `linux/futex.h`, `realpath()`
@@ -140,7 +148,8 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 
 ### Testing
 - **47 host-side unit tests** — `test_utils.c` (28) + `test_security.c` (19)
-- **19 QEMU smoke tests** — 4-CPU, expect-based
+- **20 QEMU smoke tests** — 4-CPU expect-based (includes ICMP ping network test)
+- **16-check test battery** — multi-disk ATA (hda+hdb+hdd), VFS mount, ping, diskfs ops (`make test-battery`)
 - **Static analysis** — cppcheck, sparse, gcc -fanalyzer
 - **GDB scripted checks** — heap/PMM/VGA integrity
 - `make test-all` runs everything
@@ -160,15 +169,16 @@ QEMU debug helpers:
 
 See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for a detailed checklist.
 
-**All 31 planned POSIX implementation tasks are complete**, plus additional features including the DOOM game port, uid/gid/euid/egid permission enforcement, framebuffer device, raw keyboard device, fd-backed mmap, and kernel stack guard pages. The kernel covers **~93%** of the core POSIX interfaces needed for a practical Unix-like system.
+**All 31 planned POSIX tasks are complete**, plus 10+ additional features: DOOM port, uid/gid/euid/egid, framebuffer, raw keyboard, fd-backed mmap, kernel stack guards, FAT12/16/32 full RW, ext2 full RW, ICMP ping, kernel command line parser. ~103K lines of C/ASM/headers across 255 commits. The kernel covers **~95%** of the core POSIX interfaces needed for a practical Unix-like system.
 
 ### Remaining work for full POSIX compliance
 - **Full `ld.so`** — relocation processing for shared libraries (`dlopen`/`dlsym`)
 - **`getaddrinfo`** / `/etc/hosts` — userland name resolution
 - **`sigqueue`** — queued real-time signals
 - **`setitimer`/`getitimer`** — interval timers
-- **Per-CPU scheduler runqueues** — SMP scalability
+- **Per-CPU scheduler runqueues** — SMP scalability (currently all processes run on BSP)
 - **SMAP** — Supervisor Mode Access Prevention
+- **DHCP client** — currently static IP only
 - **Multi-arch bring-up** — ARM/RISC-V functional kernels
 
 ## Directory Structure
@@ -177,7 +187,7 @@ See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for a detailed checklist.
 - `src/hal/x86/` — HAL x86 (CPU, keyboard, timer, UART, PCI, ATA PIO/DMA, E1000 NIC, RTC)
 - `src/drivers/` — Device drivers (VBE, initrd, VGA, timer)
 - `src/mm/` — Memory management (PMM, heap, slab, arch-independent VMM wrappers)
-- `src/net/` — Networking (lwIP port, DNS resolver)
+- `src/net/` — Networking (lwIP port, E1000 netif, DNS resolver, ICMP ping test)
 - `include/` — Header files
 - `user/` — Userland programs (`init.c`, `echo.c`, `sh.c`, `cat.c`, `ls.c`, `mkdir.c`, `rm.c`, `ldso.c`)
 - `user/doom/` — DOOM port (doomgeneric engine + AdrOS platform adapter)
