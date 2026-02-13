@@ -158,6 +158,37 @@ static void sleep_queue_remove(struct process* p) {
     p->in_sleep_queue = 0;
 }
 
+/* ---------- Sorted alarm queue (by alarm_tick) ---------- */
+static struct process* alarm_head = NULL;
+
+static void alarm_queue_insert(struct process* p) {
+    p->in_alarm_queue = 1;
+    if (!alarm_head || p->alarm_tick <= alarm_head->alarm_tick) {
+        p->alarm_prev = NULL;
+        p->alarm_next = alarm_head;
+        if (alarm_head) alarm_head->alarm_prev = p;
+        alarm_head = p;
+        return;
+    }
+    struct process* cur = alarm_head;
+    while (cur->alarm_next && cur->alarm_next->alarm_tick < p->alarm_tick)
+        cur = cur->alarm_next;
+    p->alarm_next = cur->alarm_next;
+    p->alarm_prev = cur;
+    if (cur->alarm_next) cur->alarm_next->alarm_prev = p;
+    cur->alarm_next = p;
+}
+
+static void alarm_queue_remove(struct process* p) {
+    if (!p->in_alarm_queue) return;
+    if (p->alarm_prev) p->alarm_prev->alarm_next = p->alarm_next;
+    else               alarm_head = p->alarm_next;
+    if (p->alarm_next) p->alarm_next->alarm_prev = p->alarm_prev;
+    p->alarm_prev = NULL;
+    p->alarm_next = NULL;
+    p->in_alarm_queue = 0;
+}
+
 static struct process* rq_pick_next(void) {
     if (rq_active->bitmap) {
         uint32_t prio = bsf32(rq_active->bitmap);
@@ -288,6 +319,7 @@ int process_kill(uint32_t pid, int sig) {
             rq_remove_if_queued(p);
         }
         sleep_queue_remove(p);
+        alarm_queue_remove(p);
         process_close_all_files_locked(p);
         p->exit_status = 128 + sig;
         p->state = PROCESS_ZOMBIE;
@@ -422,6 +454,7 @@ void process_exit_notify(int status) {
 
     current_process->exit_status = status;
     current_process->state = PROCESS_ZOMBIE;
+    alarm_queue_remove(current_process);
 
     if (current_process->pid != 0) {
         struct process* parent = process_find_locked(current_process->parent_pid);
@@ -951,15 +984,31 @@ void process_wake_check(uint32_t current_tick) {
         }
     }
 
-    /* O(N) alarm scan — alarms are rare so this is acceptable */
-    struct process* start = iter;
-    do {
-        if (iter->alarm_tick != 0 && current_tick >= iter->alarm_tick) {
-            iter->alarm_tick = 0;
-            iter->sig_pending_mask |= (1U << 14); /* SIGALRM */
-        }
-        iter = iter->next;
-    } while (iter != start);
+    /* O(1) alarm queue: pop expired entries from the sorted head */
+    while (alarm_head && current_tick >= alarm_head->alarm_tick) {
+        struct process* p = alarm_head;
+        alarm_queue_remove(p);
+        p->alarm_tick = 0;
+        p->sig_pending_mask |= (1U << 14); /* SIGALRM */
+    }
 
     spin_unlock_irqrestore(&sched_lock, flags);
+}
+
+uint32_t process_alarm_set(struct process* p, uint32_t tick) {
+    uintptr_t flags = spin_lock_irqsave(&sched_lock);
+    uint32_t old = p->alarm_tick;
+
+    /* Remove from alarm queue if currently queued */
+    alarm_queue_remove(p);
+
+    if (tick != 0) {
+        p->alarm_tick = tick;
+        alarm_queue_insert(p);
+    } else {
+        p->alarm_tick = 0;
+    }
+
+    spin_unlock_irqrestore(&sched_lock, flags);
+    return old;
 }

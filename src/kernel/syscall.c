@@ -2322,14 +2322,11 @@ void syscall_handler(struct registers* regs) {
         if (!current_process) { sc_ret(regs) = 0; return; }
         uint32_t seconds = sc_arg0(regs);
         uint32_t now = get_tick_count();
+        uint32_t new_tick = (seconds == 0) ? 0 : now + seconds * 50;
+        uint32_t old_tick = process_alarm_set(current_process, new_tick);
         uint32_t old_remaining = 0;
-        if (current_process->alarm_tick > now) {
-            old_remaining = (current_process->alarm_tick - now) / 50 + 1;
-        }
-        if (seconds == 0) {
-            current_process->alarm_tick = 0;
-        } else {
-            current_process->alarm_tick = now + seconds * 50;
+        if (old_tick > now) {
+            old_remaining = (old_tick - now) / 50 + 1;
         }
         sc_ret(regs) = old_remaining;
         return;

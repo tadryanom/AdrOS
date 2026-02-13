@@ -110,6 +110,10 @@ struct process {
     struct process* sleep_prev;
     int in_sleep_queue;
 
+    struct process* alarm_next;  // sorted alarm queue (by alarm_tick)
+    struct process* alarm_prev;
+    int in_alarm_queue;
+
     /* Thread support */
     uint32_t tgid;              /* Thread group ID (== pid for group leader) */
     uint32_t flags;             /* PROCESS_FLAG_* */
@@ -131,6 +135,9 @@ void process_sleep(uint32_t ticks);
 
 // Wake up sleeping processes (called by timer)
 void process_wake_check(uint32_t current_tick);
+
+// Set or cancel an alarm for a process (returns old alarm_tick)
+uint32_t process_alarm_set(struct process* p, uint32_t tick);
 
 // The magic function that switches stacks (Implemented in Assembly)
 // old_esp_ptr: Address where we save the OLD process's ESP
