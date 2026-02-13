@@ -9,6 +9,7 @@
 #define FS_CHARDEVICE  0x03
 #define FS_BLOCKDEVICE 0x04
 #define FS_SYMLINK     0x05
+#define FS_SOCKET      0x06
 
 /* poll() event flags — shared between kernel VFS and syscall layer */
 #define VFS_POLL_IN    0x0001

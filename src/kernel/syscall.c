@@ -596,9 +596,7 @@ static int fd_close(int fd) {
     current_process->files[fd] = NULL;
 
     if (__sync_sub_and_fetch(&f->refcount, 1) == 0) {
-        if (f->flags == 0x534F434BU && f->node == NULL) {
-            ksocket_close((int)f->offset);
-        } else if (f->node) {
+        if (f->node) {
             vfs_close(f->node);
         }
         kfree(f);
@@ -1283,7 +1281,7 @@ static int syscall_write_impl(int fd, const void* user_buf, uint32_t len) {
             return -EAGAIN;
     }
     if (!f->node->write) return -ESPIPE;
-    if (((f->node->flags & FS_FILE) == 0) && f->node->flags != FS_CHARDEVICE) return -ESPIPE;
+    if (f->node->flags != FS_FILE && f->node->flags != FS_CHARDEVICE && f->node->flags != FS_SOCKET) return -ESPIPE;
 
     if ((f->flags & O_APPEND) && (f->node->flags & FS_FILE)) {
         f->offset = f->node->length;
@@ -2586,6 +2584,50 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
     sc_ret(regs) = (uint32_t)-ENOSYS;
 }
 
+/* --- Socket VFS node --- */
+
+static uint32_t sock_node_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
+    (void)offset;
+    if (!node || !buffer) return 0;
+    int sid = (int)node->inode;
+    int rc = ksocket_recv(sid, buffer, size, 0);
+    return (rc > 0) ? (uint32_t)rc : 0;
+}
+
+static uint32_t sock_node_write(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer) {
+    (void)offset;
+    if (!node || !buffer) return 0;
+    int sid = (int)node->inode;
+    int rc = ksocket_send(sid, buffer, size, 0);
+    return (rc > 0) ? (uint32_t)rc : 0;
+}
+
+static void sock_node_close(fs_node_t* node) {
+    if (!node) return;
+    ksocket_close((int)node->inode);
+    kfree(node);
+}
+
+static fs_node_t* sock_node_create(int sid) {
+    fs_node_t* n = (fs_node_t*)kmalloc(sizeof(fs_node_t));
+    if (!n) return NULL;
+    memset(n, 0, sizeof(*n));
+    strcpy(n->name, "socket");
+    n->flags = FS_SOCKET;
+    n->inode = (uint32_t)sid;
+    n->read = sock_node_read;
+    n->write = sock_node_write;
+    n->close = sock_node_close;
+    return n;
+}
+
+static inline int sock_fd_get_sid(int fd) {
+    if (fd < 0 || fd >= PROCESS_MAX_FILES) return -EBADF;
+    struct file* f = current_process->files[fd];
+    if (!f || !f->node || f->node->flags != FS_SOCKET) return -EBADF;
+    return (int)f->node->inode;
+}
+
 /* Separate function to keep socket locals off syscall_handler's stack frame */
 __attribute__((noinline))
 static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no) {
@@ -2595,71 +2637,55 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         int protocol = (int)sc_arg2(regs);
         int sid = ksocket_create(domain, type, protocol);
         if (sid < 0) { sc_ret(regs) = (uint32_t)sid; return; }
-        int fd = -1;
-        for (int i = 0; i < PROCESS_MAX_FILES; i++) {
-            if (!current_process->files[i]) { fd = i; break; }
-        }
-        if (fd < 0) { ksocket_close(sid); sc_ret(regs) = (uint32_t)-EMFILE; return; }
+        fs_node_t* sn = sock_node_create(sid);
+        if (!sn) { ksocket_close(sid); sc_ret(regs) = (uint32_t)-ENOMEM; return; }
         struct file* f = (struct file*)kmalloc(sizeof(struct file));
-        if (!f) { ksocket_close(sid); sc_ret(regs) = (uint32_t)-ENOMEM; return; }
-        f->node = NULL;
-        f->offset = (uint32_t)sid;
-        f->flags = 0x534F434BU;     /* magic 'SOCK' */
+        if (!f) { sock_node_close(sn); sc_ret(regs) = (uint32_t)-ENOMEM; return; }
+        f->node = sn;
+        f->offset = 0;
+        f->flags = 0;
         f->refcount = 1;
-        current_process->files[fd] = f;
+        int fd = fd_alloc(f);
+        if (fd < 0) { sock_node_close(sn); kfree(f); sc_ret(regs) = (uint32_t)-EMFILE; return; }
         sc_ret(regs) = (uint32_t)fd;
         return;
     }
 
     if (syscall_no == SYSCALL_BIND) {
-        int fd = (int)sc_arg0(regs);
-        if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
-            current_process->files[fd]->flags != 0x534F434BU) {
-            sc_ret(regs) = (uint32_t)-EBADF; return;
-        }
+        int sid = sock_fd_get_sid((int)sc_arg0(regs));
+        if (sid < 0) { sc_ret(regs) = (uint32_t)-EBADF; return; }
         struct sockaddr_in sa;
         if (copy_from_user(&sa, (const void*)sc_arg1(regs), sizeof(sa)) < 0) {
             sc_ret(regs) = (uint32_t)-EFAULT; return;
         }
-        int sid = (int)current_process->files[fd]->offset;
         sc_ret(regs) = (uint32_t)ksocket_bind(sid, &sa);
         return;
     }
 
     if (syscall_no == SYSCALL_LISTEN) {
-        int fd = (int)sc_arg0(regs);
-        if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
-            current_process->files[fd]->flags != 0x534F434BU) {
-            sc_ret(regs) = (uint32_t)-EBADF; return;
-        }
-        int sid = (int)current_process->files[fd]->offset;
+        int sid = sock_fd_get_sid((int)sc_arg0(regs));
+        if (sid < 0) { sc_ret(regs) = (uint32_t)-EBADF; return; }
         sc_ret(regs) = (uint32_t)ksocket_listen(sid, (int)sc_arg1(regs));
         return;
     }
 
     if (syscall_no == SYSCALL_ACCEPT) {
-        int fd = (int)sc_arg0(regs);
-        if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
-            current_process->files[fd]->flags != 0x534F434BU) {
-            sc_ret(regs) = (uint32_t)-EBADF; return;
-        }
-        int sid = (int)current_process->files[fd]->offset;
+        int sid = sock_fd_get_sid((int)sc_arg0(regs));
+        if (sid < 0) { sc_ret(regs) = (uint32_t)-EBADF; return; }
         struct sockaddr_in sa;
         memset(&sa, 0, sizeof(sa));
         int new_sid = ksocket_accept(sid, &sa);
         if (new_sid < 0) { sc_ret(regs) = (uint32_t)new_sid; return; }
-        int new_fd = -1;
-        for (int i = 0; i < PROCESS_MAX_FILES; i++) {
-            if (!current_process->files[i]) { new_fd = i; break; }
-        }
-        if (new_fd < 0) { ksocket_close(new_sid); sc_ret(regs) = (uint32_t)-EMFILE; return; }
+        fs_node_t* sn = sock_node_create(new_sid);
+        if (!sn) { ksocket_close(new_sid); sc_ret(regs) = (uint32_t)-ENOMEM; return; }
         struct file* f = (struct file*)kmalloc(sizeof(struct file));
-        if (!f) { ksocket_close(new_sid); sc_ret(regs) = (uint32_t)-ENOMEM; return; }
-        f->node = NULL;
-        f->offset = (uint32_t)new_sid;
-        f->flags = 0x534F434BU;
+        if (!f) { sock_node_close(sn); sc_ret(regs) = (uint32_t)-ENOMEM; return; }
+        f->node = sn;
+        f->offset = 0;
+        f->flags = 0;
         f->refcount = 1;
-        current_process->files[new_fd] = f;
+        int new_fd = fd_alloc(f);
+        if (new_fd < 0) { sock_node_close(sn); kfree(f); sc_ret(regs) = (uint32_t)-EMFILE; return; }
         if (sc_arg1(regs)) {
             (void)copy_to_user((void*)sc_arg1(regs), &sa, sizeof(sa));
         }
@@ -2668,56 +2694,41 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
     }
 
     if (syscall_no == SYSCALL_CONNECT) {
-        int fd = (int)sc_arg0(regs);
-        if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
-            current_process->files[fd]->flags != 0x534F434BU) {
-            sc_ret(regs) = (uint32_t)-EBADF; return;
-        }
+        int sid = sock_fd_get_sid((int)sc_arg0(regs));
+        if (sid < 0) { sc_ret(regs) = (uint32_t)-EBADF; return; }
         struct sockaddr_in sa;
         if (copy_from_user(&sa, (const void*)sc_arg1(regs), sizeof(sa)) < 0) {
             sc_ret(regs) = (uint32_t)-EFAULT; return;
         }
-        int sid = (int)current_process->files[fd]->offset;
         sc_ret(regs) = (uint32_t)ksocket_connect(sid, &sa);
         return;
     }
 
     if (syscall_no == SYSCALL_SEND) {
-        int fd = (int)sc_arg0(regs);
-        if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
-            current_process->files[fd]->flags != 0x534F434BU) {
-            sc_ret(regs) = (uint32_t)-EBADF; return;
-        }
+        int sid = sock_fd_get_sid((int)sc_arg0(regs));
+        if (sid < 0) { sc_ret(regs) = (uint32_t)-EBADF; return; }
         size_t len = (size_t)sc_arg2(regs);
         if (!user_range_ok((const void*)sc_arg1(regs), len)) {
             sc_ret(regs) = (uint32_t)-EFAULT; return;
         }
-        int sid = (int)current_process->files[fd]->offset;
         sc_ret(regs) = (uint32_t)ksocket_send(sid, (const void*)sc_arg1(regs), len, (int)sc_arg3(regs));
         return;
     }
 
     if (syscall_no == SYSCALL_RECV) {
-        int fd = (int)sc_arg0(regs);
-        if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
-            current_process->files[fd]->flags != 0x534F434BU) {
-            sc_ret(regs) = (uint32_t)-EBADF; return;
-        }
+        int sid = sock_fd_get_sid((int)sc_arg0(regs));
+        if (sid < 0) { sc_ret(regs) = (uint32_t)-EBADF; return; }
         size_t len = (size_t)sc_arg2(regs);
         if (!user_range_ok((void*)sc_arg1(regs), len)) {
             sc_ret(regs) = (uint32_t)-EFAULT; return;
         }
-        int sid = (int)current_process->files[fd]->offset;
         sc_ret(regs) = (uint32_t)ksocket_recv(sid, (void*)sc_arg1(regs), len, (int)sc_arg3(regs));
         return;
     }
 
     if (syscall_no == SYSCALL_SENDTO) {
-        int fd = (int)sc_arg0(regs);
-        if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
-            current_process->files[fd]->flags != 0x534F434BU) {
-            sc_ret(regs) = (uint32_t)-EBADF; return;
-        }
+        int sid = sock_fd_get_sid((int)sc_arg0(regs));
+        if (sid < 0) { sc_ret(regs) = (uint32_t)-EBADF; return; }
         size_t len = (size_t)sc_arg2(regs);
         if (!user_range_ok((const void*)sc_arg1(regs), len)) {
             sc_ret(regs) = (uint32_t)-EFAULT; return;
@@ -2726,25 +2737,20 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         if (copy_from_user(&dest, (const void*)sc_arg4(regs), sizeof(dest)) < 0) {
             sc_ret(regs) = (uint32_t)-EFAULT; return;
         }
-        int sid = (int)current_process->files[fd]->offset;
         sc_ret(regs) = (uint32_t)ksocket_sendto(sid, (const void*)sc_arg1(regs), len,
                                               (int)sc_arg3(regs), &dest);
         return;
     }
 
     if (syscall_no == SYSCALL_RECVFROM) {
-        int fd = (int)sc_arg0(regs);
-        if (fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd] ||
-            current_process->files[fd]->flags != 0x534F434BU) {
-            sc_ret(regs) = (uint32_t)-EBADF; return;
-        }
+        int sid = sock_fd_get_sid((int)sc_arg0(regs));
+        if (sid < 0) { sc_ret(regs) = (uint32_t)-EBADF; return; }
         size_t len = (size_t)sc_arg2(regs);
         if (!user_range_ok((void*)sc_arg1(regs), len)) {
             sc_ret(regs) = (uint32_t)-EFAULT; return;
         }
         struct sockaddr_in src;
         memset(&src, 0, sizeof(src));
-        int sid = (int)current_process->files[fd]->offset;
         int ret = ksocket_recvfrom(sid, (void*)sc_arg1(regs), len, (int)sc_arg3(regs), &src);
         if (ret > 0 && sc_arg4(regs)) {
             (void)copy_to_user((void*)sc_arg4(regs), &src, sizeof(src));
