@@ -38,7 +38,7 @@ ifeq ($(ARCH),x86)
     AS ?= $(TOOLPREFIX)as
     LD ?= $(TOOLPREFIX)ld
     
-    # lwIP sources (NO_SYS=1, IPv4 only, no apps)
+    # lwIP sources (NO_SYS=0, IPv4, threaded API + sockets)
     LWIPDIR := third_party/lwip/src
     LWIP_CORE := $(LWIPDIR)/core/init.c $(LWIPDIR)/core/def.c $(LWIPDIR)/core/inet_chksum.c \
         $(LWIPDIR)/core/ip.c $(LWIPDIR)/core/mem.c $(LWIPDIR)/core/memp.c \
@@ -50,7 +50,10 @@ ifeq ($(ARCH),x86)
         $(LWIPDIR)/core/ipv4/ip4.c $(LWIPDIR)/core/ipv4/ip4_addr.c \
         $(LWIPDIR)/core/ipv4/ip4_frag.c
     LWIP_NETIF := $(LWIPDIR)/netif/ethernet.c
-    LWIP_SOURCES := $(LWIP_CORE) $(LWIP_IPV4) $(LWIP_NETIF)
+    LWIP_API := $(LWIPDIR)/api/api_lib.c $(LWIPDIR)/api/api_msg.c \
+        $(LWIPDIR)/api/err.c $(LWIPDIR)/api/if_api.c $(LWIPDIR)/api/netbuf.c \
+        $(LWIPDIR)/api/netifapi.c $(LWIPDIR)/api/tcpip.c
+    LWIP_SOURCES := $(LWIP_CORE) $(LWIP_IPV4) $(LWIP_NETIF) $(LWIP_API)
     NET_SOURCES := $(wildcard $(SRC_DIR)/net/*.c) $(wildcard $(SRC_DIR)/net/lwip_port/*.c)
     C_SOURCES += $(NET_SOURCES)
 
@@ -60,7 +63,7 @@ ifeq ($(ARCH),x86)
     ARCH_ASFLAGS := --32
 
     # Default User Flags (Allow override via make CFLAGS=...)
-    CFLAGS ?= -O2 -Wall -Wextra
+    CFLAGS ?= -O2 -Wall -Wextra -Werror -Wno-error=cpp
     
     # Merge Flags
     CFLAGS := $(ARCH_CFLAGS) $(CFLAGS)
@@ -88,7 +91,7 @@ ifeq ($(ARCH),arm)
     CC := aarch64-linux-gnu-gcc
     AS := aarch64-linux-gnu-as
     LD := aarch64-linux-gnu-ld
-    CFLAGS := -ffreestanding -O2 -Wall -Wextra -Iinclude
+    CFLAGS := -ffreestanding -O2 -Wall -Wextra -Werror -Wno-error=cpp -Iinclude
     LDFLAGS := -T $(SRC_DIR)/arch/arm/linker.ld
     ASFLAGS := 
     ASM_SOURCES := $(wildcard $(SRC_DIR)/arch/arm/*.S)
@@ -100,7 +103,7 @@ ifeq ($(ARCH),riscv)
     CC := riscv64-linux-gnu-gcc
     AS := riscv64-linux-gnu-as
     LD := riscv64-linux-gnu-ld
-    CFLAGS := -ffreestanding -O2 -Wall -Wextra -Iinclude -mcmodel=medany
+    CFLAGS := -ffreestanding -O2 -Wall -Wextra -Werror -Wno-error=cpp -Iinclude -mcmodel=medany
     LDFLAGS := -T $(SRC_DIR)/arch/riscv/linker.ld
     ASFLAGS := 
     ASM_SOURCES := $(wildcard $(SRC_DIR)/arch/riscv/*.S)
@@ -112,7 +115,7 @@ ifeq ($(ARCH),mips)
     CC := mipsel-linux-gnu-gcc
     AS := mipsel-linux-gnu-as
     LD := mipsel-linux-gnu-ld
-    CFLAGS := -ffreestanding -O2 -Wall -Wextra -Iinclude -mabi=32 -march=mips32
+    CFLAGS := -ffreestanding -O2 -Wall -Wextra -Werror -Wno-error=cpp -Iinclude -mabi=32 -march=mips32
     LDFLAGS := -T $(SRC_DIR)/arch/mips/linker.ld
     ASFLAGS :=
     ASM_SOURCES := $(wildcard $(SRC_DIR)/arch/mips/*.S)
