@@ -131,11 +131,11 @@ Notes:
 | **diskfs** (on-disk) | [x] | Hierarchical inodes; full POSIX ops; symlinks; hard links with `nlink` tracking |
 | **persistfs** | [x] | Minimal persistence at `/persist` |
 | **procfs** | [x] | `/proc/meminfo` + per-process `/proc/[pid]/status`, `/proc/[pid]/maps` |
-| **FAT16** (read-only) | [x] | BPB parsing, FAT chain traversal, root dir finddir, VFS read |
+| **FAT12/16/32** (full RW) | [x] | Unified FAT driver, auto-detection by cluster count (MS spec), 8.3 filenames, subdirs, cluster chain management, all VFS mutation ops (create/write/delete/mkdir/rmdir/rename/truncate) |
+| **ext2** (full RW) | [x] | Superblock + block group descriptors, inode read/write, block/inode bitmaps, direct/indirect/doubly-indirect/triply-indirect block mapping, directory entry add/remove/split, hard links, symlinks (inline), create/write/delete/mkdir/rmdir/rename/truncate/link |
 | Permissions (`uid`/`gid`/`euid`/`egid`/mode) | [x] | `chmod`, `chown` with permission checks; VFS `open()` enforces rwx bits vs process euid/egid and file uid/gid/mode |
 | Hard links | [x] | `diskfs_link()` with shared data blocks and `nlink` tracking |
-| Symbolic links | [x] | `symlink`, `readlink`; followed by VFS lookup |
-| ext2 support | [ ] | |
+| Symbolic links | [x] | `symlink`, `readlink`; followed by VFS lookup | |
 
 ## 7. TTY / PTY
 
@@ -164,7 +164,7 @@ Notes:
 | PMM contiguous block alloc | [x] | `pmm_alloc_blocks(count)` / `pmm_free_blocks()` for multi-page DMA |
 | VMM (x86 PAE paging) | [x] | Higher-half kernel, recursive page directory, PAE mode |
 | Per-process address spaces | [x] | PDPT + 4 PDs per process |
-| Kernel heap (`kmalloc`/`kfree`) | [x] | Dynamic growth up to 64MB |
+| Kernel heap (`kmalloc`/`kfree`) | [x] | 8MB Buddy Allocator (power-of-2 blocks 32B–8MB, circular free lists, buddy coalescing) |
 | Slab allocator | [x] | `slab_cache_t` with free-list-in-place |
 | W^X for user ELFs | [x] | Text segments read-only after load |
 | SMEP | [x] | Enabled in CR4 if CPU supports |
@@ -186,11 +186,11 @@ Notes:
 | PS/2 keyboard | [x] | |
 | PIT timer | [x] | |
 | LAPIC timer | [x] | Calibrated, used when APIC available |
-| ATA PIO (IDE) | [x] | Primary master |
+| ATA PIO (IDE) | [x] | Multi-drive support: 4 drives (hda/hdb/hdc/hdd) across 2 channels |
 | ATA DMA (Bus Master IDE) | [x] | Bounce buffer + zero-copy direct DMA, PRDT, IRQ-coordinated |
 | PCI enumeration | [x] | Full bus/slot/func scan with BAR + IRQ |
 | ACPI (MADT parsing) | [x] | CPU topology + IOAPIC discovery |
-| LAPIC + IOAPIC | [x] | Replaces legacy PIC |
+| LAPIC + IOAPIC | [x] | Replaces legacy PIC; ISA edge-triggered + PCI level-triggered routing |
 | SMP (multi-CPU boot) | [x] | 4 CPUs via INIT-SIPI-SIPI, per-CPU data via GS |
 | CPUID feature detection | [x] | Leaf 0/1/7/extended; SMEP/SMAP detection |
 | VBE framebuffer | [x] | Maps LFB, pixel drawing, font rendering; `/dev/fb0` device with `ioctl`/`mmap` |
@@ -199,14 +199,16 @@ Notes:
 | E1000 NIC (Intel 82540EM) | [x] | MMIO-based, IRQ-driven, lwIP integration |
 | RTC (real-time clock) | [x] | CMOS RTC driver; provides wall-clock time for `CLOCK_REALTIME` |
 | MTRR write-combining | [x] | `mtrr_init`/`mtrr_set_range` for variable-range MTRR programming |
+| Kernel console (kconsole) | [x] | Interactive debug shell with readline, scrollback, command history |
 | Virtio-blk | [ ] | |
 
 ## 10. Networking
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| E1000 NIC driver | [x] | Intel 82540EM, MMIO, IRQ 11 via IOAPIC |
-| lwIP TCP/IP stack | [x] | NO_SYS=1, IPv4, static IP (10.0.2.15) |
+| E1000 NIC driver | [x] | Intel 82540EM, MMIO, IRQ 11 via IOAPIC (level-triggered, active-low), interrupt-driven RX |
+| lwIP TCP/IP stack | [x] | NO_SYS=0 threaded mode (kernel semaphores/mutexes/mailboxes), IPv4, static IP (10.0.2.15) |
+| ICMP ping test | [x] | Kernel-level ping to QEMU gateway (10.0.2.2) during boot; verified via smoke test |
 | `socket` | [x] | `AF_INET`, `SOCK_STREAM` (TCP), `SOCK_DGRAM` (UDP) |
 | `bind`/`listen`/`accept` | [x] | TCP server support |
 | `connect`/`send`/`recv` | [x] | TCP client support |
@@ -273,7 +275,7 @@ Notes:
 
 ## Implementation Progress
 
-### All 31 planned tasks completed ✅ + 7 additional features
+### All 31 planned tasks completed ✅ + 17 additional features
 
 **High Priority (8/8):**
 1. ~~`raise()` em ulibc~~ ✅
@@ -321,6 +323,15 @@ Notes:
 37. ~~Kernel stack guard pages (0xC8000000 region)~~ ✅
 38. ~~uid/gid/euid/egid with VFS permission enforcement~~ ✅
 39. ~~DOOM port (doomgeneric + AdrOS adapter, 450KB doom.elf)~~ ✅
+40. ~~Buddy Allocator heap (replaced doubly-linked-list heap)~~ ✅
+41. ~~lwIP NO_SYS=0 threaded mode (kernel semaphores/mutexes/mailboxes)~~ ✅
+42. ~~kprintf migration (all uart_print→kprintf, 16KB ring buffer, dmesg)~~ ✅
+43. ~~Unified FAT12/16/32 full RW driver (replaced read-only FAT16)~~ ✅
+44. ~~ext2 filesystem full RW~~ ✅
+45. ~~Kernel command line parser (Linux-like: init=, root=, ring3, quiet, /proc/cmdline)~~ ✅
+46. ~~Multi-drive ATA support (4 drives across 2 channels)~~ ✅
+47. ~~IOAPIC level-triggered routing for PCI interrupts~~ ✅
+48. ~~ICMP ping test (kernel-level, verified in smoke test)~~ ✅
 
 ---
 
@@ -341,19 +352,19 @@ Notes:
 
 | Gap | Impact | Effort |
 |-----|--------|--------|
-| **ext2 filesystem** | No standard on-disk filesystem | Large |
 | **`pipe` capacity** — `F_GETPIPE_SZ`/`F_SETPIPE_SZ` | Fixed-size pipe buffer | Small |
 | **`waitid`** — extended wait | Missing POSIX interface | Small |
 | **`posix_spawn`** — efficient process creation | Missing POSIX interface | Medium |
 | **Virtio-blk driver** | Only ATA PIO/DMA disk access | Medium |
 | **SMAP** — Supervisor Mode Access Prevention | Missing hardware security feature | Small |
+| **DHCP client** | Static IP only (10.0.2.15 via QEMU user-net) | Medium |
+| **E1000 rx_thread scheduling** | RX thread not waking from semaphore during ping; inline poll workaround | Medium |
 
 ### Tier 3 — Multi-arch & long-term
 
 | Gap | Impact | Effort |
 |-----|--------|--------|
 | **Multi-arch bring-up** — ARM/RISC-V functional kernels | x86-only | Very Large |
-| **DHCP client** | Static IP only | Medium |
 | **IPv6** | IPv4-only | Large |
 | **POSIX message queues** (`mq_*`) | Missing IPC mechanism | Medium |
 | **POSIX semaphores** (`sem_*`) | Only futex available | Medium |
