@@ -13,7 +13,7 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **Language:** C and Assembly
 - **Bootloader:** GRUB2 (Multiboot2 compliant)
 - **Build System:** Make + Cross-Compilers
-- **TCP/IP:** lwIP (lightweight IP stack, NO_SYS=1 mode)
+- **TCP/IP:** lwIP (lightweight IP stack, NO_SYS=0 threaded mode)
 
 ## Features
 
@@ -72,14 +72,15 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **termios** — `TCGETS`, `TCSETS`, `TIOCGPGRP`, `TIOCSPGRP`, `VMIN`/`VTIME`
 - **Wait queues** — generic `waitqueue_t` abstraction for blocking I/O
 
-### Filesystems (8 types)
+### Filesystems (10 types)
 - **tmpfs** — in-memory filesystem
 - **devfs** — `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom`, `/dev/console`, `/dev/tty`, `/dev/ptmx`, `/dev/pts/N`, `/dev/fb0` (framebuffer), `/dev/kbd` (raw scancodes)
 - **overlayfs** — copy-up semantics
 - **diskfs** — hierarchical inode-based on-disk filesystem at `/disk` with symlinks and hard links
 - **persistfs** — minimal persistence at `/persist`
 - **procfs** — `/proc/meminfo` + per-process `/proc/[pid]/status`, `/proc/[pid]/maps`
-- **FAT16** — read-only FAT16 driver with BPB parsing, FAT chain traversal, and VFS integration
+- **FAT12/16/32** — unified FAT driver with full RW support (auto-detection by cluster count per MS spec), 8.3 filenames, subdirectories, cluster chain management, all VFS mutation ops (create/write/delete/mkdir/rmdir/rename/truncate)
+- **ext2** — full RW ext2 filesystem: superblock + block group descriptors, inode read/write, block bitmaps, inode bitmaps, direct/indirect/doubly-indirect/triply-indirect block mapping, directory entry add/remove/split, hard links, symlinks (inline small targets), create/write/delete/mkdir/rmdir/rename/truncate/link
 - Generic `readdir`/`getdents` across all VFS types; symlink following in path resolution
 
 ### Networking
@@ -163,13 +164,12 @@ See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for a detailed checklist.
 - **`getaddrinfo`** / `/etc/hosts` — userland name resolution
 - **`sigqueue`** — queued real-time signals
 - **`setitimer`/`getitimer`** — interval timers
-- **ext2 filesystem** — standard on-disk filesystem
 - **Per-CPU scheduler runqueues** — SMP scalability
 - **SMAP** — Supervisor Mode Access Prevention
 - **Multi-arch bring-up** — ARM/RISC-V functional kernels
 
 ## Directory Structure
-- `src/kernel/` — Architecture-independent kernel (VFS, syscalls, scheduler, tmpfs, diskfs, devfs, overlayfs, procfs, FAT16, PTY, TTY, shm, signals, networking, threads, vDSO, KASLR, permissions)
+- `src/kernel/` — Architecture-independent kernel (VFS, syscalls, scheduler, tmpfs, diskfs, devfs, overlayfs, procfs, FAT12/16/32, ext2, PTY, TTY, shm, signals, networking, threads, vDSO, KASLR, permissions)
 - `src/arch/x86/` — x86-specific (boot, VMM, IDT, LAPIC, IOAPIC, SMP, ACPI, CPUID, SYSENTER, ELF loader, MTRR)
 - `src/hal/x86/` — HAL x86 (CPU, keyboard, timer, UART, PCI, ATA PIO/DMA, E1000 NIC, RTC)
 - `src/drivers/` — Device drivers (VBE, initrd, VGA, timer)
