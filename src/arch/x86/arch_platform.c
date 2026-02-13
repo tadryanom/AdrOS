@@ -15,6 +15,7 @@
 
 #include "hal/cpu.h"
 #include "hal/usermode.h"
+#include "kernel/cmdline.h"
 
 #if defined(__i386__)
 #include "arch/x86/acpi.h"
@@ -45,7 +46,8 @@ static void userspace_init_thread(void) {
     uintptr_t user_sp = 0;
     uintptr_t user_as = 0;
     uintptr_t heap_brk = 0;
-    if (elf32_load_user_from_initrd("/bin/init.elf", &entry, &user_sp, &user_as, &heap_brk) != 0) {
+    const char* init_path = cmdline_init_path();
+    if (elf32_load_user_from_initrd(init_path, &entry, &user_sp, &user_as, &heap_brk) != 0) {
         process_exit_notify(1);
         schedule();
         for (;;) hal_cpu_idle();

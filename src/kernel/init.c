@@ -26,6 +26,7 @@
 #include "hal/mm.h"
 #include "heap.h"
 #include "utils.h"
+#include "kernel/cmdline.h"
 
 #include <stddef.h>
 
@@ -160,27 +161,10 @@ static void init_parse_fstab(void) {
     kfree(buf);
 }
 
-static int cmdline_has_token(const char* cmdline, const char* token) {
-    if (!cmdline || !token) return 0;
-
-    for (size_t i = 0; cmdline[i] != 0; i++) {
-        size_t j = 0;
-        while (token[j] != 0 && cmdline[i + j] == token[j]) {
-            j++;
-        }
-        if (token[j] == 0) {
-            char before = (i == 0) ? ' ' : cmdline[i - 1];
-            char after = cmdline[i + j];
-            int before_ok = (before == ' ' || before == '\t');
-            int after_ok = (after == 0 || after == ' ' || after == '\t');
-            if (before_ok && after_ok) return 1;
-        }
-    }
-
-    return 0;
-}
-
 int init_start(const struct boot_info* bi) {
+    /* Parse kernel command line (Linux-like triaging) */
+    cmdline_parse(bi ? bi->cmdline : NULL);
+
     if (bi && bi->initrd_start) {
         uintptr_t initrd_virt = 0;
         if (hal_mm_map_physical_range((uintptr_t)bi->initrd_start, (uintptr_t)bi->initrd_end,
@@ -246,7 +230,7 @@ int init_start(const struct boot_info* bi) {
 
     int user_ret = arch_platform_start_userspace(bi);
 
-    if (bi && cmdline_has_token(bi->cmdline, "ring3")) {
+    if (cmdline_has("ring3")) {
         arch_platform_usermode_test_start();
     }
 

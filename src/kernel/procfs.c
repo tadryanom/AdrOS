@@ -5,6 +5,7 @@
 #include "heap.h"
 #include "pmm.h"
 #include "timer.h"
+#include "kernel/cmdline.h"
 
 #include <stddef.h>
 
@@ -13,6 +14,7 @@ static fs_node_t g_proc_self;
 static fs_node_t g_proc_self_status;
 static fs_node_t g_proc_uptime;
 static fs_node_t g_proc_meminfo;
+static fs_node_t g_proc_cmdline;
 
 #define PID_NODE_POOL 8
 static fs_node_t g_pid_dir[PID_NODE_POOL];
@@ -77,6 +79,21 @@ static uint32_t proc_self_status_read(fs_node_t* node, uint32_t offset, uint32_t
     len += (uint32_t)proc_snprintf(tmp + len, sizeof(tmp) - len, "HeapStart:\t", (uint32_t)current_process->heap_start);
     len += (uint32_t)proc_snprintf(tmp + len, sizeof(tmp) - len, "HeapBreak:\t", (uint32_t)current_process->heap_break);
 
+    if (offset >= len) return 0;
+    uint32_t avail = len - offset;
+    if (size > avail) size = avail;
+    memcpy(buffer, tmp + offset, size);
+    return size;
+}
+
+static uint32_t proc_cmdline_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
+    (void)node;
+    const char* raw = cmdline_raw();
+    uint32_t len = (uint32_t)strlen(raw);
+    char tmp[CMDLINE_MAX + 1];
+    memcpy(tmp, raw, len);
+    tmp[len] = '\n';
+    len++;
     if (offset >= len) return 0;
     uint32_t avail = len - offset;
     if (size > avail) size = avail;
@@ -327,6 +344,7 @@ static fs_node_t* proc_root_finddir(fs_node_t* node, const char* name) {
     if (strcmp(name, "self") == 0) return &g_proc_self;
     if (strcmp(name, "uptime") == 0) return &g_proc_uptime;
     if (strcmp(name, "meminfo") == 0) return &g_proc_meminfo;
+    if (strcmp(name, "cmdline") == 0) return &g_proc_cmdline;
     if (is_numeric(name)) return proc_get_pid_dir(parse_uint(name));
     return NULL;
 }
@@ -339,8 +357,8 @@ static int proc_root_readdir(fs_node_t* node, uint32_t* inout_index, void* buf, 
     uint32_t idx = *inout_index;
     struct vfs_dirent* d = (struct vfs_dirent*)buf;
 
-    static const char* fixed[] = { "self", "uptime", "meminfo" };
-    if (idx < 3) {
+    static const char* fixed[] = { "self", "uptime", "meminfo", "cmdline" };
+    if (idx < 4) {
         d->d_ino = 200 + idx;
         d->d_type = (idx == 0) ? FS_DIRECTORY : FS_FILE;
         d->d_reclen = sizeof(struct vfs_dirent);
@@ -353,7 +371,7 @@ static int proc_root_readdir(fs_node_t* node, uint32_t* inout_index, void* buf, 
     }
 
     /* After fixed entries, list numeric PIDs */
-    uint32_t pi = idx - 3;
+    uint32_t pi = idx - 4;
     uint32_t count = 0;
     if (ready_queue_head) {
         struct process* it = ready_queue_head;
@@ -406,6 +424,11 @@ fs_node_t* procfs_create_root(void) {
     strcpy(g_proc_meminfo.name, "meminfo");
     g_proc_meminfo.flags = FS_FILE;
     g_proc_meminfo.read = proc_meminfo_read;
+
+    memset(&g_proc_cmdline, 0, sizeof(g_proc_cmdline));
+    strcpy(g_proc_cmdline.name, "cmdline");
+    g_proc_cmdline.flags = FS_FILE;
+    g_proc_cmdline.read = proc_cmdline_read;
 
     return &g_proc_root;
 }
