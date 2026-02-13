@@ -10,6 +10,12 @@
 #define FS_BLOCKDEVICE 0x04
 #define FS_SYMLINK     0x05
 
+/* poll() event flags — shared between kernel VFS and syscall layer */
+#define VFS_POLL_IN    0x0001
+#define VFS_POLL_OUT   0x0004
+#define VFS_POLL_ERR   0x0008
+#define VFS_POLL_HUP   0x0010
+
 typedef struct fs_node {
     char name[128];
     uint32_t flags;
@@ -29,6 +35,7 @@ typedef struct fs_node {
     int (*readdir)(struct fs_node* node, uint32_t* inout_index, void* buf, uint32_t buf_len);
     int (*ioctl)(struct fs_node* node, uint32_t cmd, void* arg);
     uintptr_t (*mmap)(struct fs_node* node, uintptr_t addr, uint32_t length, uint32_t prot, uint32_t offset);
+    int (*poll)(struct fs_node* node, int events);
 
     // Directory mutation operations (called on the parent directory node)
     int (*create)(struct fs_node* dir, const char* name, uint32_t flags, struct fs_node** out);

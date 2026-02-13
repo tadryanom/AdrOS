@@ -411,6 +411,14 @@ static int tty_devfs_ioctl(fs_node_t* node, uint32_t cmd, void* arg) {
     return tty_ioctl(cmd, arg);
 }
 
+static int tty_devfs_poll(fs_node_t* node, int events) {
+    (void)node;
+    int revents = 0;
+    if ((events & VFS_POLL_IN) && tty_can_read()) revents |= VFS_POLL_IN;
+    if ((events & VFS_POLL_OUT) && tty_can_write()) revents |= VFS_POLL_OUT;
+    return revents;
+}
+
 void tty_init(void) {
     spinlock_init(&tty_lock);
     line_len = 0;
@@ -429,6 +437,7 @@ void tty_init(void) {
     g_dev_console_node.read = &tty_devfs_read;
     g_dev_console_node.write = &tty_devfs_write;
     g_dev_console_node.ioctl = &tty_devfs_ioctl;
+    g_dev_console_node.poll = &tty_devfs_poll;
     devfs_register_device(&g_dev_console_node);
 
     /* Register /dev/tty */
@@ -439,6 +448,7 @@ void tty_init(void) {
     g_dev_tty_node.read = &tty_devfs_read;
     g_dev_tty_node.write = &tty_devfs_write;
     g_dev_tty_node.ioctl = &tty_devfs_ioctl;
+    g_dev_tty_node.poll = &tty_devfs_poll;
     devfs_register_device(&g_dev_tty_node);
 }
 

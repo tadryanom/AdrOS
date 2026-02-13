@@ -85,6 +85,18 @@ static uint32_t kbd_dev_read(fs_node_t* node, uint32_t offset, uint32_t size, ui
     return count;
 }
 
+static int kbd_dev_poll(fs_node_t* node, int events) {
+    (void)node;
+    int revents = 0;
+    if (events & VFS_POLL_IN) {
+        uintptr_t flags = spin_lock_irqsave(&scan_lock);
+        if (scan_head != scan_tail) revents |= VFS_POLL_IN;
+        spin_unlock_irqrestore(&scan_lock, flags);
+    }
+    if (events & VFS_POLL_OUT) revents |= VFS_POLL_OUT;
+    return revents;
+}
+
 static fs_node_t g_dev_kbd_node;
 
 void keyboard_init(void) {
@@ -106,6 +118,7 @@ void keyboard_register_devfs(void) {
     g_dev_kbd_node.flags = FS_CHARDEVICE;
     g_dev_kbd_node.inode = 21;
     g_dev_kbd_node.read = &kbd_dev_read;
+    g_dev_kbd_node.poll = &kbd_dev_poll;
     devfs_register_device(&g_dev_kbd_node);
 }
 

@@ -82,6 +82,24 @@ static uint32_t pty_slave_read_fn(fs_node_t* node, uint32_t offset, uint32_t siz
 static uint32_t pty_slave_write_fn(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer);
 static int pty_slave_ioctl_fn(fs_node_t* node, uint32_t cmd, void* arg);
 
+static int pty_master_poll_fn(fs_node_t* node, int events) {
+    int idx = pty_ino_to_idx(node->inode);
+    if (idx < 0) return 0;
+    int revents = 0;
+    if ((events & VFS_POLL_IN) && pty_master_can_read_idx(idx)) revents |= VFS_POLL_IN;
+    if ((events & VFS_POLL_OUT) && pty_master_can_write_idx(idx)) revents |= VFS_POLL_OUT;
+    return revents;
+}
+
+static int pty_slave_poll_fn(fs_node_t* node, int events) {
+    int idx = pty_ino_to_idx(node->inode);
+    if (idx < 0) return 0;
+    int revents = 0;
+    if ((events & VFS_POLL_IN) && pty_slave_can_read_idx(idx)) revents |= VFS_POLL_IN;
+    if ((events & VFS_POLL_OUT) && pty_slave_can_write_idx(idx)) revents |= VFS_POLL_OUT;
+    return revents;
+}
+
 static void pty_init_pair(int idx) {
     struct pty_pair* p = &g_ptys[idx];
     memset(p, 0, sizeof(*p));
@@ -95,6 +113,7 @@ static void pty_init_pair(int idx) {
     p->master_node.inode = PTY_MASTER_INO_BASE + (uint32_t)idx;
     p->master_node.read = &pty_master_read_fn;
     p->master_node.write = &pty_master_write_fn;
+    p->master_node.poll = &pty_master_poll_fn;
 
     memset(&p->slave_node, 0, sizeof(p->slave_node));
     name[0] = '0' + (char)idx;
@@ -105,6 +124,7 @@ static void pty_init_pair(int idx) {
     p->slave_node.read = &pty_slave_read_fn;
     p->slave_node.write = &pty_slave_write_fn;
     p->slave_node.ioctl = &pty_slave_ioctl_fn;
+    p->slave_node.poll = &pty_slave_poll_fn;
 }
 
 /* --- DevFS pts directory callbacks --- */
@@ -197,6 +217,7 @@ void pty_init(void) {
     g_dev_ptmx_node.inode = PTY_MASTER_INO_BASE;
     g_dev_ptmx_node.read = &pty_ptmx_read_fn;
     g_dev_ptmx_node.write = &pty_ptmx_write_fn;
+    g_dev_ptmx_node.poll = &pty_master_poll_fn;
     devfs_register_device(&g_dev_ptmx_node);
 
     /* Register /dev/pts directory */

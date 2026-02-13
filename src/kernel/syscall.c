@@ -246,10 +246,6 @@ static int poll_wait_kfds(struct pollfd* kfds, uint32_t nfds, int32_t timeout) {
     if (!kfds) return -EINVAL;
     if (nfds > 64U) return -EINVAL;
 
-    // timeout semantics (minimal):
-    //  - timeout == 0 : non-blocking
-    //  - timeout  < 0 : block forever
-    //  - timeout  > 0 : treated as "ticks" (best-effort)
     extern uint32_t get_tick_count(void);
     uint32_t start_tick = get_tick_count();
 
@@ -263,52 +259,25 @@ static int poll_wait_kfds(struct pollfd* kfds, uint32_t nfds, int32_t timeout) {
             struct file* f = fd_get(fd);
             if (!f || !f->node) {
                 kfds[i].revents |= POLLERR;
+                ready++;
                 continue;
             }
 
             fs_node_t* n = f->node;
 
-            // Pipes (identified by node name prefix).
-            if (n->name[0] == 'p' && n->name[1] == 'i' && n->name[2] == 'p' && n->name[3] == 'e' && n->name[4] == ':') {
-                struct pipe_node* pn = (struct pipe_node*)n;
-                struct pipe_state* ps = pn->ps;
-                if (!ps) {
-                    kfds[i].revents |= POLLERR;
-                } else if (pn->is_read_end) {
-                    if ((kfds[i].events & POLLIN) && (ps->count > 0 || ps->writers == 0)) {
-                        kfds[i].revents |= POLLIN;
-                        if (ps->writers == 0) kfds[i].revents |= POLLHUP;
-                    }
-                } else {
-                    if (ps->readers == 0) {
-                        if (kfds[i].events & POLLOUT) kfds[i].revents |= POLLERR;
-                    } else {
-                        uint32_t free = ps->cap - ps->count;
-                        if ((kfds[i].events & POLLOUT) && free > 0) {
-                            kfds[i].revents |= POLLOUT;
-                        }
-                    }
-                }
-            } else if (n->flags == FS_CHARDEVICE) {
-                // devfs devices: inode 2=/dev/null, 3=/dev/tty
-                if (n->inode == 2) {
-                    if (kfds[i].events & POLLIN) kfds[i].revents |= POLLIN | POLLHUP;
-                    if (kfds[i].events & POLLOUT) kfds[i].revents |= POLLOUT;
-                } else if (n->inode == 3) {
-                    if ((kfds[i].events & POLLIN) && tty_can_read()) kfds[i].revents |= POLLIN;
-                    if ((kfds[i].events & POLLOUT) && tty_can_write()) kfds[i].revents |= POLLOUT;
-                } else if (pty_is_master_ino(n->inode)) {
-                    int pi = pty_ino_to_idx(n->inode);
-                    if ((kfds[i].events & POLLIN) && pty_master_can_read_idx(pi)) kfds[i].revents |= POLLIN;
-                    if ((kfds[i].events & POLLOUT) && pty_master_can_write_idx(pi)) kfds[i].revents |= POLLOUT;
-                } else if (pty_is_slave_ino(n->inode)) {
-                    int pi = pty_ino_to_idx(n->inode);
-                    if ((kfds[i].events & POLLIN) && pty_slave_can_read_idx(pi)) kfds[i].revents |= POLLIN;
-                    if ((kfds[i].events & POLLOUT) && pty_slave_can_write_idx(pi)) kfds[i].revents |= POLLOUT;
-                }
+            if (n->poll) {
+                int vfs_events = 0;
+                if (kfds[i].events & POLLIN)  vfs_events |= VFS_POLL_IN;
+                if (kfds[i].events & POLLOUT) vfs_events |= VFS_POLL_OUT;
+
+                int vfs_rev = n->poll(n, vfs_events);
+
+                if (vfs_rev & VFS_POLL_IN)  kfds[i].revents |= POLLIN;
+                if (vfs_rev & VFS_POLL_OUT) kfds[i].revents |= POLLOUT;
+                if (vfs_rev & VFS_POLL_ERR) kfds[i].revents |= POLLERR;
+                if (vfs_rev & VFS_POLL_HUP) kfds[i].revents |= POLLHUP;
             } else {
-                // Regular files are always readable/writable (best-effort).
-                if (kfds[i].events & POLLIN) kfds[i].revents |= POLLIN;
+                if (kfds[i].events & POLLIN)  kfds[i].revents |= POLLIN;
                 if (kfds[i].events & POLLOUT) kfds[i].revents |= POLLOUT;
             }
 
@@ -409,6 +378,27 @@ static void pipe_close(fs_node_t* n) {
     }
 }
 
+static int pipe_poll(fs_node_t* n, int events) {
+    struct pipe_node* pn = (struct pipe_node*)n;
+    if (!pn || !pn->ps) return VFS_POLL_ERR;
+    struct pipe_state* ps = pn->ps;
+    int revents = 0;
+    if (pn->is_read_end) {
+        if ((events & VFS_POLL_IN) && (ps->count > 0 || ps->writers == 0)) {
+            revents |= VFS_POLL_IN;
+            if (ps->writers == 0) revents |= VFS_POLL_HUP;
+        }
+    } else {
+        if (ps->readers == 0) {
+            if (events & VFS_POLL_OUT) revents |= VFS_POLL_ERR;
+        } else {
+            uint32_t free = ps->cap - ps->count;
+            if ((events & VFS_POLL_OUT) && free > 0) revents |= VFS_POLL_OUT;
+        }
+    }
+    return revents;
+}
+
 static int pipe_node_create(struct pipe_state* ps, int is_read_end, fs_node_t** out_node) {
     if (!ps || !out_node) return -EINVAL;
     struct pipe_node* pn = (struct pipe_node*)kmalloc(sizeof(*pn));
@@ -422,6 +412,7 @@ static int pipe_node_create(struct pipe_state* ps, int is_read_end, fs_node_t** 
     pn->node.open = NULL;
     pn->node.finddir = NULL;
     pn->node.close = pipe_close;
+    pn->node.poll = pipe_poll;
     if (pn->is_read_end) {
         strcpy(pn->node.name, "pipe:r");
         pn->node.read = pipe_read;
@@ -1220,26 +1211,10 @@ static int syscall_read_impl(int fd, void* user_buf, uint32_t len) {
     if (!f || !f->node) return -EBADF;
 
     int nonblock = (f->flags & O_NONBLOCK) ? 1 : 0;
-    if (nonblock) {
-        // Non-blocking pipes: if empty but writers exist, return -EAGAIN.
-        if (f->node->name[0] == 'p' && f->node->name[1] == 'i' && f->node->name[2] == 'p' && f->node->name[3] == 'e' && f->node->name[4] == ':') {
-            struct pipe_node* pn = (struct pipe_node*)f->node;
-            struct pipe_state* ps = pn ? pn->ps : 0;
-            if (pn && ps && pn->is_read_end && ps->count == 0 && ps->writers != 0) {
-                return -EAGAIN;
-            }
-        }
-
-        // Non-blocking char devices (tty/pty) need special handling, since devfs read blocks.
-        if (f->node->flags == FS_CHARDEVICE) {
-            if (f->node->inode == 3) {
-                if (!tty_can_read()) return -EAGAIN;
-            } else if (pty_is_master_ino(f->node->inode)) {
-                if (!pty_master_can_read_idx(pty_ino_to_idx(f->node->inode))) return -EAGAIN;
-            } else if (pty_is_slave_ino(f->node->inode)) {
-                if (!pty_slave_can_read_idx(pty_ino_to_idx(f->node->inode))) return -EAGAIN;
-            }
-        }
+    if (nonblock && f->node->poll) {
+        int rev = f->node->poll(f->node, VFS_POLL_IN);
+        if (!(rev & (VFS_POLL_IN | VFS_POLL_ERR | VFS_POLL_HUP)))
+            return -EAGAIN;
     }
 
     if (f->node->flags == FS_CHARDEVICE) {
@@ -1302,17 +1277,10 @@ static int syscall_write_impl(int fd, const void* user_buf, uint32_t len) {
     if (!f || !f->node) return -EBADF;
 
     int nonblock = (f->flags & O_NONBLOCK) ? 1 : 0;
-    if (nonblock) {
-        // Non-blocking pipe write: if full but readers exist, return -EAGAIN.
-        if (f->node->name[0] == 'p' && f->node->name[1] == 'i' && f->node->name[2] == 'p' && f->node->name[3] == 'e' && f->node->name[4] == ':') {
-            struct pipe_node* pn = (struct pipe_node*)f->node;
-            struct pipe_state* ps = pn ? pn->ps : 0;
-            if (pn && ps && !pn->is_read_end) {
-                if (ps->readers != 0 && (ps->cap - ps->count) == 0) {
-                    return -EAGAIN;
-                }
-            }
-        }
+    if (nonblock && f->node->poll) {
+        int rev = f->node->poll(f->node, VFS_POLL_OUT);
+        if (!(rev & (VFS_POLL_OUT | VFS_POLL_ERR)))
+            return -EAGAIN;
     }
     if (!f->node->write) return -ESPIPE;
     if (((f->node->flags & FS_FILE) == 0) && f->node->flags != FS_CHARDEVICE) return -ESPIPE;
