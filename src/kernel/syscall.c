@@ -36,6 +36,29 @@ enum {
     O_CLOEXEC  = 0x80000,
 };
 
+/* Kernel-side itimerval for setitimer/getitimer (matches userland layout) */
+struct k_timeval {
+    uint32_t tv_sec;
+    uint32_t tv_usec;
+};
+struct k_itimerval {
+    struct k_timeval it_interval;
+    struct k_timeval it_value;
+};
+#define ITIMER_REAL    0
+#define ITIMER_VIRTUAL 1
+#define ITIMER_PROF    2
+#define TICKS_PER_SEC  50
+#define USEC_PER_TICK  (1000000U / TICKS_PER_SEC)  /* 20000 */
+
+static uint32_t timeval_to_ticks(const struct k_timeval* tv) {
+    return tv->tv_sec * TICKS_PER_SEC + tv->tv_usec / USEC_PER_TICK;
+}
+static void ticks_to_timeval(uint32_t ticks, struct k_timeval* tv) {
+    tv->tv_sec  = ticks / TICKS_PER_SEC;
+    tv->tv_usec = (ticks % TICKS_PER_SEC) * USEC_PER_TICK;
+}
+
 enum {
     FD_CLOEXEC = 1,
 };
@@ -2322,13 +2345,109 @@ void syscall_handler(struct registers* regs) {
         if (!current_process) { sc_ret(regs) = 0; return; }
         uint32_t seconds = sc_arg0(regs);
         uint32_t now = get_tick_count();
-        uint32_t new_tick = (seconds == 0) ? 0 : now + seconds * 50;
+        uint32_t new_tick = (seconds == 0) ? 0 : now + seconds * TICKS_PER_SEC;
+        current_process->alarm_interval = 0; /* alarm() is always one-shot */
         uint32_t old_tick = process_alarm_set(current_process, new_tick);
         uint32_t old_remaining = 0;
         if (old_tick > now) {
-            old_remaining = (old_tick - now) / 50 + 1;
+            old_remaining = (old_tick - now) / TICKS_PER_SEC + 1;
         }
         sc_ret(regs) = old_remaining;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SETITIMER) {
+        if (!current_process) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
+        int which = (int)sc_arg0(regs);
+        const void* user_new = (const void*)sc_arg1(regs);
+        void* user_old = (void*)sc_arg2(regs);
+
+        struct k_itimerval knew;
+        memset(&knew, 0, sizeof(knew));
+        if (user_new) {
+            if (copy_from_user(&knew, user_new, sizeof(knew)) < 0) {
+                sc_ret(regs) = (uint32_t)-EFAULT; return;
+            }
+        }
+
+        uint32_t now = get_tick_count();
+
+        if (which == ITIMER_REAL) {
+            /* Return old value */
+            if (user_old) {
+                struct k_itimerval kold;
+                memset(&kold, 0, sizeof(kold));
+                ticks_to_timeval(current_process->alarm_interval, &kold.it_interval);
+                if (current_process->alarm_tick > now)
+                    ticks_to_timeval(current_process->alarm_tick - now, &kold.it_value);
+                if (copy_to_user(user_old, &kold, sizeof(kold)) < 0) {
+                    sc_ret(regs) = (uint32_t)-EFAULT; return;
+                }
+            }
+            /* Set new value */
+            uint32_t val_ticks = timeval_to_ticks(&knew.it_value);
+            uint32_t int_ticks = timeval_to_ticks(&knew.it_interval);
+            current_process->alarm_interval = int_ticks;
+            process_alarm_set(current_process, val_ticks ? now + val_ticks : 0);
+        } else if (which == ITIMER_VIRTUAL) {
+            if (user_old) {
+                struct k_itimerval kold;
+                memset(&kold, 0, sizeof(kold));
+                ticks_to_timeval(current_process->itimer_virt_interval, &kold.it_interval);
+                ticks_to_timeval(current_process->itimer_virt_value, &kold.it_value);
+                if (copy_to_user(user_old, &kold, sizeof(kold)) < 0) {
+                    sc_ret(regs) = (uint32_t)-EFAULT; return;
+                }
+            }
+            current_process->itimer_virt_value = timeval_to_ticks(&knew.it_value);
+            current_process->itimer_virt_interval = timeval_to_ticks(&knew.it_interval);
+        } else if (which == ITIMER_PROF) {
+            if (user_old) {
+                struct k_itimerval kold;
+                memset(&kold, 0, sizeof(kold));
+                ticks_to_timeval(current_process->itimer_prof_interval, &kold.it_interval);
+                ticks_to_timeval(current_process->itimer_prof_value, &kold.it_value);
+                if (copy_to_user(user_old, &kold, sizeof(kold)) < 0) {
+                    sc_ret(regs) = (uint32_t)-EFAULT; return;
+                }
+            }
+            current_process->itimer_prof_value = timeval_to_ticks(&knew.it_value);
+            current_process->itimer_prof_interval = timeval_to_ticks(&knew.it_interval);
+        } else {
+            sc_ret(regs) = (uint32_t)-EINVAL; return;
+        }
+        sc_ret(regs) = 0;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_GETITIMER) {
+        if (!current_process) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
+        int which = (int)sc_arg0(regs);
+        void* user_val = (void*)sc_arg1(regs);
+        if (!user_val) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
+
+        struct k_itimerval kval;
+        memset(&kval, 0, sizeof(kval));
+        uint32_t now = get_tick_count();
+
+        if (which == ITIMER_REAL) {
+            ticks_to_timeval(current_process->alarm_interval, &kval.it_interval);
+            if (current_process->alarm_tick > now)
+                ticks_to_timeval(current_process->alarm_tick - now, &kval.it_value);
+        } else if (which == ITIMER_VIRTUAL) {
+            ticks_to_timeval(current_process->itimer_virt_interval, &kval.it_interval);
+            ticks_to_timeval(current_process->itimer_virt_value, &kval.it_value);
+        } else if (which == ITIMER_PROF) {
+            ticks_to_timeval(current_process->itimer_prof_interval, &kval.it_interval);
+            ticks_to_timeval(current_process->itimer_prof_value, &kval.it_value);
+        } else {
+            sc_ret(regs) = (uint32_t)-EINVAL; return;
+        }
+
+        if (copy_to_user(user_val, &kval, sizeof(kval)) < 0) {
+            sc_ret(regs) = (uint32_t)-EFAULT; return;
+        }
+        sc_ret(regs) = 0;
         return;
     }
 

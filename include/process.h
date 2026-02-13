@@ -60,8 +60,15 @@ struct process {
     process_state_t state;
     uint32_t wake_at_tick;
     uint32_t alarm_tick;
+    uint32_t alarm_interval;    /* repeat interval in ticks (0 = one-shot) */
     uint32_t utime;             /* ticks spent in user mode */
     uint32_t stime;             /* ticks spent in kernel mode */
+
+    /* POSIX interval timers (values in ticks, 0 = disabled) */
+    uint32_t itimer_virt_value;     /* ITIMER_VIRTUAL: remaining user ticks */
+    uint32_t itimer_virt_interval;  /* ITIMER_VIRTUAL: reload value */
+    uint32_t itimer_prof_value;     /* ITIMER_PROF: remaining user+sys ticks */
+    uint32_t itimer_prof_interval;  /* ITIMER_PROF: reload value */
     int exit_status;
 
     int has_user_regs;

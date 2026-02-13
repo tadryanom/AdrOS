@@ -24,6 +24,8 @@
 #define SIGTSTP  20
 #define SIGTTIN  21
 #define SIGTTOU  22
+#define SIGVTALRM 26
+#define SIGPROF  27
 
 #define SA_SIGINFO 0x00000004U
 

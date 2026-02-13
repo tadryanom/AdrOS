@@ -988,8 +988,33 @@ void process_wake_check(uint32_t current_tick) {
     while (alarm_head && current_tick >= alarm_head->alarm_tick) {
         struct process* p = alarm_head;
         alarm_queue_remove(p);
-        p->alarm_tick = 0;
         p->sig_pending_mask |= (1U << 14); /* SIGALRM */
+        /* Re-arm repeating ITIMER_REAL */
+        if (p->alarm_interval != 0) {
+            p->alarm_tick = current_tick + p->alarm_interval;
+            alarm_queue_insert(p);
+        } else {
+            p->alarm_tick = 0;
+        }
+    }
+
+    /* ITIMER_VIRTUAL: decrement when running in user mode */
+    if (current_process && current_process->state == PROCESS_RUNNING) {
+        if (current_process->itimer_virt_value > 0) {
+            current_process->itimer_virt_value--;
+            if (current_process->itimer_virt_value == 0) {
+                current_process->sig_pending_mask |= (1U << 26); /* SIGVTALRM */
+                current_process->itimer_virt_value = current_process->itimer_virt_interval;
+            }
+        }
+        /* ITIMER_PROF: decrement when running (user + kernel) */
+        if (current_process->itimer_prof_value > 0) {
+            current_process->itimer_prof_value--;
+            if (current_process->itimer_prof_value == 0) {
+                current_process->sig_pending_mask |= (1U << 27); /* SIGPROF */
+                current_process->itimer_prof_value = current_process->itimer_prof_interval;
+            }
+        }
     }
 
     spin_unlock_irqrestore(&sched_lock, flags);

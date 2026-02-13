@@ -78,6 +78,8 @@ enum {
     SYS_GETEGID = 89,
     SYS_SETEUID = 90,
     SYS_SETEGID = 91,
+    SYS_SETITIMER = 92,
+    SYS_GETITIMER = 93,
 };
 
 /* Raw syscall wrappers — up to 5 args via INT 0x80 */

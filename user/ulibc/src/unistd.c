@@ -150,6 +150,14 @@ unsigned int alarm(unsigned int seconds) {
     return (unsigned int)_syscall1(SYS_ALARM, (int)seconds);
 }
 
+int setitimer(int which, const void* new_value, void* old_value) {
+    return __syscall_ret(_syscall3(SYS_SETITIMER, which, (int)new_value, (int)old_value));
+}
+
+int getitimer(int which, void* curr_value) {
+    return __syscall_ret(_syscall2(SYS_GETITIMER, which, (int)curr_value));
+}
+
 int flock(int fd, int operation) {
     return __syscall_ret(_syscall2(SYS_FLOCK, fd, operation));
 }
