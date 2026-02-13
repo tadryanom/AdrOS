@@ -30,10 +30,18 @@ struct winsize {
     uint16_t ws_ypixel;
 };
 
+/* c_lflag bits */
 enum {
     TTY_ICANON = 0x0002,
     TTY_ECHO   = 0x0008,
     TTY_ISIG   = 0x0001,
+};
+
+/* c_iflag bits */
+enum {
+    TTY_ICRNL  = 0x0100,  /* map CR to NL on input        */
+    TTY_IGNCR  = 0x0080,  /* ignore CR on input            */
+    TTY_INLCR  = 0x0040,  /* map NL to CR on input         */
 };
 
 /* c_oflag bits (POSIX) */

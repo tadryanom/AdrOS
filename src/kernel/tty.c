@@ -26,6 +26,7 @@ static uint32_t canon_tail = 0;
 
 static waitqueue_t tty_wq;
 
+static uint32_t tty_iflag = TTY_ICRNL;
 static uint32_t tty_lflag = TTY_ICANON | TTY_ECHO | TTY_ISIG;
 static uint32_t tty_oflag = TTY_OPOST | TTY_ONLCR;
 static uint8_t tty_cc[NCCS] = {
@@ -205,6 +206,8 @@ static void canon_push(char c) {
 enum {
     TTY_TCGETS = 0x5401,
     TTY_TCSETS = 0x5402,
+    TTY_TCSETSW = 0x5403,
+    TTY_TCSETSF = 0x5404,
     TTY_TIOCGPGRP = 0x540F,
     TTY_TIOCSPGRP = 0x5410,
     TTY_TIOCGWINSZ = 0x5413,
@@ -252,6 +255,7 @@ int tty_ioctl(uint32_t cmd, void* user_arg) {
         struct termios t;
         memset(&t, 0, sizeof(t));
         uintptr_t flags = spin_lock_irqsave(&tty_lock);
+        t.c_iflag = tty_iflag;
         t.c_lflag = tty_lflag;
         t.c_oflag = tty_oflag;
         for (int i = 0; i < NCCS; i++) t.c_cc[i] = tty_cc[i];
@@ -260,10 +264,11 @@ int tty_ioctl(uint32_t cmd, void* user_arg) {
         return 0;
     }
 
-    if (cmd == TTY_TCSETS) {
+    if (cmd == TTY_TCSETS || cmd == TTY_TCSETSW || cmd == TTY_TCSETSF) {
         struct termios t;
         if (copy_from_user(&t, user_arg, sizeof(t)) < 0) return -EFAULT;
         uintptr_t flags = spin_lock_irqsave(&tty_lock);
+        tty_iflag = t.c_iflag & (TTY_ICRNL | TTY_IGNCR | TTY_INLCR);
         tty_lflag = t.c_lflag & (TTY_ICANON | TTY_ECHO | TTY_ISIG);
         tty_oflag = t.c_oflag & (TTY_OPOST | TTY_ONLCR);
         for (int i = 0; i < NCCS; i++) tty_cc[i] = t.c_cc[i];
@@ -288,7 +293,16 @@ int tty_ioctl(uint32_t cmd, void* user_arg) {
 
 void tty_input_char(char c) {
     uintptr_t flags = spin_lock_irqsave(&tty_lock);
+    uint32_t iflag = tty_iflag;
     uint32_t lflag = tty_lflag;
+
+    /* c_iflag input translation */
+    if (c == '\r') {
+        if (iflag & TTY_IGNCR) { spin_unlock_irqrestore(&tty_lock, flags); return; }
+        if (iflag & TTY_ICRNL) c = '\n';
+    } else if (c == '\n') {
+        if (iflag & TTY_INLCR) c = '\r';
+    }
 
     enum { SIGINT_NUM = 2, SIGQUIT_NUM = 3, SIGTSTP_NUM = 20 };
 
@@ -341,7 +355,6 @@ void tty_input_char(char c) {
     }
 
     if ((lflag & TTY_ICANON) == 0) {
-        if (c == '\r') c = '\n';
         canon_push(c);
         wq_wake_one(&tty_wq);
         if (lflag & TTY_ECHO) {
@@ -362,7 +375,17 @@ void tty_input_char(char c) {
         return;
     }
 
-    if (c == '\r') c = '\n';
+    if (tty_cc[VKILL] && (uint8_t)c == tty_cc[VKILL]) {
+        if (lflag & TTY_ECHO) {
+            while (line_len > 0) {
+                line_len--;
+                kprintf("\b \b");
+            }
+        }
+        line_len = 0;
+        spin_unlock_irqrestore(&tty_lock, flags);
+        return;
+    }
 
     if (c == '\n') {
         if (lflag & TTY_ECHO) {
