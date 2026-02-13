@@ -33,6 +33,7 @@ file delete -force $serial_log
 set qemu_pid [exec qemu-system-i386 \
     -smp $smp -boot d -cdrom $iso -m 128M -display none \
     -drive file=$disk,if=ide,format=raw \
+    -nic user,model=e1000 \
     -serial file:$serial_log -monitor none \
     -no-reboot -no-shutdown &]
 
@@ -61,6 +62,7 @@ set tests {
     {"diskfs test"          "\\[init\\] /disk/test prev="}
     {"diskfs mkdir/unlink"  "\\[init\\] diskfs mkdir/unlink OK"}
     {"diskfs getdents"      "\\[init\\] diskfs getdents OK"}
+    {"PING network"         "\\[PING\\] .*received.*network OK"}
 }
 
 # ---- Poll serial.log for results ----
