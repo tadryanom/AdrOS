@@ -80,6 +80,15 @@ static struct fs_node* persist_root_finddir(struct fs_node* node, const char* na
     return 0;
 }
 
+static const struct file_operations persistfs_root_fops = {
+    .finddir = persist_root_finddir,
+};
+
+static const struct file_operations persistfs_counter_fops = {
+    .read  = persist_counter_read,
+    .write = persist_counter_write,
+};
+
 fs_node_t* persistfs_create_root(int drive) {
     if (!g_ready) {
         if (ata_pio_drive_present(drive)) {
@@ -112,6 +121,7 @@ fs_node_t* persistfs_create_root(int drive) {
         g_root.flags = FS_DIRECTORY;
         g_root.inode = 1;
         g_root.length = 0;
+        g_root.f_ops = &persistfs_root_fops;
         g_root.read = 0;
         g_root.write = 0;
         g_root.open = 0;
@@ -123,6 +133,7 @@ fs_node_t* persistfs_create_root(int drive) {
         g_counter.flags = FS_FILE;
         g_counter.inode = 2;
         g_counter.length = 512;
+        g_counter.f_ops = &persistfs_counter_fops;
         g_counter.read = &persist_counter_read;
         g_counter.write = &persist_counter_write;
         g_counter.open = 0;
