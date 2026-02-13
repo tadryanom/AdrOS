@@ -105,6 +105,22 @@ static uint32_t dev_random_write(fs_node_t* node, uint32_t offset, uint32_t size
     return size;
 }
 
+static int dev_null_poll(fs_node_t* node, int events) {
+    (void)node;
+    int revents = 0;
+    if (events & VFS_POLL_IN) revents |= VFS_POLL_IN | VFS_POLL_HUP;
+    if (events & VFS_POLL_OUT) revents |= VFS_POLL_OUT;
+    return revents;
+}
+
+static int dev_always_ready_poll(fs_node_t* node, int events) {
+    (void)node;
+    int revents = 0;
+    if (events & VFS_POLL_IN) revents |= VFS_POLL_IN;
+    if (events & VFS_POLL_OUT) revents |= VFS_POLL_OUT;
+    return revents;
+}
+
 static struct fs_node* devfs_finddir_impl(struct fs_node* node, const char* name) {
     (void)node;
     if (!name || name[0] == 0) return 0;
@@ -197,6 +213,7 @@ static void devfs_init_once(void) {
     g_dev_null.length = 0;
     g_dev_null.read = &dev_null_read;
     g_dev_null.write = &dev_null_write;
+    g_dev_null.poll = &dev_null_poll;
     g_dev_null.open = 0;
     g_dev_null.close = 0;
     g_dev_null.finddir = 0;
@@ -207,6 +224,7 @@ static void devfs_init_once(void) {
     g_dev_zero.inode = 7;
     g_dev_zero.read = &dev_zero_read;
     g_dev_zero.write = &dev_zero_write;
+    g_dev_zero.poll = &dev_always_ready_poll;
 
     memset(&g_dev_random, 0, sizeof(g_dev_random));
     strcpy(g_dev_random.name, "random");
@@ -214,6 +232,7 @@ static void devfs_init_once(void) {
     g_dev_random.inode = 8;
     g_dev_random.read = &dev_random_read;
     g_dev_random.write = &dev_random_write;
+    g_dev_random.poll = &dev_always_ready_poll;
 
     memset(&g_dev_urandom, 0, sizeof(g_dev_urandom));
     strcpy(g_dev_urandom.name, "urandom");
@@ -221,6 +240,7 @@ static void devfs_init_once(void) {
     g_dev_urandom.inode = 9;
     g_dev_urandom.read = &dev_random_read;
     g_dev_urandom.write = &dev_random_write;
+    g_dev_urandom.poll = &dev_always_ready_poll;
 }
 
 fs_node_t* devfs_create_root(void) {
