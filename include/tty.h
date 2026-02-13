@@ -4,9 +4,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define NCCS 8
-#define VMIN  4
-#define VTIME 5
+#define NCCS  11
+
+#define VINTR  0   /* Ctrl-C  → SIGINT  */
+#define VQUIT  1   /* Ctrl-\  → SIGQUIT */
+#define VERASE 2   /* Backspace / DEL    */
+#define VKILL  3   /* Ctrl-U  (kill line)*/
+#define VEOF   4   /* Ctrl-D  (EOF)      */
+#define VSUSP  7   /* Ctrl-Z  → SIGTSTP  */
+#define VMIN   8
+#define VTIME  9
 
 struct termios {
     uint32_t c_iflag;

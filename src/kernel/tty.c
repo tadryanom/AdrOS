@@ -28,7 +28,16 @@ static waitqueue_t tty_wq;
 
 static uint32_t tty_lflag = TTY_ICANON | TTY_ECHO | TTY_ISIG;
 static uint32_t tty_oflag = TTY_OPOST | TTY_ONLCR;
-static uint8_t tty_cc[NCCS] = {0, 0, 0, 0, 1, 0, 0, 0};
+static uint8_t tty_cc[NCCS] = {
+    [VINTR]  = 0x03,  /* Ctrl-C  */
+    [VQUIT]  = 0x1C,  /* Ctrl-\  */
+    [VERASE] = 0x7F,  /* DEL     */
+    [VKILL]  = 0x15,  /* Ctrl-U  */
+    [VEOF]   = 0x04,  /* Ctrl-D  */
+    [VSUSP]  = 0x1A,  /* Ctrl-Z  */
+    [VMIN]   = 1,
+    [VTIME]  = 0,
+};
 
 static struct winsize tty_winsize = { 24, 80, 0, 0 };
 
@@ -284,7 +293,7 @@ void tty_input_char(char c) {
     enum { SIGINT_NUM = 2, SIGQUIT_NUM = 3, SIGTSTP_NUM = 20 };
 
     if (lflag & TTY_ISIG) {
-        if (c == 0x03) {
+        if (tty_cc[VINTR] && (uint8_t)c == tty_cc[VINTR]) {
             spin_unlock_irqrestore(&tty_lock, flags);
             if (lflag & TTY_ECHO) {
                 kprintf("^C\n");
@@ -295,7 +304,7 @@ void tty_input_char(char c) {
             return;
         }
 
-        if (c == 0x1C) {
+        if (tty_cc[VQUIT] && (uint8_t)c == tty_cc[VQUIT]) {
             spin_unlock_irqrestore(&tty_lock, flags);
             if (lflag & TTY_ECHO) {
                 kprintf("^\\\n");
@@ -306,7 +315,7 @@ void tty_input_char(char c) {
             return;
         }
 
-        if (c == 0x1A) {
+        if (tty_cc[VSUSP] && (uint8_t)c == tty_cc[VSUSP]) {
             spin_unlock_irqrestore(&tty_lock, flags);
             if (lflag & TTY_ECHO) {
                 kprintf("^Z\n");
@@ -318,7 +327,7 @@ void tty_input_char(char c) {
         }
     }
 
-    if (c == 0x04 && (lflag & TTY_ICANON)) {
+    if (tty_cc[VEOF] && (uint8_t)c == tty_cc[VEOF] && (lflag & TTY_ICANON)) {
         if (lflag & TTY_ECHO) {
             kprintf("^D");
         }
@@ -342,7 +351,7 @@ void tty_input_char(char c) {
         return;
     }
 
-    if (c == '\b') {
+    if (c == '\b' || (tty_cc[VERASE] && (uint8_t)c == tty_cc[VERASE])) {
         if (line_len > 0) {
             line_len--;
             if (lflag & TTY_ECHO) {
