@@ -68,7 +68,11 @@ uint32_t ata_pio_sector_size(void) {
     return 512;
 }
 
+static int ata_pio_inited = 0;
+
 int ata_pio_init_primary_master(void) {
+    if (ata_pio_inited) return 0;
+
     // Register IRQ 14 handler early to prevent INTRQ storm
     register_interrupt_handler(46, ata_pio_irq14_handler);
 
@@ -102,6 +106,7 @@ int ata_pio_init_primary_master(void) {
         kprintf("[ATA] Using PIO mode (DMA unavailable).\n");
     }
 
+    ata_pio_inited = 1;
     return 0;
 }
 

@@ -10,7 +10,7 @@ struct vfs_mount {
     fs_node_t* root;
 };
 
-static struct vfs_mount g_mounts[8];
+static struct vfs_mount g_mounts[16];
 static int g_mount_count = 0;
 
 static int path_is_mountpoint_prefix(const char* mp, const char* path) {

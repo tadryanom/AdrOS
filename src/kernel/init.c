@@ -22,6 +22,7 @@
 #include "keyboard.h"
 #include "console.h"
 
+#include "ata_pio.h"
 #include "hal/mm.h"
 
 #include <stddef.h>
@@ -96,29 +97,46 @@ int init_start(const struct boot_info* bi) {
         (void)vfs_mount("/persist", persist);
     }
 
-    fs_node_t* disk = diskfs_create_root();
-    if (disk) {
-        (void)vfs_mount("/disk", disk);
-    }
-
     fs_node_t* proc = procfs_create_root();
     if (proc) {
         (void)vfs_mount("/proc", proc);
     }
 
-    /* Probe second IDE disk partition (LBA 0) for FAT or ext2.
-     * The primary disk is used by diskfs; a second partition could
-     * be formatted as FAT or ext2 and mounted at /mnt. */
-    {
-        fs_node_t* fatfs = fat_mount(0);
-        if (fatfs) {
-            (void)vfs_mount("/fat", fatfs);
+    /* Probe the ATA primary master disk and mount the appropriate
+     * filesystem.  ext2, FAT, and diskfs are mutually exclusive on
+     * the same device — we probe in order of specificity so that
+     * diskfs auto-format never overwrites a recognized filesystem.
+     *
+     * Probe order: ext2 (magic 0xEF53), FAT (BPB validation), diskfs.
+     * If neither ext2 nor FAT is detected, diskfs initializes and may
+     * auto-format the disk. */
+    if (ata_pio_init_primary_master() == 0) {
+        int disk_mounted = 0;
+
+        /* 1. Try ext2 — superblock at byte 1024 (LBA 2), magic at offset 56 */
+        {
+            fs_node_t* ext2fs = ext2_mount(0);
+            if (ext2fs) {
+                (void)vfs_mount("/ext2", ext2fs);
+                disk_mounted = 1;
+            }
         }
-    }
-    {
-        fs_node_t* ext2fs = ext2_mount(0);
-        if (ext2fs) {
-            (void)vfs_mount("/ext2", ext2fs);
+
+        /* 2. Try FAT — BPB at LBA 0 */
+        if (!disk_mounted) {
+            fs_node_t* fatfs = fat_mount(0);
+            if (fatfs) {
+                (void)vfs_mount("/fat", fatfs);
+                disk_mounted = 1;
+            }
+        }
+
+        /* 3. Fallback to diskfs (may auto-format blank/unrecognized disks) */
+        if (!disk_mounted) {
+            fs_node_t* disk = diskfs_create_root();
+            if (disk) {
+                (void)vfs_mount("/disk", disk);
+            }
         }
     }
 

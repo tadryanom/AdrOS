@@ -348,8 +348,8 @@ static void kconsole_exec(const char* cmd) {
 void kconsole_enter(void) {
     keyboard_set_callback(0);
 
-    kc_puts("\n*** AdrOS Kernel Console (kconsole) ***\n");
-    kc_puts("Type 'help' for available commands.\n");
+    kc_puts("\n[PANIC] Userspace init failed -- dropping to kconsole.\n");
+    kc_puts("        Type 'help' for commands, 'reboot' to restart.\n\n");
 
     char line[KCMD_MAX];
 
