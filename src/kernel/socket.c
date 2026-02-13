@@ -1,4 +1,5 @@
 #include "socket.h"
+#include "fs.h"
 #include "net.h"
 #include "errno.h"
 #include "process.h"
@@ -432,4 +433,35 @@ int ksocket_close(int sid) {
 
     s->in_use = 0;
     return 0;
+}
+
+int ksocket_poll(int sid, int events) {
+    if (sid < 0 || sid >= KSOCKET_MAX) return VFS_POLL_ERR;
+    struct ksocket* s = &sockets[sid];
+    if (!s->in_use) return VFS_POLL_ERR | VFS_POLL_HUP;
+
+    int revents = 0;
+
+    if (s->error) revents |= VFS_POLL_ERR;
+
+    if (s->state == KSOCK_PEER_CLOSED || s->state == KSOCK_CLOSED) {
+        revents |= VFS_POLL_HUP;
+        /* Peer-closed socket is still readable (returns EOF / remaining data) */
+        if (events & VFS_POLL_IN) revents |= VFS_POLL_IN;
+        return revents;
+    }
+
+    if (events & VFS_POLL_IN) {
+        if (s->state == KSOCK_LISTENING) {
+            if (s->aq_count > 0) revents |= VFS_POLL_IN;
+        } else {
+            if (s->rx_count > 0) revents |= VFS_POLL_IN;
+        }
+    }
+
+    if (events & VFS_POLL_OUT) {
+        if (s->state == KSOCK_CONNECTED) revents |= VFS_POLL_OUT;
+    }
+
+    return revents;
 }

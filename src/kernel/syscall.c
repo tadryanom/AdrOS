@@ -2745,10 +2745,16 @@ static void sock_node_close(fs_node_t* node) {
     kfree(node);
 }
 
+static int sock_node_poll(fs_node_t* node, int events) {
+    if (!node) return VFS_POLL_ERR;
+    return ksocket_poll((int)node->inode, events);
+}
+
 static const struct file_operations sock_fops = {
     .read  = sock_node_read,
     .write = sock_node_write,
     .close = sock_node_close,
+    .poll  = sock_node_poll,
 };
 
 static fs_node_t* sock_node_create(int sid) {

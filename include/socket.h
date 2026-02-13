@@ -78,6 +78,7 @@ int  ksocket_sendto(int sid, const void* buf, size_t len, int flags,
 int  ksocket_recvfrom(int sid, void* buf, size_t len, int flags,
                       struct sockaddr_in* src);
 int  ksocket_close(int sid);
+int  ksocket_poll(int sid, int events);
 void ksocket_init(void);
 
 #endif
