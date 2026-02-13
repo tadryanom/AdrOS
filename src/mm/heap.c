@@ -8,285 +8,224 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Heap starts at 3GB + 256MB
-#define KHEAP_START 0xD0000000
-#define KHEAP_INITIAL_SIZE (10 * 1024 * 1024) // 10MB
-#define KHEAP_MAX_SIZE    (64 * 1024 * 1024) // 64MB max growth
-#define PAGE_SIZE 4096
+/* ------------------------------------------------------------------ */
+/* Buddy Allocator                                                    */
+/*                                                                    */
+/* Power-of-2 block sizes from 2^MIN_ORDER (32B) to 2^MAX_ORDER (8MB)*/
+/* O(log N) alloc/free with automatic buddy coalescing.               */
+/* Each block carries an 8-byte header; free blocks embed list ptrs   */
+/* in their data area.                                                */
+/* ------------------------------------------------------------------ */
 
-#define HEAP_MAGIC 0xCAFEBABE
+#define KHEAP_START       0xD0000000U
 
-// Advanced Header: Doubly Linked List
-typedef struct heap_header {
-    uint32_t magic;           // Magic number for corruption detection
-    size_t size;              // Size of data
-    uint8_t is_free;          // 1 = Free, 0 = Used
-    struct heap_header* next; // Next block
-    struct heap_header* prev; // Previous block
-} heap_header_t;
+#define BUDDY_MIN_ORDER   5                                   /* 32 B  */
+#define BUDDY_MAX_ORDER   23                                  /* 8 MB  */
+#define BUDDY_NUM_ORDERS  (BUDDY_MAX_ORDER - BUDDY_MIN_ORDER + 1)
+#define BUDDY_HEAP_SIZE   (1U << BUDDY_MAX_ORDER)
 
-static heap_header_t* head = NULL;
-static heap_header_t* tail = NULL;
-static uintptr_t heap_end = 0; // Current end of mapped heap region
+#define BUDDY_MAGIC       0xBD00CAFEU
+
+/* Block header — always at the start of every block (free or alloc) */
+typedef struct block_hdr {
+    uint32_t magic;
+    uint8_t  order;       /* 5..23 */
+    uint8_t  is_free;     /* 1 = free, 0 = allocated */
+    uint16_t pad;
+} block_hdr_t;            /* 8 bytes → keeps 8-byte alignment */
+
+/* Free-list node, embedded in the data area of a free block */
+typedef struct free_node {
+    struct free_node* next;
+    struct free_node* prev;
+} free_node_t;
+
+/* Sentinel-based circular doubly-linked free lists, one per order */
+static free_node_t free_lists[BUDDY_NUM_ORDERS];
 
 static spinlock_t heap_lock = {0};
 
-// Helper to check corruption
-void check_integrity(heap_header_t* header) {
-    if (header->magic != HEAP_MAGIC) {
-        uart_print("\n[HEAP] CRITICAL: Heap Corruption Detected!\n");
-        uart_print("Block at: ");
-        // TODO: print address
-        uart_print(" has invalid magic number.\n");
-        for(;;) hal_cpu_idle();
-    }
+/* ---- Inline helpers ---- */
+
+static inline free_node_t* blk_to_fn(block_hdr_t* h) {
+    return (free_node_t*)((uint8_t*)h + sizeof(block_hdr_t));
 }
+static inline block_hdr_t* fn_to_blk(free_node_t* fn) {
+    return (block_hdr_t*)((uint8_t*)fn - sizeof(block_hdr_t));
+}
+
+static inline void fl_init(free_node_t* s)  { s->next = s; s->prev = s; }
+static inline int  fl_empty(free_node_t* s) { return s->next == s; }
+
+static inline void fl_add(free_node_t* s, free_node_t* n) {
+    n->next = s->next;
+    n->prev = s;
+    s->next->prev = n;
+    s->next = n;
+}
+static inline void fl_del(free_node_t* n) {
+    n->prev->next = n->next;
+    n->next->prev = n->prev;
+}
+static inline free_node_t* fl_pop(free_node_t* s) {
+    free_node_t* n = s->next;
+    fl_del(n);
+    return n;
+}
+
+/* Buddy address via XOR on the offset from heap start */
+static inline block_hdr_t* buddy_of(block_hdr_t* b, int order) {
+    uintptr_t off = (uintptr_t)b - KHEAP_START;
+    return (block_hdr_t*)(KHEAP_START + (off ^ (1U << order)));
+}
+
+/* Minimum order that can hold `size` user bytes (+ header) */
+static inline int size_to_order(size_t size) {
+    size_t total = size + sizeof(block_hdr_t);
+    int order = BUDDY_MIN_ORDER;
+    while ((1U << order) < total && order < BUDDY_MAX_ORDER)
+        order++;
+    return order;
+}
+
+/* ---- Public API ---- */
+
 void kheap_init(void) {
-    uart_print("[HEAP] Initializing Advanced Heap (Doubly Linked)...\n");
+    uart_print("[HEAP] Initializing Buddy Allocator...\n");
 
     uintptr_t flags = spin_lock_irqsave(&heap_lock);
-    
-    // 1. Map pages
-    uint32_t pages_needed = KHEAP_INITIAL_SIZE / PAGE_SIZE;
-    if (KHEAP_INITIAL_SIZE % PAGE_SIZE != 0) pages_needed++;
-    
-    uint32_t virt_addr = KHEAP_START;
-    
-    for (uint32_t i = 0; i < pages_needed; i++) {
-        void* phys_frame = pmm_alloc_page();
-        if (!phys_frame) {
+
+    for (int i = 0; i < BUDDY_NUM_ORDERS; i++)
+        fl_init(&free_lists[i]);
+
+    /* Map physical pages for the 8 MB heap region */
+    uint32_t pages = BUDDY_HEAP_SIZE / PAGE_SIZE;
+    uintptr_t va = KHEAP_START;
+    for (uint32_t i = 0; i < pages; i++) {
+        void* phys = pmm_alloc_page();
+        if (!phys) {
             spin_unlock_irqrestore(&heap_lock, flags);
             uart_print("[HEAP] OOM during init!\n");
             return;
         }
-        
-        // Map 4KB frame
-        vmm_map_page((uint64_t)(uintptr_t)phys_frame, (uint64_t)virt_addr, 
+        vmm_map_page((uint64_t)(uintptr_t)phys, (uint64_t)va,
                      VMM_FLAG_PRESENT | VMM_FLAG_RW);
-                     
-        virt_addr += PAGE_SIZE;
+        va += PAGE_SIZE;
     }
-    
-    // 2. Initial Block
-    head = (heap_header_t*)KHEAP_START;
-    head->magic = HEAP_MAGIC; // Set Magic
-    head->size = KHEAP_INITIAL_SIZE - sizeof(heap_header_t);
-    head->is_free = 1;
-    head->next = NULL;
-    head->prev = NULL;
-    
-    tail = head;
-    heap_end = KHEAP_START + KHEAP_INITIAL_SIZE;
-    spin_unlock_irqrestore(&heap_lock, flags);
 
-    uart_print("[HEAP] 10MB Heap Ready.\n");
+    /* Single free block spanning the whole heap */
+    block_hdr_t* root = (block_hdr_t*)KHEAP_START;
+    root->magic   = BUDDY_MAGIC;
+    root->order   = BUDDY_MAX_ORDER;
+    root->is_free = 1;
+    root->pad     = 0;
+    fl_add(&free_lists[BUDDY_MAX_ORDER - BUDDY_MIN_ORDER], blk_to_fn(root));
+
+    spin_unlock_irqrestore(&heap_lock, flags);
+    uart_print("[HEAP] 8MB Buddy Allocator Ready.\n");
 }
 
 void* kmalloc(size_t size) {
     if (size == 0) return NULL;
 
+    int order = size_to_order(size);
+    if (order > BUDDY_MAX_ORDER) return NULL;
+
     uintptr_t flags = spin_lock_irqsave(&heap_lock);
-    
-    // Align to 8 bytes
-    size_t aligned_size = (size + 7) & ~7;
-    
-    heap_header_t* current = head;
-    
-    while (current) {
-        // Sanity Check
-        if (current->magic != HEAP_MAGIC) {
-            spin_unlock_irqrestore(&heap_lock, flags);
-            uart_print("[HEAP] Corruption Detected in kmalloc scan!\n");
-            char a[11];
-            char m[11];
-            itoa_hex((uint32_t)(uintptr_t)current, a);
-            itoa_hex((uint32_t)current->magic, m);
-            uart_print("[HEAP] header=");
-            uart_print(a);
-            uart_print(" magic=");
-            uart_print(m);
-            uart_print("\n");
-            for(;;) hal_cpu_idle();
-        }
 
-        if (current->is_free && current->size >= aligned_size) {
-            // Found candidate. Split?
-            if (current->size > aligned_size + sizeof(heap_header_t) + 16) {
-                // Create new header in the remaining space
-                heap_header_t* new_block = (heap_header_t*)((uint8_t*)current + sizeof(heap_header_t) + aligned_size);
-                
-                new_block->magic = HEAP_MAGIC; // Set Magic
-                new_block->size = current->size - aligned_size - sizeof(heap_header_t);
-                new_block->is_free = 1;
-                new_block->next = current->next;
-                new_block->prev = current;
-                
-                // Update pointers
-                if (current->next) {
-                    current->next->prev = new_block;
-                }
-                current->next = new_block;
-                current->size = aligned_size;
-                
-                if (current == tail) tail = new_block;
-            }
-            
-            current->is_free = 0;
-            void* ret = (void*)((uint8_t*)current + sizeof(heap_header_t));
-            spin_unlock_irqrestore(&heap_lock, flags);
-            return ret;
-        }
-        current = current->next;
-    }
-    
-    // No free block found — try to grow the heap.
-    size_t grow_size = aligned_size + sizeof(heap_header_t);
-    // Round up to page boundary, minimum 64KB growth.
-    if (grow_size < 64 * 1024) grow_size = 64 * 1024;
-    grow_size = (grow_size + PAGE_SIZE - 1) & ~(size_t)(PAGE_SIZE - 1);
-
-    if (heap_end + grow_size > KHEAP_START + KHEAP_MAX_SIZE) {
-        spin_unlock_irqrestore(&heap_lock, flags);
-        uart_print("[HEAP] OOM: max heap size reached.\n");
-        return NULL;
-    }
-
-    // Map new pages.
-    uintptr_t map_addr = heap_end;
-    for (size_t off = 0; off < grow_size; off += PAGE_SIZE) {
-        void* phys_frame = pmm_alloc_page();
-        if (!phys_frame) {
-            // Partial growth: use whatever we mapped so far.
-            grow_size = off;
+    /* Find the smallest available order >= requested */
+    int k;
+    for (k = order; k <= BUDDY_MAX_ORDER; k++) {
+        if (!fl_empty(&free_lists[k - BUDDY_MIN_ORDER]))
             break;
-        }
-        vmm_map_page((uint64_t)(uintptr_t)phys_frame, (uint64_t)(map_addr + off),
-                     VMM_FLAG_PRESENT | VMM_FLAG_RW);
     }
 
-    if (grow_size == 0) {
+    if (k > BUDDY_MAX_ORDER) {
         spin_unlock_irqrestore(&heap_lock, flags);
-        uart_print("[HEAP] OOM: kmalloc failed (no phys pages).\n");
+        uart_print("[HEAP] OOM: kmalloc failed.\n");
         return NULL;
     }
 
-    // Create a new free block in the grown region.
-    heap_header_t* new_block = (heap_header_t*)heap_end;
-    new_block->magic = HEAP_MAGIC;
-    new_block->size = grow_size - sizeof(heap_header_t);
-    new_block->is_free = 1;
-    new_block->next = NULL;
-    new_block->prev = tail;
-    if (tail) tail->next = new_block;
-    tail = new_block;
-    heap_end += grow_size;
+    /* Remove the block from its free list */
+    free_node_t* fn = fl_pop(&free_lists[k - BUDDY_MIN_ORDER]);
+    block_hdr_t* blk = fn_to_blk(fn);
 
-    // Coalesce with previous block if it's free and adjacent.
-    if (new_block->prev && new_block->prev->is_free) {
-        heap_header_t* prev = new_block->prev;
-        heap_header_t* expected = (heap_header_t*)((uint8_t*)prev + sizeof(heap_header_t) + prev->size);
-        if (expected == new_block) {
-            prev->size += sizeof(heap_header_t) + new_block->size;
-            prev->next = new_block->next;
-            if (new_block->next) {
-                new_block->next->prev = prev;
-            } else {
-                tail = prev;
-            }
-        }
+    if (blk->magic != BUDDY_MAGIC || !blk->is_free) {
+        spin_unlock_irqrestore(&heap_lock, flags);
+        uart_print("[HEAP] Corruption in kmalloc!\n");
+        for (;;) hal_cpu_idle();
     }
 
-    // Retry allocation from the start (the new block should satisfy it).
-    current = head;
-    while (current) {
-        if (current->magic != HEAP_MAGIC) break;
-        if (current->is_free && current->size >= aligned_size) {
-            if (current->size > aligned_size + sizeof(heap_header_t) + 16) {
-                heap_header_t* split = (heap_header_t*)((uint8_t*)current + sizeof(heap_header_t) + aligned_size);
-                split->magic = HEAP_MAGIC;
-                split->size = current->size - aligned_size - sizeof(heap_header_t);
-                split->is_free = 1;
-                split->next = current->next;
-                split->prev = current;
-                if (current->next) current->next->prev = split;
-                current->next = split;
-                current->size = aligned_size;
-                if (current == tail) tail = split;
-            }
-            current->is_free = 0;
-            void* ret = (void*)((uint8_t*)current + sizeof(heap_header_t));
-            spin_unlock_irqrestore(&heap_lock, flags);
-            return ret;
-        }
-        current = current->next;
+    /* Split down to the required order */
+    while (k > order) {
+        k--;
+        /* Upper buddy */
+        block_hdr_t* buddy = (block_hdr_t*)((uintptr_t)blk + (1U << k));
+        buddy->magic   = BUDDY_MAGIC;
+        buddy->order   = (uint8_t)k;
+        buddy->is_free = 1;
+        buddy->pad     = 0;
+        fl_add(&free_lists[k - BUDDY_MIN_ORDER], blk_to_fn(buddy));
+
+        blk->order = (uint8_t)k;
     }
+
+    blk->is_free = 0;
 
     spin_unlock_irqrestore(&heap_lock, flags);
-    uart_print("[HEAP] OOM: kmalloc failed after grow.\n");
-    return NULL;
+    return (void*)((uint8_t*)blk + sizeof(block_hdr_t));
 }
 
 void kfree(void* ptr) {
     if (!ptr) return;
 
     uintptr_t flags = spin_lock_irqsave(&heap_lock);
-    
-    heap_header_t* header = (heap_header_t*)((uint8_t*)ptr - sizeof(heap_header_t));
-    
-    if (header->magic != HEAP_MAGIC) {
-        spin_unlock_irqrestore(&heap_lock, flags);
-        uart_print("[HEAP] Corruption Detected in kfree!\n");
-        for(;;) hal_cpu_idle();
-    }
 
-    if (header->is_free) {
+    block_hdr_t* blk = (block_hdr_t*)((uint8_t*)ptr - sizeof(block_hdr_t));
+
+    if (blk->magic != BUDDY_MAGIC) {
         spin_unlock_irqrestore(&heap_lock, flags);
-        uart_print("[HEAP] Double free detected!\n");
-        char a[11];
-        itoa_hex((uint32_t)(uintptr_t)header, a);
-        uart_print("[HEAP] header=");
-        uart_print(a);
+        uart_print("[HEAP] Corruption in kfree! (bad magic)\n");
+        char a[11], m[11];
+        itoa_hex((uint32_t)(uintptr_t)blk, a);
+        itoa_hex(blk->magic, m);
+        uart_print("[HEAP] hdr="); uart_print(a);
+        uart_print(" magic=");    uart_print(m);
         uart_print("\n");
-        for(;;) hal_cpu_idle();
+        for (;;) hal_cpu_idle();
     }
 
-    header->is_free = 1;
-    
-    // 1. Coalesce Right (Forward)
-    if (header->next && header->next->is_free) {
-        heap_header_t* next_block = header->next;
-
-        // Only coalesce if physically adjacent.
-        heap_header_t* expected_next = (heap_header_t*)((uint8_t*)header + sizeof(heap_header_t) + header->size);
-        if (next_block == expected_next) {
-            header->size += sizeof(heap_header_t) + next_block->size;
-            header->next = next_block->next;
-
-            if (header->next) {
-                header->next->prev = header;
-            } else {
-                tail = header;
-            }
-        }
+    if (blk->is_free) {
+        spin_unlock_irqrestore(&heap_lock, flags);
+        uart_print("[HEAP] Double free!\n");
+        for (;;) hal_cpu_idle();
     }
-    
-    // 2. Coalesce Left (Backward) - The Power of Double Links!
-    if (header->prev && header->prev->is_free) {
-        heap_header_t* prev_block = header->prev;
 
-        // Only coalesce if physically adjacent.
-        heap_header_t* expected_hdr = (heap_header_t*)((uint8_t*)prev_block + sizeof(heap_header_t) + prev_block->size);
-        if (expected_hdr == header) {
-            prev_block->size += sizeof(heap_header_t) + header->size;
-            prev_block->next = header->next;
+    blk->is_free = 1;
+    int order = blk->order;
 
-            if (header->next) {
-                header->next->prev = prev_block;
-            } else {
-                tail = prev_block;
-            }
-        }
+    /* Coalesce with buddy while possible */
+    while (order < BUDDY_MAX_ORDER) {
+        block_hdr_t* buddy = buddy_of(blk, order);
+
+        /* Buddy must be valid, free, and at the same order */
+        if (buddy->magic != BUDDY_MAGIC || !buddy->is_free ||
+            buddy->order != (uint8_t)order)
+            break;
+
+        /* Remove buddy from its free list */
+        fl_del(blk_to_fn(buddy));
+
+        /* Merged block starts at the lower address */
+        if ((uintptr_t)buddy < (uintptr_t)blk)
+            blk = buddy;
+
+        order++;
+        blk->order = (uint8_t)order;
     }
+
+    /* Insert the (possibly merged) block into the correct free list */
+    fl_add(&free_lists[order - BUDDY_MIN_ORDER], blk_to_fn(blk));
 
     spin_unlock_irqrestore(&heap_lock, flags);
 }
