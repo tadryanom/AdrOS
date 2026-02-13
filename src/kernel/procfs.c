@@ -233,6 +233,11 @@ static uint32_t proc_pid_maps_read(fs_node_t* node, uint32_t offset, uint32_t si
 
 /* --- per-PID directory --- */
 
+/* Forward declarations for file_operations tables used in dynamic node creation */
+static const struct file_operations procfs_pid_dir_fops;
+static const struct file_operations procfs_pid_status_fops;
+static const struct file_operations procfs_pid_maps_fops;
+
 static fs_node_t* proc_pid_finddir(fs_node_t* node, const char* name) {
     uint32_t pid = node->inode;
     uint32_t slot = g_pid_pool_idx;
@@ -243,6 +248,7 @@ static fs_node_t* proc_pid_finddir(fs_node_t* node, const char* name) {
         strcpy(g_pid_status[slot].name, "status");
         g_pid_status[slot].flags = FS_FILE;
         g_pid_status[slot].inode = pid;
+        g_pid_status[slot].f_ops = &procfs_pid_status_fops;
         g_pid_status[slot].read = proc_pid_status_read;
         return &g_pid_status[slot];
     }
@@ -252,6 +258,7 @@ static fs_node_t* proc_pid_finddir(fs_node_t* node, const char* name) {
         strcpy(g_pid_maps[slot].name, "maps");
         g_pid_maps[slot].flags = FS_FILE;
         g_pid_maps[slot].inode = pid;
+        g_pid_maps[slot].f_ops = &procfs_pid_maps_fops;
         g_pid_maps[slot].read = proc_pid_maps_read;
         return &g_pid_maps[slot];
     }
@@ -291,6 +298,7 @@ static fs_node_t* proc_get_pid_dir(uint32_t pid) {
     strcpy(g_pid_dir[slot].name, num);
     g_pid_dir[slot].flags = FS_DIRECTORY;
     g_pid_dir[slot].inode = pid;
+    g_pid_dir[slot].f_ops = &procfs_pid_dir_fops;
     g_pid_dir[slot].finddir = proc_pid_finddir;
     g_pid_dir[slot].readdir = proc_pid_readdir;
     return &g_pid_dir[slot];
@@ -397,37 +405,84 @@ static int proc_root_readdir(fs_node_t* node, uint32_t* inout_index, void* buf, 
     return 0;
 }
 
+/* --- file_operations tables --- */
+
+static const struct file_operations procfs_root_fops = {
+    .finddir = proc_root_finddir,
+    .readdir = proc_root_readdir,
+};
+
+static const struct file_operations procfs_self_fops = {
+    .finddir = proc_self_finddir,
+    .readdir = proc_self_readdir,
+};
+
+static const struct file_operations procfs_self_status_fops = {
+    .read = proc_self_status_read,
+};
+
+static const struct file_operations procfs_uptime_fops = {
+    .read = proc_uptime_read,
+};
+
+static const struct file_operations procfs_meminfo_fops = {
+    .read = proc_meminfo_read,
+};
+
+static const struct file_operations procfs_cmdline_fops = {
+    .read = proc_cmdline_read,
+};
+
+static const struct file_operations procfs_pid_dir_fops = {
+    .finddir = proc_pid_finddir,
+    .readdir = proc_pid_readdir,
+};
+
+static const struct file_operations procfs_pid_status_fops = {
+    .read = proc_pid_status_read,
+};
+
+static const struct file_operations procfs_pid_maps_fops = {
+    .read = proc_pid_maps_read,
+};
+
 fs_node_t* procfs_create_root(void) {
     memset(&g_proc_root, 0, sizeof(g_proc_root));
     strcpy(g_proc_root.name, "proc");
     g_proc_root.flags = FS_DIRECTORY;
+    g_proc_root.f_ops = &procfs_root_fops;
     g_proc_root.finddir = proc_root_finddir;
     g_proc_root.readdir = proc_root_readdir;
 
     memset(&g_proc_self, 0, sizeof(g_proc_self));
     strcpy(g_proc_self.name, "self");
     g_proc_self.flags = FS_DIRECTORY;
+    g_proc_self.f_ops = &procfs_self_fops;
     g_proc_self.finddir = proc_self_finddir;
     g_proc_self.readdir = proc_self_readdir;
 
     memset(&g_proc_self_status, 0, sizeof(g_proc_self_status));
     strcpy(g_proc_self_status.name, "status");
     g_proc_self_status.flags = FS_FILE;
+    g_proc_self_status.f_ops = &procfs_self_status_fops;
     g_proc_self_status.read = proc_self_status_read;
 
     memset(&g_proc_uptime, 0, sizeof(g_proc_uptime));
     strcpy(g_proc_uptime.name, "uptime");
     g_proc_uptime.flags = FS_FILE;
+    g_proc_uptime.f_ops = &procfs_uptime_fops;
     g_proc_uptime.read = proc_uptime_read;
 
     memset(&g_proc_meminfo, 0, sizeof(g_proc_meminfo));
     strcpy(g_proc_meminfo.name, "meminfo");
     g_proc_meminfo.flags = FS_FILE;
+    g_proc_meminfo.f_ops = &procfs_meminfo_fops;
     g_proc_meminfo.read = proc_meminfo_read;
 
     memset(&g_proc_cmdline, 0, sizeof(g_proc_cmdline));
     strcpy(g_proc_cmdline.name, "cmdline");
     g_proc_cmdline.flags = FS_FILE;
+    g_proc_cmdline.f_ops = &procfs_cmdline_fops;
     g_proc_cmdline.read = proc_cmdline_read;
 
     return &g_proc_root;

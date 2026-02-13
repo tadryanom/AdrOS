@@ -100,6 +100,36 @@ static int pty_slave_poll_fn(fs_node_t* node, int events) {
     return revents;
 }
 
+/* Forward declarations for file_operations tables */
+static uint32_t pty_ptmx_read_fn(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer);
+static uint32_t pty_ptmx_write_fn(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer);
+static struct fs_node* pty_pts_finddir(struct fs_node* node, const char* name);
+static int pty_pts_readdir(struct fs_node* node, uint32_t* inout_index, void* buf, uint32_t buf_len);
+
+static const struct file_operations pty_master_fops = {
+    .read  = pty_master_read_fn,
+    .write = pty_master_write_fn,
+    .poll  = pty_master_poll_fn,
+};
+
+static const struct file_operations pty_slave_fops = {
+    .read  = pty_slave_read_fn,
+    .write = pty_slave_write_fn,
+    .ioctl = pty_slave_ioctl_fn,
+    .poll  = pty_slave_poll_fn,
+};
+
+static const struct file_operations pty_ptmx_fops = {
+    .read  = pty_ptmx_read_fn,
+    .write = pty_ptmx_write_fn,
+    .poll  = pty_master_poll_fn,
+};
+
+static const struct file_operations pty_pts_dir_fops = {
+    .finddir = pty_pts_finddir,
+    .readdir = pty_pts_readdir,
+};
+
 static void pty_init_pair(int idx) {
     struct pty_pair* p = &g_ptys[idx];
     memset(p, 0, sizeof(*p));
@@ -111,6 +141,7 @@ static void pty_init_pair(int idx) {
     strcpy(p->master_node.name, "ptmx");
     p->master_node.flags = FS_CHARDEVICE;
     p->master_node.inode = PTY_MASTER_INO_BASE + (uint32_t)idx;
+    p->master_node.f_ops = &pty_master_fops;
     p->master_node.read = &pty_master_read_fn;
     p->master_node.write = &pty_master_write_fn;
     p->master_node.poll = &pty_master_poll_fn;
@@ -121,6 +152,7 @@ static void pty_init_pair(int idx) {
     strcpy(p->slave_node.name, name);
     p->slave_node.flags = FS_CHARDEVICE;
     p->slave_node.inode = PTY_SLAVE_INO_BASE + (uint32_t)idx;
+    p->slave_node.f_ops = &pty_slave_fops;
     p->slave_node.read = &pty_slave_read_fn;
     p->slave_node.write = &pty_slave_write_fn;
     p->slave_node.ioctl = &pty_slave_ioctl_fn;
@@ -215,6 +247,7 @@ void pty_init(void) {
     strcpy(g_dev_ptmx_node.name, "ptmx");
     g_dev_ptmx_node.flags = FS_CHARDEVICE;
     g_dev_ptmx_node.inode = PTY_MASTER_INO_BASE;
+    g_dev_ptmx_node.f_ops = &pty_ptmx_fops;
     g_dev_ptmx_node.read = &pty_ptmx_read_fn;
     g_dev_ptmx_node.write = &pty_ptmx_write_fn;
     g_dev_ptmx_node.poll = &pty_master_poll_fn;
@@ -225,6 +258,7 @@ void pty_init(void) {
     strcpy(g_dev_pts_dir_node.name, "pts");
     g_dev_pts_dir_node.flags = FS_DIRECTORY;
     g_dev_pts_dir_node.inode = 5;
+    g_dev_pts_dir_node.f_ops = &pty_pts_dir_fops;
     g_dev_pts_dir_node.finddir = &pty_pts_finddir;
     g_dev_pts_dir_node.readdir = &pty_pts_readdir;
     devfs_register_device(&g_dev_pts_dir_node);
