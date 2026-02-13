@@ -82,7 +82,8 @@ void kernel_main(const struct boot_info* bi) {
     int init_ret = init_start(bi);
     
     if (init_ret < 0) {
-        // VFS/init failed — enter kernel emergency console
+        kprintf("\n[PANIC] Userspace init failed — dropping to emergency console.\n");
+        kprintf("        (type 'help' for commands, 'reboot' to restart)\n\n");
         kconsole_enter();
     }
     

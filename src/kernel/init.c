@@ -122,6 +122,11 @@ int init_start(const struct boot_info* bi) {
         }
     }
 
+    if (!fs_root) {
+        kprintf("[INIT] No root filesystem — cannot start userspace.\n");
+        return -1;
+    }
+
     int user_ret = arch_platform_start_userspace(bi);
 
     if (bi && cmdline_has_token(bi->cmdline, "ring3")) {
