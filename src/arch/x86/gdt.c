@@ -9,7 +9,7 @@
 
 #include "arch/x86/gdt.h"
 
-#include "uart_console.h"
+#include "console.h"
  #include "utils.h"
 
 struct gdt_entry {
@@ -103,7 +103,7 @@ void tss_set_kernel_stack(uintptr_t esp0) {
 }
 
 void gdt_init(void) {
-    uart_print("[GDT] Initializing GDT/TSS...\n");
+    kprintf("[GDT] Initializing GDT/TSS...\n");
 
     gp.limit = (uint16_t)(sizeof(struct gdt_entry) * GDT_MAX_ENTRIES - 1);
     gp.base = (uint32_t)(uintptr_t)&gdt;
@@ -121,5 +121,5 @@ void gdt_init(void) {
     gdt_flush((uint32_t)(uintptr_t)&gp);
     tss_flush(0x28);
 
-    uart_print("[GDT] Loaded.\n");
+    kprintf("[GDT] Loaded.\n");
 }

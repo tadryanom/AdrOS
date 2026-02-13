@@ -13,7 +13,7 @@
 #include "process.h"
 #include "spinlock.h"
 #include "uaccess.h"
-#include "uart_console.h"
+#include "console.h"
 #include "utils.h"
 
 #include "heap.h"
