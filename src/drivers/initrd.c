@@ -193,6 +193,14 @@ static struct fs_node* initrd_finddir(struct fs_node* node, const char* name) {
     return 0;
 }
 
+static const struct file_operations initrd_file_ops = {
+    .read = initrd_read_impl,
+};
+
+static const struct file_operations initrd_dir_ops = {
+    .finddir = initrd_finddir,
+};
+
 static void initrd_finalize_nodes(void) {
     for (int i = 0; i < entry_count; i++) {
         fs_node_t* n = &nodes[i];
@@ -203,11 +211,13 @@ static void initrd_finalize_nodes(void) {
         n->length = e->length;
         n->flags = e->flags;
 
-        n->read = (e->flags & FS_FILE) ? &initrd_read_impl : 0;
-        n->write = 0;
-        n->open = 0;
-        n->close = 0;
-        n->finddir = (e->flags & FS_DIRECTORY) ? &initrd_finddir : 0;
+        if (e->flags & FS_FILE) {
+            n->f_ops = &initrd_file_ops;
+            n->read = &initrd_read_impl;
+        } else if (e->flags & FS_DIRECTORY) {
+            n->f_ops = &initrd_dir_ops;
+            n->finddir = &initrd_finddir;
+        }
     }
 }
 
