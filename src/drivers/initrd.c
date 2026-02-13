@@ -213,10 +213,8 @@ static void initrd_finalize_nodes(void) {
 
         if (e->flags & FS_FILE) {
             n->f_ops = &initrd_file_ops;
-            n->read = &initrd_read_impl;
         } else if (e->flags & FS_DIRECTORY) {
             n->f_ops = &initrd_dir_ops;
-            n->finddir = &initrd_finddir;
         }
     }
 }

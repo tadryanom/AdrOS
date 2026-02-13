@@ -267,7 +267,9 @@ static void kconsole_ls(const char* path) {
         return;
     }
 
-    if (!dir->readdir) {
+    int (*fn_readdir)(struct fs_node*, uint32_t*, void*, uint32_t) = NULL;
+    if (dir->f_ops && dir->f_ops->readdir) fn_readdir = dir->f_ops->readdir;
+    if (!fn_readdir) {
         kprintf("ls: not a directory\n");
         return;
     }
@@ -275,7 +277,7 @@ static void kconsole_ls(const char* path) {
     uint32_t idx = 0;
     struct vfs_dirent ent;
     while (1) {
-        int rc = dir->readdir(dir, &idx, &ent, sizeof(ent));
+        int rc = fn_readdir(dir, &idx, &ent, sizeof(ent));
         if (rc != 0) break;
         kprintf("  %s\n", ent.d_name);
     }

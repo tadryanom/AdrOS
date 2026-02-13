@@ -224,44 +224,30 @@ static void devfs_init_once(void) {
     g_dev_root.vfs.inode = 1;
     g_dev_root.vfs.length = 0;
     g_dev_root.vfs.f_ops = &devfs_dir_ops;
-    g_dev_root.vfs.finddir = devfs_finddir_impl;
-    g_dev_root.vfs.readdir = devfs_readdir_impl;
 
     memset(&g_dev_null, 0, sizeof(g_dev_null));
     strcpy(g_dev_null.name, "null");
     g_dev_null.flags = FS_CHARDEVICE;
     g_dev_null.inode = 2;
     g_dev_null.f_ops = &dev_null_ops;
-    g_dev_null.read = dev_null_read;
-    g_dev_null.write = dev_null_write;
-    g_dev_null.poll = dev_null_poll;
 
     memset(&g_dev_zero, 0, sizeof(g_dev_zero));
     strcpy(g_dev_zero.name, "zero");
     g_dev_zero.flags = FS_CHARDEVICE;
     g_dev_zero.inode = 7;
     g_dev_zero.f_ops = &dev_zero_ops;
-    g_dev_zero.read = dev_zero_read;
-    g_dev_zero.write = dev_zero_write;
-    g_dev_zero.poll = dev_always_ready_poll;
 
     memset(&g_dev_random, 0, sizeof(g_dev_random));
     strcpy(g_dev_random.name, "random");
     g_dev_random.flags = FS_CHARDEVICE;
     g_dev_random.inode = 8;
     g_dev_random.f_ops = &dev_random_ops;
-    g_dev_random.read = dev_random_read;
-    g_dev_random.write = dev_random_write;
-    g_dev_random.poll = dev_always_ready_poll;
 
     memset(&g_dev_urandom, 0, sizeof(g_dev_urandom));
     strcpy(g_dev_urandom.name, "urandom");
     g_dev_urandom.flags = FS_CHARDEVICE;
     g_dev_urandom.inode = 9;
     g_dev_urandom.f_ops = &dev_random_ops;
-    g_dev_urandom.read = dev_random_read;
-    g_dev_urandom.write = dev_random_write;
-    g_dev_urandom.poll = dev_always_ready_poll;
 }
 
 fs_node_t* devfs_create_root(void) {

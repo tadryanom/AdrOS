@@ -474,10 +474,6 @@ void tty_init(void) {
     g_dev_console_node.flags = FS_CHARDEVICE;
     g_dev_console_node.inode = 10;
     g_dev_console_node.f_ops = &tty_fops;
-    g_dev_console_node.read = &tty_devfs_read;
-    g_dev_console_node.write = &tty_devfs_write;
-    g_dev_console_node.ioctl = &tty_devfs_ioctl;
-    g_dev_console_node.poll = &tty_devfs_poll;
     devfs_register_device(&g_dev_console_node);
 
     /* Register /dev/tty */
@@ -486,10 +482,6 @@ void tty_init(void) {
     g_dev_tty_node.flags = FS_CHARDEVICE;
     g_dev_tty_node.inode = 3;
     g_dev_tty_node.f_ops = &tty_fops;
-    g_dev_tty_node.read = &tty_devfs_read;
-    g_dev_tty_node.write = &tty_devfs_write;
-    g_dev_tty_node.ioctl = &tty_devfs_ioctl;
-    g_dev_tty_node.poll = &tty_devfs_poll;
     devfs_register_device(&g_dev_tty_node);
 }
 

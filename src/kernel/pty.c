@@ -142,9 +142,6 @@ static void pty_init_pair(int idx) {
     p->master_node.flags = FS_CHARDEVICE;
     p->master_node.inode = PTY_MASTER_INO_BASE + (uint32_t)idx;
     p->master_node.f_ops = &pty_master_fops;
-    p->master_node.read = &pty_master_read_fn;
-    p->master_node.write = &pty_master_write_fn;
-    p->master_node.poll = &pty_master_poll_fn;
 
     memset(&p->slave_node, 0, sizeof(p->slave_node));
     name[0] = '0' + (char)idx;
@@ -153,10 +150,6 @@ static void pty_init_pair(int idx) {
     p->slave_node.flags = FS_CHARDEVICE;
     p->slave_node.inode = PTY_SLAVE_INO_BASE + (uint32_t)idx;
     p->slave_node.f_ops = &pty_slave_fops;
-    p->slave_node.read = &pty_slave_read_fn;
-    p->slave_node.write = &pty_slave_write_fn;
-    p->slave_node.ioctl = &pty_slave_ioctl_fn;
-    p->slave_node.poll = &pty_slave_poll_fn;
 }
 
 /* --- DevFS pts directory callbacks --- */
@@ -248,9 +241,6 @@ void pty_init(void) {
     g_dev_ptmx_node.flags = FS_CHARDEVICE;
     g_dev_ptmx_node.inode = PTY_MASTER_INO_BASE;
     g_dev_ptmx_node.f_ops = &pty_ptmx_fops;
-    g_dev_ptmx_node.read = &pty_ptmx_read_fn;
-    g_dev_ptmx_node.write = &pty_ptmx_write_fn;
-    g_dev_ptmx_node.poll = &pty_master_poll_fn;
     devfs_register_device(&g_dev_ptmx_node);
 
     /* Register /dev/pts directory */
@@ -259,8 +249,6 @@ void pty_init(void) {
     g_dev_pts_dir_node.flags = FS_DIRECTORY;
     g_dev_pts_dir_node.inode = 5;
     g_dev_pts_dir_node.f_ops = &pty_pts_dir_fops;
-    g_dev_pts_dir_node.finddir = &pty_pts_finddir;
-    g_dev_pts_dir_node.readdir = &pty_pts_readdir;
     devfs_register_device(&g_dev_pts_dir_node);
 }
 

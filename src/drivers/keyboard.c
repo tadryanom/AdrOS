@@ -123,8 +123,6 @@ void keyboard_register_devfs(void) {
     g_dev_kbd_node.flags = FS_CHARDEVICE;
     g_dev_kbd_node.inode = 21;
     g_dev_kbd_node.f_ops = &kbd_fops;
-    g_dev_kbd_node.read = &kbd_dev_read;
-    g_dev_kbd_node.poll = &kbd_dev_poll;
     devfs_register_device(&g_dev_kbd_node);
 }
 

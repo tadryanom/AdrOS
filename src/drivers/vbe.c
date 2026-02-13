@@ -193,10 +193,6 @@ void vbe_register_devfs(void) {
     g_dev_fb0_node.inode = 20;
     g_dev_fb0_node.length = g_vbe.size;
     g_dev_fb0_node.f_ops = &fb0_fops;
-    g_dev_fb0_node.read = &fb0_read;
-    g_dev_fb0_node.write = &fb0_write;
-    g_dev_fb0_node.ioctl = &fb0_ioctl;
-    g_dev_fb0_node.mmap = &fb0_mmap;
     devfs_register_device(&g_dev_fb0_node);
 
     kprintf("[VBE] Registered /dev/fb0\n");

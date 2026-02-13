@@ -459,7 +459,6 @@ static int diskfs_readdir_impl(struct fs_node* node, uint32_t* inout_index, void
     return (int)(nents * (uint32_t)sizeof(struct vfs_dirent));
 }
 
-static void diskfs_set_dir_ops(fs_node_t* vfs);
 static int diskfs_vfs_truncate(struct fs_node* node, uint32_t length);
 static struct fs_node* diskfs_root_finddir(struct fs_node* node, const char* name);
 static int diskfs_vfs_create(struct fs_node* dir, const char* name, uint32_t flags, struct fs_node** out);
@@ -512,24 +511,16 @@ static struct fs_node* diskfs_root_finddir(struct fs_node* node, const char* nam
 
     strcpy(dn->vfs.name, name);
     dn->vfs.inode = 100 + (uint32_t)cino;
-    dn->vfs.open = 0;
-    dn->vfs.close = &diskfs_close_impl;
     dn->ino = cino;
 
     if (sb.inodes[cino].type == DISKFS_INODE_DIR) {
         dn->vfs.flags = FS_DIRECTORY;
         dn->vfs.length = 0;
         dn->vfs.f_ops = &diskfs_dir_fops;
-        dn->vfs.finddir = &diskfs_root_finddir;
-        dn->vfs.readdir = &diskfs_readdir_impl;
-        diskfs_set_dir_ops(&dn->vfs);
     } else {
         dn->vfs.flags = FS_FILE;
         dn->vfs.length = sb.inodes[cino].size_bytes;
         dn->vfs.f_ops = &diskfs_file_fops;
-        dn->vfs.read = &diskfs_read_impl;
-        dn->vfs.write = &diskfs_write_impl;
-        dn->vfs.truncate = &diskfs_vfs_truncate;
     }
 
     return &dn->vfs;
@@ -584,9 +575,6 @@ int diskfs_open_file(const char* rel_path, uint32_t flags, fs_node_t** out_node)
     dn->vfs.inode = 100 + (uint32_t)ino;
     dn->vfs.length = sb.inodes[ino].size_bytes;
     dn->vfs.f_ops = &diskfs_file_fops;
-    dn->vfs.read = &diskfs_read_impl;
-    dn->vfs.write = &diskfs_write_impl;
-    dn->vfs.close = &diskfs_close_impl;
     dn->ino = ino;
 
     *out_node = &dn->vfs;
@@ -871,9 +859,7 @@ static int diskfs_vfs_create(struct fs_node* dir, const char* name, uint32_t fla
         dn->vfs.flags = FS_FILE;
         dn->vfs.inode = 100 + (uint32_t)ino;
         dn->vfs.length = sb.inodes[ino].size_bytes;
-        dn->vfs.read = &diskfs_read_impl;
-        dn->vfs.write = &diskfs_write_impl;
-        dn->vfs.close = &diskfs_close_impl;
+        dn->vfs.f_ops = &diskfs_file_fops;
         dn->ino = ino;
         *out = &dn->vfs;
         return 0;
@@ -894,9 +880,7 @@ static int diskfs_vfs_create(struct fs_node* dir, const char* name, uint32_t fla
     dn->vfs.flags = FS_FILE;
     dn->vfs.inode = 100 + (uint32_t)new_ino;
     dn->vfs.length = 0;
-    dn->vfs.read = &diskfs_read_impl;
-    dn->vfs.write = &diskfs_write_impl;
-    dn->vfs.close = &diskfs_close_impl;
+    dn->vfs.f_ops = &diskfs_file_fops;
     dn->ino = new_ino;
     *out = &dn->vfs;
     return 0;
@@ -1069,16 +1053,6 @@ static int diskfs_vfs_link(struct fs_node* dir, const char* name, struct fs_node
     return diskfs_super_store(&sb);
 }
 
-static void diskfs_set_dir_ops(fs_node_t* vfs) {
-    if (!vfs) return;
-    vfs->create = &diskfs_vfs_create;
-    vfs->mkdir = &diskfs_vfs_mkdir;
-    vfs->unlink = &diskfs_vfs_unlink;
-    vfs->rmdir = &diskfs_vfs_rmdir;
-    vfs->rename = &diskfs_vfs_rename;
-    vfs->link = &diskfs_vfs_link;
-}
-
 fs_node_t* diskfs_create_root(int drive) {
     if (!g_ready) {
         g_diskfs_drive = drive;
@@ -1094,9 +1068,6 @@ fs_node_t* diskfs_create_root(int drive) {
         g_root.vfs.inode = 100;
         g_root.vfs.length = 0;
         g_root.vfs.f_ops = &diskfs_dir_fops;
-        g_root.vfs.finddir = &diskfs_root_finddir;
-        g_root.vfs.readdir = &diskfs_readdir_impl;
-        diskfs_set_dir_ops(&g_root.vfs);
         g_root.ino = 0;
 
         if (g_ready) {

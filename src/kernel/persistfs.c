@@ -113,11 +113,6 @@ fs_node_t* persistfs_create_root(int drive) {
         g_root.inode = 1;
         g_root.length = 0;
         g_root.f_ops = &persistfs_root_fops;
-        g_root.read = 0;
-        g_root.write = 0;
-        g_root.open = 0;
-        g_root.close = 0;
-        g_root.finddir = &persist_root_finddir;
 
         memset(&g_counter, 0, sizeof(g_counter));
         strcpy(g_counter.name, "counter");
@@ -125,11 +120,6 @@ fs_node_t* persistfs_create_root(int drive) {
         g_counter.inode = 2;
         g_counter.length = 512;
         g_counter.f_ops = &persistfs_counter_fops;
-        g_counter.read = &persist_counter_read;
-        g_counter.write = &persist_counter_write;
-        g_counter.open = 0;
-        g_counter.close = 0;
-        g_counter.finddir = 0;
     }
 
     return g_ready ? &g_root : 0;

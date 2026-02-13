@@ -264,7 +264,6 @@ static int poll_wait_kfds(struct pollfd* kfds, uint32_t nfds, int32_t timeout) {
 
             int (*fn_poll)(fs_node_t*, int) = NULL;
             if (n->f_ops && n->f_ops->poll) fn_poll = n->f_ops->poll;
-            else if (n->poll) fn_poll = n->poll;
             if (fn_poll) {
                 int vfs_events = 0;
                 if (kfds[i].events & POLLIN)  vfs_events |= VFS_POLL_IN;
@@ -421,17 +420,13 @@ static int pipe_node_create(struct pipe_state* ps, int is_read_end, fs_node_t** 
     pn->is_read_end = is_read_end ? 1U : 0U;
     pn->node.flags = FS_FILE;
     pn->node.length = 0;
-    pn->node.close = pipe_close;
-    pn->node.poll = pipe_poll;
     if (pn->is_read_end) {
         strcpy(pn->node.name, "pipe:r");
         pn->node.f_ops = &pipe_read_fops;
-        pn->node.read = pipe_read;
         ps->readers++;
     } else {
         strcpy(pn->node.name, "pipe:w");
         pn->node.f_ops = &pipe_write_fops;
-        pn->node.write = pipe_write;
         ps->writers++;
     }
 
@@ -917,11 +912,8 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
         return -ENOENT;
     } else if ((flags & 0x200U) != 0U && node->flags == FS_FILE) {
         /* O_TRUNC on existing file */
-        if ((node->f_ops && node->f_ops->truncate) || node->truncate) {
-            if (node->f_ops && node->f_ops->truncate)
-                node->f_ops->truncate(node, 0);
-            else
-                node->truncate(node, 0);
+        if (node->f_ops && node->f_ops->truncate) {
+            node->f_ops->truncate(node, 0);
             node->length = 0;
         }
     }
@@ -1155,7 +1147,6 @@ static int syscall_getdents_impl(int fd, void* user_buf, uint32_t len) {
     if (f->node->flags != FS_DIRECTORY) return -ENOTDIR;
     int (*fn_readdir)(struct fs_node*, uint32_t*, void*, uint32_t) = NULL;
     if (f->node->f_ops && f->node->f_ops->readdir) fn_readdir = f->node->f_ops->readdir;
-    else if (f->node->readdir) fn_readdir = f->node->readdir;
     if (!fn_readdir) return -ENOSYS;
 
     uint8_t kbuf[256];
@@ -1228,7 +1219,6 @@ static int syscall_read_impl(int fd, void* user_buf, uint32_t len) {
     {
         int (*fn_poll)(fs_node_t*, int) = NULL;
         if (f->node->f_ops && f->node->f_ops->poll) fn_poll = f->node->f_ops->poll;
-        else if (f->node->poll) fn_poll = f->node->poll;
         if (nonblock && fn_poll) {
             int rev = fn_poll(f->node, VFS_POLL_IN);
             if (!(rev & (VFS_POLL_IN | VFS_POLL_ERR | VFS_POLL_HUP)))
@@ -1257,7 +1247,7 @@ static int syscall_read_impl(int fd, void* user_buf, uint32_t len) {
         return (int)total;
     }
 
-    if (!(f->node->f_ops && f->node->f_ops->read) && !f->node->read) return -ESPIPE;
+    if (!(f->node->f_ops && f->node->f_ops->read)) return -ESPIPE;
 
     uint8_t kbuf[256];
     uint32_t total = 0;
@@ -1299,14 +1289,13 @@ static int syscall_write_impl(int fd, const void* user_buf, uint32_t len) {
     {
         int (*fn_poll)(fs_node_t*, int) = NULL;
         if (f->node->f_ops && f->node->f_ops->poll) fn_poll = f->node->f_ops->poll;
-        else if (f->node->poll) fn_poll = f->node->poll;
         if (nonblock && fn_poll) {
             int rev = fn_poll(f->node, VFS_POLL_OUT);
             if (!(rev & (VFS_POLL_OUT | VFS_POLL_ERR)))
                 return -EAGAIN;
         }
     }
-    if (!(f->node->f_ops && f->node->f_ops->write) && !f->node->write) return -ESPIPE;
+    if (!(f->node->f_ops && f->node->f_ops->write)) return -ESPIPE;
     if (f->node->flags != FS_FILE && f->node->flags != FS_CHARDEVICE && f->node->flags != FS_SOCKET) return -ESPIPE;
 
     if ((f->flags & O_APPEND) && (f->node->flags & FS_FILE)) {
@@ -1338,7 +1327,6 @@ static int syscall_ioctl_impl(int fd, uint32_t cmd, void* user_arg) {
 
     fs_node_t* n = f->node;
     if (n->f_ops && n->f_ops->ioctl) return n->f_ops->ioctl(n, cmd, user_arg);
-    if (n->ioctl) return n->ioctl(n, cmd, user_arg);
     return -ENOTTY;
 }
 
@@ -1520,7 +1508,7 @@ static uintptr_t syscall_mmap_impl(uintptr_t addr, uint32_t length, uint32_t pro
         if (fd < 0) return (uintptr_t)-EBADF;
         struct file* f = fd_get(fd);
         if (!f || !f->node) return (uintptr_t)-EBADF;
-        if (!(f->node->f_ops && f->node->f_ops->mmap) && !f->node->mmap) return (uintptr_t)-ENOSYS;
+        if (!(f->node->f_ops && f->node->f_ops->mmap)) return (uintptr_t)-ENOSYS;
         mmap_node = f->node;
     }
 
@@ -1546,7 +1534,7 @@ static uintptr_t syscall_mmap_impl(uintptr_t addr, uint32_t length, uint32_t pro
         /* Device-backed mmap: delegate to the node's mmap callback */
         uintptr_t (*fn_mmap)(fs_node_t*, uintptr_t, uint32_t, uint32_t, uint32_t) = NULL;
         if (mmap_node->f_ops && mmap_node->f_ops->mmap) fn_mmap = mmap_node->f_ops->mmap;
-        else fn_mmap = mmap_node->mmap;
+        if (!fn_mmap) return (uintptr_t)-ENOSYS;
         uintptr_t result = fn_mmap(mmap_node, base, aligned_len, prot, offset);
         if (!result) return (uintptr_t)-ENOMEM;
         base = result;
@@ -1700,7 +1688,6 @@ static int syscall_readlink_impl(const char* user_path, char* user_buf, uint32_t
     if (!dir) return -ENOENT;
     fs_node_t* (*fn_finddir)(fs_node_t*, const char*) = NULL;
     if (dir->f_ops && dir->f_ops->finddir) fn_finddir = dir->f_ops->finddir;
-    else if (dir->finddir) fn_finddir = dir->finddir;
     if (!fn_finddir) return -ENOENT;
 
     fs_node_t* node = fn_finddir(dir, leaf);
@@ -2382,7 +2369,7 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
         uint32_t offset = sc_arg3(regs);
         struct file* f = fd_get(fd);
         if (!f || !f->node) { sc_ret(regs) = (uint32_t)-EBADF; return; }
-        if (!(f->node->f_ops && f->node->f_ops->read) && !f->node->read) { sc_ret(regs) = (uint32_t)-ESPIPE; return; }
+        if (!(f->node->f_ops && f->node->f_ops->read)) { sc_ret(regs) = (uint32_t)-ESPIPE; return; }
         if (count > 1024 * 1024) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
         uint8_t kbuf[256];
         uint32_t total = 0;
@@ -2408,7 +2395,7 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
         uint32_t offset = sc_arg3(regs);
         struct file* f = fd_get(fd);
         if (!f || !f->node) { sc_ret(regs) = (uint32_t)-EBADF; return; }
-        if (!(f->node->f_ops && f->node->f_ops->write) && !f->node->write) { sc_ret(regs) = (uint32_t)-ESPIPE; return; }
+        if (!(f->node->f_ops && f->node->f_ops->write)) { sc_ret(regs) = (uint32_t)-ESPIPE; return; }
         if (count > 1024 * 1024) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
         uint8_t kbuf[256];
         uint32_t total = 0;
@@ -2656,9 +2643,6 @@ static fs_node_t* sock_node_create(int sid) {
     n->flags = FS_SOCKET;
     n->inode = (uint32_t)sid;
     n->f_ops = &sock_fops;
-    n->read = sock_node_read;
-    n->write = sock_node_write;
-    n->close = sock_node_close;
     return n;
 }
 

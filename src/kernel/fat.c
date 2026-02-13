@@ -507,17 +507,6 @@ static void fat_close_impl(fs_node_t* node) {
     kfree(fn);
 }
 
-static void fat_set_dir_ops(fs_node_t* vfs) {
-    if (!vfs) return;
-    vfs->finddir = &fat_finddir;
-    vfs->readdir = &fat_readdir_impl;
-    vfs->create = &fat_create_impl;
-    vfs->mkdir = &fat_mkdir_impl;
-    vfs->unlink = &fat_unlink_impl;
-    vfs->rmdir = &fat_rmdir_impl;
-    vfs->rename = &fat_rename_impl;
-}
-
 static struct fat_node* fat_make_node(const struct fat_dirent* de, uint32_t parent_cluster, uint32_t dirent_offset) {
     struct fat_node* fn = (struct fat_node*)kmalloc(sizeof(struct fat_node));
     if (!fn) return NULL;
@@ -533,17 +522,12 @@ static struct fat_node* fat_make_node(const struct fat_dirent* de, uint32_t pare
         fn->vfs.length = 0;
         fn->vfs.inode = fn->first_cluster;
         fn->vfs.f_ops = &fat_dir_fops;
-        fat_set_dir_ops(&fn->vfs);
     } else {
         fn->vfs.flags = FS_FILE;
         fn->vfs.length = de->file_size;
         fn->vfs.inode = fn->first_cluster;
         fn->vfs.f_ops = &fat_file_fops;
-        fn->vfs.read = &fat_file_read;
-        fn->vfs.write = &fat_file_write;
-        fn->vfs.truncate = &fat_truncate_impl;
     }
-    fn->vfs.close = &fat_close_impl;
 
     return fn;
 }
@@ -1179,7 +1163,7 @@ fs_node_t* fat_mount(int drive, uint32_t partition_lba) {
     g_fat_root.first_cluster = (g_fat.type == FAT_TYPE_32) ? g_fat.root_cluster : 0;
     g_fat_root.parent_cluster = 0;
     g_fat_root.dir_entry_offset = 0;
-    fat_set_dir_ops(&g_fat_root.vfs);
+    g_fat_root.vfs.f_ops = &fat_dir_fops;
 
     g_fat_ready = 1;
 

@@ -126,10 +126,6 @@ static fs_node_t* overlay_wrap_child(struct overlay_node* parent, const char* na
     } else {
         c->vfs.f_ops = &overlay_file_ops;
     }
-    c->vfs.read = &overlay_read_impl;
-    c->vfs.write = (c->vfs.flags == FS_FILE) ? &overlay_write_impl : 0;
-    c->vfs.finddir = (c->vfs.flags == FS_DIRECTORY) ? &overlay_finddir_impl : 0;
-    c->vfs.readdir = (c->vfs.flags == FS_DIRECTORY) ? &overlay_readdir_impl : 0;
 
     if (parent->path[0] == 0) {
         c->path[0] = '/';
@@ -170,8 +166,6 @@ static int overlay_readdir_impl(struct fs_node* node, uint32_t* inout_index, voi
     if (!src) return 0;
     if (src->f_ops && src->f_ops->readdir)
         return src->f_ops->readdir(src, inout_index, buf, buf_len);
-    if (src->readdir)
-        return src->readdir(src, inout_index, buf, buf_len);
     return 0;
 }
 
@@ -184,18 +178,10 @@ static struct fs_node* overlay_finddir_impl(struct fs_node* node, const char* na
     fs_node_t* upper_child = NULL;
     fs_node_t* lower_child = NULL;
 
-    if (dir->upper) {
-        if (dir->upper->f_ops && dir->upper->f_ops->finddir)
-            upper_child = dir->upper->f_ops->finddir(dir->upper, name);
-        else if (dir->upper->finddir)
-            upper_child = dir->upper->finddir(dir->upper, name);
-    }
-    if (dir->lower) {
-        if (dir->lower->f_ops && dir->lower->f_ops->finddir)
-            lower_child = dir->lower->f_ops->finddir(dir->lower, name);
-        else if (dir->lower->finddir)
-            lower_child = dir->lower->finddir(dir->lower, name);
-    }
+    if (dir->upper && dir->upper->f_ops && dir->upper->f_ops->finddir)
+        upper_child = dir->upper->f_ops->finddir(dir->upper, name);
+    if (dir->lower && dir->lower->f_ops && dir->lower->f_ops->finddir)
+        lower_child = dir->lower->f_ops->finddir(dir->lower, name);
 
     if (!upper_child && !lower_child) return 0;
     return overlay_wrap_child(dir, name, lower_child, upper_child);
@@ -225,8 +211,6 @@ fs_node_t* overlayfs_create_root(fs_node_t* lower_root, fs_node_t* upper_root) {
     root->vfs.inode = upper_root->inode;
     root->vfs.length = 0;
     root->vfs.f_ops = &overlay_dir_ops;
-    root->vfs.finddir = &overlay_finddir_impl;
-    root->vfs.readdir = &overlay_readdir_impl;
 
     root->path[0] = 0;
 

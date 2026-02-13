@@ -76,8 +76,6 @@ static struct tmpfs_node* tmpfs_child_ensure_dir(struct tmpfs_node* dir, const c
     struct tmpfs_node* nd = tmpfs_node_alloc(name, FS_DIRECTORY);
     if (!nd) return NULL;
     nd->vfs.f_ops = &tmpfs_dir_ops;
-    nd->vfs.finddir = tmpfs_finddir_impl;
-    nd->vfs.readdir = tmpfs_readdir_impl;
     tmpfs_child_add(dir, nd);
     return nd;
 }
@@ -206,8 +204,6 @@ fs_node_t* tmpfs_create_root(void) {
     if (!root) return NULL;
 
     root->vfs.f_ops = &tmpfs_dir_ops;
-    root->vfs.finddir = tmpfs_finddir_impl;
-    root->vfs.readdir = tmpfs_readdir_impl;
 
     return &root->vfs;
 }
@@ -223,8 +219,6 @@ int tmpfs_add_file(fs_node_t* root_dir, const char* name, const uint8_t* data, u
     if (!f) return -ENOMEM;
 
     f->vfs.f_ops = &tmpfs_file_ops;
-    f->vfs.read = tmpfs_read_impl;
-    f->vfs.write = tmpfs_write_impl;
 
     if (len) {
         f->data = (uint8_t*)kmalloc(len);
@@ -297,8 +291,6 @@ fs_node_t* tmpfs_create_file(fs_node_t* root_dir, const char* path, const uint8_
     if (!f) return NULL;
 
     f->vfs.f_ops = &tmpfs_file_ops;
-    f->vfs.read = tmpfs_read_impl;
-    f->vfs.write = tmpfs_write_impl;
 
     if (len && data) {
         f->data = (uint8_t*)kmalloc(len);

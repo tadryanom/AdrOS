@@ -557,18 +557,6 @@ static void ext2_close_impl(fs_node_t* node) {
     kfree(en);
 }
 
-static void ext2_set_dir_ops(fs_node_t* vfs) {
-    if (!vfs) return;
-    vfs->finddir = &ext2_finddir;
-    vfs->readdir = &ext2_readdir_impl;
-    vfs->create = &ext2_create_impl;
-    vfs->mkdir = &ext2_mkdir_impl;
-    vfs->unlink = &ext2_unlink_impl;
-    vfs->rmdir = &ext2_rmdir_impl;
-    vfs->rename = &ext2_rename_impl;
-    vfs->link = &ext2_link_impl;
-}
-
 static struct ext2_node* ext2_make_node(uint32_t ino, const struct ext2_inode* inode, const char* name) {
     struct ext2_node* en = (struct ext2_node*)kmalloc(sizeof(struct ext2_node));
     if (!en) return NULL;
@@ -584,13 +572,11 @@ static struct ext2_node* ext2_make_node(uint32_t ino, const struct ext2_inode* i
     en->vfs.uid = inode->i_uid;
     en->vfs.gid = inode->i_gid;
     en->vfs.mode = inode->i_mode;
-    en->vfs.close = &ext2_close_impl;
 
     if ((inode->i_mode & 0xF000) == EXT2_S_IFDIR) {
         en->vfs.flags = FS_DIRECTORY;
         en->vfs.length = inode->i_size;
         en->vfs.f_ops = &ext2_dir_fops;
-        ext2_set_dir_ops(&en->vfs);
     } else if ((inode->i_mode & 0xF000) == EXT2_S_IFLNK) {
         en->vfs.flags = FS_SYMLINK;
         en->vfs.length = inode->i_size;
@@ -603,9 +589,6 @@ static struct ext2_node* ext2_make_node(uint32_t ino, const struct ext2_inode* i
         en->vfs.flags = FS_FILE;
         en->vfs.length = inode->i_size;
         en->vfs.f_ops = &ext2_file_fops;
-        en->vfs.read = &ext2_file_read;
-        en->vfs.write = &ext2_file_write;
-        en->vfs.truncate = &ext2_truncate_impl;
     }
 
     return en;
@@ -1427,7 +1410,7 @@ fs_node_t* ext2_mount(int drive, uint32_t partition_lba) {
     g_ext2_root.vfs.gid = root_inode.i_gid;
     g_ext2_root.vfs.mode = root_inode.i_mode;
     g_ext2_root.ino = EXT2_ROOT_INO;
-    ext2_set_dir_ops(&g_ext2_root.vfs);
+    g_ext2_root.vfs.f_ops = &ext2_dir_fops;
 
     g_ext2_ready = 1;
 
