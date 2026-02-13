@@ -106,6 +106,10 @@ struct e1000_rx_desc {
     uint16_t special;
 } __attribute__((packed));
 
+/* RX semaphore — signaled by IRQ handler, waited on by RX thread */
+#include "sync.h"
+extern ksem_t e1000_rx_sem;
+
 /* Initialize the E1000 NIC. Returns 0 on success, -1 on failure. */
 int e1000_init(void);
 

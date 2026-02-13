@@ -89,8 +89,8 @@ done:
     kprintf("Welcome to AdrOS (x86/ARM/RISC-V/MIPS)!\n");
 
     // Infinite loop acting as Idle Task
+    // RX is interrupt-driven (e1000_rx_thread), no polling needed.
     for(;;) {
-        net_poll();
         hal_cpu_idle();
     }
 }

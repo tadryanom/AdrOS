@@ -1,6 +1,9 @@
 /*
  * lwIP netif driver for the E1000 NIC.
  * Bridges the E1000 hardware driver to lwIP's network interface abstraction.
+ *
+ * RX path:  interrupt → e1000_rx_sem → rx_thread → e1000_recv → tcpip_input
+ * TX path:  lwIP core → e1000_netif_output → e1000_send (non-blocking)
  */
 #include "lwip/opt.h"
 #include "lwip/netif.h"
@@ -15,19 +18,17 @@
 #include "spinlock.h"
 
 #include "e1000.h"
+#include "process.h"
 #include "console.h"
 #include "utils.h"
 
 #define E1000_NETIF_MTU  1500
 
-/* Temporary receive buffer (stack-allocated per poll call) */
-static uint8_t rx_tmp[2048];
-
 /* Forward declaration */
 static err_t e1000_netif_output(struct netif* netif, struct pbuf* p);
 
 /*
- * Low-level output: send a pbuf chain via E1000.
+ * Low-level output: send a pbuf chain via E1000 (non-blocking).
  */
 static err_t e1000_netif_output(struct netif* netif, struct pbuf* p) {
     (void)netif;
@@ -62,7 +63,7 @@ static err_t e1000_netif_output(struct netif* netif, struct pbuf* p) {
 /*
  * Netif init callback — called by netif_add().
  */
-err_t e1000_netif_init(struct netif* netif) {
+static err_t e1000_netif_init(struct netif* netif) {
     netif->name[0] = 'e';
     netif->name[1] = 'n';
     netif->output = etharp_output;
@@ -76,26 +77,6 @@ err_t e1000_netif_init(struct netif* netif) {
     return ERR_OK;
 }
 
-/*
- * Poll the E1000 for received packets and feed them into lwIP.
- * Must be called periodically from the main loop.
- */
-void e1000_netif_poll(struct netif* netif) {
-    for (;;) {
-        int len = e1000_recv(rx_tmp, sizeof(rx_tmp));
-        if (len <= 0) break;
-
-        struct pbuf* p = pbuf_alloc(PBUF_RAW, (u16_t)len, PBUF_POOL);
-        if (!p) break;
-
-        pbuf_take(p, rx_tmp, (u16_t)len);
-
-        if (netif->input(p, netif) != ERR_OK) {
-            pbuf_free(p);
-        }
-    }
-}
-
 /* ---- Global network state ---- */
 
 static struct netif e1000_nif;
@@ -106,6 +87,35 @@ static volatile int tcpip_ready = 0;
 static void net_init_done(void* arg) {
     (void)arg;
     tcpip_ready = 1;
+}
+
+/*
+ * Dedicated RX thread — waits on the E1000 RX semaphore (signaled by
+ * the hardware interrupt handler) and drains all available packets into
+ * the lwIP TCP/IP stack via tcpip_input().
+ */
+static uint8_t rx_tmp[2048];
+
+static void e1000_rx_thread(void) {
+    for (;;) {
+        /* Block until the IRQ handler signals a receive event */
+        ksem_wait(&e1000_rx_sem);
+
+        /* Drain all available packets */
+        for (;;) {
+            int len = e1000_recv(rx_tmp, sizeof(rx_tmp));
+            if (len <= 0) break;
+
+            struct pbuf* p = pbuf_alloc(PBUF_RAW, (u16_t)len, PBUF_POOL);
+            if (!p) break;
+
+            pbuf_take(p, rx_tmp, (u16_t)len);
+
+            if (e1000_nif.input(p, &e1000_nif) != ERR_OK) {
+                pbuf_free(p);
+            }
+        }
+    }
 }
 
 void net_init(void) {
@@ -130,14 +140,18 @@ void net_init(void) {
     netif_set_default(&e1000_nif);
     netif_set_up(&e1000_nif);
 
+    /* Start the dedicated RX thread */
+    process_create_kernel(e1000_rx_thread);
+
     net_initialized = 1;
 
-    kprintf("[NET] lwIP initialized (threaded), IP=10.0.2.15\n");
+    kprintf("[NET] lwIP initialized (interrupt-driven RX), IP=10.0.2.15\n");
 }
 
 void net_poll(void) {
-    if (!net_initialized) return;
-    e1000_netif_poll(&e1000_nif);
+    /* No-op: RX is now handled by the interrupt-driven rx_thread.
+     * Kept for backward compatibility — callers can safely remove. */
+    (void)0;
 }
 
 struct netif* net_get_netif(void) {

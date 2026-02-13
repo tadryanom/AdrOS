@@ -7,6 +7,7 @@
 #include "console.h"
 #include "utils.h"
 #include "io.h"
+#include "sync.h"
 
 #include <stddef.h>
 
@@ -31,6 +32,9 @@ static uint32_t rx_buf_phys[E1000_NUM_RX_DESC];
 /* Ring indices */
 static volatile uint32_t tx_tail = 0;
 static volatile uint32_t rx_tail = 0;
+
+/* RX semaphore — signaled by IRQ handler, waited on by RX thread */
+ksem_t e1000_rx_sem;
 
 /* Cached PCI device info */
 static uint8_t e1000_bus, e1000_slot, e1000_func;
@@ -196,10 +200,10 @@ static int e1000_init_rx(void) {
 static void e1000_irq_handler(struct registers* regs) {
     (void)regs;
     uint32_t icr = e1000_read(E1000_ICR);
-    (void)icr;
-    /* Reading ICR clears the pending interrupt bits.
-     * RX/TX processing is done via polling in e1000_recv/e1000_send
-     * for simplicity. The interrupt just wakes the system. */
+    /* Wake the RX thread if a receive event occurred */
+    if (icr & (E1000_ICR_RXT0 | E1000_ICR_RXDMT0 | E1000_ICR_RXO)) {
+        ksem_signal(&e1000_rx_sem);
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -243,6 +247,9 @@ int e1000_init(void) {
     e1000_write(E1000_CTRL, ctrl | E1000_CTRL_RST);
     /* Wait for reset to complete (spec says ~1us, be generous) */
     for (volatile int i = 0; i < 100000; i++) { }
+
+    /* Init RX semaphore before enabling interrupts */
+    ksem_init(&e1000_rx_sem, 0);
 
     /* Disable interrupts during setup */
     e1000_write(E1000_IMC, 0xFFFFFFFF);
@@ -295,10 +302,9 @@ int e1000_send(const void* data, uint16_t len) {
     struct e1000_tx_desc* txd = (struct e1000_tx_desc*)E1000_TX_DESC_VA;
     uint32_t idx = tx_tail;
 
-    /* Wait for descriptor to be available */
-    int timeout = 100000;
-    while (!(txd[idx].status & E1000_TXD_STAT_DD) && --timeout > 0) { }
-    if (timeout <= 0) return -1;
+    /* Non-blocking: if descriptor not ready, return immediately */
+    if (!(txd[idx].status & E1000_TXD_STAT_DD))
+        return -1;
 
     /* Copy data to TX buffer */
     uintptr_t buf_va = E1000_TX_BUF_VA + (uintptr_t)(idx / 2) * 4096 +

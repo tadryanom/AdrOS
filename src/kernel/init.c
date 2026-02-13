@@ -218,9 +218,36 @@ int init_start(const struct boot_info* bi) {
      * (primary/secondary x master/slave). */
     (void)ata_pio_init();
 
-    /* Disk-based filesystems (diskfs, FAT, ext2) are NOT auto-mounted.
-     * They are mounted either by /etc/fstab entries or manually via the
-     * kconsole 'mount' command.  Parse /etc/fstab if it exists. */
+    /* If root= is specified on the kernel command line, mount that device
+     * as the disk root filesystem.  The filesystem type is auto-detected
+     * by trying each supported type in order.
+     * Example:  root=/dev/hda  or  root=/dev/hdb */
+    const char* root_dev = cmdline_get("root");
+    if (root_dev) {
+        int drive = -1;
+        if (strncmp(root_dev, "/dev/", 5) == 0)
+            drive = ata_name_to_drive(root_dev + 5);
+        if (drive >= 0 && ata_pio_drive_present(drive)) {
+            /* Try auto-detect: diskfs, fat, ext2 */
+            static const char* fstypes[] = { "diskfs", "fat", "ext2", NULL };
+            int mounted = 0;
+            for (int i = 0; fstypes[i]; i++) {
+                if (init_mount_fs(fstypes[i], drive, 0, "/disk") == 0) {
+                    kprintf("[INIT] root=%s mounted as %s on /disk\n",
+                            root_dev, fstypes[i]);
+                    mounted = 1;
+                    break;
+                }
+            }
+            if (!mounted)
+                kprintf("[INIT] root=%s: no supported filesystem found\n", root_dev);
+        } else {
+            kprintf("[INIT] root=%s: device not found\n", root_dev);
+        }
+    }
+
+    /* Disk-based filesystems can also be mounted via /etc/fstab entries
+     * or manually via the kconsole 'mount' command. */
     init_parse_fstab();
 
     if (!fs_root) {
