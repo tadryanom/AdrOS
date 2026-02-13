@@ -1,4 +1,5 @@
 #include "pty.h"
+#include "tty.h"
 
 #include "devfs.h"
 #include "errno.h"
@@ -38,6 +39,7 @@ struct pty_pair {
 
     uint32_t session_id;
     uint32_t fg_pgrp;
+    uint32_t oflag;      /* output flags (OPOST, ONLCR) */
     int      active;
 
     fs_node_t master_node;
@@ -84,6 +86,7 @@ static void pty_init_pair(int idx) {
     struct pty_pair* p = &g_ptys[idx];
     memset(p, 0, sizeof(*p));
     p->active = 1;
+    p->oflag = TTY_OPOST | TTY_ONLCR;
 
     char name[8];
     memset(&p->master_node, 0, sizeof(p->master_node));
@@ -414,21 +417,31 @@ int pty_slave_write_idx(int idx, const void* kbuf, uint32_t len) {
     int jc = pty_jobctl_write_check(p);
     if (jc < 0) return jc;
 
-    uintptr_t flags = spin_lock_irqsave(&pty_lock);
-    uint32_t free_space = rb_free(p->s2m_head, p->s2m_tail);
-    uint32_t to_write = len;
-    if (to_write > free_space) to_write = free_space;
+    int do_onlcr = (p->oflag & TTY_OPOST) && (p->oflag & TTY_ONLCR);
 
-    for (uint32_t i = 0; i < to_write; i++) {
-        rb_push(p->s2m_buf, &p->s2m_head, &p->s2m_tail, ((const uint8_t*)kbuf)[i]);
+    uintptr_t flags = spin_lock_irqsave(&pty_lock);
+    uint32_t written = 0;
+
+    for (uint32_t i = 0; i < len; i++) {
+        uint8_t ch = ((const uint8_t*)kbuf)[i];
+        /* OPOST: convert \n to \r\n */
+        if (do_onlcr && ch == '\n') {
+            if (rb_free(p->s2m_head, p->s2m_tail) < 2U) break;
+            rb_push(p->s2m_buf, &p->s2m_head, &p->s2m_tail, '\r');
+            rb_push(p->s2m_buf, &p->s2m_head, &p->s2m_tail, '\n');
+        } else {
+            if (rb_free(p->s2m_head, p->s2m_tail) == 0U) break;
+            rb_push(p->s2m_buf, &p->s2m_head, &p->s2m_tail, ch);
+        }
+        written++;
     }
 
-    if (to_write) {
+    if (written) {
         wq_wake_one(&p->s2m_wq);
     }
 
     spin_unlock_irqrestore(&pty_lock, flags);
-    return (int)to_write;
+    return (int)written;
 }
 
 int pty_slave_ioctl_idx(int idx, uint32_t cmd, void* user_arg) {
@@ -463,6 +476,29 @@ int pty_slave_ioctl_idx(int idx, uint32_t cmd, void* user_arg) {
         if (current_process->session_id != p->session_id) return -EPERM;
         if (fg < 0) return -EINVAL;
         p->fg_pgrp = (uint32_t)fg;
+        return 0;
+    }
+
+    enum { PTY_TCGETS = 0x5401, PTY_TCSETS = 0x5402 };
+
+    if (cmd == PTY_TCGETS) {
+        if (user_range_ok(user_arg, sizeof(struct termios)) == 0) return -EFAULT;
+        struct termios t;
+        memset(&t, 0, sizeof(t));
+        uintptr_t flags = spin_lock_irqsave(&pty_lock);
+        t.c_oflag = p->oflag;
+        spin_unlock_irqrestore(&pty_lock, flags);
+        if (copy_to_user(user_arg, &t, sizeof(t)) < 0) return -EFAULT;
+        return 0;
+    }
+
+    if (cmd == PTY_TCSETS) {
+        if (user_range_ok(user_arg, sizeof(struct termios)) == 0) return -EFAULT;
+        struct termios t;
+        if (copy_from_user(&t, user_arg, sizeof(t)) < 0) return -EFAULT;
+        uintptr_t flags = spin_lock_irqsave(&pty_lock);
+        p->oflag = t.c_oflag & (TTY_OPOST | TTY_ONLCR);
+        spin_unlock_irqrestore(&pty_lock, flags);
         return 0;
     }
 
