@@ -110,6 +110,23 @@ static void rq_dequeue(struct runqueue* rq, struct process* p) {
     if (!pq->head) rq->bitmap &= ~(1U << prio);
 }
 
+static void rq_remove_if_queued(struct process* p) {
+    uint8_t prio = p->priority;
+    struct process* it;
+
+    it = rq_active->queue[prio].head;
+    while (it) {
+        if (it == p) { rq_dequeue(rq_active, p); return; }
+        it = it->rq_next;
+    }
+
+    it = rq_expired->queue[prio].head;
+    while (it) {
+        if (it == p) { rq_dequeue(rq_expired, p); return; }
+        it = it->rq_next;
+    }
+}
+
 static struct process* rq_pick_next(void) {
     if (rq_active->bitmap) {
         uint32_t prio = bsf32(rq_active->bitmap);
@@ -153,6 +170,9 @@ static struct process* process_find_locked(uint32_t pid) {
 static void process_reap_locked(struct process* p) {
     if (!p) return;
     if (p->pid == 0) return;
+
+    /* Safety net: ensure process is not in any runqueue before freeing */
+    rq_remove_if_queued(p);
 
     if (p == ready_queue_head && p == ready_queue_tail) {
         return;
@@ -230,6 +250,12 @@ int process_kill(uint32_t pid, int sig) {
     }
 
     if (sig == SIG_KILL) {
+        /* Remove from runqueue BEFORE marking ZOMBIE to prevent
+         * rq_pick_next() from returning a stale/freed pointer
+         * after the parent reaps this process. */
+        if (p->state == PROCESS_READY) {
+            rq_remove_if_queued(p);
+        }
         process_close_all_files_locked(p);
         p->exit_status = 128 + sig;
         p->state = PROCESS_ZOMBIE;
