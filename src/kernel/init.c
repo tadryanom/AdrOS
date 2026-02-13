@@ -12,6 +12,8 @@
 #include "persistfs.h"
 #include "diskfs.h"
 #include "procfs.h"
+#include "fat.h"
+#include "ext2.h"
 #include "pci.h"
 #include "e1000.h"
 #include "net.h"
@@ -102,6 +104,22 @@ int init_start(const struct boot_info* bi) {
     fs_node_t* proc = procfs_create_root();
     if (proc) {
         (void)vfs_mount("/proc", proc);
+    }
+
+    /* Probe second IDE disk partition (LBA 0) for FAT or ext2.
+     * The primary disk is used by diskfs; a second partition could
+     * be formatted as FAT or ext2 and mounted at /mnt. */
+    {
+        fs_node_t* fatfs = fat_mount(0);
+        if (fatfs) {
+            (void)vfs_mount("/fat", fatfs);
+        }
+    }
+    {
+        fs_node_t* ext2fs = ext2_mount(0);
+        if (ext2fs) {
+            (void)vfs_mount("/ext2", ext2fs);
+        }
     }
 
     int user_ret = arch_platform_start_userspace(bi);
