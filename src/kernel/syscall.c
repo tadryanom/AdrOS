@@ -25,9 +25,6 @@
 #include "shm.h"
 #include "socket.h"
 
-#if defined(__i386__)
-extern void x86_sysenter_init(void);
-#endif
 #include "elf.h"
 #include "stat.h"
 #include "vmm.h"
@@ -2772,8 +2769,5 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
 }
 
 void syscall_init(void) {
-#if defined(__i386__)
-    register_interrupt_handler(128, syscall_handler);
-    x86_sysenter_init();
-#endif
+    arch_syscall_init();
 }
