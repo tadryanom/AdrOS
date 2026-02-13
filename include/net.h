@@ -12,4 +12,7 @@ void net_poll(void);
 /* Get the active network interface (or NULL). */
 struct netif* net_get_netif(void);
 
+/* Run ICMP ping test (sends echo requests to QEMU gateway 10.0.2.2). */
+void net_ping_test(void);
+
 #endif

@@ -80,6 +80,23 @@ void ioapic_route_irq(uint8_t irq, uint8_t vector, uint8_t lapic_id) {
     ioapic_write(reg_lo, lo);
 }
 
+void ioapic_route_irq_level(uint8_t irq, uint8_t vector, uint8_t lapic_id) {
+    if (!ioapic_active) return;
+    if (irq >= ioapic_max_irqs) return;
+
+    uint32_t reg_lo = IOAPIC_REG_REDTBL + (uint32_t)irq * 2;
+    uint32_t reg_hi = reg_lo + 1;
+
+    /* High 32 bits: destination LAPIC ID in bits 24-31 */
+    ioapic_write(reg_hi, (uint32_t)lapic_id << 24);
+
+    /* Low 32 bits: vector, physical destination, level-triggered, active-low, unmasked */
+    uint32_t lo = (uint32_t)vector;
+    lo |= IOAPIC_RED_ACTIVELO; /* bit 13: active-low (PCI spec) */
+    lo |= IOAPIC_RED_LEVEL;   /* bit 15: level-triggered (PCI spec) */
+    ioapic_write(reg_lo, lo);
+}
+
 void ioapic_mask_irq(uint8_t irq) {
     if (!ioapic_active && ioapic_base == 0) return;
     if (irq >= IOAPIC_MAX_IRQS) return;

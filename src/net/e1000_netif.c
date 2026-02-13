@@ -98,10 +98,10 @@ static uint8_t rx_tmp[2048];
 
 static void e1000_rx_thread(void) {
     for (;;) {
-        /* Block until the IRQ handler signals a receive event */
-        ksem_wait(&e1000_rx_sem);
+        /* Poll every tick (~20ms at 50Hz).  The E1000 IRQ sets
+         * e1000_rx_sem, but for robustness we also poll. */
+        process_sleep(1);
 
-        /* Drain all available packets */
         for (;;) {
             int len = e1000_recv(rx_tmp, sizeof(rx_tmp));
             if (len <= 0) break;

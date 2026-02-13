@@ -1,0 +1,274 @@
+#!/usr/bin/expect -f
+#
+# AdrOS Test Battery — exercises multi-disk ATA, VFS root= mount,
+# and TCP/IP ping in addition to the standard smoke tests.
+#
+# Usage: expect tests/test_battery.exp [timeout_sec]
+#   timeout_sec: max seconds per QEMU run (default: 90)
+#
+# Exit codes:
+#   0 = all checks passed
+#   1 = test failure
+#   2 = timeout
+
+set timeout_sec [lindex $argv 0]
+if {$timeout_sec eq ""} { set timeout_sec 90 }
+
+set iso "adros-x86.iso"
+set serial_log "serial.log"
+set smp 4
+
+# ---- Helpers ----
+
+proc create_disk {path mb} {
+    if {![file exists $path]} {
+        exec dd if=/dev/zero of=$path bs=1M count=$mb 2>/dev/null
+    }
+}
+
+proc run_qemu {iso smp serial_log timeout_sec drive_args} {
+    file delete -force $serial_log
+    set cmd [list qemu-system-i386 \
+        -smp $smp -boot d -cdrom $iso -m 128M -display none \
+        -nic user,model=e1000]
+    foreach a $drive_args {
+        lappend cmd {*}$a
+    }
+    lappend cmd -serial file:$serial_log -monitor none -no-reboot -no-shutdown
+    set pid [exec {*}$cmd &]
+    after 1000
+    return $pid
+}
+
+proc wait_for_patterns {serial_log timeout_sec patterns} {
+    set start [clock seconds]
+    set total [llength $patterns]
+    for {set i 0} {$i < $total} {incr i} {
+        set found($i) 0
+    }
+
+    while {1} {
+        set elapsed [expr {[clock seconds] - $start}]
+        if {$elapsed > $timeout_sec} { break }
+
+        if {[file exists $serial_log]} {
+            set fd [open $serial_log r]
+            set log [read $fd]
+            close $fd
+        } else {
+            set log ""
+        }
+
+        if {[regexp {KERNEL PANIC} $log]} {
+            return [list -1 "KERNEL PANIC detected"]
+        }
+
+        set all 1
+        for {set i 0} {$i < $total} {incr i} {
+            if {$found($i)} continue
+            set pat [lindex [lindex $patterns $i] 1]
+            if {[regexp $pat $log]} {
+                set found($i) 1
+            } else {
+                set all 0
+            }
+        }
+
+        if {$all} {
+            set results {}
+            for {set i 0} {$i < $total} {incr i} {
+                lappend results [list [lindex [lindex $patterns $i] 0] 1]
+            }
+            return [list 0 $results]
+        }
+
+        after 1000
+    }
+
+    # Timeout — report what passed/failed
+    set results {}
+    for {set i 0} {$i < $total} {incr i} {
+        lappend results [list [lindex [lindex $patterns $i] 0] $found($i)]
+    }
+    return [list 1 $results]
+}
+
+proc kill_qemu {iso} {
+    catch {exec pkill -f "qemu-system-i386.*[file tail $iso]" 2>/dev/null}
+    after 500
+}
+
+# ================================================================
+# Test Suite
+# ================================================================
+
+set global_pass 0
+set global_fail 0
+set global_tests {}
+
+proc report_section {title rc results} {
+    upvar global_pass gp
+    upvar global_fail gf
+    upvar global_tests gt
+
+    puts ""
+    puts "--- $title ---"
+
+    if {$rc == -1} {
+        puts "  *** $results ***"
+        incr gf
+        lappend gt [list $title "PANIC"]
+        return
+    }
+
+    foreach r $results {
+        set desc [lindex $r 0]
+        set ok   [lindex $r 1]
+        if {$ok} {
+            puts "  PASS  $desc"
+            incr gp
+        } else {
+            puts "  FAIL  $desc"
+            incr gf
+        }
+        lappend gt [list "$title: $desc" [expr {$ok ? "PASS" : "FAIL"}]]
+    }
+}
+
+# ================================================================
+# TEST 1: Standard smoke + ping (single disk on hda)
+# ================================================================
+puts "========================================="
+puts "  AdrOS Test Battery"
+puts "========================================="
+
+create_disk "disk.img" 4
+
+set pid [run_qemu $iso $smp $serial_log $timeout_sec \
+    {{-drive file=disk.img,if=ide,format=raw}}]
+
+set patterns {
+    {"NET lwIP init"         "\\[NET\\] lwIP initialized"}
+    {"PING network OK"       "\\[PING\\] .*received.*network OK"}
+    {"ATA /dev/hda"          "\\[ATA\\] /dev/hda detected"}
+    {"INITRD found"          "\\[INITRD\\] Found"}
+    {"diskfs mount /disk"    "\\[MOUNT\\] diskfs on /dev/hda"}
+    {"diskfs test"           "\\[init\\] /disk/test prev="}
+    {"diskfs getdents"       "\\[init\\] diskfs getdents OK"}
+}
+
+set res [wait_for_patterns $serial_log $timeout_sec $patterns]
+kill_qemu $iso
+
+report_section "Smoke + Ping (1 disk)" [lindex $res 0] [lindex $res 1]
+
+# ================================================================
+# TEST 2: Multi-disk ATA detection (hda + hdb + hdd)
+# hdc is the CD-ROM (boot device)
+# ================================================================
+
+create_disk "hda.img" 4
+create_disk "hdb.img" 4
+create_disk "hdd.img" 4
+
+set pid [run_qemu $iso $smp $serial_log $timeout_sec \
+    {{-drive file=hda.img,if=ide,index=0,format=raw}
+     {-drive file=hdb.img,if=ide,index=1,format=raw}
+     {-drive file=hdd.img,if=ide,index=3,format=raw}}]
+
+set patterns {
+    {"ATA /dev/hda"     "\\[ATA\\] /dev/hda detected"}
+    {"ATA /dev/hdb"     "\\[ATA\\] /dev/hdb detected"}
+    {"ATA /dev/hdd"     "\\[ATA\\] /dev/hdd detected"}
+    {"ATA Ch0 DMA"      "\\[ATA\\] Channel 0: DMA mode"}
+    {"ATA Ch1"          "\\[ATA\\] Channel 1:"}
+}
+
+set res [wait_for_patterns $serial_log $timeout_sec $patterns]
+kill_qemu $iso
+
+report_section "Multi-disk ATA (3 drives)" [lindex $res 0] [lindex $res 1]
+
+# ================================================================
+# TEST 3: VFS mount root=/dev/hda (diskfs auto-format)
+# ================================================================
+
+create_disk "root_hda.img" 4
+
+set pid [run_qemu $iso $smp $serial_log $timeout_sec \
+    {{-drive file=root_hda.img,if=ide,index=0,format=raw}}]
+
+set patterns {
+    {"INITRD loaded"       "\\[INITRD\\] Found"}
+    {"diskfs mount /disk"  "\\[MOUNT\\] diskfs on /dev/hda"}
+}
+
+set res [wait_for_patterns $serial_log $timeout_sec $patterns]
+kill_qemu $iso
+
+report_section "VFS mount InitRD + /dev/hda" [lindex $res 0] [lindex $res 1]
+
+# ================================================================
+# TEST 4: VFS mount root=/dev/hdb
+# ================================================================
+
+create_disk "root_hdb.img" 4
+
+set pid [run_qemu $iso $smp $serial_log $timeout_sec \
+    {{-drive file=disk.img,if=ide,index=0,format=raw}
+     {-drive file=root_hdb.img,if=ide,index=1,format=raw}}]
+
+set patterns {
+    {"ATA /dev/hdb"     "\\[ATA\\] /dev/hdb detected"}
+}
+
+set res [wait_for_patterns $serial_log $timeout_sec $patterns]
+kill_qemu $iso
+
+report_section "ATA /dev/hdb detection" [lindex $res 0] [lindex $res 1]
+
+# ================================================================
+# TEST 5: VFS mount root=/dev/hdd
+# ================================================================
+
+create_disk "root_hdd.img" 4
+
+set pid [run_qemu $iso $smp $serial_log $timeout_sec \
+    {{-drive file=disk.img,if=ide,index=0,format=raw}
+     {-drive file=root_hdd.img,if=ide,index=3,format=raw}}]
+
+set patterns {
+    {"ATA /dev/hdd"     "\\[ATA\\] /dev/hdd detected"}
+}
+
+set res [wait_for_patterns $serial_log $timeout_sec $patterns]
+kill_qemu $iso
+
+report_section "ATA /dev/hdd detection" [lindex $res 0] [lindex $res 1]
+
+# ================================================================
+# Final Summary
+# ================================================================
+set total_tests [expr {$global_pass + $global_fail}]
+puts ""
+puts "========================================="
+puts "  Test Battery Summary"
+puts "========================================="
+puts "  $global_pass/$total_tests passed, $global_fail failed"
+
+if {$global_fail > 0} {
+    puts ""
+    puts "  Failed tests:"
+    foreach t $global_tests {
+        if {[lindex $t 1] ne "PASS"} {
+            puts "    - [lindex $t 0]: [lindex $t 1]"
+        }
+    }
+    puts ""
+    puts "  RESULT: FAIL"
+    exit 1
+}
+
+puts ""
+puts "  RESULT: PASS"
+exit 0

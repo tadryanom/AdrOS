@@ -195,6 +195,7 @@ int init_start(const struct boot_info* bi) {
     pci_init();
     e1000_init();
     net_init();
+    net_ping_test();
     ksocket_init();
     vbe_init(bi);
 

@@ -196,6 +196,7 @@ run: iso
 	@test -f disk.img || dd if=/dev/zero of=disk.img bs=1M count=4 2>/dev/null
 	@qemu-system-i386 -boot d -cdrom adros-$(ARCH).iso -m 128M -display none \
 		-drive file=disk.img,if=ide,format=raw \
+		-nic user,model=e1000 \
 		-serial file:serial.log -monitor none -no-reboot -no-shutdown \
 		$(QEMU_DFLAGS)
 
@@ -250,6 +251,10 @@ test: iso
 test-1cpu: iso
 	@echo "[TEST] Running smoke test (SMP=1, timeout=50s)..."
 	@expect tests/smoke_test.exp 1 50
+
+test-battery: iso
+	@echo "[TEST] Running full test battery (multi-disk, ping, VFS)..."
+	@expect tests/test_battery.exp $(SMOKE_TIMEOUT)
 
 # ---- Host-Side Unit Tests ----
 

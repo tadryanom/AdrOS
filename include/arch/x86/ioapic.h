@@ -34,6 +34,12 @@ int ioapic_init(void);
  * lapic_id: destination LAPIC ID */
 void ioapic_route_irq(uint8_t irq, uint8_t vector, uint8_t lapic_id);
 
+/* Route a PCI IRQ (level-triggered, active-low) to a specific IDT vector.
+ * irq: IOAPIC pin (GSI) number
+ * vector: IDT vector number (32-255)
+ * lapic_id: destination LAPIC ID */
+void ioapic_route_irq_level(uint8_t irq, uint8_t vector, uint8_t lapic_id);
+
 /* Mask (disable) an IRQ line on the IOAPIC. */
 void ioapic_mask_irq(uint8_t irq);
 

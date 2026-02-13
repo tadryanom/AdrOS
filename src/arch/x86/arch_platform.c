@@ -127,7 +127,7 @@ int arch_platform_setup(const struct boot_info* bi) {
              * IRQ 15 (ATA secondary)  -> IDT vector 47 */
             ioapic_route_irq(0,  32, (uint8_t)bsp_id);
             ioapic_route_irq(1,  33, (uint8_t)bsp_id);
-            ioapic_route_irq(11, 43, (uint8_t)bsp_id); /* E1000 NIC */
+            ioapic_route_irq_level(11, 43, (uint8_t)bsp_id); /* E1000 NIC (PCI: level-triggered, active-low) */
             ioapic_route_irq(14, 46, (uint8_t)bsp_id); /* ATA primary */
             ioapic_route_irq(15, 47, (uint8_t)bsp_id); /* ATA secondary */
 
