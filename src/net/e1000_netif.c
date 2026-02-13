@@ -98,9 +98,9 @@ static uint8_t rx_tmp[2048];
 
 static void e1000_rx_thread(void) {
     for (;;) {
-        /* Poll every tick (~20ms at 50Hz).  The E1000 IRQ sets
-         * e1000_rx_sem, but for robustness we also poll. */
-        process_sleep(1);
+        /* Wait for the E1000 IRQ to signal a packet, with a 20ms
+         * timeout for robustness (catches missed interrupts). */
+        ksem_wait_timeout(&e1000_rx_sem, 20);
 
         for (;;) {
             int len = e1000_recv(rx_tmp, sizeof(rx_tmp));
