@@ -9,7 +9,7 @@
  */
 
 #include "timer.h"
-#include "uart_console.h"
+#include "console.h"
 #include "process.h" 
 #include "vdso.h"
 
@@ -29,6 +29,6 @@ static void hal_tick_bridge(void) {
 }
 
 void timer_init(uint32_t frequency) {
-    uart_print("[TIMER] Initializing...\n");
+    kprintf("[TIMER] Initializing...\n");
     hal_timer_init(frequency, hal_tick_bridge);
 }

@@ -10,7 +10,7 @@
 
 #include "hal/cpu_features.h"
 #include "arch/x86/cpuid.h"
-#include "uart_console.h"
+#include "console.h"
 
 #include <stddef.h>
 
@@ -66,7 +66,7 @@ void hal_cpu_detect_features(void) {
         uint32_t cr4 = read_cr4();
         cr4 |= CR4_SMEP;
         write_cr4(cr4);
-        uart_print("[CPU] SMEP enabled.\n");
+        kprintf("[CPU] SMEP enabled.\n");
     }
 
     /* SMAP (Supervisor Mode Access Prevention) is NOT enabled yet because

@@ -9,7 +9,7 @@
  */
 
 #include "dns.h"
-#include "uart_console.h"
+#include "console.h"
 
 #include "lwip/dns.h"
 #include "lwip/ip_addr.h"
@@ -22,7 +22,7 @@ void dns_resolver_init(uint32_t server_ip) {
                           (server_ip >> 8) & 0xFF,
                           server_ip & 0xFF);
     dns_setserver(0, &dns_server);
-    uart_print("[DNS] Resolver initialized\n");
+    kprintf("[DNS] Resolver initialized\n");
 }
 
 static volatile int dns_done;

@@ -9,7 +9,7 @@
  */
 
 #include "hal/cpu_features.h"
-#include "uart_console.h"
+#include "console.h"
 
 #include <stddef.h>
 
@@ -19,7 +19,7 @@ __attribute__((weak))
 void hal_cpu_detect_features(void) {
     for (size_t i = 0; i < sizeof(g_default_features); i++)
         ((uint8_t*)&g_default_features)[i] = 0;
-    uart_print("[CPU] No arch-specific feature detection.\n");
+    kprintf("[CPU] No arch-specific feature detection.\n");
 }
 
 __attribute__((weak))
@@ -29,5 +29,5 @@ const struct cpu_features* hal_cpu_get_features(void) {
 
 __attribute__((weak))
 void hal_cpu_print_features(void) {
-    uart_print("[CPU] Feature detection not available.\n");
+    kprintf("[CPU] Feature detection not available.\n");
 }
