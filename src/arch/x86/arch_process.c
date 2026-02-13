@@ -34,7 +34,7 @@ uintptr_t arch_kstack_init(void* stack_top,
     *--sp = 0;                               /* EBX                  */
     *--sp = 0;                               /* ESI                  */
     *--sp = 0;                               /* EDI                  */
-    *--sp = 0x202;                           /* EFLAGS: IF=1         */
+    *--sp = 0x002;                           /* EFLAGS: IF=0 (thread_wrapper enables interrupts) */
 
     return (uintptr_t)sp;
 }

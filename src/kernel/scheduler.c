@@ -714,7 +714,13 @@ void process_init(void) {
     spin_unlock_irqrestore(&sched_lock, flags);
 }
 
+extern spinlock_t sched_lock;
+
 void thread_wrapper(void (*fn)(void)) {
+    /* We arrive here from context_switch while schedule() still holds
+     * sched_lock with interrupts disabled.  Release the lock and
+     * enable interrupts so the new thread can run normally. */
+    spin_unlock(&sched_lock);
     hal_cpu_enable_interrupts();
     fn();
     for(;;) hal_cpu_idle();
@@ -780,23 +786,6 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
     return proc;
 }
 
-// Find next READY process — O(1) via bitmap
-struct process* get_next_ready_process(void) {
-    struct process* next = rq_pick_next();
-    if (next) return next;
-
-    // Fallback: idle task (PID 0)
-    if (current_process && current_process->pid == 0) return current_process;
-    struct process* it = ready_queue_head;
-    if (!it) return current_process;
-    const struct process* start = it;
-    do {
-        if (it->pid == 0) return it;
-        it = it->next;
-    } while (it && it != start);
-    return current_process;
-}
-
 void schedule(void) {
     uintptr_t irq_flags = spin_lock_irqsave(&sched_lock);
 
@@ -815,21 +804,22 @@ void schedule(void) {
         rq_enqueue(rq_expired, prev);
     }
 
-    // Pick highest-priority READY process (may swap active/expired).
-    struct process* next = get_next_ready_process();
+    // Pick highest-priority READY process from runqueues (O(1) bitmap).
+    // rq_pick_next() may swap active/expired internally.
+    struct process* next = rq_pick_next();
 
     if (next) {
-        // next is in rq_active (possibly after swap) — remove it.
+        // next came from rq_active — safe to dequeue.
         rq_dequeue(rq_active, next);
-    }
-
-    if (!next) {
-        // Nothing in runqueues. If prev is still runnable, keep it.
+    } else {
+        // Nothing in runqueues.
         if (prev->state == PROCESS_READY) {
+            // prev was just enqueued to rq_expired — pull it back.
             rq_dequeue(rq_expired, prev);
             next = prev;
         } else {
-            // Fall back to idle (PID 0).
+            // Fall back to idle (PID 0).  PID 0 is NOT in any
+            // runqueue, so we must NOT call rq_dequeue on it.
             struct process* it = ready_queue_head;
             next = it;
             if (it) {
@@ -859,12 +849,22 @@ void schedule(void) {
         hal_cpu_set_kernel_stack((uintptr_t)current_process->kernel_stack + KSTACK_SIZE);
     }
 
-    spin_unlock_irqrestore(&sched_lock, irq_flags);
-
+    /* context_switch MUST execute with the lock held and interrupts
+     * disabled.  Otherwise a timer firing between unlock and
+     * context_switch would call schedule() again while current_process
+     * is already set to `next` but we're still on prev's stack,
+     * corrupting next->sp.
+     *
+     * After context_switch we are on the new process's stack.
+     * irq_flags now holds the value saved during THIS process's
+     * previous spin_lock_irqsave in schedule().  Releasing the
+     * lock restores the correct interrupt state.
+     *
+     * For brand-new processes, context_switch's `ret` goes to
+     * thread_wrapper which releases the lock explicitly. */
     context_switch(&prev->sp, current_process->sp);
 
-    /* EFLAGS (including IF) is now restored by context_switch via popf,
-     * so we no longer force-enable interrupts here. */
+    spin_unlock_irqrestore(&sched_lock, irq_flags);
 }
 
 void process_sleep(uint32_t ticks) {
