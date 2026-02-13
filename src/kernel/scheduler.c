@@ -415,10 +415,10 @@ static void fork_child_trampoline(void) {
         vmm_as_activate(current_process->addr_space);
     }
 
-    hal_usermode_enter_regs(&current_process->user_regs);
+    hal_usermode_enter_regs(current_process->user_regs);
 }
 
-struct process* process_fork_create(uintptr_t child_as, const struct registers* child_regs) {
+struct process* process_fork_create(uintptr_t child_as, const void* child_regs) {
     if (!child_as || !child_regs) return NULL;
 
     uintptr_t flags = spin_lock_irqsave(&sched_lock);
@@ -457,7 +457,7 @@ struct process* process_fork_create(uintptr_t child_as, const struct registers* 
     }
 
     proc->has_user_regs = 1;
-    proc->user_regs = *child_regs;
+    memcpy(proc->user_regs, child_regs, ARCH_REGS_SIZE);
     proc->tgid = proc->pid;
     proc->flags = 0;
     proc->tls_base = 0;
@@ -511,12 +511,12 @@ static void clone_child_trampoline(void) {
         hal_cpu_set_tls(current_process->tls_base);
     }
 
-    hal_usermode_enter_regs(&current_process->user_regs);
+    hal_usermode_enter_regs(current_process->user_regs);
 }
 
 struct process* process_clone_create(uint32_t clone_flags,
                                      uintptr_t child_stack,
-                                     const struct registers* child_regs,
+                                     const void* child_regs,
                                      uintptr_t tls_base) {
     if (!child_regs || !current_process) return NULL;
 
@@ -601,12 +601,12 @@ struct process* process_clone_create(uint32_t clone_flags,
     }
 
     proc->has_user_regs = 1;
-    proc->user_regs = *child_regs;
-    arch_regs_set_retval(&proc->user_regs, 0); /* child returns 0 */
+    memcpy(proc->user_regs, child_regs, ARCH_REGS_SIZE);
+    arch_regs_set_retval(proc->user_regs, 0); /* child returns 0 */
 
     /* If child_stack specified, override user stack pointer */
     if (child_stack) {
-        arch_regs_set_ustack(&proc->user_regs, child_stack);
+        arch_regs_set_ustack(proc->user_regs, child_stack);
     }
 
     /* Allocate kernel stack */

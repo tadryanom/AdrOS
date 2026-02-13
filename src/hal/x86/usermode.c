@@ -14,9 +14,9 @@ int hal_usermode_enter(uintptr_t user_eip, uintptr_t user_esp) {
 #endif
 }
 
-void hal_usermode_enter_regs(const struct registers* regs) {
+void hal_usermode_enter_regs(const void* regs) {
 #if defined(__i386__)
-    x86_enter_usermode_regs(regs);
+    x86_enter_usermode_regs((const struct registers*)regs);
 #else
     (void)regs;
 #endif

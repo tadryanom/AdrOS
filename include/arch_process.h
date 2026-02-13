@@ -2,7 +2,6 @@
 #define ARCH_PROCESS_H
 
 #include <stdint.h>
-#include "interrupts.h"
 
 /*
  * arch_kstack_init — Prepare a kernel stack for a brand-new process/thread
@@ -23,13 +22,15 @@ uintptr_t arch_kstack_init(void* stack_top,
 /*
  * Set the "return value" register in a saved trapframe.
  * On x86 this is EAX; on ARM it would be R0, etc.
+ * regs points to the opaque user_regs[] buffer in struct process.
  */
-void arch_regs_set_retval(struct registers* regs, uint32_t val);
+void arch_regs_set_retval(void* regs, uint32_t val);
 
 /*
  * Set the user-mode stack pointer in a saved trapframe.
  * On x86 this is useresp; on ARM it would be SP_usr, etc.
+ * regs points to the opaque user_regs[] buffer in struct process.
  */
-void arch_regs_set_ustack(struct registers* regs, uintptr_t sp);
+void arch_regs_set_ustack(void* regs, uintptr_t sp);
 
 #endif /* ARCH_PROCESS_H */

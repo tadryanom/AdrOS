@@ -6,8 +6,9 @@
 
 #if defined(__i386__)
 
-int arch_sigreturn(struct registers* regs, const void* user_frame)
+int arch_sigreturn(void* opaque, const void* user_frame)
 {
+    struct registers* regs = (struct registers*)opaque;
     if (!regs) return -EINVAL;
     if (!current_process) return -EINVAL;
     if ((regs->cs & 3U) != 3U) return -EPERM;

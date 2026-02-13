@@ -39,13 +39,15 @@ uintptr_t arch_kstack_init(void* stack_top,
     return (uintptr_t)sp;
 }
 
-void arch_regs_set_retval(struct registers* regs, uint32_t val)
+void arch_regs_set_retval(void* opaque, uint32_t val)
 {
+    struct registers* regs = (struct registers*)opaque;
     if (regs) regs->eax = val;
 }
 
-void arch_regs_set_ustack(struct registers* regs, uintptr_t sp)
+void arch_regs_set_ustack(void* opaque, uintptr_t sp)
 {
+    struct registers* regs = (struct registers*)opaque;
     if (regs) regs->useresp = (uint32_t)sp;
 }
 

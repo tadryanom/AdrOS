@@ -2,7 +2,7 @@
 #define PROCESS_H
 
 #include <stdint.h>
-#include "interrupts.h" // For struct registers
+#include "arch_types.h"
 #include "fs.h"
 #include "signal.h"
 
@@ -65,7 +65,7 @@ struct process {
     int exit_status;
 
     int has_user_regs;
-    struct registers user_regs;
+    uint8_t user_regs[ARCH_REGS_SIZE]; /* opaque arch register snapshot */
 
     // Minimal signals: per-signal action, blocked mask and pending mask.
     // sa_handler == 0 => default
@@ -153,12 +153,14 @@ int process_kill(uint32_t pid, int sig);
 int process_kill_pgrp(uint32_t pgrp, int sig);
 
 // Create a child process that will resume in usermode from a saved register frame.
-struct process* process_fork_create(uintptr_t child_as, const struct registers* child_regs);
+// child_regs points to an opaque arch register snapshot (ARCH_REGS_SIZE bytes).
+struct process* process_fork_create(uintptr_t child_as, const void* child_regs);
 
 // Create a thread (clone) sharing the parent's address space.
+// child_regs points to an opaque arch register snapshot (ARCH_REGS_SIZE bytes).
 struct process* process_clone_create(uint32_t clone_flags,
                                      uintptr_t child_stack,
-                                     const struct registers* child_regs,
+                                     const void* child_regs,
                                      uintptr_t tls_base);
 
 // Look up a process by PID (scheduler lock must NOT be held).
