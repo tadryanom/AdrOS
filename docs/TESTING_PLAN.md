@@ -5,7 +5,8 @@
 All four testing layers are **implemented and operational**:
 
 - **Static analysis** (`make check`): cppcheck + sparse + gcc -fanalyzer (59 x86 C files)
-- **QEMU smoke tests** (`make test`): expect-based, 19 checks, 4-CPU SMP, 40s timeout
+- **QEMU smoke tests** (`make test`): expect-based, 20 checks (incl. ICMP ping), 4-CPU SMP, 90s timeout
+- **Test battery** (`make test-battery`): 16 checks across 5 QEMU scenarios — multi-disk ATA, VFS mount, ping, diskfs
 - **Host unit tests** (`make test-host`): 47 tests — `test_utils.c` (28) + `test_security.c` (19)
 - **GDB scripted checks** (`make test-gdb`): heap/PMM/VGA integrity validation
 - **Full suite** (`make test-all`): runs check + test-host + test
@@ -55,6 +56,9 @@ This replaces the manual `grep serial.log` approach with a scripted test that:
 
 **Implementation**: `tests/smoke_test.exp` expect script + `make test` target.
 
+A separate **test battery** (`tests/test_battery.exp`) exercises multi-disk ATA detection,
+VFS mount verification, and ICMP ping across multiple QEMU configurations.
+
 ### Layer 3: QEMU + GDB Scripted Debugging (`make test-gdb`)
 
 **Tools**: QEMU `-s -S` + GDB with Python scripting
@@ -102,9 +106,10 @@ To run manually: boot AdrOS with `-vga std`, then execute `/bin/doom.elf` from t
 ## Makefile Targets
 
 ```makefile
-make check      # cppcheck + sparse + gcc -fanalyzer
-make test        # QEMU + expect automated smoke test
-make test-host   # Host-side unit tests for pure functions
-make test-gdb    # QEMU + GDB scripted checks (optional)
-make test-all    # All of the above
+make check        # cppcheck + sparse + gcc -fanalyzer
+make test         # QEMU + expect automated smoke test (20 checks incl. ICMP ping)
+make test-battery # Full test battery: multi-disk ATA, VFS mount, ping, diskfs (16 checks)
+make test-host    # Host-side unit tests for pure functions
+make test-gdb     # QEMU + GDB scripted checks (optional)
+make test-all     # All of the above
 ```

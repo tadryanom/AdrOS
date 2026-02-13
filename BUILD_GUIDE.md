@@ -2,7 +2,7 @@
 
 This guide explains how to build and run AdrOS on your local machine (Linux/WSL).
 
-AdrOS is a Unix-like, POSIX-compatible OS kernel with threads, futex synchronization, networking (TCP/IP + DNS via lwIP), dynamic linking infrastructure, FAT16 filesystem, ASLR, vDSO, zero-copy DMA, a POSIX shell, framebuffer graphics (`/dev/fb0`), raw keyboard input (`/dev/kbd`), uid/gid/euid/egid permission enforcement, and a working DOOM port. See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for the full compatibility checklist.
+AdrOS is a Unix-like, POSIX-compatible OS kernel with threads, futex synchronization, networking (TCP/IP + DNS + ICMP via lwIP in threaded mode), dynamic linking infrastructure, FAT12/16/32 + ext2 filesystems, ASLR, vDSO, zero-copy DMA, multi-drive ATA, a POSIX shell, framebuffer graphics (`/dev/fb0`), raw keyboard input (`/dev/kbd`), uid/gid/euid/egid permission enforcement, an interactive kernel console, and a working DOOM port. See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for the full compatibility checklist.
 
 ## 1. Dependencies
 
@@ -55,11 +55,26 @@ make ARCH=x86 run
 ```
 
 Persistent storage note:
-- The x86 QEMU run target attaches a `disk.img` file as an IDE drive (primary master).
+- The x86 QEMU run target attaches a `disk.img` file as an IDE drive (primary master) and enables an E1000 NIC.
 - The kernel mounts two filesystems from this disk:
   - `/persist` — minimal persistence filesystem (e.g. `/persist/counter`)
   - `/disk` — hierarchical inode-based filesystem (diskfs) supporting `mkdir`, `unlink`, `rmdir`, `rename`, `getdents`, etc.
 - If `disk.img` does not exist, it is created automatically by the Makefile.
+- The `root=` kernel parameter can override which device is mounted at `/disk` (e.g. `root=/dev/hdb`).
+
+Multi-disk testing:
+- QEMU supports up to 3 IDE hard drives alongside the CD-ROM boot device:
+  - **hda** (index 0) — Primary Master
+  - **hdb** (index 1) — Primary Slave
+  - **hdd** (index 3) — Secondary Slave (hdc = CD-ROM)
+- The kernel auto-detects all attached ATA drives and logs `[ATA] /dev/hdX detected`.
+
+Kernel command line parameters:
+- `root=/dev/hdX` — mount specified device at `/disk` (auto-detects diskfs/FAT/ext2)
+- `init=/path/to/binary` — override init binary (default: `/bin/init.elf`)
+- `ring3` — enable userspace (ring 3) execution
+- `quiet` — suppress non-critical boot messages
+- `noapic` / `nosmp` — disable APIC / SMP
 
 If you are iterating on kernel changes and want to avoid hanging runs, you can wrap it with a timeout:
 ```bash
@@ -77,7 +92,7 @@ Syscall return convention note:
 
 ### Userland programs
 The following ELF binaries are bundled in the initrd:
-- `/bin/init.elf` — comprehensive smoke test suite (19+ checks)
+- `/bin/init.elf` — comprehensive smoke test suite (20+ checks)
 - `/bin/echo` — argv/envp test
 - `/bin/sh` — POSIX sh-compatible shell with `$PATH` search, pipes, redirects, builtins
 - `/bin/cat`, `/bin/ls`, `/bin/mkdir`, `/bin/rm` — core utilities
@@ -119,8 +134,9 @@ Individual test targets:
 ```bash
 make check        # cppcheck + sparse + gcc -fanalyzer
 make test-host    # 47 host-side unit tests (test_utils + test_security)
-make test         # QEMU smoke test (4 CPUs, 40s timeout, 19 checks)
+make test         # QEMU smoke test (4 CPUs, 90s timeout, 20 checks incl. ICMP ping)
 make test-1cpu    # Single-CPU smoke test (50s timeout)
+make test-battery # Full test battery: multi-disk ATA, VFS mount, ping, diskfs (16 checks)
 make test-gdb     # GDB scripted integrity checks (heap, PMM, VGA)
 ```
 
