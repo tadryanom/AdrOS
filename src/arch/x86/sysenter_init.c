@@ -1,4 +1,5 @@
 #include "hal/cpu_features.h"
+#include "interrupts.h"
 #include "console.h"
 
 #include <stdint.h>
@@ -29,7 +30,17 @@ static inline uint64_t rdmsr(uint32_t msr) {
 static uint8_t sysenter_stack[4096] __attribute__((aligned(16)));
 static int sysenter_enabled = 0;
 
-void x86_sysenter_init(void) {
+static void x86_sysenter_init(void);
+
+/* Generic syscall_handler defined in src/kernel/syscall.c */
+extern void syscall_handler(struct registers*);
+
+void arch_syscall_init(void) {
+    register_interrupt_handler(128, syscall_handler);
+    x86_sysenter_init();
+}
+
+static void x86_sysenter_init(void) {
     const struct cpu_features* f = hal_cpu_get_features();
     if (!f->has_sysenter) {
         kprintf("[SYSENTER] CPU does not support SYSENTER/SYSEXIT.\n");
