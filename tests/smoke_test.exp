@@ -44,8 +44,8 @@ after 1000
 set tests {
     {"Heap init"            "\\[HEAP\\] 8MB Buddy Allocator Ready."}
     {"PCI enumeration"      "\\[PCI\\] Enumerated"}
-    {"ATA DMA init"         "\\[ATA-DMA\\] Initialized"}
-    {"ATA DMA mode"         "\\[ATA\\] Using DMA mode."}
+    {"ATA DMA init"         "\\[ATA-DMA\\] Ch0 initialized"}
+    {"ATA DMA mode"         "\\[ATA\\] Channel 0: DMA mode."}
     {"SMP CPUs active"      "CPU\\(s\\) active."}
     {"User ring3 entry"     "\\[USER\\] enter ring3"}
     {"init.elf hello"       "\\[init\\] hello from init.elf"}
