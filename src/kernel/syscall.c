@@ -2330,7 +2330,7 @@ void syscall_handler(struct registers* regs) {
 
     /* ---- Socket syscalls ---- */
     socket_syscall_dispatch(regs, syscall_no);
-    /* If socket dispatch handled it, eax is set and we return.
+    /* If socket dispatch handled it, the return register is set and we return.
        If not, it sets ENOSYS. Either way, return. */
     return;
 }
