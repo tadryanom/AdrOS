@@ -21,6 +21,7 @@ static char klog_buf[KLOG_BUF_SIZE];
 static size_t klog_head = 0;   // next write position
 static size_t klog_count = 0;  // total bytes stored (capped at KLOG_BUF_SIZE)
 static spinlock_t klog_lock = {0};
+static volatile int klog_suppress_flag = 0;
 
 static void klog_append(const char* s, size_t len) {
     for (size_t i = 0; i < len; i++) {
@@ -222,7 +223,7 @@ void kprintf(const char* fmt, ...) {
     int len = kvsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
 
-    if (len > 0) {
+    if (len > 0 && !klog_suppress_flag) {
         size_t slen = (size_t)len;
         if (slen >= sizeof(buf)) slen = sizeof(buf) - 1;
 
@@ -232,6 +233,10 @@ void kprintf(const char* fmt, ...) {
     }
 
     console_write(buf);
+}
+
+void klog_set_suppress(int suppress) {
+    klog_suppress_flag = suppress ? 1 : 0;
 }
 
 int kgetc(void) {

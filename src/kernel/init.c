@@ -123,7 +123,7 @@ int init_start(const struct boot_info* bi) {
     }
 
     if (!fs_root) {
-        kprintf("[INIT] No root filesystem — cannot start userspace.\n");
+        kprintf("[INIT] No root filesystem -- cannot start userspace.\n");
         return -1;
     }
 

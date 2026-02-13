@@ -18,6 +18,7 @@ void kprintf(const char* fmt, ...);
 
 int kgetc(void);
 
+void klog_set_suppress(int suppress);
 size_t klog_read(char* out, size_t out_size);
 
 #endif
