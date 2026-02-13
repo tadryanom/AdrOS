@@ -1,0 +1,4 @@
+# /etc/fstab — AdrOS filesystem table
+# <device>      <mountpoint>  <fstype>     <options>
+/dev/hda        /disk         diskfs       defaults
+/dev/hda        /persist      persistfs    defaults

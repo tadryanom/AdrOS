@@ -8,6 +8,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+static int g_diskfs_drive = 0;
+
 // Very small on-disk FS stored starting at LBA2.
 // - LBA0 reserved
 // - LBA1 used by legacy persist counter storage
@@ -100,8 +102,8 @@ static int diskfs_super_load(struct diskfs_super* sb) {
     if (!sb) return -EINVAL;
     uint8_t sec0[DISKFS_SECTOR];
     uint8_t sec1[DISKFS_SECTOR];
-    if (ata_pio_read28(DISKFS_LBA_SUPER, sec0) < 0) return -EIO;
-    if (ata_pio_read28(DISKFS_LBA_SUPER2, sec1) < 0) return -EIO;
+    if (ata_pio_read28(g_diskfs_drive, DISKFS_LBA_SUPER, sec0) < 0) return -EIO;
+    if (ata_pio_read28(g_diskfs_drive, DISKFS_LBA_SUPER2, sec1) < 0) return -EIO;
 
     if (sizeof(*sb) > (size_t)(DISKFS_SECTOR * 2U)) return -EIO;
     memcpy(sb, sec0, DISKFS_SECTOR);
@@ -197,8 +199,8 @@ static int diskfs_super_store(const struct diskfs_super* sb) {
         memcpy(sec1, ((const uint8_t*)sb) + DISKFS_SECTOR, sizeof(*sb) - DISKFS_SECTOR);
     }
 
-    if (ata_pio_write28(DISKFS_LBA_SUPER, sec0) < 0) return -EIO;
-    if (ata_pio_write28(DISKFS_LBA_SUPER2, sec1) < 0) return -EIO;
+    if (ata_pio_write28(g_diskfs_drive, DISKFS_LBA_SUPER, sec0) < 0) return -EIO;
+    if (ata_pio_write28(g_diskfs_drive, DISKFS_LBA_SUPER2, sec1) < 0) return -EIO;
     return 0;
 }
 
@@ -240,7 +242,7 @@ static int diskfs_alloc_inode_file(struct diskfs_super* sb, uint16_t parent, con
         uint8_t zero[DISKFS_SECTOR];
         memset(zero, 0, sizeof(zero));
         for (uint32_t s = 0; s < sb->inodes[i].cap_sectors; s++) {
-            (void)ata_pio_write28(sb->inodes[i].start_lba + s, zero);
+            (void)ata_pio_write28(g_diskfs_drive, sb->inodes[i].start_lba + s, zero);
         }
 
         *out_ino = i;
@@ -339,7 +341,7 @@ static uint32_t diskfs_read_impl(fs_node_t* node, uint32_t offset, uint32_t size
         if (lba_off >= de->cap_sectors) break;
 
         uint8_t sec[DISKFS_SECTOR];
-        if (ata_pio_read28(de->start_lba + lba_off, sec) < 0) break;
+        if (ata_pio_read28(g_diskfs_drive, de->start_lba + lba_off, sec) < 0) break;
         memcpy(buffer + total, sec + sec_off, chunk);
         total += chunk;
     }
@@ -381,11 +383,11 @@ static uint32_t diskfs_write_impl(fs_node_t* node, uint32_t offset, uint32_t siz
         for (uint32_t s = 0; s < new_cap; s++) {
             memset(sec, 0, sizeof(sec));
             if (s < de->cap_sectors) {
-                if (ata_pio_read28(de->start_lba + s, sec) < 0) {
+                if (ata_pio_read28(g_diskfs_drive, de->start_lba + s, sec) < 0) {
                     return 0;
                 }
             }
-            (void)ata_pio_write28(new_start + s, sec);
+            (void)ata_pio_write28(g_diskfs_drive, new_start + s, sec);
         }
 
         de->start_lba = new_start;
@@ -403,13 +405,13 @@ static uint32_t diskfs_write_impl(fs_node_t* node, uint32_t offset, uint32_t siz
 
         uint8_t sec[DISKFS_SECTOR];
         if (sec_off != 0 || chunk != DISKFS_SECTOR) {
-            if (ata_pio_read28(de->start_lba + lba_off, sec) < 0) break;
+            if (ata_pio_read28(g_diskfs_drive, de->start_lba + lba_off, sec) < 0) break;
         } else {
             memset(sec, 0, sizeof(sec));
         }
 
         memcpy(sec + sec_off, buffer + total, chunk);
-        if (ata_pio_write28(de->start_lba + lba_off, sec) < 0) break;
+        if (ata_pio_write28(g_diskfs_drive, de->start_lba + lba_off, sec) < 0) break;
 
         total += chunk;
     }
@@ -1052,9 +1054,10 @@ static void diskfs_set_dir_ops(fs_node_t* vfs) {
     vfs->link = &diskfs_vfs_link;
 }
 
-fs_node_t* diskfs_create_root(void) {
+fs_node_t* diskfs_create_root(int drive) {
     if (!g_ready) {
-        if (ata_pio_init_primary_master() == 0) {
+        g_diskfs_drive = drive;
+        if (ata_pio_drive_present(drive)) {
             g_ready = 1;
         } else {
             g_ready = 0;

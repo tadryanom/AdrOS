@@ -178,8 +178,9 @@ $(RM_ELF): user/rm.c user/linker.ld
 $(LDSO_ELF): user/ldso.c user/linker.ld
 	@i686-elf-gcc -m32 -I include -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(LDSO_ELF) user/ldso.c
 
-INITRD_FILES := $(USER_ELF):bin/init.elf $(ECHO_ELF):bin/echo.elf $(SH_ELF):bin/sh $(CAT_ELF):bin/cat $(LS_ELF):bin/ls $(MKDIR_ELF):bin/mkdir $(RM_ELF):bin/rm $(LDSO_ELF):lib/ld.so
-INITRD_DEPS := $(MKINITRD) $(USER_ELF) $(ECHO_ELF) $(SH_ELF) $(CAT_ELF) $(LS_ELF) $(MKDIR_ELF) $(RM_ELF) $(LDSO_ELF)
+FSTAB := rootfs/etc/fstab
+INITRD_FILES := $(USER_ELF):bin/init.elf $(ECHO_ELF):bin/echo.elf $(SH_ELF):bin/sh $(CAT_ELF):bin/cat $(LS_ELF):bin/ls $(MKDIR_ELF):bin/mkdir $(RM_ELF):bin/rm $(LDSO_ELF):lib/ld.so $(FSTAB):etc/fstab
+INITRD_DEPS := $(MKINITRD) $(USER_ELF) $(ECHO_ELF) $(SH_ELF) $(CAT_ELF) $(LS_ELF) $(MKDIR_ELF) $(RM_ELF) $(LDSO_ELF) $(FSTAB)
 
 # Include doom.elf if it has been built
 ifneq ($(wildcard $(DOOM_ELF)),)

@@ -36,9 +36,11 @@
 #define KVA_ACPI_TMP_BASE   0xC0300000U
 #define KVA_ACPI_TMP_PAGES  16
 
-/* ATA DMA (hal/x86/ata_dma.c) */
-#define KVA_ATA_DMA_PRDT    0xC0320000U
-#define KVA_ATA_DMA_BUF     0xC0321000U
+/* ATA DMA (hal/x86/ata_dma.c) — two pages per channel (PRDT + bounce buf) */
+#define KVA_ATA_DMA_PRDT_PRI  0xC0320000U
+#define KVA_ATA_DMA_BUF_PRI   0xC0321000U
+#define KVA_ATA_DMA_PRDT_SEC  0xC0322000U
+#define KVA_ATA_DMA_BUF_SEC   0xC0323000U
 
 /* E1000 NIC (drivers/e1000.c) */
 #define KVA_E1000_MMIO      0xC0330000U

@@ -114,6 +114,7 @@ struct ext2_dir_entry {
 #define EXT2_SECTOR_SIZE 512
 
 struct ext2_state {
+    int      drive;
     uint32_t part_lba;        /* partition start LBA */
     uint32_t block_size;      /* bytes per block (1024, 2048, or 4096) */
     uint32_t sectors_per_block;
@@ -143,7 +144,7 @@ static int ext2_read_block(uint32_t block, void* buf) {
     uint32_t lba = g_ext2.part_lba + block * g_ext2.sectors_per_block;
     uint8_t* p = (uint8_t*)buf;
     for (uint32_t s = 0; s < g_ext2.sectors_per_block; s++) {
-        if (ata_pio_read28(lba + s, p + s * EXT2_SECTOR_SIZE) < 0)
+        if (ata_pio_read28(g_ext2.drive, lba + s, p + s * EXT2_SECTOR_SIZE) < 0)
             return -EIO;
     }
     return 0;
@@ -153,7 +154,7 @@ static int ext2_write_block(uint32_t block, const void* buf) {
     uint32_t lba = g_ext2.part_lba + block * g_ext2.sectors_per_block;
     const uint8_t* p = (const uint8_t*)buf;
     for (uint32_t s = 0; s < g_ext2.sectors_per_block; s++) {
-        if (ata_pio_write28(lba + s, p + s * EXT2_SECTOR_SIZE) < 0)
+        if (ata_pio_write28(g_ext2.drive, lba + s, p + s * EXT2_SECTOR_SIZE) < 0)
             return -EIO;
     }
     return 0;
@@ -168,7 +169,7 @@ static int ext2_read_superblock(struct ext2_superblock* sb) {
 
     uint8_t raw[1024];
     for (uint32_t i = 0; i < 1024 / EXT2_SECTOR_SIZE; i++) {
-        if (ata_pio_read28(sb_lba + i, sec) < 0) return -EIO;
+        if (ata_pio_read28(g_ext2.drive, sb_lba + i, sec) < 0) return -EIO;
         memcpy(raw + i * EXT2_SECTOR_SIZE, sec, EXT2_SECTOR_SIZE);
     }
     memcpy(sb, raw, sizeof(*sb));
@@ -183,7 +184,7 @@ static int ext2_write_superblock(const struct ext2_superblock* sb) {
     memcpy(raw, sb, sizeof(*sb));
 
     for (uint32_t i = 0; i < 1024 / EXT2_SECTOR_SIZE; i++) {
-        if (ata_pio_write28(sb_lba + i, raw + i * EXT2_SECTOR_SIZE) < 0)
+        if (ata_pio_write28(g_ext2.drive, sb_lba + i, raw + i * EXT2_SECTOR_SIZE) < 0)
             return -EIO;
     }
     return 0;
@@ -1322,8 +1323,9 @@ static int ext2_link_impl(struct fs_node* dir, const char* name, struct fs_node*
 
 /* ---- Mount ---- */
 
-fs_node_t* ext2_mount(uint32_t partition_lba) {
+fs_node_t* ext2_mount(int drive, uint32_t partition_lba) {
     memset(&g_ext2, 0, sizeof(g_ext2));
+    g_ext2.drive = drive;
     g_ext2.part_lba = partition_lba;
 
     struct ext2_superblock sb;

@@ -3,6 +3,6 @@
 
 #include "fs.h"
 
-fs_node_t* persistfs_create_root(void);
+fs_node_t* persistfs_create_root(int drive);
 
 #endif

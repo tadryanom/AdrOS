@@ -24,8 +24,141 @@
 
 #include "ata_pio.h"
 #include "hal/mm.h"
+#include "heap.h"
+#include "utils.h"
 
 #include <stddef.h>
+
+/* ---- Mount helper: used by fstab parser and kconsole 'mount' command ---- */
+
+int init_mount_fs(const char* fstype, int drive, uint32_t lba, const char* mountpoint) {
+    fs_node_t* root = NULL;
+
+    if (strcmp(fstype, "diskfs") == 0) {
+        root = diskfs_create_root(drive);
+    } else if (strcmp(fstype, "fat") == 0) {
+        root = fat_mount(drive, lba);
+    } else if (strcmp(fstype, "ext2") == 0) {
+        root = ext2_mount(drive, lba);
+    } else if (strcmp(fstype, "persistfs") == 0) {
+        root = persistfs_create_root(drive);
+    } else {
+        kprintf("[MOUNT] Unknown filesystem type: %s\n", fstype);
+        return -1;
+    }
+
+    if (!root) {
+        kprintf("[MOUNT] Failed to mount %s on /dev/%s at %s\n",
+                fstype, ata_drive_to_name(drive) ? ata_drive_to_name(drive) : "?",
+                mountpoint);
+        return -1;
+    }
+
+    if (vfs_mount(mountpoint, root) < 0) {
+        kprintf("[MOUNT] Failed to register mount at %s\n", mountpoint);
+        return -1;
+    }
+
+    kprintf("[MOUNT] %s on /dev/%s -> %s\n",
+            fstype, ata_drive_to_name(drive) ? ata_drive_to_name(drive) : "?",
+            mountpoint);
+    return 0;
+}
+
+/* ---- /etc/fstab parser ---- */
+
+/* fstab format (one entry per line, '#' comments):
+ *   <device>  <mountpoint>  <fstype>  [options]
+ * Example:
+ *   /dev/hda  /disk    diskfs   defaults
+ *   /dev/hda  /persist persistfs defaults
+ *   /dev/hdb  /ext2    ext2     defaults
+ */
+static void init_parse_fstab(void) {
+    fs_node_t* fstab = vfs_lookup("/etc/fstab");
+    if (!fstab) return;
+
+    uint32_t len = fstab->length;
+    if (len == 0 || len > 4096) return;
+
+    uint8_t* buf = (uint8_t*)kmalloc(len + 1);
+    if (!buf) return;
+
+    uint32_t rd = vfs_read(fstab, 0, len, buf);
+    buf[rd] = '\0';
+
+    kprintf("[FSTAB] Parsing /etc/fstab (%u bytes)\n", rd);
+
+    /* Parse line by line */
+    char* p = (char*)buf;
+    while (*p) {
+        /* Skip leading whitespace */
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p == '\0') break;
+        if (*p == '#' || *p == '\n') {
+            while (*p && *p != '\n') p++;
+            if (*p == '\n') p++;
+            continue;
+        }
+
+        /* Extract device field */
+        char* dev_start = p;
+        while (*p && *p != ' ' && *p != '\t' && *p != '\n') p++;
+        char dev_end_ch = *p; *p = '\0';
+        char device[32];
+        strncpy(device, dev_start, sizeof(device) - 1);
+        device[sizeof(device) - 1] = '\0';
+        *p = dev_end_ch;
+        if (*p == '\n' || *p == '\0') { if (*p == '\n') p++; continue; }
+
+        /* Skip whitespace */
+        while (*p == ' ' || *p == '\t') p++;
+
+        /* Extract mountpoint field */
+        char* mp_start = p;
+        while (*p && *p != ' ' && *p != '\t' && *p != '\n') p++;
+        char mp_end_ch = *p; *p = '\0';
+        char mountpoint[64];
+        strncpy(mountpoint, mp_start, sizeof(mountpoint) - 1);
+        mountpoint[sizeof(mountpoint) - 1] = '\0';
+        *p = mp_end_ch;
+        if (*p == '\n' || *p == '\0') { if (*p == '\n') p++; continue; }
+
+        /* Skip whitespace */
+        while (*p == ' ' || *p == '\t') p++;
+
+        /* Extract fstype field */
+        char* fs_start = p;
+        while (*p && *p != ' ' && *p != '\t' && *p != '\n') p++;
+        char fs_end_ch = *p; *p = '\0';
+        char fstype[16];
+        strncpy(fstype, fs_start, sizeof(fstype) - 1);
+        fstype[sizeof(fstype) - 1] = '\0';
+        *p = fs_end_ch;
+
+        /* Skip rest of line */
+        while (*p && *p != '\n') p++;
+        if (*p == '\n') p++;
+
+        /* Parse device: expect /dev/hdX */
+        int drive = -1;
+        if (strncmp(device, "/dev/", 5) == 0) {
+            drive = ata_name_to_drive(device + 5);
+        }
+        if (drive < 0) {
+            kprintf("[FSTAB] Unknown device: %s\n", device);
+            continue;
+        }
+        if (!ata_pio_drive_present(drive)) {
+            kprintf("[FSTAB] Device %s not present, skipping\n", device);
+            continue;
+        }
+
+        (void)init_mount_fs(fstype, drive, 0, mountpoint);
+    }
+
+    kfree(buf);
+}
 
 static int cmdline_has_token(const char* cmdline, const char* token) {
     if (!cmdline || !token) return 0;
@@ -92,53 +225,19 @@ int init_start(const struct boot_info* bi) {
     vbe_register_devfs();
     keyboard_register_devfs();
 
-    fs_node_t* persist = persistfs_create_root();
-    if (persist) {
-        (void)vfs_mount("/persist", persist);
-    }
-
     fs_node_t* proc = procfs_create_root();
     if (proc) {
         (void)vfs_mount("/proc", proc);
     }
 
-    /* Probe the ATA primary master disk and mount the appropriate
-     * filesystem.  ext2, FAT, and diskfs are mutually exclusive on
-     * the same device — we probe in order of specificity so that
-     * diskfs auto-format never overwrites a recognized filesystem.
-     *
-     * Probe order: ext2 (magic 0xEF53), FAT (BPB validation), diskfs.
-     * If neither ext2 nor FAT is detected, diskfs initializes and may
-     * auto-format the disk. */
-    if (ata_pio_init_primary_master() == 0) {
-        int disk_mounted = 0;
+    /* Initialize ATA subsystem — probe all 4 drives
+     * (primary/secondary x master/slave). */
+    (void)ata_pio_init();
 
-        /* 1. Try ext2 — superblock at byte 1024 (LBA 2), magic at offset 56 */
-        {
-            fs_node_t* ext2fs = ext2_mount(0);
-            if (ext2fs) {
-                (void)vfs_mount("/ext2", ext2fs);
-                disk_mounted = 1;
-            }
-        }
-
-        /* 2. Try FAT — BPB at LBA 0 */
-        if (!disk_mounted) {
-            fs_node_t* fatfs = fat_mount(0);
-            if (fatfs) {
-                (void)vfs_mount("/fat", fatfs);
-                disk_mounted = 1;
-            }
-        }
-
-        /* 3. Fallback to diskfs (may auto-format blank/unrecognized disks) */
-        if (!disk_mounted) {
-            fs_node_t* disk = diskfs_create_root();
-            if (disk) {
-                (void)vfs_mount("/disk", disk);
-            }
-        }
-    }
+    /* Disk-based filesystems (diskfs, FAT, ext2) are NOT auto-mounted.
+     * They are mounted either by /etc/fstab entries or manually via the
+     * kconsole 'mount' command.  Parse /etc/fstab if it exists. */
+    init_parse_fstab();
 
     if (!fs_root) {
         kprintf("[INIT] No root filesystem -- cannot start userspace.\n");

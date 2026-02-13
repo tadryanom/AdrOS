@@ -71,9 +71,9 @@ static struct fs_node* persist_root_finddir(struct fs_node* node, const char* na
     return 0;
 }
 
-fs_node_t* persistfs_create_root(void) {
+fs_node_t* persistfs_create_root(int drive) {
     if (!g_ready) {
-        if (ata_pio_init_primary_master() == 0) {
+        if (ata_pio_drive_present(drive)) {
             g_ready = 1;
         } else {
             g_ready = 0;
@@ -81,11 +81,11 @@ fs_node_t* persistfs_create_root(void) {
 
         if (g_ready) {
             // Ensure diskfs is initialized even if /disk mount happens later.
-            (void)diskfs_create_root();
+            (void)diskfs_create_root(drive);
 
             // One-time migration from legacy LBA1 counter storage.
             uint8_t sec[512];
-            if (ata_pio_read28(PERSISTFS_LBA_COUNTER, sec) == 0) {
+            if (ata_pio_read28(drive, PERSISTFS_LBA_COUNTER, sec) == 0) {
                 fs_node_t* b = persistfs_backing_open(PERSIST_O_CREAT);
                 if (b) {
                     uint8_t cur4[4];

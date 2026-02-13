@@ -10,6 +10,8 @@
 #include "arch/arch_platform.h"
 #include "hal/system.h"
 #include "hal/cpu.h"
+#include "kernel/init.h"
+#include "ata_pio.h"
 
 #define KCMD_MAX 128
 
@@ -239,14 +241,16 @@ static int kc_readline(char* buf, int maxlen) {
 
 static void kconsole_help(void) {
     kc_puts("kconsole commands:\n");
-    kc_puts("  help        - Show this list\n");
-    kc_puts("  clear       - Clear screen\n");
-    kc_puts("  ls [path]   - List files in directory\n");
-    kc_puts("  cat <file>  - Read file content\n");
-    kc_puts("  mem         - Show memory stats\n");
-    kc_puts("  dmesg       - Show kernel log buffer\n");
-    kc_puts("  reboot      - Restart system\n");
-    kc_puts("  halt        - Halt the CPU\n");
+    kc_puts("  help                              - Show this list\n");
+    kc_puts("  clear                             - Clear screen\n");
+    kc_puts("  ls [path]                         - List files in directory\n");
+    kc_puts("  cat <file>                        - Read file content\n");
+    kc_puts("  mem                               - Show memory stats\n");
+    kc_puts("  dmesg                             - Show kernel log buffer\n");
+    kc_puts("  lsblk                             - List detected ATA drives\n");
+    kc_puts("  mount -t <type> /dev/<hd> <mnt>   - Mount filesystem\n");
+    kc_puts("  reboot                            - Restart system\n");
+    kc_puts("  halt                              - Halt the CPU\n");
 }
 
 static void kconsole_ls(const char* path) {
@@ -275,6 +279,80 @@ static void kconsole_ls(const char* path) {
         if (rc != 0) break;
         kprintf("  %s\n", ent.d_name);
     }
+}
+
+/* mount -t <fstype> /dev/<hdX> <mountpoint> */
+static void kconsole_mount(const char* args) {
+    const char* p = args;
+
+    /* Expect: -t <type> /dev/<hd> <mnt> */
+    while (*p == ' ') p++;
+    if (p[0] != '-' || p[1] != 't' || p[2] != ' ') {
+        kprintf("Usage: mount -t <type> /dev/<hd> <mountpoint>\n");
+        return;
+    }
+    p += 3;
+    while (*p == ' ') p++;
+
+    /* Extract fstype */
+    const char* fs_start = p;
+    while (*p && *p != ' ') p++;
+    if (*p == '\0') {
+        kprintf("Usage: mount -t <type> /dev/<hd> <mountpoint>\n");
+        return;
+    }
+    char fstype[16];
+    size_t fs_len = (size_t)(p - fs_start);
+    if (fs_len >= sizeof(fstype)) fs_len = sizeof(fstype) - 1;
+    memcpy(fstype, fs_start, fs_len);
+    fstype[fs_len] = '\0';
+
+    while (*p == ' ') p++;
+
+    /* Extract device */
+    const char* dev_start = p;
+    while (*p && *p != ' ') p++;
+    if (*p == '\0') {
+        kprintf("Usage: mount -t <type> /dev/<hd> <mountpoint>\n");
+        return;
+    }
+    char device[32];
+    size_t dev_len = (size_t)(p - dev_start);
+    if (dev_len >= sizeof(device)) dev_len = sizeof(device) - 1;
+    memcpy(device, dev_start, dev_len);
+    device[dev_len] = '\0';
+
+    while (*p == ' ') p++;
+
+    /* Extract mountpoint */
+    const char* mp_start = p;
+    while (*p && *p != ' ') p++;
+    char mountpoint[64];
+    size_t mp_len = (size_t)(p - mp_start);
+    if (mp_len >= sizeof(mountpoint)) mp_len = sizeof(mountpoint) - 1;
+    memcpy(mountpoint, mp_start, mp_len);
+    mountpoint[mp_len] = '\0';
+
+    if (mountpoint[0] != '/') {
+        kprintf("mount: mountpoint must be absolute path\n");
+        return;
+    }
+
+    /* Resolve device to drive ID */
+    int drive = -1;
+    if (strncmp(device, "/dev/", 5) == 0) {
+        drive = ata_name_to_drive(device + 5);
+    }
+    if (drive < 0) {
+        kprintf("mount: unknown device: %s\n", device);
+        return;
+    }
+    if (!ata_pio_drive_present(drive)) {
+        kprintf("mount: device %s not present\n", device);
+        return;
+    }
+
+    (void)init_mount_fs(fstype, drive, 0, mountpoint);
 }
 
 static void kconsole_exec(const char* cmd) {
@@ -337,6 +415,17 @@ static void kconsole_exec(const char* cmd) {
         kc_puts("System halted.\n");
         hal_cpu_disable_interrupts();
         for (;;) hal_cpu_idle();
+    }
+    else if (strcmp(cmd, "lsblk") == 0) {
+        for (int i = 0; i < ATA_MAX_DRIVES; i++) {
+            const char* name = ata_drive_to_name(i);
+            if (!name) continue;
+            kprintf("  /dev/%s  %s\n", name,
+                    ata_pio_drive_present(i) ? "present" : "not detected");
+        }
+    }
+    else if (strncmp(cmd, "mount ", 6) == 0) {
+        kconsole_mount(cmd + 6);
     }
     else if (cmd[0] != '\0') {
         kprintf("unknown command: %s\n", cmd);

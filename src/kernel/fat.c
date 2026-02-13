@@ -81,6 +81,7 @@ enum fat_type {
 /* ---- In-memory filesystem state ---- */
 
 struct fat_state {
+    int      drive;
     uint32_t part_lba;
     uint16_t bytes_per_sector;
     uint8_t  sectors_per_cluster;
@@ -113,11 +114,11 @@ static uint8_t g_sec_buf[FAT_SECTOR_SIZE];
 /* ---- Low-level sector I/O ---- */
 
 static int fat_read_sector(uint32_t lba, void* buf) {
-    return ata_pio_read28(lba, (uint8_t*)buf);
+    return ata_pio_read28(g_fat.drive, lba, (uint8_t*)buf);
 }
 
 static int fat_write_sector(uint32_t lba, const void* buf) {
-    return ata_pio_write28(lba, (const uint8_t*)buf);
+    return ata_pio_write28(g_fat.drive, lba, (const uint8_t*)buf);
 }
 
 /* ---- FAT table access ---- */
@@ -1091,7 +1092,10 @@ static int fat_truncate_impl(struct fs_node* node, uint32_t length) {
 
 /* ---- Mount ---- */
 
-fs_node_t* fat_mount(uint32_t partition_lba) {
+fs_node_t* fat_mount(int drive, uint32_t partition_lba) {
+    /* Store drive early so fat_read_sector can use it */
+    g_fat.drive = drive;
+
     uint8_t boot_sec[FAT_SECTOR_SIZE];
     if (fat_read_sector(partition_lba, boot_sec) < 0) {
         kprintf("[FAT] Failed to read BPB at LBA %u\n", partition_lba);
@@ -1110,6 +1114,7 @@ fs_node_t* fat_mount(uint32_t partition_lba) {
     }
 
     memset(&g_fat, 0, sizeof(g_fat));
+    g_fat.drive = drive;
     g_fat.part_lba = partition_lba;
     g_fat.bytes_per_sector = bpb->bytes_per_sector;
     g_fat.sectors_per_cluster = bpb->sectors_per_cluster;

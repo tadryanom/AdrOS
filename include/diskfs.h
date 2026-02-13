@@ -4,7 +4,7 @@
 #include "fs.h"
 #include <stdint.h>
 
-fs_node_t* diskfs_create_root(void);
+fs_node_t* diskfs_create_root(int drive);
 
 // Open (and optionally create) a diskfs file at the root (flat namespace).
 // rel_path must not contain '/'.
