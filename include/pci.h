@@ -28,4 +28,6 @@ const struct pci_device* pci_get_device(int index);
 const struct pci_device* pci_find_device(uint16_t vendor, uint16_t device);
 const struct pci_device* pci_find_class(uint8_t class_code, uint8_t subclass);
 
+void pci_driver_register(void);
+
 #endif

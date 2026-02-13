@@ -1,4 +1,5 @@
 #include "pci.h"
+#include "hal/driver.h"
 #include "console.h"
 #include "utils.h"
 #include "io.h"
@@ -132,4 +133,18 @@ const struct pci_device* pci_find_class(uint8_t class_code, uint8_t subclass) {
             return &pci_devices[i];
     }
     return 0;
+}
+
+/* HAL driver registration */
+static int pci_drv_init(void) { pci_init(); return 0; }
+
+static const struct hal_driver pci_hal_driver = {
+    .name     = "x86-pci",
+    .type     = HAL_DRV_BUS,
+    .priority = 10,
+    .ops      = { .probe = NULL, .init = pci_drv_init, .shutdown = NULL }
+};
+
+void pci_driver_register(void) {
+    hal_driver_register(&pci_hal_driver);
 }

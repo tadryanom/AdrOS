@@ -1,4 +1,5 @@
 #include "e1000.h"
+#include "hal/driver.h"
 #include "kernel_va_map.h"
 #include "pci.h"
 #include "vmm.h"
@@ -358,4 +359,20 @@ void e1000_get_mac(uint8_t mac[6]) {
 int e1000_link_up(void) {
     if (!e1000_ready) return 0;
     return (e1000_read(E1000_STATUS) & (1U << 1)) ? 1 : 0;
+}
+
+/* HAL driver registration */
+static int e1000_drv_probe(void) {
+    return pci_find_device(0x8086, 0x100E) ? 0 : -1;
+}
+
+static const struct hal_driver e1000_hal_driver = {
+    .name     = "e1000",
+    .type     = HAL_DRV_NET,
+    .priority = 20,
+    .ops      = { .probe = e1000_drv_probe, .init = e1000_init, .shutdown = NULL }
+};
+
+void e1000_driver_register(void) {
+    hal_driver_register(&e1000_hal_driver);
 }

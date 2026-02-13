@@ -125,4 +125,6 @@ void e1000_get_mac(uint8_t mac[6]);
 /* Check if the NIC is initialized and link is up. */
 int e1000_link_up(void);
 
+void e1000_driver_register(void);
+
 #endif

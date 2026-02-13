@@ -1,6 +1,7 @@
 #include "kernel/init.h"
 
 #include "arch/arch_platform.h"
+#include "hal/driver.h"
 
 #include "fs.h"
 #include "initrd.h"
@@ -192,8 +193,11 @@ int init_start(const struct boot_info* bi) {
         (void)vfs_mount("/tmp", tmp);
     }
 
-    pci_init();
-    e1000_init();
+    /* Register hardware drivers with HAL and init in priority order */
+    pci_driver_register();      /* priority 10: bus */
+    e1000_driver_register();    /* priority 20: NIC (probes PCI) */
+    hal_drivers_init_all();
+
     net_init();
     net_ping_test();
     ksocket_init();
