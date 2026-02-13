@@ -52,4 +52,11 @@ extern uint32_t __arch_syscall_stub_sink;
 
 #endif
 
+/*
+ * arch_syscall_init — Register the syscall entry point(s) for this
+ *                     architecture (e.g. INT 0x80 + SYSENTER on x86).
+ *                     Called once from the generic syscall_init().
+ */
+void arch_syscall_init(void);
+
 #endif /* ARCH_SYSCALL_H */
