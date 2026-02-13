@@ -9,6 +9,7 @@
 #include "errno.h"
 #include "hal/cpu.h"
 #include "hal/usermode.h"
+#include "arch_process.h"
 #include <stddef.h>
 
 struct process* current_process = NULL;
@@ -446,13 +447,8 @@ struct process* process_fork_create(uintptr_t child_as, const struct registers* 
     }
     proc->kernel_stack = (uint32_t*)stack;
 
-    uint32_t* sp = (uint32_t*)((uint8_t*)stack + 4096);
-    *--sp = (uint32_t)fork_child_trampoline;
-    *--sp = 0;
-    *--sp = (uint32_t)thread_wrapper;
-    *--sp = 0; *--sp = 0; *--sp = 0; *--sp = 0;
-    *--sp = 0x202; /* EFLAGS: IF=1, reserved bit 1 */
-    proc->sp = (uintptr_t)sp;
+    proc->sp = arch_kstack_init((uint8_t*)stack + 4096,
+                                  thread_wrapper, fork_child_trampoline);
 
     proc->next = ready_queue_head;
     proc->prev = ready_queue_tail;
@@ -574,11 +570,11 @@ struct process* process_clone_create(uint32_t clone_flags,
 
     proc->has_user_regs = 1;
     proc->user_regs = *child_regs;
-    proc->user_regs.eax = 0; /* child returns 0 */
+    arch_regs_set_retval(&proc->user_regs, 0); /* child returns 0 */
 
-    /* If child_stack specified, override ESP */
+    /* If child_stack specified, override user stack pointer */
     if (child_stack) {
-        proc->user_regs.useresp = (uint32_t)child_stack;
+        arch_regs_set_ustack(&proc->user_regs, child_stack);
     }
 
     /* Allocate kernel stack */
@@ -593,13 +589,8 @@ struct process* process_clone_create(uint32_t clone_flags,
     }
     proc->kernel_stack = (uint32_t*)kstack;
 
-    uint32_t* sp = (uint32_t*)((uint8_t*)kstack + 4096);
-    *--sp = (uint32_t)clone_child_trampoline;
-    *--sp = 0;
-    *--sp = (uint32_t)thread_wrapper;
-    *--sp = 0; *--sp = 0; *--sp = 0; *--sp = 0;
-    *--sp = 0x202; /* EFLAGS: IF=1, reserved bit 1 */
-    proc->sp = (uintptr_t)sp;
+    proc->sp = arch_kstack_init((uint8_t*)kstack + 4096,
+                                  thread_wrapper, clone_child_trampoline);
 
     /* Insert into process list */
     proc->next = ready_queue_head;
@@ -742,15 +733,8 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
 
     proc->kernel_stack = (uint32_t*)stack;
     
-    uint32_t* sp = (uint32_t*)((uint8_t*)stack + 4096);
-    
-    *--sp = (uint32_t)entry_point;
-    *--sp = 0;
-    *--sp = (uint32_t)thread_wrapper;
-    *--sp = 0; *--sp = 0; *--sp = 0; *--sp = 0;
-    *--sp = 0x202; /* EFLAGS: IF=1, reserved bit 1 */
-    
-    proc->sp = (uintptr_t)sp;
+    proc->sp = arch_kstack_init((uint8_t*)stack + 4096,
+                                  thread_wrapper, entry_point);
 
     proc->next = ready_queue_head;
     proc->prev = ready_queue_tail;
