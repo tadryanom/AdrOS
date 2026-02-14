@@ -3,6 +3,7 @@
 #if defined(__i386__)
 #include "arch/x86/idt.h"
 #include "arch/x86/lapic.h"
+#include "arch/x86/ioapic.h"
 #include "io.h"
 #include "console.h"
 
@@ -10,6 +11,10 @@ static hal_timer_tick_cb_t g_tick_cb = 0;
 
 static void timer_irq(struct registers* regs) {
     (void)regs;
+    /* Only the BSP (LAPIC ID 0) drives the global tick, scheduling,
+     * and VGA refresh.  APs have no processes to run and would only
+     * add spinlock contention on sched_lock / vga_lock. */
+    if (lapic_is_enabled() && lapic_get_id() != 0) return;
     if (g_tick_cb) g_tick_cb();
 }
 
@@ -19,7 +24,11 @@ void hal_timer_init(uint32_t frequency_hz, hal_timer_tick_cb_t tick_cb) {
     register_interrupt_handler(32, timer_irq);
 
     if (lapic_is_enabled()) {
-        /* Use LAPIC timer — more precise and per-CPU capable */
+        /* Use LAPIC timer — more precise and per-CPU capable.
+         * Mask PIT IRQ 0 via IOAPIC so only the LAPIC timer drives
+         * vector 32.  Without this, PIT adds ~18 extra ticks/sec,
+         * making all timing calculations off by ~18%. */
+        ioapic_mask_irq(0);
         lapic_timer_start(frequency_hz);
     } else {
         /* Fallback to legacy PIT */

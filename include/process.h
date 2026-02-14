@@ -54,9 +54,11 @@ struct process {
     uint32_t* kernel_stack;
 #define SCHED_NUM_PRIOS 32
 #define SCHED_DEFAULT_PRIO 16
+#define SCHED_TIME_SLICE   2    /* ticks before forced preemption (20ms at 100Hz) */
 
     uint8_t priority;           // 0 = highest, 31 = lowest
     int8_t  nice;               // -20 to +19 (maps to priority)
+    uint8_t time_slice;         // ticks remaining in current quantum
     process_state_t state;
     uint32_t wake_at_tick;
     uint32_t alarm_tick;

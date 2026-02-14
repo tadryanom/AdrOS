@@ -863,9 +863,19 @@ void schedule(void) {
 
     struct process* prev = current_process;
 
-    // Put prev back into expired runqueue if it's still runnable.
-    // Priority decay: penalize CPU-bound processes that exhaust their slice.
+    // Time-slice preemption: if the process is still running (timer
+    // preemption, not a voluntary yield) and has quantum left, do NOT
+    // preempt.  Woken processes accumulate in rq_active and get their
+    // turn when the slice expires.  This limits context-switch rate to
+    // TIMER_HZ/SCHED_TIME_SLICE while keeping full tick resolution for
+    // sleep/wake timing.
     if (prev->state == PROCESS_RUNNING) {
+        if (prev->time_slice > 0) {
+            prev->time_slice--;
+            spin_unlock_irqrestore(&sched_lock, irq_flags);
+            return;
+        }
+        // Slice exhausted — enqueue to expired with priority decay.
         prev->state = PROCESS_READY;
         if (prev->priority < SCHED_NUM_PRIOS - 1) prev->priority++;
         rq_enqueue(rq_expired, prev);
@@ -907,12 +917,14 @@ void schedule(void) {
 
     if (prev == next) {
         prev->state = PROCESS_RUNNING;
+        prev->time_slice = SCHED_TIME_SLICE;
         spin_unlock_irqrestore(&sched_lock, irq_flags);
         return;
     }
 
     current_process = next;
     current_process->state = PROCESS_RUNNING;
+    current_process->time_slice = SCHED_TIME_SLICE;
 
     if (current_process->addr_space && current_process->addr_space != prev->addr_space) {
         hal_cpu_set_address_space(current_process->addr_space);
