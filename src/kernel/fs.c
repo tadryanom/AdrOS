@@ -154,7 +154,6 @@ static fs_node_t* vfs_lookup_depth(const char* path, int depth) {
         if (!cur) return NULL;
         fs_node_t* (*fn_finddir)(fs_node_t*, const char*) = NULL;
         if (cur->i_ops && cur->i_ops->lookup) fn_finddir = cur->i_ops->lookup;
-        else if (cur->f_ops && cur->f_ops->finddir) fn_finddir = cur->f_ops->finddir;
         if (!fn_finddir) return NULL;
         cur = fn_finddir(cur, part);
         if (!cur) return NULL;
@@ -208,8 +207,6 @@ int vfs_create(const char* path, uint32_t flags, fs_node_t** out) {
     if (parent->flags != FS_DIRECTORY) return -ENOTDIR;
     if (parent->i_ops && parent->i_ops->create)
         return parent->i_ops->create(parent, name, flags, out);
-    if (parent->f_ops && parent->f_ops->create)
-        return parent->f_ops->create(parent, name, flags, out);
     return -ENOSYS;
 }
 
@@ -221,8 +218,6 @@ int vfs_mkdir(const char* path) {
     if (parent->flags != FS_DIRECTORY) return -ENOTDIR;
     if (parent->i_ops && parent->i_ops->mkdir)
         return parent->i_ops->mkdir(parent, name);
-    if (parent->f_ops && parent->f_ops->mkdir)
-        return parent->f_ops->mkdir(parent, name);
     return -ENOSYS;
 }
 
@@ -234,8 +229,6 @@ int vfs_unlink(const char* path) {
     if (parent->flags != FS_DIRECTORY) return -ENOTDIR;
     if (parent->i_ops && parent->i_ops->unlink)
         return parent->i_ops->unlink(parent, name);
-    if (parent->f_ops && parent->f_ops->unlink)
-        return parent->f_ops->unlink(parent, name);
     return -ENOSYS;
 }
 
@@ -247,8 +240,6 @@ int vfs_rmdir(const char* path) {
     if (parent->flags != FS_DIRECTORY) return -ENOTDIR;
     if (parent->i_ops && parent->i_ops->rmdir)
         return parent->i_ops->rmdir(parent, name);
-    if (parent->f_ops && parent->f_ops->rmdir)
-        return parent->f_ops->rmdir(parent, name);
     return -ENOSYS;
 }
 
@@ -260,8 +251,6 @@ int vfs_rename(const char* old_path, const char* new_path) {
     if (!old_parent || !new_parent) return -ENOENT;
     if (old_parent->i_ops && old_parent->i_ops->rename)
         return old_parent->i_ops->rename(old_parent, old_name, new_parent, new_name);
-    if (old_parent->f_ops && old_parent->f_ops->rename)
-        return old_parent->f_ops->rename(old_parent, old_name, new_parent, new_name);
     return -ENOSYS;
 }
 
@@ -272,8 +261,6 @@ int vfs_truncate(const char* path, uint32_t length) {
     if (node->flags != FS_FILE) return -EISDIR;
     if (node->i_ops && node->i_ops->truncate)
         return node->i_ops->truncate(node, length);
-    if (node->f_ops && node->f_ops->truncate)
-        return node->f_ops->truncate(node, length);
     return -ENOSYS;
 }
 
@@ -289,7 +276,5 @@ int vfs_link(const char* old_path, const char* new_path) {
     if (parent->flags != FS_DIRECTORY) return -ENOTDIR;
     if (parent->i_ops && parent->i_ops->link)
         return parent->i_ops->link(parent, name, target);
-    if (parent->f_ops && parent->f_ops->link)
-        return parent->f_ops->link(parent, name, target);
     return -ENOSYS;
 }
