@@ -1434,7 +1434,8 @@ static int syscall_getdents_impl(int fd, void* user_buf, uint32_t len) {
     if (!f || !f->node) return -EBADF;
     if (f->node->flags != FS_DIRECTORY) return -ENOTDIR;
     int (*fn_readdir)(struct fs_node*, uint32_t*, void*, uint32_t) = NULL;
-    if (f->node->f_ops && f->node->f_ops->readdir) fn_readdir = f->node->f_ops->readdir;
+    if (f->node->i_ops && f->node->i_ops->readdir) fn_readdir = f->node->i_ops->readdir;
+    else if (f->node->f_ops && f->node->f_ops->readdir) fn_readdir = f->node->f_ops->readdir;
     if (!fn_readdir) return -ENOSYS;
 
     uint8_t kbuf[256];

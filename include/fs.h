@@ -43,6 +43,20 @@ struct file_operations {
     int (*link)(struct fs_node* dir, const char* name, struct fs_node* target);
 };
 
+/* Inode operations — namespace / metadata (no open fd required) */
+struct inode_operations {
+    struct fs_node* (*lookup)(struct fs_node* dir, const char* name);
+    int (*readdir)(struct fs_node* dir, uint32_t* inout_index, void* buf, uint32_t buf_len);
+    int (*create)(struct fs_node* dir, const char* name, uint32_t flags, struct fs_node** out);
+    int (*mkdir)(struct fs_node* dir, const char* name);
+    int (*unlink)(struct fs_node* dir, const char* name);
+    int (*rmdir)(struct fs_node* dir, const char* name);
+    int (*rename)(struct fs_node* old_dir, const char* old_name,
+                  struct fs_node* new_dir, const char* new_name);
+    int (*truncate)(struct fs_node* node, uint32_t length);
+    int (*link)(struct fs_node* dir, const char* name, struct fs_node* target);
+};
+
 typedef struct fs_node {
     char name[128];
     uint32_t flags;
@@ -54,6 +68,7 @@ typedef struct fs_node {
     char symlink_target[128];
 
     const struct file_operations* f_ops;
+    const struct inode_operations* i_ops;
 } fs_node_t;
 
 struct vfs_dirent {
