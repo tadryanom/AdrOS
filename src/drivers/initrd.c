@@ -197,8 +197,10 @@ static const struct file_operations initrd_file_ops = {
     .read = initrd_read_impl,
 };
 
-static const struct file_operations initrd_dir_ops = {
-    .finddir = initrd_finddir,
+static const struct file_operations initrd_dir_ops = {0};
+
+static const struct inode_operations initrd_dir_iops = {
+    .lookup = initrd_finddir,
 };
 
 static void initrd_finalize_nodes(void) {
@@ -215,6 +217,7 @@ static void initrd_finalize_nodes(void) {
             n->f_ops = &initrd_file_ops;
         } else if (e->flags & FS_DIRECTORY) {
             n->f_ops = &initrd_dir_ops;
+            n->i_ops = &initrd_dir_iops;
         }
     }
 }

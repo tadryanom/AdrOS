@@ -19,28 +19,15 @@
 
 struct fs_node; /* forward declaration for file_operations */
 
-/* Shared file operations table — filesystems define one static instance
- * per node type (file, dir, device) and point every node's f_ops at it.
- * During the migration period, the VFS checks f_ops first, then falls
- * back to per-node function pointers (legacy). */
+/* File operations — per-open-fd I/O (requires an open file descriptor) */
 struct file_operations {
     uint32_t (*read)(struct fs_node* node, uint32_t offset, uint32_t size, uint8_t* buffer);
     uint32_t (*write)(struct fs_node* node, uint32_t offset, uint32_t size, const uint8_t* buffer);
     void (*open)(struct fs_node* node);
     void (*close)(struct fs_node* node);
-    struct fs_node* (*finddir)(struct fs_node* node, const char* name);
-    int (*readdir)(struct fs_node* node, uint32_t* inout_index, void* buf, uint32_t buf_len);
     int (*ioctl)(struct fs_node* node, uint32_t cmd, void* arg);
     uintptr_t (*mmap)(struct fs_node* node, uintptr_t addr, uint32_t length, uint32_t prot, uint32_t offset);
     int (*poll)(struct fs_node* node, int events);
-    int (*create)(struct fs_node* dir, const char* name, uint32_t flags, struct fs_node** out);
-    int (*mkdir)(struct fs_node* dir, const char* name);
-    int (*unlink)(struct fs_node* dir, const char* name);
-    int (*rmdir)(struct fs_node* dir, const char* name);
-    int (*rename)(struct fs_node* old_dir, const char* old_name,
-                  struct fs_node* new_dir, const char* new_name);
-    int (*truncate)(struct fs_node* node, uint32_t length);
-    int (*link)(struct fs_node* dir, const char* name, struct fs_node* target);
 };
 
 /* Inode operations — namespace / metadata (no open fd required) */

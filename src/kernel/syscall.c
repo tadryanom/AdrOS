@@ -1152,8 +1152,8 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
         return -ENOENT;
     } else if ((flags & 0x200U) != 0U && node->flags == FS_FILE) {
         /* O_TRUNC on existing file */
-        if (node->f_ops && node->f_ops->truncate) {
-            node->f_ops->truncate(node, 0);
+        if (node->i_ops && node->i_ops->truncate) {
+            node->i_ops->truncate(node, 0);
             node->length = 0;
         }
     }
@@ -1435,7 +1435,6 @@ static int syscall_getdents_impl(int fd, void* user_buf, uint32_t len) {
     if (f->node->flags != FS_DIRECTORY) return -ENOTDIR;
     int (*fn_readdir)(struct fs_node*, uint32_t*, void*, uint32_t) = NULL;
     if (f->node->i_ops && f->node->i_ops->readdir) fn_readdir = f->node->i_ops->readdir;
-    else if (f->node->f_ops && f->node->f_ops->readdir) fn_readdir = f->node->f_ops->readdir;
     if (!fn_readdir) return -ENOSYS;
 
     uint8_t kbuf[256];
@@ -1976,7 +1975,7 @@ static int syscall_readlink_impl(const char* user_path, char* user_buf, uint32_t
     fs_node_t* dir = vfs_lookup(parent);
     if (!dir) return -ENOENT;
     fs_node_t* (*fn_finddir)(fs_node_t*, const char*) = NULL;
-    if (dir->f_ops && dir->f_ops->finddir) fn_finddir = dir->f_ops->finddir;
+    if (dir->i_ops && dir->i_ops->lookup) fn_finddir = dir->i_ops->lookup;
     if (!fn_finddir) return -ENOENT;
 
     fs_node_t* node = fn_finddir(dir, leaf);

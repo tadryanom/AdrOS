@@ -268,7 +268,7 @@ static void kconsole_ls(const char* path) {
     }
 
     int (*fn_readdir)(struct fs_node*, uint32_t*, void*, uint32_t) = NULL;
-    if (dir->f_ops && dir->f_ops->readdir) fn_readdir = dir->f_ops->readdir;
+    if (dir->i_ops && dir->i_ops->readdir) fn_readdir = dir->i_ops->readdir;
     if (!fn_readdir) {
         kprintf("ls: not a directory\n");
         return;

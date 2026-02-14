@@ -170,8 +170,6 @@ static int overlay_readdir_impl(struct fs_node* node, uint32_t* inout_index, voi
     if (!src) return 0;
     if (src->i_ops && src->i_ops->readdir)
         return src->i_ops->readdir(src, inout_index, buf, buf_len);
-    if (src->f_ops && src->f_ops->readdir)
-        return src->f_ops->readdir(src, inout_index, buf, buf_len);
     return 0;
 }
 
@@ -184,18 +182,10 @@ static struct fs_node* overlay_finddir_impl(struct fs_node* node, const char* na
     fs_node_t* upper_child = NULL;
     fs_node_t* lower_child = NULL;
 
-    if (dir->upper) {
-        if (dir->upper->i_ops && dir->upper->i_ops->lookup)
-            upper_child = dir->upper->i_ops->lookup(dir->upper, name);
-        else if (dir->upper->f_ops && dir->upper->f_ops->finddir)
-            upper_child = dir->upper->f_ops->finddir(dir->upper, name);
-    }
-    if (dir->lower) {
-        if (dir->lower->i_ops && dir->lower->i_ops->lookup)
-            lower_child = dir->lower->i_ops->lookup(dir->lower, name);
-        else if (dir->lower->f_ops && dir->lower->f_ops->finddir)
-            lower_child = dir->lower->f_ops->finddir(dir->lower, name);
-    }
+    if (dir->upper && dir->upper->i_ops && dir->upper->i_ops->lookup)
+        upper_child = dir->upper->i_ops->lookup(dir->upper, name);
+    if (dir->lower && dir->lower->i_ops && dir->lower->i_ops->lookup)
+        lower_child = dir->lower->i_ops->lookup(dir->lower, name);
 
     if (!upper_child && !lower_child) return 0;
     return overlay_wrap_child(dir, name, lower_child, upper_child);

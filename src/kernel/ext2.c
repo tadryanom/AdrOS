@@ -536,12 +536,18 @@ static const struct file_operations ext2_file_fops = {
     .read     = ext2_file_read,
     .write    = ext2_file_write,
     .close    = ext2_close_impl,
+};
+
+static const struct inode_operations ext2_file_iops = {
     .truncate = ext2_truncate_impl,
 };
 
 static const struct file_operations ext2_dir_fops = {
     .close   = ext2_close_impl,
-    .finddir = ext2_finddir,
+};
+
+static const struct inode_operations ext2_dir_iops = {
+    .lookup  = ext2_finddir,
     .readdir = ext2_readdir_impl,
     .create  = ext2_create_impl,
     .mkdir   = ext2_mkdir_impl,
@@ -577,6 +583,7 @@ static struct ext2_node* ext2_make_node(uint32_t ino, const struct ext2_inode* i
         en->vfs.flags = FS_DIRECTORY;
         en->vfs.length = inode->i_size;
         en->vfs.f_ops = &ext2_dir_fops;
+        en->vfs.i_ops = &ext2_dir_iops;
     } else if ((inode->i_mode & 0xF000) == EXT2_S_IFLNK) {
         en->vfs.flags = FS_SYMLINK;
         en->vfs.length = inode->i_size;
@@ -589,6 +596,7 @@ static struct ext2_node* ext2_make_node(uint32_t ino, const struct ext2_inode* i
         en->vfs.flags = FS_FILE;
         en->vfs.length = inode->i_size;
         en->vfs.f_ops = &ext2_file_fops;
+        en->vfs.i_ops = &ext2_file_iops;
     }
 
     return en;
@@ -1411,6 +1419,7 @@ fs_node_t* ext2_mount(int drive, uint32_t partition_lba) {
     g_ext2_root.vfs.mode = root_inode.i_mode;
     g_ext2_root.ino = EXT2_ROOT_INO;
     g_ext2_root.vfs.f_ops = &ext2_dir_fops;
+    g_ext2_root.vfs.i_ops = &ext2_dir_iops;
 
     g_ext2_ready = 1;
 
