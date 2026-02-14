@@ -20,6 +20,7 @@
 #include "process.h"
 #include "net.h"
 #include "e1000.h"
+#include "timer.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -135,7 +136,7 @@ void net_ping_test(void) {
     }
 
     /* Wait for the E1000 link to stabilize in QEMU */
-    process_sleep(100); /* ~2 seconds at 50 Hz */
+    process_sleep(2 * TIMER_HZ); /* ~2 seconds */
 
     ip_addr_t target;
     IP4_ADDR(&target, 10, 0, 2, 2);
@@ -168,7 +169,7 @@ void net_ping_test(void) {
             process_sleep(1); /* yield for 1 tick */
         }
 
-        uint32_t dt = (get_tick_count() - t0) * 20;
+        uint32_t dt = (get_tick_count() - t0) * TIMER_MS_PER_TICK;
 
         if (ping_got_reply) {
             kprintf("[PING] reply from 10.0.2.2: seq=%d time=%dms\n",
@@ -179,7 +180,7 @@ void net_ping_test(void) {
         }
 
         if (i + 1 < PING_COUNT)
-            process_sleep(50); /* ~1 second between pings */
+            process_sleep(TIMER_HZ); /* ~1 second between pings */
     }
 
     /* Cleanup in tcpip thread */

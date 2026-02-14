@@ -11,6 +11,7 @@
 #include "sync.h"
 #include "process.h"
 #include "spinlock.h"
+#include "timer.h"
 
 #include <stddef.h>
 
@@ -19,9 +20,9 @@ extern void* kmalloc(uint32_t size);
 extern void  kfree(void* ptr);
 extern struct process* process_create_kernel(void (*entry)(void));
 
-/* Return milliseconds since boot. Timer runs at 50 Hz → 20 ms per tick. */
+/* Return milliseconds since boot. */
 u32_t sys_now(void) {
-    return (u32_t)(get_tick_count() * 20);
+    return (u32_t)(get_tick_count() * TIMER_MS_PER_TICK);
 }
 
 /* ------------------------------------------------------------------ */

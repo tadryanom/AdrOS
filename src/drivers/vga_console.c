@@ -208,6 +208,11 @@ void vga_print(const char* str) {
 }
 
 void vga_flush(void) {
+    /* Quick unlocked check: if nothing is dirty, skip entirely.
+     * All write paths (vga_write_buf, vga_put_char, vga_print) already
+     * flush immediately, so this timer-tick path is just a safety net. */
+    if (dirty_lo > dirty_hi) return;
+
     uintptr_t flags = spin_lock_irqsave(&vga_lock);
     vga_flush_to_hw();
     spin_unlock_irqrestore(&vga_lock, flags);

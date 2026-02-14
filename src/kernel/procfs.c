@@ -104,8 +104,8 @@ static uint32_t proc_cmdline_read(fs_node_t* node, uint32_t offset, uint32_t siz
 static uint32_t proc_uptime_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
     (void)node;
     uint32_t ticks = get_tick_count();
-    uint32_t secs = (ticks * 20) / 1000;
-    uint32_t frac = ((ticks * 20) % 1000) / 10;
+    uint32_t secs = (ticks * TIMER_MS_PER_TICK) / 1000;
+    uint32_t frac = ((ticks * TIMER_MS_PER_TICK) % 1000) / 10;
 
     char tmp[64];
     uint32_t len = 0;

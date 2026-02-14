@@ -74,8 +74,8 @@ void kernel_main(const struct boot_info* bi) {
         vdso_init();
     }
 
-    // 8. Start Timer (Preemption!) - 50Hz
-    timer_init(50);
+    // 8. Start Timer (Preemption!) - 100Hz (like Linux CONFIG_HZ=100)
+    timer_init(TIMER_HZ);
 
     hal_cpu_enable_interrupts();
 

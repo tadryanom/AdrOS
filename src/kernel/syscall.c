@@ -18,9 +18,9 @@
 
 #include "elf.h"
 #include "stat.h"
+#include "timer.h"
 #include "vmm.h"
 #include "pmm.h"
-#include "timer.h"
 #include "hal/mm.h"
 
 #include "hal/cpu.h"
@@ -49,8 +49,8 @@ struct k_itimerval {
 #define ITIMER_REAL    0
 #define ITIMER_VIRTUAL 1
 #define ITIMER_PROF    2
-#define TICKS_PER_SEC  50
-#define USEC_PER_TICK  (1000000U / TICKS_PER_SEC)  /* 20000 */
+#define TICKS_PER_SEC  TIMER_HZ
+#define USEC_PER_TICK  (1000000U / TICKS_PER_SEC)
 
 static uint32_t timeval_to_ticks(const struct k_timeval* tv) {
     return tv->tv_sec * TICKS_PER_SEC + tv->tv_usec / USEC_PER_TICK;
@@ -1705,9 +1705,8 @@ static int syscall_nanosleep_impl(const struct timespec* user_req, struct timesp
 
     if (req.tv_nsec >= 1000000000U) return -EINVAL;
 
-    const uint32_t TICK_MS = 20;
     uint32_t ms = req.tv_sec * 1000U + req.tv_nsec / 1000000U;
-    uint32_t ticks = (ms + TICK_MS - 1) / TICK_MS;
+    uint32_t ticks = (ms + TIMER_MS_PER_TICK - 1) / TIMER_MS_PER_TICK;
     if (ticks == 0 && (req.tv_sec > 0 || req.tv_nsec > 0)) ticks = 1;
 
     if (ticks > 0) {
@@ -1736,8 +1735,7 @@ static int syscall_clock_gettime_impl(uint32_t clk_id, struct timespec* user_tp)
         tp.tv_nsec = 0;
     } else {
         uint32_t ticks = get_tick_count();
-        const uint32_t TICK_MS = 20;
-        uint32_t total_ms = ticks * TICK_MS;
+        uint32_t total_ms = ticks * TIMER_MS_PER_TICK;
         tp.tv_sec = total_ms / 1000U;
         tp.tv_nsec = (total_ms % 1000U) * 1000000U;
     }
