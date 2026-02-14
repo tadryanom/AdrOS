@@ -4,8 +4,9 @@
 #include "pmm.h"
 #include "vmm.h"
 #include "console.h"
+#include "process.h"
 #include "utils.h"
- #include "arch/x86/usermode.h"
+#include "arch/x86/usermode.h"
 #include "arch/x86/idt.h"
 
 #if defined(__i386__)
@@ -150,11 +151,6 @@ void x86_usermode_test_start(void) {
         return;
     }
 
-    vmm_map_page((uint64_t)(uintptr_t)code_phys, (uint64_t)user_code_vaddr,
-                 VMM_FLAG_PRESENT | VMM_FLAG_RW | VMM_FLAG_USER);
-    vmm_map_page((uint64_t)(uintptr_t)stack_phys, (uint64_t)user_stack_vaddr,
-                 VMM_FLAG_PRESENT | VMM_FLAG_RW | VMM_FLAG_USER);
-
     const uintptr_t base = user_code_vaddr;
     const uint32_t addr_t1_ok = (uint32_t)(base + 0x200);
     const uint32_t addr_t1_fail = (uint32_t)(base + 0x210);
@@ -259,6 +255,27 @@ void x86_usermode_test_start(void) {
     memcpy((void*)((uintptr_t)code_phys + 0x240), "T3 OK\n", t3_ok_len);
     memcpy((void*)((uintptr_t)code_phys + 0x250), "T3 FAIL\n", t3_fail_len);
     memcpy((void*)((uintptr_t)code_phys + 0x300), "Hello from ring3!\n", msg_len);
+
+    /* Create a private address space so the ring3 user pages do NOT
+     * pollute kernel_as (which is shared by all kernel threads).
+     * Code/data was emitted above via the identity mapping still
+     * active in kernel_as; now we switch to the new AS and map the
+     * physical pages at their user virtual addresses. */
+    uintptr_t ring3_as = vmm_as_create_kernel_clone();
+    if (!ring3_as) {
+        kprintf("[USER] Failed to create ring3 address space.\n");
+        pmm_free_page(code_phys);
+        pmm_free_page(stack_phys);
+        return;
+    }
+
+    current_process->addr_space = ring3_as;
+    vmm_as_activate(ring3_as);
+
+    vmm_map_page((uint64_t)(uintptr_t)code_phys, (uint64_t)user_code_vaddr,
+                 VMM_FLAG_PRESENT | VMM_FLAG_RW | VMM_FLAG_USER);
+    vmm_map_page((uint64_t)(uintptr_t)stack_phys, (uint64_t)user_stack_vaddr,
+                 VMM_FLAG_PRESENT | VMM_FLAG_RW | VMM_FLAG_USER);
 
     uintptr_t user_esp = user_stack_vaddr + 4096;
     x86_enter_usermode(user_code_vaddr, user_esp);

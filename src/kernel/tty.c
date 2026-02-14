@@ -11,6 +11,7 @@
 
 #include "hal/cpu.h"
 #include "hal/uart.h"
+#include "timer.h"
 #include "utils.h"
 
 #define TTY_LINE_MAX 256
@@ -163,10 +164,10 @@ int tty_read_kbuf(void* kbuf, uint32_t len) {
     if (target > len) target = len;
     if (target == 0) target = 1;
 
-    /* VTIME in tenths-of-second => ticks at 50 Hz */
+    /* VTIME in tenths-of-second => ticks at TIMER_HZ */
     uint32_t timeout_ticks = 0;
     if (vtime > 0) {
-        timeout_ticks = (vtime * 5U);
+        timeout_ticks = vtime * (TIMER_HZ / 10);
         if (timeout_ticks == 0) timeout_ticks = 1;
     }
 
