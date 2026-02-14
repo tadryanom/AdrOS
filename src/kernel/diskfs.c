@@ -473,12 +473,18 @@ static const struct file_operations diskfs_file_fops = {
     .read     = diskfs_read_impl,
     .write    = diskfs_write_impl,
     .close    = diskfs_close_impl,
+};
+
+static const struct inode_operations diskfs_file_iops = {
     .truncate = diskfs_vfs_truncate,
 };
 
 static const struct file_operations diskfs_dir_fops = {
     .close   = diskfs_close_impl,
-    .finddir = diskfs_root_finddir,
+};
+
+static const struct inode_operations diskfs_dir_iops = {
+    .lookup  = diskfs_root_finddir,
     .readdir = diskfs_readdir_impl,
     .create  = diskfs_vfs_create,
     .mkdir   = diskfs_vfs_mkdir,
@@ -517,10 +523,12 @@ static struct fs_node* diskfs_root_finddir(struct fs_node* node, const char* nam
         dn->vfs.flags = FS_DIRECTORY;
         dn->vfs.length = 0;
         dn->vfs.f_ops = &diskfs_dir_fops;
+        dn->vfs.i_ops = &diskfs_dir_iops;
     } else {
         dn->vfs.flags = FS_FILE;
         dn->vfs.length = sb.inodes[cino].size_bytes;
         dn->vfs.f_ops = &diskfs_file_fops;
+        dn->vfs.i_ops = &diskfs_file_iops;
     }
 
     return &dn->vfs;
@@ -575,6 +583,7 @@ int diskfs_open_file(const char* rel_path, uint32_t flags, fs_node_t** out_node)
     dn->vfs.inode = 100 + (uint32_t)ino;
     dn->vfs.length = sb.inodes[ino].size_bytes;
     dn->vfs.f_ops = &diskfs_file_fops;
+    dn->vfs.i_ops = &diskfs_file_iops;
     dn->ino = ino;
 
     *out_node = &dn->vfs;
@@ -860,6 +869,7 @@ static int diskfs_vfs_create(struct fs_node* dir, const char* name, uint32_t fla
         dn->vfs.inode = 100 + (uint32_t)ino;
         dn->vfs.length = sb.inodes[ino].size_bytes;
         dn->vfs.f_ops = &diskfs_file_fops;
+        dn->vfs.i_ops = &diskfs_file_iops;
         dn->ino = ino;
         *out = &dn->vfs;
         return 0;
@@ -881,6 +891,7 @@ static int diskfs_vfs_create(struct fs_node* dir, const char* name, uint32_t fla
     dn->vfs.inode = 100 + (uint32_t)new_ino;
     dn->vfs.length = 0;
     dn->vfs.f_ops = &diskfs_file_fops;
+    dn->vfs.i_ops = &diskfs_file_iops;
     dn->ino = new_ino;
     *out = &dn->vfs;
     return 0;
@@ -1068,6 +1079,7 @@ fs_node_t* diskfs_create_root(int drive) {
         g_root.vfs.inode = 100;
         g_root.vfs.length = 0;
         g_root.vfs.f_ops = &diskfs_dir_fops;
+        g_root.vfs.i_ops = &diskfs_dir_iops;
         g_root.ino = 0;
 
         if (g_ready) {
