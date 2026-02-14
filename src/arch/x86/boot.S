@@ -20,6 +20,20 @@ multiboot_header_start:
     .long MB_ARCH
     .long multiboot_header_end - multiboot_header_start
     .long 0x100000000 - (MB_MAGIC + MB_ARCH + (multiboot_header_end - multiboot_header_start))
+
+    /* Framebuffer request tag (type 5, optional) */
+    .align 8
+fb_tag_start:
+    .word 5                 /* type: framebuffer */
+    .word 1                 /* flags: optional (boot even if unavailable) */
+    .long fb_tag_end - fb_tag_start
+    .long 1024              /* preferred width */
+    .long 768               /* preferred height */
+    .long 32                /* preferred depth (bpp) */
+fb_tag_end:
+
+    /* End tag */
+    .align 8
     .word 0, 0
     .long 8
 multiboot_header_end:

@@ -18,6 +18,7 @@ struct boot_info {
     uint32_t  fb_width;
     uint32_t  fb_height;
     uint8_t   fb_bpp;
+    uint8_t   fb_type;      /* 0=indexed, 1=direct RGB (linear), 2=EGA text */
 };
 
 #endif

@@ -27,6 +27,7 @@
 #include "arch_signal.h"
 #include "arch_syscall.h"
 #include "arch_process.h"
+#include "rtc.h"
 
 #include <stddef.h>
 
@@ -1731,7 +1732,6 @@ static int syscall_clock_gettime_impl(uint32_t clk_id, struct timespec* user_tp)
 
     struct timespec tp;
     if (clk_id == CLOCK_REALTIME) {
-        extern uint32_t rtc_unix_timestamp(void);
         tp.tv_sec = rtc_unix_timestamp();
         tp.tv_nsec = 0;
     } else {

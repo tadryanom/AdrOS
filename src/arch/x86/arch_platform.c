@@ -80,7 +80,7 @@ static void userspace_init_thread(void) {
         }
     }
 
-    kprintf("[ELF] starting /bin/init.elf\n");
+    kprintf("[ELF] starting %s\n", init_path);
 
     kprintf("[ELF] user_range_ok(entry)=%c user_range_ok(stack)=%c\n",
             user_range_ok((const void*)entry, 1) ? '1' : '0',
@@ -100,14 +100,21 @@ static void userspace_init_thread(void) {
 #endif
 
 int arch_platform_setup(const struct boot_info* bi) {
-    (void)bi;
 #if defined(__i386__)
     vmm_init();
 
-    vga_init();
-    vga_set_color(0x0A, 0x00);
-    console_enable_vga(1);
-    kprintf("[AdrOS] Kernel Initialized (VGA).\n");
+    /* Enable VGA text console only if we are NOT in linear framebuffer mode.
+     * When GRUB provides a linear framebuffer (fb_type==1), the VGA text
+     * buffer at 0xB8000 is inactive — serial console carries all output. */
+    if (!bi || bi->fb_type != 1) {
+        vga_init();
+        vga_set_color(0x0A, 0x00);
+        console_enable_vga(1);
+        kprintf("[AdrOS] Kernel Initialized (VGA text mode).\n");
+    } else {
+        kprintf("[AdrOS] Kernel Initialized (framebuffer %ux%ux%u, VGA text disabled).\n",
+                (unsigned)bi->fb_width, (unsigned)bi->fb_height, (unsigned)bi->fb_bpp);
+    }
 
     syscall_init();
 
@@ -167,8 +174,13 @@ int arch_platform_start_userspace(const struct boot_info* bi) {
 #endif
 }
 
+static void ring3_test_thread(void) {
+    x86_usermode_test_start();
+    for (;;) hal_cpu_idle();
+}
+
 void arch_platform_usermode_test_start(void) {
 #if defined(__i386__)
-    x86_usermode_test_start();
+    process_create_kernel(ring3_test_thread);
 #endif
 }

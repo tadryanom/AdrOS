@@ -44,6 +44,7 @@ static uint32_t multiboot_copy_size;
     bi.fb_width = 0;
     bi.fb_height = 0;
     bi.fb_bpp = 0;
+    bi.fb_type = 0;
 
     if (mbi_phys) {
         uint32_t total_size = *(volatile uint32_t*)mbi_phys;
@@ -68,9 +69,10 @@ static uint32_t multiboot_copy_size;
              tag = (struct multiboot_tag*)((uint8_t*)tag + ((tag->size + 7) & ~7))) {
             if (tag->type == MULTIBOOT_TAG_TYPE_MODULE) {
                 const struct multiboot_tag_module* mod = (const struct multiboot_tag_module*)tag;
-                bi.initrd_start = mod->mod_start;
-                bi.initrd_end = mod->mod_end;
-                break;
+                if (!bi.initrd_start) {
+                    bi.initrd_start = mod->mod_start;
+                    bi.initrd_end = mod->mod_end;
+                }
             }
             if (tag->type == MULTIBOOT_TAG_TYPE_CMDLINE) {
                 const struct multiboot_tag_string* s = (const struct multiboot_tag_string*)tag;
@@ -83,6 +85,7 @@ static uint32_t multiboot_copy_size;
                 bi.fb_width = fb->framebuffer_width;
                 bi.fb_height = fb->framebuffer_height;
                 bi.fb_bpp = fb->framebuffer_bpp;
+                bi.fb_type = fb->framebuffer_type;
             }
         }
     }

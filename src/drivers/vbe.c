@@ -6,6 +6,7 @@
 #include "uaccess.h"
 #include "console.h"
 #include "utils.h"
+#include "kernel_va_map.h"
 
 #include <stddef.h>
 
@@ -27,7 +28,7 @@ int vbe_init(const struct boot_info* bi) {
     g_vbe.size = g_vbe.pitch * g_vbe.height;
 
     uint32_t pages = (g_vbe.size + 0xFFF) >> 12;
-    uintptr_t virt_base = 0xE0000000U;
+    uintptr_t virt_base = KVA_FRAMEBUFFER;
 
     for (uint32_t i = 0; i < pages; i++) {
         vmm_map_page((uint64_t)(g_vbe.phys_addr + i * 0x1000),

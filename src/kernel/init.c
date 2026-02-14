@@ -166,6 +166,22 @@ int init_start(const struct boot_info* bi) {
     /* Parse kernel command line (Linux-like triaging) */
     cmdline_parse(bi ? bi->cmdline : NULL);
 
+    /* Apply console= parameter: serial, vga, or both (default) */
+    const char* con = cmdline_get("console");
+    if (con) {
+        if (strcmp(con, "serial") == 0 || strcmp(con, "ttyS0") == 0) {
+            console_enable_uart(1);
+            console_enable_vga(0);
+            kprintf("[CONSOLE] output: serial only\n");
+        } else if (strcmp(con, "vga") == 0 || strcmp(con, "tty0") == 0) {
+            console_enable_uart(0);
+            console_enable_vga(1);
+            kprintf("[CONSOLE] output: VGA only\n");
+        } else {
+            kprintf("[CONSOLE] unknown console=%s, using both\n", con);
+        }
+    }
+
     if (bi && bi->initrd_start) {
         uintptr_t initrd_virt = 0;
         if (hal_mm_map_physical_range((uintptr_t)bi->initrd_start, (uintptr_t)bi->initrd_end,

@@ -1,6 +1,7 @@
 #include "hal/mm.h"
 
 #include "vmm.h"
+#include "kernel_va_map.h"
 
 #include <stddef.h>
 
@@ -9,7 +10,7 @@ int hal_mm_map_physical_range(uintptr_t phys_start, uintptr_t phys_end, uint32_t
 
     if (phys_end < phys_start) phys_end = phys_start;
 
-    const uintptr_t virt_base = 0xE0000000U;
+    const uintptr_t virt_base = KVA_PHYS_MAP;
 
     uintptr_t phys_start_aligned = phys_start & ~(uintptr_t)0xFFF;
     uintptr_t phys_end_aligned = (phys_end + 0xFFF) & ~(uintptr_t)0xFFF;

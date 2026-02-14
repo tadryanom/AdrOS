@@ -113,11 +113,18 @@ void cmdline_parse(const char* raw) {
         return;
     }
 
-    /* Token 0 is the kernel path — skip it.
-     * Process remaining tokens. */
+    /* Token 0 may be the kernel path (e.g. "/boot/adros-x86.bin") —
+     * skip it only if it looks like a path.  GRUB2 with Multiboot2
+     * does NOT always include the kernel path in the cmdline string;
+     * it may pass only the arguments (e.g. "ring3" or "init=/bin/sh"). */
+    int start_idx = 0;
+    if (ntokens > 0 && tokens[0][0] == '/') {
+        start_idx = 1;
+    }
+
     int after_separator = 0;
 
-    for (int i = 1; i < ntokens; i++) {
+    for (int i = start_idx; i < ntokens; i++) {
         const char* tok = tokens[i];
 
         /* Check for "--" separator */
