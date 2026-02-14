@@ -6,14 +6,15 @@
 
 /* ---- Static storage ---- */
 
-static char raw_copy[CMDLINE_MAX];
+static char raw_copy[CMDLINE_MAX];   /* pristine copy for /proc/cmdline */
+static char tok_copy[CMDLINE_MAX];   /* tokenized copy — pointers live here */
 
 /* Kernel-recognized "key=value" parameters */
 #define KPARAM_MAX 16
 
 struct kparam {
     const char* key;
-    const char* value;   /* points into raw_copy */
+    const char* value;   /* points into tok_copy */
 };
 
 static struct kparam kparams[KPARAM_MAX];
@@ -88,17 +89,15 @@ void cmdline_parse(const char* raw) {
     strncpy(raw_copy, raw, CMDLINE_MAX - 1);
     raw_copy[CMDLINE_MAX - 1] = '\0';
 
-    /* We'll tokenize a second working copy in-place.
-     * We can reuse raw_copy since we split by replacing ' ' with '\0'. */
-    char work[CMDLINE_MAX];
-    strncpy(work, raw_copy, CMDLINE_MAX - 1);
-    work[CMDLINE_MAX - 1] = '\0';
+    /* Tokenize a second copy in-place — all pointers will live here */
+    strncpy(tok_copy, raw, CMDLINE_MAX - 1);
+    tok_copy[CMDLINE_MAX - 1] = '\0';
 
     char* tokens[128];
     int ntokens = 0;
 
     /* Tokenize by whitespace */
-    char* p = work;
+    char* p = tok_copy;
     while (*p && ntokens < 128) {
         while (*p == ' ' || *p == '\t') p++;
         if (!*p) break;
@@ -145,34 +144,30 @@ void cmdline_parse(const char* raw) {
                 /* "key=value" form */
                 size_t keylen = (size_t)(eq - tok);
                 if (is_known_kv_key(tok, keylen)) {
-                    /* Kernel param: store in raw_copy so pointers remain valid */
-                    size_t off = (size_t)(tok - work);
                     if (kparam_count < KPARAM_MAX) {
-                        /* Point key/value into raw_copy */
-                        raw_copy[off + keylen] = '\0'; /* split at '=' */
-                        kparams[kparam_count].key = &raw_copy[off];
-                        kparams[kparam_count].value = &raw_copy[off + keylen + 1];
+                        /* Split "key=value" in tok_copy at '=' */
+                        char* eq_ptr = (char*)(uintptr_t)eq;
+                        *eq_ptr = '\0';
+                        kparams[kparam_count].key = tok;
+                        kparams[kparam_count].value = eq_ptr + 1;
                         kparam_count++;
                     }
                 } else {
                     /* Unrecognized key=value → init envp */
                     if (init_envc < CMDLINE_MAX_ENVS) {
-                        size_t off = (size_t)(tok - work);
-                        init_envp[init_envc++] = &raw_copy[off];
+                        init_envp[init_envc++] = tok;
                     }
                 }
             } else {
                 /* Plain token (no '=') */
                 if (is_known_flag(tok)) {
                     if (kflag_count < KFLAG_MAX) {
-                        size_t off = (size_t)(tok - work);
-                        kflags[kflag_count++] = &raw_copy[off];
+                        kflags[kflag_count++] = tok;
                     }
                 } else if (!has_char(tok, '.')) {
                     /* No '.' and not recognized → init argv */
                     if (init_argc < CMDLINE_MAX_ARGS) {
-                        size_t off = (size_t)(tok - work);
-                        init_argv[init_argc++] = &raw_copy[off];
+                        init_argv[init_argc++] = tok;
                     }
                 }
                 /* Tokens with '.' but no '=' (like module params) are
@@ -182,13 +177,11 @@ void cmdline_parse(const char* raw) {
             /* After "--": everything goes to init */
             if (eq) {
                 if (init_envc < CMDLINE_MAX_ENVS) {
-                    size_t off = (size_t)(tok - work);
-                    init_envp[init_envc++] = &raw_copy[off];
+                    init_envp[init_envc++] = tok;
                 }
             } else {
                 if (init_argc < CMDLINE_MAX_ARGS) {
-                    size_t off = (size_t)(tok - work);
-                    init_argv[init_argc++] = &raw_copy[off];
+                    init_argv[init_argc++] = tok;
                 }
             }
         }

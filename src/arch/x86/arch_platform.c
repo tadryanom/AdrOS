@@ -129,11 +129,13 @@ int arch_platform_setup(const struct boot_info* bi) {
             /* Route ISA IRQs through IOAPIC:
              * IRQ 0  (PIT/Timer)      -> IDT vector 32
              * IRQ 1  (Keyboard)       -> IDT vector 33
+             * IRQ 4  (COM1 UART)      -> IDT vector 36
              * IRQ 11 (E1000 NIC)      -> IDT vector 43
              * IRQ 14 (ATA primary)    -> IDT vector 46
              * IRQ 15 (ATA secondary)  -> IDT vector 47 */
             ioapic_route_irq(0,  32, (uint8_t)bsp_id);
             ioapic_route_irq(1,  33, (uint8_t)bsp_id);
+            ioapic_route_irq(4,  36, (uint8_t)bsp_id); /* COM1 serial */
             ioapic_route_irq_level(11, 43, (uint8_t)bsp_id); /* E1000 NIC (PCI: level-triggered, active-low) */
             ioapic_route_irq(14, 46, (uint8_t)bsp_id); /* ATA primary */
             ioapic_route_irq(15, 47, (uint8_t)bsp_id); /* ATA secondary */

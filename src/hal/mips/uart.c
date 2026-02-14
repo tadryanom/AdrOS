@@ -22,3 +22,7 @@ int hal_uart_try_getc(void) {
     }
     return -1;
 }
+
+void hal_uart_set_rx_callback(void (*cb)(char)) {
+    (void)cb;
+}

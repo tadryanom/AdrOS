@@ -10,6 +10,7 @@
 #include "errno.h"
 
 #include "hal/cpu.h"
+#include "hal/uart.h"
 #include "utils.h"
 
 #define TTY_LINE_MAX 256
@@ -460,6 +461,7 @@ void tty_init(void) {
     tty_fg_pgrp = 0;
 
     keyboard_set_callback(tty_keyboard_cb);
+    hal_uart_set_rx_callback(tty_input_char);
 
     static const struct file_operations tty_fops = {
         .read  = tty_devfs_read,

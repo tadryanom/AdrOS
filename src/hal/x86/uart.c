@@ -1,18 +1,39 @@
 #include "hal/uart.h"
 #include "io.h"
+#include "arch/x86/idt.h"
 
 #include <stdint.h>
 
 #define UART_BASE 0x3F8
 
+static void (*uart_rx_cb)(char) = 0;
+
+static void uart_irq_handler(struct registers* regs) {
+    (void)regs;
+    while (inb(UART_BASE + 5) & 0x01) {
+        char c = (char)inb(UART_BASE);
+        if (uart_rx_cb) uart_rx_cb(c);
+    }
+}
+
 void hal_uart_init(void) {
+    outb(UART_BASE + 1, 0x00);    /* Disable all interrupts */
+    outb(UART_BASE + 3, 0x80);    /* Enable DLAB */
+    outb(UART_BASE + 0, 0x03);    /* Baud 38400 */
     outb(UART_BASE + 1, 0x00);
-    outb(UART_BASE + 3, 0x80);
-    outb(UART_BASE + 0, 0x03);
-    outb(UART_BASE + 1, 0x00);
-    outb(UART_BASE + 3, 0x03);
-    outb(UART_BASE + 2, 0xC7);
-    outb(UART_BASE + 4, 0x0B);
+    outb(UART_BASE + 3, 0x03);    /* 8N1 */
+    outb(UART_BASE + 2, 0xC7);    /* Enable FIFO */
+    outb(UART_BASE + 4, 0x0B);    /* DTR + RTS + OUT2 */
+
+    /* Register IRQ 4 handler (IDT vector 36 = 32 + 4) */
+    register_interrupt_handler(36, uart_irq_handler);
+
+    /* Enable receive data available interrupt (IER bit 0) */
+    outb(UART_BASE + 1, 0x01);
+}
+
+void hal_uart_set_rx_callback(void (*cb)(char)) {
+    uart_rx_cb = cb;
 }
 
 void hal_uart_putc(char c) {
