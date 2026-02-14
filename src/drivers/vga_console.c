@@ -204,7 +204,7 @@ void vga_write_buf(const char* buf, uint32_t len) {
     for (uint32_t i = 0; i < len; i++) {
         vga_put_char_unlocked(buf[i]);
     }
-    /* No MMIO flush here — deferred to vga_flush() on timer tick */
+    vga_flush_to_hw();
     spin_unlock_irqrestore(&vga_lock, flags);
 }
 
