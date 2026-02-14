@@ -16,6 +16,9 @@ void hal_uart_drain_rx(void) {
         (void)mmio_read8(UART_BASE);
 }
 
+void hal_uart_poll_rx(void) {
+}
+
 void hal_uart_putc(char c) {
     while ((mmio_read8(UART_BASE + 5) & 0x20) == 0) { }
     mmio_write8(UART_BASE, (uint8_t)c);

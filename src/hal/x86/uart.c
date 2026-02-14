@@ -22,7 +22,7 @@ void hal_uart_init(void) {
     outb(UART_BASE + 0, 0x03);    /* Baud 38400 */
     outb(UART_BASE + 1, 0x00);
     outb(UART_BASE + 3, 0x03);    /* 8N1 */
-    outb(UART_BASE + 2, 0xC7);    /* Enable FIFO */
+    outb(UART_BASE + 2, 0x07);    /* Enable FIFO, clear both, 1-byte trigger */
     outb(UART_BASE + 4, 0x0B);    /* DTR + RTS + OUT2 */
 
     /* Register IRQ 4 handler (IDT vector 36 = 32 + 4) */
@@ -33,13 +33,50 @@ void hal_uart_init(void) {
 }
 
 void hal_uart_drain_rx(void) {
-    /* Drain any pending characters from the UART FIFO.
-     * This de-asserts the IRQ line so that the next character
-     * produces a clean rising edge for the IOAPIC (edge-triggered). */
-    (void)inb(UART_BASE + 2);          /* Read IIR to ack any pending */
-    while (inb(UART_BASE + 5) & 0x01)  /* Drain RX FIFO */
+    /* Full UART interrupt reinitialisation for IOAPIC hand-off.
+     *
+     * hal_uart_init() runs under the legacy PIC and enables IER bit 0
+     * (RX interrupt).  By the time the IOAPIC routes IRQ 4 as
+     * edge-triggered, the UART IRQ line may already be asserted —
+     * the IOAPIC will never see a rising edge and serial input is
+     * permanently dead.
+     *
+     * Fix: temporarily disable ALL UART interrupts so the IRQ line
+     * goes LOW, drain every pending condition, then re-enable IER.
+     * The next character will produce a clean LOW→HIGH edge. */
+
+    /* 1. Disable all UART interrupts — IRQ line goes LOW */
+    outb(UART_BASE + 1, 0x00);
+
+    /* 2. Drain the RX FIFO */
+    while (inb(UART_BASE + 5) & 0x01)
         (void)inb(UART_BASE);
-    (void)inb(UART_BASE + 6);          /* Read MSR to clear delta bits */
+
+    /* 3. Read IIR until "no interrupt pending" (bit 0 set) */
+    for (int i = 0; i < 16; i++) {
+        uint8_t iir = inb(UART_BASE + 2);
+        if (iir & 0x01) break;
+    }
+
+    /* 4. Clear modem-status delta bits */
+    (void)inb(UART_BASE + 6);
+
+    /* 5. Clear line-status error bits */
+    (void)inb(UART_BASE + 5);
+
+    /* 6. Re-enable RX interrupt — next character will assert a clean edge */
+    outb(UART_BASE + 1, 0x01);
+}
+
+void hal_uart_poll_rx(void) {
+    /* Timer-driven fallback: drain any pending characters from the
+     * UART FIFO via polling.  Called from the timer tick handler so
+     * serial input works even if the IOAPIC edge-triggered IRQ for
+     * COM1 is never delivered (observed in QEMU i440FX). */
+    while (inb(UART_BASE + 5) & 0x01) {
+        char c = (char)inb(UART_BASE);
+        if (uart_rx_cb) uart_rx_cb(c);
+    }
 }
 
 void hal_uart_set_rx_callback(void (*cb)(char)) {

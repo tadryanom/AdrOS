@@ -1,0 +1,100 @@
+#!/usr/bin/expect -f
+#
+# AdrOS Serial Input Test
+# Verifies that typing on the serial console works with /bin/sh.
+#
+# Usage: expect tests/test_serial_input.exp [timeout_sec]
+#   timeout_sec: max seconds (default: 30)
+#
+# Exit codes:
+#   0 = serial input works (echo received)
+#   1 = serial input broken (no echo / no response)
+#   2 = timeout (boot did not complete)
+
+set timeout_sec [lindex $argv 0]
+if {$timeout_sec eq ""} { set timeout_sec 30 }
+
+set iso "adros-x86.iso"
+set disk "disk.img"
+
+# Ensure disk image exists
+if {![file exists $disk]} {
+    exec dd if=/dev/zero of=$disk bs=1M count=4 2>/dev/null
+}
+
+# Create a temporary grub.cfg that boots directly into shell+serial
+set tmpdir [exec mktemp -d]
+file mkdir "$tmpdir/boot/grub"
+set fd [open "$tmpdir/boot/grub/grub.cfg" w]
+puts $fd {set timeout=0
+set default=0
+menuentry "AdrOS serial shell" {
+  multiboot2 /boot/adros-x86.bin init=/bin/sh console=serial
+  module2 /boot/initrd.img
+  boot
+}}
+close $fd
+
+# Build a temporary ISO with the modified grub.cfg
+set tmp_iso "$tmpdir/adros-serial-test.iso"
+# Copy original ISO contents
+file mkdir "$tmpdir/iso"
+exec cp -r iso/boot "$tmpdir/iso/"
+file copy -force "$tmpdir/boot/grub/grub.cfg" "$tmpdir/iso/boot/grub/grub.cfg"
+exec grub-mkrescue -o $tmp_iso "$tmpdir/iso" 2>/dev/null
+
+set timeout $timeout_sec
+
+# Spawn QEMU with serial on stdio so expect can interact
+spawn qemu-system-i386 \
+    -smp 4 -boot d -cdrom $tmp_iso -m 128M -display none \
+    -drive file=$disk,if=ide,format=raw \
+    -nic user,model=e1000 \
+    -serial mon:stdio -monitor none \
+    -no-reboot -no-shutdown
+
+set qemu_id $spawn_id
+
+# Wait for shell prompt ($ )
+expect {
+    -re {\$ } {
+        # Shell prompt appeared — good
+    }
+    timeout {
+        puts "\n\[SERIAL-INPUT\] FAIL: Timeout waiting for shell prompt"
+        catch {exec kill [exp_pid]}
+        file delete -force $tmpdir
+        exit 2
+    }
+    eof {
+        puts "\n\[SERIAL-INPUT\] FAIL: QEMU exited before shell prompt"
+        file delete -force $tmpdir
+        exit 1
+    }
+}
+
+# Send a test command
+send "echo SERIAL_INPUT_OK\r"
+
+# Wait for the output
+expect {
+    "SERIAL_INPUT_OK" {
+        puts "\n\[SERIAL-INPUT\] PASS: Serial input works"
+        send "exit\r"
+        after 500
+        catch {exec kill [exp_pid]}
+        file delete -force $tmpdir
+        exit 0
+    }
+    timeout {
+        puts "\n\[SERIAL-INPUT\] FAIL: No response to typed command"
+        catch {exec kill [exp_pid]}
+        file delete -force $tmpdir
+        exit 1
+    }
+    eof {
+        puts "\n\[SERIAL-INPUT\] FAIL: QEMU exited unexpectedly"
+        file delete -force $tmpdir
+        exit 1
+    }
+}

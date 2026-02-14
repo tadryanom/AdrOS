@@ -5,6 +5,7 @@
 #include "vga_console.h"
 
 #include "hal/timer.h"
+#include "hal/uart.h"
 
 static uint32_t tick = 0;
 
@@ -16,6 +17,7 @@ static void hal_tick_bridge(void) {
     tick++;
     vdso_update_tick(tick);
     vga_flush();
+    hal_uart_poll_rx();
     process_wake_check(tick);
     schedule();
 }
