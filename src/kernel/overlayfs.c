@@ -94,7 +94,10 @@ static const struct file_operations overlay_file_ops = {
 
 static const struct file_operations overlay_dir_ops = {
     .read    = overlay_read_impl,
-    .finddir = overlay_finddir_impl,
+};
+
+static const struct inode_operations overlay_dir_iops = {
+    .lookup  = overlay_finddir_impl,
     .readdir = overlay_readdir_impl,
 };
 
@@ -123,6 +126,7 @@ static fs_node_t* overlay_wrap_child(struct overlay_node* parent, const char* na
 
     if (c->vfs.flags == FS_DIRECTORY) {
         c->vfs.f_ops = &overlay_dir_ops;
+        c->vfs.i_ops = &overlay_dir_iops;
     } else {
         c->vfs.f_ops = &overlay_file_ops;
     }
@@ -164,6 +168,8 @@ static int overlay_readdir_impl(struct fs_node* node, uint32_t* inout_index, voi
     // Prefer upper layer readdir; fall back to lower.
     fs_node_t* src = dir->upper ? dir->upper : dir->lower;
     if (!src) return 0;
+    if (src->i_ops && src->i_ops->readdir)
+        return src->i_ops->readdir(src, inout_index, buf, buf_len);
     if (src->f_ops && src->f_ops->readdir)
         return src->f_ops->readdir(src, inout_index, buf, buf_len);
     return 0;
@@ -178,10 +184,18 @@ static struct fs_node* overlay_finddir_impl(struct fs_node* node, const char* na
     fs_node_t* upper_child = NULL;
     fs_node_t* lower_child = NULL;
 
-    if (dir->upper && dir->upper->f_ops && dir->upper->f_ops->finddir)
-        upper_child = dir->upper->f_ops->finddir(dir->upper, name);
-    if (dir->lower && dir->lower->f_ops && dir->lower->f_ops->finddir)
-        lower_child = dir->lower->f_ops->finddir(dir->lower, name);
+    if (dir->upper) {
+        if (dir->upper->i_ops && dir->upper->i_ops->lookup)
+            upper_child = dir->upper->i_ops->lookup(dir->upper, name);
+        else if (dir->upper->f_ops && dir->upper->f_ops->finddir)
+            upper_child = dir->upper->f_ops->finddir(dir->upper, name);
+    }
+    if (dir->lower) {
+        if (dir->lower->i_ops && dir->lower->i_ops->lookup)
+            lower_child = dir->lower->i_ops->lookup(dir->lower, name);
+        else if (dir->lower->f_ops && dir->lower->f_ops->finddir)
+            lower_child = dir->lower->f_ops->finddir(dir->lower, name);
+    }
 
     if (!upper_child && !lower_child) return 0;
     return overlay_wrap_child(dir, name, lower_child, upper_child);
@@ -211,6 +225,7 @@ fs_node_t* overlayfs_create_root(fs_node_t* lower_root, fs_node_t* upper_root) {
     root->vfs.inode = upper_root->inode;
     root->vfs.length = 0;
     root->vfs.f_ops = &overlay_dir_ops;
+    root->vfs.i_ops = &overlay_dir_iops;
 
     root->path[0] = 0;
 

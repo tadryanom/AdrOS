@@ -71,8 +71,10 @@ static struct fs_node* persist_root_finddir(struct fs_node* node, const char* na
     return 0;
 }
 
-static const struct file_operations persistfs_root_fops = {
-    .finddir = persist_root_finddir,
+static const struct file_operations persistfs_root_fops = {0};
+
+static const struct inode_operations persistfs_root_iops = {
+    .lookup = persist_root_finddir,
 };
 
 static const struct file_operations persistfs_counter_fops = {
@@ -113,6 +115,7 @@ fs_node_t* persistfs_create_root(int drive) {
         g_root.inode = 1;
         g_root.length = 0;
         g_root.f_ops = &persistfs_root_fops;
+        g_root.i_ops = &persistfs_root_iops;
 
         memset(&g_counter, 0, sizeof(g_counter));
         strcpy(g_counter.name, "counter");

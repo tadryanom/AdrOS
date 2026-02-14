@@ -233,8 +233,9 @@ static uint32_t proc_pid_maps_read(fs_node_t* node, uint32_t offset, uint32_t si
 
 /* --- per-PID directory --- */
 
-/* Forward declarations for file_operations tables used in dynamic node creation */
+/* Forward declarations for file_operations / inode_operations tables */
 static const struct file_operations procfs_pid_dir_fops;
+static const struct inode_operations procfs_pid_dir_iops;
 static const struct file_operations procfs_pid_status_fops;
 static const struct file_operations procfs_pid_maps_fops;
 
@@ -297,6 +298,7 @@ static fs_node_t* proc_get_pid_dir(uint32_t pid) {
     g_pid_dir[slot].flags = FS_DIRECTORY;
     g_pid_dir[slot].inode = pid;
     g_pid_dir[slot].f_ops = &procfs_pid_dir_fops;
+    g_pid_dir[slot].i_ops = &procfs_pid_dir_iops;
     return &g_pid_dir[slot];
 }
 
@@ -403,13 +405,17 @@ static int proc_root_readdir(fs_node_t* node, uint32_t* inout_index, void* buf, 
 
 /* --- file_operations tables --- */
 
-static const struct file_operations procfs_root_fops = {
-    .finddir = proc_root_finddir,
+static const struct file_operations procfs_root_fops = {0};
+
+static const struct inode_operations procfs_root_iops = {
+    .lookup  = proc_root_finddir,
     .readdir = proc_root_readdir,
 };
 
-static const struct file_operations procfs_self_fops = {
-    .finddir = proc_self_finddir,
+static const struct file_operations procfs_self_fops = {0};
+
+static const struct inode_operations procfs_self_iops = {
+    .lookup  = proc_self_finddir,
     .readdir = proc_self_readdir,
 };
 
@@ -429,8 +435,10 @@ static const struct file_operations procfs_cmdline_fops = {
     .read = proc_cmdline_read,
 };
 
-static const struct file_operations procfs_pid_dir_fops = {
-    .finddir = proc_pid_finddir,
+static const struct file_operations procfs_pid_dir_fops = {0};
+
+static const struct inode_operations procfs_pid_dir_iops = {
+    .lookup  = proc_pid_finddir,
     .readdir = proc_pid_readdir,
 };
 
@@ -447,11 +455,13 @@ fs_node_t* procfs_create_root(void) {
     strcpy(g_proc_root.name, "proc");
     g_proc_root.flags = FS_DIRECTORY;
     g_proc_root.f_ops = &procfs_root_fops;
+    g_proc_root.i_ops = &procfs_root_iops;
 
     memset(&g_proc_self, 0, sizeof(g_proc_self));
     strcpy(g_proc_self.name, "self");
     g_proc_self.flags = FS_DIRECTORY;
     g_proc_self.f_ops = &procfs_self_fops;
+    g_proc_self.i_ops = &procfs_self_iops;
 
     memset(&g_proc_self_status, 0, sizeof(g_proc_self_status));
     strcpy(g_proc_self_status.name, "status");

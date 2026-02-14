@@ -27,8 +27,10 @@ static uint32_t dev_random_write(fs_node_t* node, uint32_t offset, uint32_t size
 static int dev_null_poll(fs_node_t* node, int events);
 static int dev_always_ready_poll(fs_node_t* node, int events);
 
-static const struct file_operations devfs_dir_ops = {
-    .finddir = devfs_finddir_impl,
+static const struct file_operations devfs_dir_ops = {0};
+
+static const struct inode_operations devfs_dir_iops = {
+    .lookup  = devfs_finddir_impl,
     .readdir = devfs_readdir_impl,
 };
 
@@ -224,6 +226,7 @@ static void devfs_init_once(void) {
     g_dev_root.vfs.inode = 1;
     g_dev_root.vfs.length = 0;
     g_dev_root.vfs.f_ops = &devfs_dir_ops;
+    g_dev_root.vfs.i_ops = &devfs_dir_iops;
 
     memset(&g_dev_null, 0, sizeof(g_dev_null));
     strcpy(g_dev_null.name, "null");
