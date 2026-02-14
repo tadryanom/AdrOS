@@ -14,6 +14,7 @@
 #include "heap.h"
 
 #include "hal/cpu.h"
+#include "hal/uart.h"
 #include "hal/usermode.h"
 #include "kernel/cmdline.h"
 
@@ -136,6 +137,7 @@ int arch_platform_setup(const struct boot_info* bi) {
             ioapic_route_irq(0,  32, (uint8_t)bsp_id);
             ioapic_route_irq(1,  33, (uint8_t)bsp_id);
             ioapic_route_irq(4,  36, (uint8_t)bsp_id); /* COM1 serial */
+            hal_uart_drain_rx(); /* Clear stale UART FIFO so edge-triggered IRQ4 isn't stuck high */
             ioapic_route_irq_level(11, 43, (uint8_t)bsp_id); /* E1000 NIC (PCI: level-triggered, active-low) */
             ioapic_route_irq(14, 46, (uint8_t)bsp_id); /* ATA primary */
             ioapic_route_irq(15, 47, (uint8_t)bsp_id); /* ATA secondary */

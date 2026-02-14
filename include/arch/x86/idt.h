@@ -20,7 +20,8 @@ struct idt_ptr {
 
 /* Registers saved by our assembly ISR stub */
 struct registers {
-    uint32_t ds;                                     // Data segment selector
+    uint32_t gs;                                     // Per-CPU GS selector (pushed second)
+    uint32_t ds;                                     // Data segment selector (pushed first)
     uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax; // Pushed by pusha
     uint32_t int_no, err_code;                       // Interrupt number and error code
     uint32_t eip, cs, eflags, useresp, ss;           // Pushed by the processor automatically

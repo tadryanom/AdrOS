@@ -100,6 +100,10 @@ __attribute__((noreturn)) void x86_enter_usermode_regs(const struct registers* r
     }
 
     // Layout follows include/arch/x86/idt.h struct registers.
+    // struct registers { gs(0), ds(4), edi(8), esi(12), ebp(16),
+    //   esp(20), ebx(24), edx(28), ecx(32), eax(36),
+    //   int_no(40), err_code(44), eip(48), cs(52), eflags(56),
+    //   useresp(60), ss(64) };
     const uint32_t eflags = (regs->eflags | 0x200U);
 
     /* Use ESI as scratch to hold regs pointer, since we'll overwrite
@@ -116,18 +120,18 @@ __attribute__((noreturn)) void x86_enter_usermode_regs(const struct registers* r
         "mov %%ax, %%gs\n"
 
         "pushl $0x23\n"           /* ss */
-        "pushl 56(%%esi)\n"       /* useresp */
+        "pushl 60(%%esi)\n"       /* useresp */
         "pushl %[efl]\n"          /* eflags */
         "pushl $0x1B\n"           /* cs */
-        "pushl 44(%%esi)\n"       /* eip */
+        "pushl 48(%%esi)\n"       /* eip */
 
-        "mov 4(%%esi), %%edi\n"   /* edi */
-        "mov 12(%%esi), %%ebp\n"  /* ebp */
-        "mov 20(%%esi), %%ebx\n"  /* ebx */
-        "mov 24(%%esi), %%edx\n"  /* edx */
-        "mov 28(%%esi), %%ecx\n"  /* ecx */
-        "mov 32(%%esi), %%eax\n"  /* eax */
-        "mov 8(%%esi), %%esi\n"   /* esi (last — self-overwrite) */
+        "mov  8(%%esi), %%edi\n"  /* edi */
+        "mov 16(%%esi), %%ebp\n"  /* ebp */
+        "mov 24(%%esi), %%ebx\n"  /* ebx */
+        "mov 28(%%esi), %%edx\n"  /* edx */
+        "mov 32(%%esi), %%ecx\n"  /* ecx */
+        "mov 36(%%esi), %%eax\n"  /* eax */
+        "mov 12(%%esi), %%esi\n"  /* esi (last — self-overwrite) */
         "iret\n"
         :
         : [r] "r"(regs),
@@ -168,7 +172,10 @@ void x86_usermode_test_start(void) {
     const uint32_t t3_fail_len = 8;
     const uint32_t msg_len = 18;
 
-    struct emitter e = { .buf = (uint8_t*)(uintptr_t)code_phys, .pos = 0 };
+    /* Access the physical page via the kernel higher-half mapping (P2V)
+     * instead of relying on an identity mapping that may not exist. */
+    const uintptr_t code_kva = (uintptr_t)code_phys + 0xC0000000U;
+    struct emitter e = { .buf = (uint8_t*)code_kva, .pos = 0 };
 
     /* T1: write(valid buf) -> t1_ok_len */
     emit_mov_eax_imm(&e, SYSCALL_WRITE_NO);
@@ -248,19 +255,19 @@ void x86_usermode_test_start(void) {
     patch_rel8(e.buf, t3_fail_jne.at, t3_fail_pos);
     patch_rel8(e.buf, t3_to_exit.at, exit_pos);
 
-    memcpy((void*)((uintptr_t)code_phys + 0x200), "T1 OK\n", t1_ok_len);
-    memcpy((void*)((uintptr_t)code_phys + 0x210), "T1 FAIL\n", t1_fail_len);
-    memcpy((void*)((uintptr_t)code_phys + 0x220), "T2 OK\n", t2_ok_len);
-    memcpy((void*)((uintptr_t)code_phys + 0x230), "T2 FAIL\n", t2_fail_len);
-    memcpy((void*)((uintptr_t)code_phys + 0x240), "T3 OK\n", t3_ok_len);
-    memcpy((void*)((uintptr_t)code_phys + 0x250), "T3 FAIL\n", t3_fail_len);
-    memcpy((void*)((uintptr_t)code_phys + 0x300), "Hello from ring3!\n", msg_len);
+    memcpy((void*)(code_kva + 0x200), "T1 OK\n", t1_ok_len);
+    memcpy((void*)(code_kva + 0x210), "T1 FAIL\n", t1_fail_len);
+    memcpy((void*)(code_kva + 0x220), "T2 OK\n", t2_ok_len);
+    memcpy((void*)(code_kva + 0x230), "T2 FAIL\n", t2_fail_len);
+    memcpy((void*)(code_kva + 0x240), "T3 OK\n", t3_ok_len);
+    memcpy((void*)(code_kva + 0x250), "T3 FAIL\n", t3_fail_len);
+    memcpy((void*)(code_kva + 0x300), "Hello from ring3!\n", msg_len);
 
     /* Create a private address space so the ring3 user pages do NOT
      * pollute kernel_as (which is shared by all kernel threads).
-     * Code/data was emitted above via the identity mapping still
-     * active in kernel_as; now we switch to the new AS and map the
-     * physical pages at their user virtual addresses. */
+     * Code/data was emitted above via P2V (kernel higher-half mapping);
+     * now we switch to the new AS and map the physical pages at their
+     * user virtual addresses. */
     uintptr_t ring3_as = vmm_as_create_kernel_clone();
     if (!ring3_as) {
         kprintf("[USER] Failed to create ring3 address space.\n");

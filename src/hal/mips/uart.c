@@ -11,6 +11,11 @@ void hal_uart_init(void) {
     /* Minimal init: assume firmware/QEMU defaults are usable */
 }
 
+void hal_uart_drain_rx(void) {
+    while (mmio_read8(UART_BASE + 5) & 0x01)
+        (void)mmio_read8(UART_BASE);
+}
+
 void hal_uart_putc(char c) {
     while ((mmio_read8(UART_BASE + 5) & 0x20) == 0) { }
     mmio_write8(UART_BASE, (uint8_t)c);

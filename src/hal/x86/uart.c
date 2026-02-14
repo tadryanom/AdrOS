@@ -32,6 +32,16 @@ void hal_uart_init(void) {
     outb(UART_BASE + 1, 0x01);
 }
 
+void hal_uart_drain_rx(void) {
+    /* Drain any pending characters from the UART FIFO.
+     * This de-asserts the IRQ line so that the next character
+     * produces a clean rising edge for the IOAPIC (edge-triggered). */
+    (void)inb(UART_BASE + 2);          /* Read IIR to ack any pending */
+    while (inb(UART_BASE + 5) & 0x01)  /* Drain RX FIFO */
+        (void)inb(UART_BASE);
+    (void)inb(UART_BASE + 6);          /* Read MSR to clear delta bits */
+}
+
 void hal_uart_set_rx_callback(void (*cb)(char)) {
     uart_rx_cb = cb;
 }

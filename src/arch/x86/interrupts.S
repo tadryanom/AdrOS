@@ -9,36 +9,38 @@
 isr_common_stub:
     /* Save all registers */
     pusha
-    
-    /* Save Data Segment */
+
+    /* Save segment selectors (DS and GS saved separately) */
     mov %ds, %ax
     push %eax
-    
-    /* Load Kernel Data Segment */
+    push %gs
+
+    /* Load Kernel Data Segment for DS/ES/FS.
+     * GS is NOT touched — it holds the per-CPU selector set by
+     * percpu_setup_gs() and must survive ISR entry/exit. */
     mov $0x10, %ax
     mov %ax, %ds
     mov %ax, %es
     mov %ax, %fs
-    mov %ax, %gs
-    
+
     /* Call C handler */
     push %esp   /* Pass pointer to stack structure */
     call isr_handler
     add $4, %esp
-    
-    /* Restore Data Segment */
+
+    /* Restore GS (per-CPU) then DS/ES/FS */
+    pop %gs
     pop %eax
     mov %ax, %ds
     mov %ax, %es
     mov %ax, %fs
-    mov %ax, %gs
-    
+
     /* Restore registers */
     popa
-    
+
     /* Clean up error code and ISR number */
     add $8, %esp
-    
+
     /* Return from interrupt */
     iret
 
