@@ -35,5 +35,7 @@
 #define EPROTONOSUPPORT 93
 #define ECONNRESET 54
 #define ETIMEDOUT 60
+#define ENOLCK 37
+#define EWOULDBLOCK EAGAIN
 
 #endif

@@ -63,6 +63,106 @@ enum {
     FD_CLOEXEC = 1,
 };
 
+/* --- Advisory file locking (flock) --- */
+enum {
+    FLOCK_SH = 1,
+    FLOCK_EX = 2,
+    FLOCK_NB = 4,
+    FLOCK_UN = 8,
+};
+
+#define FLOCK_TABLE_SIZE 64
+
+struct flock_entry {
+    uint32_t inode;
+    uint32_t pid;
+    int      type;      /* FLOCK_SH or FLOCK_EX */
+    int      active;
+};
+
+static struct flock_entry flock_table[FLOCK_TABLE_SIZE];
+static spinlock_t flock_lock_g = {0};
+
+static int flock_can_acquire(uint32_t inode, uint32_t pid, int type) {
+    for (int i = 0; i < FLOCK_TABLE_SIZE; i++) {
+        if (!flock_table[i].active || flock_table[i].inode != inode)
+            continue;
+        if (flock_table[i].pid == pid)
+            continue; /* our own lock — will be upgraded/downgraded */
+        if (type == FLOCK_EX || flock_table[i].type == FLOCK_EX)
+            return 0; /* conflict */
+    }
+    return 1;
+}
+
+static int flock_do(uint32_t inode, uint32_t pid, int operation) {
+    int type = operation & (FLOCK_SH | FLOCK_EX);
+    int nonblock = operation & FLOCK_NB;
+
+    if (operation & FLOCK_UN) {
+        uintptr_t fl = spin_lock_irqsave(&flock_lock_g);
+        for (int i = 0; i < FLOCK_TABLE_SIZE; i++) {
+            if (flock_table[i].active && flock_table[i].inode == inode &&
+                flock_table[i].pid == pid) {
+                flock_table[i].active = 0;
+                break;
+            }
+        }
+        spin_unlock_irqrestore(&flock_lock_g, fl);
+        return 0;
+    }
+
+    if (!type) return -EINVAL;
+
+    for (;;) {
+        uintptr_t fl = spin_lock_irqsave(&flock_lock_g);
+
+        if (flock_can_acquire(inode, pid, type)) {
+            /* Find existing entry for this pid+inode or allocate new */
+            int slot = -1;
+            int free_slot = -1;
+            for (int i = 0; i < FLOCK_TABLE_SIZE; i++) {
+                if (flock_table[i].active && flock_table[i].inode == inode &&
+                    flock_table[i].pid == pid) {
+                    slot = i;
+                    break;
+                }
+                if (!flock_table[i].active && free_slot < 0)
+                    free_slot = i;
+            }
+            if (slot >= 0) {
+                flock_table[slot].type = type; /* upgrade/downgrade */
+            } else if (free_slot >= 0) {
+                flock_table[free_slot].inode = inode;
+                flock_table[free_slot].pid = pid;
+                flock_table[free_slot].type = type;
+                flock_table[free_slot].active = 1;
+            } else {
+                spin_unlock_irqrestore(&flock_lock_g, fl);
+                return -ENOLCK;
+            }
+            spin_unlock_irqrestore(&flock_lock_g, fl);
+            return 0;
+        }
+
+        spin_unlock_irqrestore(&flock_lock_g, fl);
+
+        if (nonblock) return -EWOULDBLOCK;
+
+        extern void process_sleep(uint32_t ticks);
+        process_sleep(1); /* block and retry */
+    }
+}
+
+static void flock_release_pid(uint32_t pid) {
+    uintptr_t fl = spin_lock_irqsave(&flock_lock_g);
+    for (int i = 0; i < FLOCK_TABLE_SIZE; i++) {
+        if (flock_table[i].active && flock_table[i].pid == pid)
+            flock_table[i].active = 0;
+    }
+    spin_unlock_irqrestore(&flock_lock_g, fl);
+}
+
 enum {
     FCNTL_F_DUPFD = 0,
     FCNTL_F_GETFD = 1,
@@ -1841,6 +1941,8 @@ void syscall_handler(struct registers* regs) {
     if (syscall_no == SYSCALL_EXIT) {
         int status = (int)sc_arg0(regs);
 
+        if (current_process) flock_release_pid(current_process->pid);
+
         for (int fd = 0; fd < PROCESS_MAX_FILES; fd++) {
             if (current_process && current_process->files[fd]) {
                 (void)fd_close(fd);
@@ -2327,10 +2429,12 @@ void syscall_handler(struct registers* regs) {
 
     if (syscall_no == SYSCALL_FLOCK) {
         int fd = (int)sc_arg0(regs);
+        int operation = (int)sc_arg1(regs);
         if (!current_process || fd < 0 || fd >= PROCESS_MAX_FILES || !current_process->files[fd]) {
             sc_ret(regs) = (uint32_t)-EBADF;
         } else {
-            sc_ret(regs) = 0; /* advisory lock — no-op stub */
+            uint32_t ino = current_process->files[fd]->node->inode;
+            sc_ret(regs) = (uint32_t)flock_do(ino, current_process->pid, operation);
         }
         return;
     }

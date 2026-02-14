@@ -24,6 +24,8 @@ extern int errno;
 #define EPIPE   32
 #define ENOSYS  38
 #define ENOTEMPTY 39
+#define ENOLCK   37
+#define EWOULDBLOCK EAGAIN
 
 /* Convert raw syscall return to errno-style */
 static inline int __syscall_ret(int r) {
