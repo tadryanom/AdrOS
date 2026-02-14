@@ -35,8 +35,10 @@ static const struct file_operations tmpfs_file_ops = {
     .write   = tmpfs_write_impl,
 };
 
-static const struct file_operations tmpfs_dir_ops = {
-    .finddir = tmpfs_finddir_impl,
+static const struct file_operations tmpfs_dir_ops = {0};
+
+static const struct inode_operations tmpfs_dir_iops = {
+    .lookup  = tmpfs_finddir_impl,
     .readdir = tmpfs_readdir_impl,
 };
 
@@ -85,6 +87,7 @@ static struct tmpfs_node* tmpfs_child_ensure_dir(struct tmpfs_node* dir, const c
     struct tmpfs_node* nd = tmpfs_node_alloc(name, FS_DIRECTORY);
     if (!nd) return NULL;
     nd->vfs.f_ops = &tmpfs_dir_ops;
+    nd->vfs.i_ops = &tmpfs_dir_iops;
     tmpfs_child_add(dir, nd);
     return nd;
 }
@@ -213,6 +216,7 @@ fs_node_t* tmpfs_create_root(void) {
     if (!root) return NULL;
 
     root->vfs.f_ops = &tmpfs_dir_ops;
+    root->vfs.i_ops = &tmpfs_dir_iops;
 
     return &root->vfs;
 }
