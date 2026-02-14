@@ -487,12 +487,18 @@ static const struct file_operations fat_file_fops = {
     .read     = fat_file_read,
     .write    = fat_file_write,
     .close    = fat_close_impl,
+};
+
+static const struct inode_operations fat_file_iops = {
     .truncate = fat_truncate_impl,
 };
 
 static const struct file_operations fat_dir_fops = {
     .close   = fat_close_impl,
-    .finddir = fat_finddir,
+};
+
+static const struct inode_operations fat_dir_iops = {
+    .lookup  = fat_finddir,
     .readdir = fat_readdir_impl,
     .create  = fat_create_impl,
     .mkdir   = fat_mkdir_impl,
@@ -522,11 +528,13 @@ static struct fat_node* fat_make_node(const struct fat_dirent* de, uint32_t pare
         fn->vfs.length = 0;
         fn->vfs.inode = fn->first_cluster;
         fn->vfs.f_ops = &fat_dir_fops;
+        fn->vfs.i_ops = &fat_dir_iops;
     } else {
         fn->vfs.flags = FS_FILE;
         fn->vfs.length = de->file_size;
         fn->vfs.inode = fn->first_cluster;
         fn->vfs.f_ops = &fat_file_fops;
+        fn->vfs.i_ops = &fat_file_iops;
     }
 
     return fn;
@@ -1164,6 +1172,7 @@ fs_node_t* fat_mount(int drive, uint32_t partition_lba) {
     g_fat_root.parent_cluster = 0;
     g_fat_root.dir_entry_offset = 0;
     g_fat_root.vfs.f_ops = &fat_dir_fops;
+    g_fat_root.vfs.i_ops = &fat_dir_iops;
 
     g_fat_ready = 1;
 

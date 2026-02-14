@@ -125,8 +125,10 @@ static const struct file_operations pty_ptmx_fops = {
     .poll  = pty_master_poll_fn,
 };
 
-static const struct file_operations pty_pts_dir_fops = {
-    .finddir = pty_pts_finddir,
+static const struct file_operations pty_pts_dir_fops = {0};
+
+static const struct inode_operations pty_pts_dir_iops = {
+    .lookup  = pty_pts_finddir,
     .readdir = pty_pts_readdir,
 };
 
@@ -249,6 +251,7 @@ void pty_init(void) {
     g_dev_pts_dir_node.flags = FS_DIRECTORY;
     g_dev_pts_dir_node.inode = 5;
     g_dev_pts_dir_node.f_ops = &pty_pts_dir_fops;
+    g_dev_pts_dir_node.i_ops = &pty_pts_dir_iops;
     devfs_register_device(&g_dev_pts_dir_node);
 }
 
