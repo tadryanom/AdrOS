@@ -169,7 +169,124 @@ enum {
     FCNTL_F_SETFD = 2,
     FCNTL_F_GETFL = 3,
     FCNTL_F_SETFL = 4,
+    FCNTL_F_GETLK = 5,
+    FCNTL_F_SETLK = 6,
+    FCNTL_F_SETLKW = 7,
+    FCNTL_F_DUPFD_CLOEXEC = 1030,
 };
+
+enum {
+    F_RDLCK = 0,
+    F_WRLCK = 1,
+    F_UNLCK = 2,
+};
+
+struct k_flock {
+    int16_t  l_type;
+    int16_t  l_whence;
+    uint32_t l_start;
+    uint32_t l_len;     /* 0 = to EOF */
+    uint32_t l_pid;
+};
+
+#define RLOCK_TABLE_SIZE 64
+
+struct rlock_entry {
+    uint32_t inode;
+    uint32_t pid;
+    uint32_t start;
+    uint32_t end;       /* 0xFFFFFFFF = to EOF */
+    int      type;      /* F_RDLCK or F_WRLCK */
+    int      active;
+};
+
+static struct rlock_entry rlock_table[RLOCK_TABLE_SIZE];
+static spinlock_t rlock_lock_g = {0};
+
+static int rlock_overlaps(uint32_t s1, uint32_t e1, uint32_t s2, uint32_t e2) {
+    return s1 <= e2 && s2 <= e1;
+}
+
+static int rlock_conflicts(uint32_t inode, uint32_t pid, int type,
+                           uint32_t start, uint32_t end, struct rlock_entry** out) {
+    for (int i = 0; i < RLOCK_TABLE_SIZE; i++) {
+        struct rlock_entry* e = &rlock_table[i];
+        if (!e->active || e->inode != inode) continue;
+        if (e->pid == pid) continue;
+        if (!rlock_overlaps(start, end, e->start, e->end)) continue;
+        if (type == F_WRLCK || e->type == F_WRLCK) {
+            if (out) *out = e;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int rlock_setlk(uint32_t inode, uint32_t pid, int type,
+                        uint32_t start, uint32_t end, int blocking) {
+    if (type == F_UNLCK) {
+        uintptr_t fl = spin_lock_irqsave(&rlock_lock_g);
+        for (int i = 0; i < RLOCK_TABLE_SIZE; i++) {
+            struct rlock_entry* e = &rlock_table[i];
+            if (e->active && e->inode == inode && e->pid == pid &&
+                rlock_overlaps(start, end, e->start, e->end)) {
+                e->active = 0;
+            }
+        }
+        spin_unlock_irqrestore(&rlock_lock_g, fl);
+        return 0;
+    }
+
+    for (;;) {
+        uintptr_t fl = spin_lock_irqsave(&rlock_lock_g);
+
+        if (!rlock_conflicts(inode, pid, type, start, end, NULL)) {
+            /* Remove our own overlapping locks, then insert */
+            int slot = -1;
+            for (int i = 0; i < RLOCK_TABLE_SIZE; i++) {
+                struct rlock_entry* e = &rlock_table[i];
+                if (e->active && e->inode == inode && e->pid == pid &&
+                    rlock_overlaps(start, end, e->start, e->end)) {
+                    e->active = 0;
+                }
+                if (!e->active && slot < 0) slot = i;
+            }
+            if (slot < 0) {
+                /* Scan again for free slot after removals */
+                for (int i = 0; i < RLOCK_TABLE_SIZE; i++) {
+                    if (!rlock_table[i].active) { slot = i; break; }
+                }
+            }
+            if (slot < 0) {
+                spin_unlock_irqrestore(&rlock_lock_g, fl);
+                return -ENOLCK;
+            }
+            rlock_table[slot].inode = inode;
+            rlock_table[slot].pid = pid;
+            rlock_table[slot].start = start;
+            rlock_table[slot].end = end;
+            rlock_table[slot].type = type;
+            rlock_table[slot].active = 1;
+            spin_unlock_irqrestore(&rlock_lock_g, fl);
+            return 0;
+        }
+
+        spin_unlock_irqrestore(&rlock_lock_g, fl);
+        if (!blocking) return -EAGAIN;
+
+        extern void process_sleep(uint32_t ticks);
+        process_sleep(1);
+    }
+}
+
+static void rlock_release_pid(uint32_t pid) {
+    uintptr_t fl = spin_lock_irqsave(&rlock_lock_g);
+    for (int i = 0; i < RLOCK_TABLE_SIZE; i++) {
+        if (rlock_table[i].active && rlock_table[i].pid == pid)
+            rlock_table[i].active = 0;
+    }
+    spin_unlock_irqrestore(&rlock_lock_g, fl);
+}
 
 enum {
     AT_FDCWD = -100,
@@ -1097,6 +1214,54 @@ static int syscall_fcntl_impl(int fd, int cmd, uint32_t arg) {
         f->flags = keep | set;
         return 0;
     }
+    if (cmd == FCNTL_F_GETLK || cmd == FCNTL_F_SETLK || cmd == FCNTL_F_SETLKW) {
+        if (!current_process || !f->node) return -EINVAL;
+        void* user_fl = (void*)(uintptr_t)arg;
+        if (!user_fl || user_range_ok(user_fl, sizeof(struct k_flock)) == 0)
+            return -EFAULT;
+
+        struct k_flock kfl;
+        if (copy_from_user(&kfl, user_fl, sizeof(kfl)) < 0) return -EFAULT;
+
+        uint32_t ino = f->node->inode;
+        uint32_t start = kfl.l_start;
+        uint32_t end = (kfl.l_len == 0) ? 0xFFFFFFFFU : start + kfl.l_len - 1;
+
+        if (cmd == FCNTL_F_GETLK) {
+            uintptr_t fl = spin_lock_irqsave(&rlock_lock_g);
+            struct rlock_entry* conflict = NULL;
+            int has = rlock_conflicts(ino, current_process->pid,
+                                      kfl.l_type, start, end, &conflict);
+            if (has && conflict) {
+                kfl.l_type = (int16_t)conflict->type;
+                kfl.l_whence = 0; /* SEEK_SET */
+                kfl.l_start = conflict->start;
+                kfl.l_len = (conflict->end == 0xFFFFFFFFU) ? 0
+                            : conflict->end - conflict->start + 1;
+                kfl.l_pid = conflict->pid;
+            } else {
+                kfl.l_type = F_UNLCK;
+            }
+            spin_unlock_irqrestore(&rlock_lock_g, fl);
+            if (copy_to_user(user_fl, &kfl, sizeof(kfl)) < 0) return -EFAULT;
+            return 0;
+        }
+
+        return rlock_setlk(ino, current_process->pid, kfl.l_type,
+                           start, end, cmd == FCNTL_F_SETLKW);
+    }
+    if (cmd == FCNTL_F_DUPFD_CLOEXEC) {
+        if (!current_process) return -EINVAL;
+        int new_fd = -1;
+        for (int i = (int)arg; i < PROCESS_MAX_FILES; i++) {
+            if (!current_process->files[i]) { new_fd = i; break; }
+        }
+        if (new_fd < 0) return -EMFILE;
+        current_process->files[new_fd] = f;
+        f->refcount++;
+        current_process->fd_flags[new_fd] = FD_CLOEXEC;
+        return new_fd;
+    }
     return -EINVAL;
 }
 
@@ -1941,7 +2106,10 @@ void syscall_handler(struct registers* regs) {
     if (syscall_no == SYSCALL_EXIT) {
         int status = (int)sc_arg0(regs);
 
-        if (current_process) flock_release_pid(current_process->pid);
+        if (current_process) {
+            flock_release_pid(current_process->pid);
+            rlock_release_pid(current_process->pid);
+        }
 
         for (int fd = 0; fd < PROCESS_MAX_FILES; fd++) {
             if (current_process && current_process->files[fd]) {
