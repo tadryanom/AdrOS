@@ -5,8 +5,10 @@
 
 void vga_init(void);
 void vga_put_char(char c);
+void vga_write_buf(const char* buf, uint32_t len);
 void vga_print(const char* str);
 void vga_set_color(uint8_t fg, uint8_t bg);
+void vga_flush(void);
 void vga_clear(void);
 void vga_scroll_back(void);
 void vga_scroll_fwd(void);

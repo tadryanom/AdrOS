@@ -67,6 +67,23 @@ void console_write(const char* s) {
     spin_unlock_irqrestore(&g_console_lock, flags);
 }
 
+void console_write_buf(const char* buf, uint32_t len) {
+    if (!buf || len == 0) return;
+
+    uintptr_t flags = spin_lock_irqsave(&g_console_lock);
+
+    if (g_console_uart_enabled) {
+        for (uint32_t i = 0; i < len; i++) {
+            hal_uart_putc(buf[i]);
+        }
+    }
+    if (g_console_vga_enabled) {
+        vga_write_buf(buf, len);
+    }
+
+    spin_unlock_irqrestore(&g_console_lock, flags);
+}
+
 void console_put_char(char c) {
     uintptr_t flags = spin_lock_irqsave(&g_console_lock);
 

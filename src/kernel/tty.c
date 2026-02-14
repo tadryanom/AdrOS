@@ -68,6 +68,20 @@ static void tty_output_char(char c) {
     console_put_char(c);
 }
 
+/* OPOST-expand src into obuf; return number of bytes written to obuf. */
+static uint32_t tty_opost_expand(const char* src, uint32_t slen,
+                                 char* obuf, uint32_t osize) {
+    uint32_t olen = 0;
+    int do_onlcr = (tty_oflag & TTY_OPOST) && (tty_oflag & TTY_ONLCR);
+    for (uint32_t i = 0; i < slen && olen < osize; i++) {
+        if (do_onlcr && src[i] == '\n' && olen + 1 < osize) {
+            obuf[olen++] = '\r';
+        }
+        obuf[olen++] = src[i];
+    }
+    return olen;
+}
+
 int tty_write_kbuf(const void* kbuf, uint32_t len) {
     if (!kbuf) return -EFAULT;
     if (len > 1024 * 1024) return -EINVAL;
@@ -80,8 +94,15 @@ int tty_write_kbuf(const void* kbuf, uint32_t len) {
     }
 
     const char* p = (const char*)kbuf;
-    for (uint32_t i = 0; i < len; i++) {
-        tty_output_char(p[i]);
+    char obuf[512];
+    uint32_t remaining = len;
+    while (remaining) {
+        uint32_t chunk = remaining;
+        if (chunk > 256) chunk = 256;
+        uint32_t olen = tty_opost_expand(p, chunk, obuf, sizeof(obuf));
+        console_write_buf(obuf, olen);
+        p += chunk;
+        remaining -= chunk;
     }
     return (int)len;
 }
@@ -509,9 +530,9 @@ int tty_write(const void* user_buf, uint32_t len) {
 
         if (copy_from_user(kbuf, (const void*)up, (size_t)chunk) < 0) return -EFAULT;
 
-        for (uint32_t i = 0; i < chunk; i++) {
-            tty_output_char(kbuf[i]);
-        }
+        char obuf[512];
+        uint32_t olen = tty_opost_expand(kbuf, chunk, obuf, sizeof(obuf));
+        console_write_buf(obuf, olen);
 
         up += chunk;
         remaining -= chunk;
