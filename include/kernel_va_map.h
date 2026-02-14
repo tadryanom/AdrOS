@@ -34,6 +34,8 @@
  *   0xC0400000                 LAPIC MMIO (1 page)
  *   0xC8000000 ..              Kernel stacks (guard + 8KB per thread)
  *   0xD0000000 ..              Kernel heap (10 MB)
+ *   0xDC000000 ..              Initrd / generic phys mapping (up to 64 MB)
+ *   0xE0000000 ..              Framebuffer mapping (up to 16 MB)
  */
 
 /* IOAPIC (arch/x86/ioapic.c) */
@@ -62,5 +64,11 @@
 
 /* LAPIC (arch/x86/lapic.c) */
 #define KVA_LAPIC           0xC0400000U
+
+/* Initrd / generic physical range mapping (hal/x86/mm.c) */
+#define KVA_PHYS_MAP        0xDC000000U
+
+/* Framebuffer (drivers/vbe.c) — up to 16 MB for large resolutions */
+#define KVA_FRAMEBUFFER     0xE0000000U
 
 #endif
