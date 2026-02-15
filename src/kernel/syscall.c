@@ -2318,6 +2318,45 @@ void syscall_handler(struct registers* regs) {
         return;
     }
 
+    if (syscall_no == SYSCALL_POSIX_SPAWN) {
+        /* posix_spawn(pid_t* pid_out, path, argv, envp)
+         * Combines fork+execve atomically.  Returns 0 on success and stores
+         * child pid in *pid_out.  The child immediately execs path. */
+        uint32_t* user_pid = (uint32_t*)sc_arg0(regs);
+        const char* path    = (const char*)sc_arg1(regs);
+        const char* const* argv = (const char* const*)sc_arg2(regs);
+        const char* const* envp = (const char* const*)sc_arg3(regs);
+
+        if (user_pid && user_range_ok(user_pid, 4) == 0) {
+            sc_ret(regs) = (uint32_t)-EFAULT; return;
+        }
+
+        /* Fork: creates child with copy of parent's regs */
+        int child_pid = syscall_fork_impl(regs);
+        if (child_pid < 0) {
+            sc_ret(regs) = (uint32_t)child_pid; return;
+        }
+        if (child_pid == 0) {
+            /* We are in the child — exec immediately */
+            int rc = syscall_execve_impl(regs, path, argv, envp);
+            if (rc < 0) {
+                /* execve failed — exit child */
+                process_exit_notify(127);
+                hal_cpu_enable_interrupts();
+                schedule();
+                for (;;) hal_cpu_idle();
+            }
+            return; /* execve rewrote regs, return to new program */
+        }
+        /* Parent: store child PID */
+        if (user_pid) {
+            uint32_t cpid = (uint32_t)child_pid;
+            (void)copy_to_user(user_pid, &cpid, 4);
+        }
+        sc_ret(regs) = 0;
+        return;
+    }
+
     if (syscall_no == SYSCALL_POLL) {
         struct pollfd* fds = (struct pollfd*)sc_arg0(regs);
         uint32_t nfds = sc_arg1(regs);

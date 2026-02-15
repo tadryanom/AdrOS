@@ -119,6 +119,7 @@ enum {
     SYSCALL_GETITIMER  = 93,
     SYSCALL_WAITID     = 94,
     SYSCALL_SIGQUEUE   = 95,
+    SYSCALL_POSIX_SPAWN = 96,
 };
 
 #endif
