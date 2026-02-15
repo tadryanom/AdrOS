@@ -4071,6 +4071,73 @@ static inline int sock_fd_get_sid(int fd) {
     return (int)f->node->inode;
 }
 
+__attribute__((noinline))
+static int syscall_sendmsg_impl(int sockfd, void* user_msg, int flags) {
+    int sid = sock_fd_get_sid(sockfd);
+    if (sid < 0) return -EBADF;
+
+    struct { void* name; uint32_t namelen; void* iov; uint32_t iovlen;
+             void* control; uint32_t controllen; int mflags; } kmsg;
+    if (copy_from_user(&kmsg, user_msg, sizeof(kmsg)) < 0) return -EFAULT;
+
+    struct sockaddr_in dest;
+    int has_dest = 0;
+    if (kmsg.name && kmsg.namelen >= sizeof(dest)) {
+        if (copy_from_user(&dest, kmsg.name, sizeof(dest)) < 0) return -EFAULT;
+        has_dest = 1;
+    }
+
+    int total = 0;
+    for (uint32_t i = 0; i < kmsg.iovlen && i < 16; i++) {
+        struct { void* base; uint32_t len; } kiov;
+        uint8_t* iov_arr = (uint8_t*)kmsg.iov;
+        if (copy_from_user(&kiov, &iov_arr[i * sizeof(kiov)], sizeof(kiov)) < 0)
+            return -EFAULT;
+        if (kiov.len == 0) continue;
+        if (!user_range_ok(kiov.base, kiov.len)) return -EFAULT;
+        int ret;
+        if (has_dest)
+            ret = ksocket_sendto(sid, kiov.base, kiov.len, flags, &dest);
+        else
+            ret = ksocket_send(sid, kiov.base, kiov.len, flags);
+        if (ret < 0) return (total > 0) ? total : ret;
+        total += ret;
+    }
+    return total;
+}
+
+__attribute__((noinline))
+static int syscall_recvmsg_impl(int sockfd, void* user_msg, int flags) {
+    int sid = sock_fd_get_sid(sockfd);
+    if (sid < 0) return -EBADF;
+
+    struct { void* name; uint32_t namelen; void* iov; uint32_t iovlen;
+             void* control; uint32_t controllen; int mflags; } kmsg;
+    if (copy_from_user(&kmsg, user_msg, sizeof(kmsg)) < 0) return -EFAULT;
+
+    int total = 0;
+    struct sockaddr_in src;
+    memset(&src, 0, sizeof(src));
+
+    for (uint32_t i = 0; i < kmsg.iovlen && i < 16; i++) {
+        struct { void* base; uint32_t len; } kiov;
+        uint8_t* iov_arr = (uint8_t*)kmsg.iov;
+        if (copy_from_user(&kiov, &iov_arr[i * sizeof(kiov)], sizeof(kiov)) < 0)
+            return -EFAULT;
+        if (kiov.len == 0) continue;
+        if (!user_range_ok(kiov.base, kiov.len)) return -EFAULT;
+        int ret = ksocket_recvfrom(sid, kiov.base, kiov.len, flags, &src);
+        if (ret < 0) return (total > 0) ? total : ret;
+        total += ret;
+        if ((uint32_t)ret < kiov.len) break;
+    }
+
+    if (kmsg.name && kmsg.namelen >= sizeof(src))
+        (void)copy_to_user(kmsg.name, &src, sizeof(src));
+
+    return total;
+}
+
 /* Separate function to keep socket locals off syscall_handler's stack frame */
 __attribute__((noinline))
 static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no) {
@@ -4199,6 +4266,18 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
             (void)copy_to_user((void*)sc_arg4(regs), &src, sizeof(src));
         }
         sc_ret(regs) = (uint32_t)ret;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SENDMSG) {
+        sc_ret(regs) = (uint32_t)syscall_sendmsg_impl(
+            (int)sc_arg0(regs), (void*)sc_arg1(regs), (int)sc_arg2(regs));
+        return;
+    }
+
+    if (syscall_no == SYSCALL_RECVMSG) {
+        sc_ret(regs) = (uint32_t)syscall_recvmsg_impl(
+            (int)sc_arg0(regs), (void*)sc_arg1(regs), (int)sc_arg2(regs));
         return;
     }
 
