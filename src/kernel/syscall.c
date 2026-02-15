@@ -3271,6 +3271,88 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         return;
     }
 
+    if (syscall_no == SYSCALL_SETITIMER) {
+        /* setitimer(which, user_new_value, user_old_value)
+         * struct itimerval { uint32_t it_interval; uint32_t it_value; } (ticks) */
+        uint32_t which = sc_arg0(regs);
+        void* user_new = (void*)sc_arg1(regs);
+        void* user_old = (void*)sc_arg2(regs);
+        if (!current_process) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
+
+        uint32_t pair[2]; /* [0]=it_interval, [1]=it_value */
+
+        if (user_old) {
+            if (user_range_ok(user_old, 8) == 0) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
+            uint32_t old[2] = {0, 0};
+            if (which == 0) { /* ITIMER_REAL */
+                old[0] = current_process->alarm_interval;
+                extern uint32_t get_tick_count(void);
+                uint32_t now = get_tick_count();
+                old[1] = (current_process->alarm_tick > now) ? current_process->alarm_tick - now : 0;
+            } else if (which == 1) { /* ITIMER_VIRTUAL */
+                old[0] = current_process->itimer_virt_interval;
+                old[1] = current_process->itimer_virt_value;
+            } else if (which == 2) { /* ITIMER_PROF */
+                old[0] = current_process->itimer_prof_interval;
+                old[1] = current_process->itimer_prof_value;
+            }
+            if (copy_to_user(user_old, old, 8) < 0) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
+        }
+
+        if (user_new) {
+            if (user_range_ok(user_new, 8) == 0) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
+            if (copy_from_user(pair, user_new, 8) < 0) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
+        } else {
+            pair[0] = 0; pair[1] = 0;
+        }
+
+        if (which == 0) { /* ITIMER_REAL — uses alarm queue */
+            current_process->alarm_interval = pair[0];
+            if (pair[1] > 0) {
+                extern uint32_t get_tick_count(void);
+                process_alarm_set(current_process, get_tick_count() + pair[1]);
+            } else {
+                process_alarm_set(current_process, 0);
+            }
+        } else if (which == 1) { /* ITIMER_VIRTUAL */
+            current_process->itimer_virt_interval = pair[0];
+            current_process->itimer_virt_value = pair[1];
+        } else if (which == 2) { /* ITIMER_PROF */
+            current_process->itimer_prof_interval = pair[0];
+            current_process->itimer_prof_value = pair[1];
+        } else {
+            sc_ret(regs) = (uint32_t)-EINVAL; return;
+        }
+        sc_ret(regs) = 0;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_GETITIMER) {
+        uint32_t which = sc_arg0(regs);
+        void* user_val = (void*)sc_arg1(regs);
+        if (!current_process) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
+        if (!user_val || user_range_ok(user_val, 8) == 0) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
+
+        uint32_t out[2] = {0, 0};
+        if (which == 0) {
+            out[0] = current_process->alarm_interval;
+            extern uint32_t get_tick_count(void);
+            uint32_t now = get_tick_count();
+            out[1] = (current_process->alarm_tick > now) ? current_process->alarm_tick - now : 0;
+        } else if (which == 1) {
+            out[0] = current_process->itimer_virt_interval;
+            out[1] = current_process->itimer_virt_value;
+        } else if (which == 2) {
+            out[0] = current_process->itimer_prof_interval;
+            out[1] = current_process->itimer_prof_value;
+        } else {
+            sc_ret(regs) = (uint32_t)-EINVAL; return;
+        }
+        if (copy_to_user(user_val, out, 8) < 0) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
+        sc_ret(regs) = 0;
+        return;
+    }
+
     sc_ret(regs) = (uint32_t)-ENOSYS;
 }
 
