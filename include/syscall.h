@@ -117,6 +117,7 @@ enum {
     SYSCALL_SETEGID   = 91,
     SYSCALL_SETITIMER  = 92,
     SYSCALL_GETITIMER  = 93,
+    SYSCALL_WAITID     = 94,
 };
 
 #endif

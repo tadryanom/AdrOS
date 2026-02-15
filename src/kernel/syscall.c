@@ -2190,6 +2190,56 @@ void syscall_handler(struct registers* regs) {
         return;
     }
 
+    if (syscall_no == SYSCALL_WAITID) {
+        /* waitid(idtype, id, siginfo_t* infop, options)
+         * idtype: 0=P_ALL, 1=P_PID, 2=P_PGID */
+        uint32_t idtype = sc_arg0(regs);
+        uint32_t id = sc_arg1(regs);
+        void* user_infop = (void*)sc_arg2(regs);
+        uint32_t options = (uint32_t)((int32_t)sc_arg3(regs));
+
+        int wait_pid_arg;
+        if (idtype == 0) wait_pid_arg = -1;        /* P_ALL */
+        else if (idtype == 1) wait_pid_arg = (int)id; /* P_PID */
+        else { sc_ret(regs) = (uint32_t)-EINVAL; return; }
+
+        if (user_infop && user_range_ok(user_infop, 16) == 0) {
+            sc_ret(regs) = (uint32_t)-EFAULT;
+            return;
+        }
+
+        int status = 0;
+        int retpid = process_waitpid(wait_pid_arg, &status, options);
+        if (retpid < 0) {
+            sc_ret(regs) = (uint32_t)retpid;
+            return;
+        }
+        if (retpid == 0) {
+            /* WNOHANG, no child changed state yet */
+            if (user_infop) {
+                uint32_t zero[4] = {0, 0, 0, 0};
+                (void)copy_to_user(user_infop, zero, 16);
+            }
+            sc_ret(regs) = 0;
+            return;
+        }
+        if (user_infop) {
+            /* Fill minimal siginfo: si_signo=SIGCHLD(17), si_code=CLD_EXITED(1),
+             * si_pid, si_status */
+            uint32_t info[4];
+            info[0] = 17;           /* si_signo = SIGCHLD */
+            info[1] = 1;            /* si_code = CLD_EXITED */
+            info[2] = (uint32_t)retpid; /* si_pid */
+            info[3] = (uint32_t)status; /* si_status */
+            if (copy_to_user(user_infop, info, 16) < 0) {
+                sc_ret(regs) = (uint32_t)-EFAULT;
+                return;
+            }
+        }
+        sc_ret(regs) = 0;
+        return;
+    }
+
     if (syscall_no == SYSCALL_LSEEK) {
         int fd = (int)sc_arg0(regs);
         int32_t off = (int32_t)sc_arg1(regs);
