@@ -107,6 +107,19 @@ enum {
     SYSCALL_SETITIMER = 92,
     SYSCALL_GETITIMER = 93,
     SYSCALL_WAITID    = 94,
+
+    SYSCALL_EPOLL_CREATE = 112,
+    SYSCALL_EPOLL_CTL    = 113,
+    SYSCALL_EPOLL_WAIT   = 114,
+
+    SYSCALL_INOTIFY_INIT      = 115,
+    SYSCALL_INOTIFY_ADD_WATCH = 116,
+    SYSCALL_INOTIFY_RM_WATCH  = 117,
+
+    SYSCALL_AIO_READ    = 121,
+    SYSCALL_AIO_WRITE   = 122,
+    SYSCALL_AIO_ERROR   = 123,
+    SYSCALL_AIO_RETURN  = 124,
 };
 
 enum {
@@ -984,6 +997,125 @@ static int sys_waitid(uint32_t idtype, uint32_t id, void* infop, uint32_t option
         : "memory"
     );
     return __syscall_fix(ret);
+}
+
+static int sys_epoll_create(int size) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_EPOLL_CREATE), "b"(size)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_epoll_ctl(int epfd, int op, int fd, void* event) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_EPOLL_CTL), "b"(epfd), "c"(op), "d"(fd), "S"(event)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_epoll_wait(int epfd, void* events, int maxevents, int timeout) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_EPOLL_WAIT), "b"(epfd), "c"(events), "d"(maxevents), "S"(timeout)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_inotify_init(void) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_INOTIFY_INIT)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_inotify_add_watch(int fd, const char* path, uint32_t mask) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_INOTIFY_ADD_WATCH), "b"(fd), "c"(path), "d"(mask)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_inotify_rm_watch(int fd, int wd) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_INOTIFY_RM_WATCH), "b"(fd), "c"(wd)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+struct aiocb {
+    int      aio_fildes;
+    void*    aio_buf;
+    uint32_t aio_nbytes;
+    uint32_t aio_offset;
+    int32_t  aio_error;
+    int32_t  aio_return;
+};
+
+static int sys_aio_read(struct aiocb* cb) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_AIO_READ), "b"(cb)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_aio_write(struct aiocb* cb) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_AIO_WRITE), "b"(cb)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_aio_error(struct aiocb* cb) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_AIO_ERROR), "b"(cb)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_aio_return(struct aiocb* cb) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_AIO_RETURN), "b"(cb)
+        : "memory"
+    );
+    return ret;
 }
 
 __attribute__((noreturn)) static void sys_exit(int code) {
@@ -2926,6 +3058,127 @@ void _start(void) {
         } else {
             sys_write(1, "[init] hard link OK\n", (uint32_t)(sizeof("[init] hard link OK\n") - 1));
         }
+    }
+
+    // C22: epoll_create/ctl/wait smoke
+    {
+        int epfd = sys_epoll_create(1);
+        if (epfd < 0) {
+            sys_write(1, "[init] epoll_create failed\n", (uint32_t)(sizeof("[init] epoll_create failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int fds[2];
+        if (sys_pipe(fds) < 0) {
+            sys_write(1, "[init] epoll pipe failed\n", (uint32_t)(sizeof("[init] epoll pipe failed\n") - 1));
+            sys_exit(1);
+        }
+
+        struct { uint32_t events; uint32_t data; } ev;
+        ev.events = POLLIN;
+        ev.data = (uint32_t)fds[0];
+        if (sys_epoll_ctl(epfd, 1, fds[0], &ev) < 0) {
+            sys_write(1, "[init] epoll_ctl ADD failed\n", (uint32_t)(sizeof("[init] epoll_ctl ADD failed\n") - 1));
+            sys_exit(1);
+        }
+
+        struct { uint32_t events; uint32_t data; } out;
+        int n = sys_epoll_wait(epfd, &out, 1, 0);
+        if (n != 0) {
+            sys_write(1, "[init] epoll_wait expected 0\n", (uint32_t)(sizeof("[init] epoll_wait expected 0\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_write(fds[1], "E", 1);
+
+        n = sys_epoll_wait(epfd, &out, 1, 0);
+        if (n != 1 || !(out.events & POLLIN)) {
+            sys_write(1, "[init] epoll_wait expected POLLIN\n", (uint32_t)(sizeof("[init] epoll_wait expected POLLIN\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_close(fds[0]);
+        (void)sys_close(fds[1]);
+        (void)sys_close(epfd);
+        sys_write(1, "[init] epoll OK\n", (uint32_t)(sizeof("[init] epoll OK\n") - 1));
+    }
+
+    // C23: inotify_init/add_watch/rm_watch smoke
+    {
+        int ifd = sys_inotify_init();
+        if (ifd < 0) {
+            sys_write(1, "[init] inotify_init failed\n", (uint32_t)(sizeof("[init] inotify_init failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int wd = sys_inotify_add_watch(ifd, "/tmp", 0x100);
+        if (wd < 0) {
+            sys_write(1, "[init] inotify_add_watch failed\n", (uint32_t)(sizeof("[init] inotify_add_watch failed\n") - 1));
+            sys_exit(1);
+        }
+
+        if (sys_inotify_rm_watch(ifd, wd) < 0) {
+            sys_write(1, "[init] inotify_rm_watch failed\n", (uint32_t)(sizeof("[init] inotify_rm_watch failed\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_close(ifd);
+        sys_write(1, "[init] inotify OK\n", (uint32_t)(sizeof("[init] inotify OK\n") - 1));
+    }
+
+    // C24: aio_read/aio_write smoke
+    {
+        int fd = sys_open("/disk/aiotest", O_CREAT | O_TRUNC);
+        if (fd < 0) {
+            sys_write(1, "[init] aio open failed\n", (uint32_t)(sizeof("[init] aio open failed\n") - 1));
+            sys_exit(1);
+        }
+
+        char wbuf[4] = {'A', 'I', 'O', '!'};
+        struct aiocb wcb;
+        wcb.aio_fildes = fd;
+        wcb.aio_buf = wbuf;
+        wcb.aio_nbytes = 4;
+        wcb.aio_offset = 0;
+        wcb.aio_error = -1;
+        wcb.aio_return = -1;
+        if (sys_aio_write(&wcb) < 0) {
+            sys_write(1, "[init] aio_write failed\n", (uint32_t)(sizeof("[init] aio_write failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_aio_error(&wcb) != 0) {
+            sys_write(1, "[init] aio_error after write bad\n", (uint32_t)(sizeof("[init] aio_error after write bad\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_aio_return(&wcb) != 4) {
+            sys_write(1, "[init] aio_return after write bad\n", (uint32_t)(sizeof("[init] aio_return after write bad\n") - 1));
+            sys_exit(1);
+        }
+
+        char rbuf[4] = {0, 0, 0, 0};
+        struct aiocb rcb;
+        rcb.aio_fildes = fd;
+        rcb.aio_buf = rbuf;
+        rcb.aio_nbytes = 4;
+        rcb.aio_offset = 0;
+        rcb.aio_error = -1;
+        rcb.aio_return = -1;
+        if (sys_aio_read(&rcb) < 0) {
+            sys_write(1, "[init] aio_read failed\n", (uint32_t)(sizeof("[init] aio_read failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_aio_error(&rcb) != 0 || sys_aio_return(&rcb) != 4) {
+            sys_write(1, "[init] aio_read result bad\n", (uint32_t)(sizeof("[init] aio_read result bad\n") - 1));
+            sys_exit(1);
+        }
+        if (rbuf[0] != 'A' || rbuf[1] != 'I' || rbuf[2] != 'O' || rbuf[3] != '!') {
+            sys_write(1, "[init] aio_read data bad\n", (uint32_t)(sizeof("[init] aio_read data bad\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_close(fd);
+        (void)sys_unlink("/disk/aiotest");
+        sys_write(1, "[init] aio OK\n", (uint32_t)(sizeof("[init] aio OK\n") - 1));
     }
 
     enum { NCHILD = 100 };
