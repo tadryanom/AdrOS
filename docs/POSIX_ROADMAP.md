@@ -250,7 +250,7 @@ Notes:
 | Feature | Status | Notes |
 |---------|--------|-------|
 | ELF32 loader | [x] | Secure with W^X + ASLR; supports `ET_EXEC` + `ET_DYN` + `PT_INTERP` |
-| `/bin/init.elf` (smoke tests) | [x] | Comprehensive test suite (19+ checks) |
+| `/bin/init.elf` (smoke tests) | [x] | Comprehensive test suite (35 checks: file I/O, signals, memory, IPC, devices, procfs) |
 | `/bin/echo` | [x] | argv/envp test |
 | `/bin/sh` | [x] | POSIX sh-compatible shell; builtins, pipes, redirects, `$PATH` search |
 | `/bin/cat` | [x] | |
