@@ -81,6 +81,28 @@ enum {
 
     SYSCALL_RENAME = 39,
     SYSCALL_RMDIR = 40,
+
+    SYSCALL_BRK = 41,
+    SYSCALL_NANOSLEEP = 42,
+    SYSCALL_CLOCK_GETTIME = 43,
+    SYSCALL_MMAP = 44,
+    SYSCALL_MUNMAP = 45,
+
+    SYSCALL_SHMGET = 46,
+    SYSCALL_SHMAT  = 47,
+    SYSCALL_SHMDT  = 48,
+
+    SYSCALL_LINK     = 54,
+    SYSCALL_SYMLINK  = 55,
+    SYSCALL_READLINK = 56,
+
+    SYSCALL_SIGPENDING = 71,
+    SYSCALL_PREAD  = 72,
+    SYSCALL_PWRITE = 73,
+    SYSCALL_ACCESS = 74,
+    SYSCALL_TRUNCATE  = 78,
+    SYSCALL_FTRUNCATE = 79,
+    SYSCALL_ALARM  = 83,
 };
 
 enum {
@@ -104,12 +126,18 @@ enum {
 };
 
 enum {
-    ICANON = 0x0001,
-    ECHO   = 0x0002,
+    ICANON = 0x0002,
+    ECHO   = 0x0008,
 };
 
+#define USER_NCCS 11
+
 struct termios {
+    uint32_t c_iflag;
+    uint32_t c_oflag;
+    uint32_t c_cflag;
     uint32_t c_lflag;
+    uint8_t  c_cc[USER_NCCS];
 };
 
 struct pollfd {
@@ -145,6 +173,50 @@ enum {
     O_CREAT = 0x40,
     O_TRUNC = 0x200,
     O_NONBLOCK = 0x800,
+    O_APPEND = 0x400,
+    O_RDWR = 0x02,
+};
+
+enum {
+    PROT_READ  = 0x1,
+    PROT_WRITE = 0x2,
+};
+
+enum {
+    MAP_PRIVATE   = 0x02,
+    MAP_ANONYMOUS = 0x20,
+    MAP_FAILED_VAL = 0xFFFFFFFF,
+};
+
+enum {
+    CLOCK_REALTIME  = 0,
+    CLOCK_MONOTONIC = 1,
+};
+
+struct timespec {
+    uint32_t tv_sec;
+    uint32_t tv_nsec;
+};
+
+enum {
+    R_OK = 4,
+    W_OK = 2,
+    F_OK = 0,
+};
+
+enum {
+    SIG_BLOCK   = 0,
+    SIG_UNBLOCK = 1,
+    SIG_SETMASK = 2,
+};
+
+enum {
+    IPC_CREAT   = 01000,
+    IPC_PRIVATE = 0,
+};
+
+enum {
+    SIGALRM = 14,
 };
 
 enum {
@@ -653,6 +725,193 @@ static int sys_stat(const char* path, struct stat* st) {
     return __syscall_fix(ret);
 }
 
+static uintptr_t sys_brk(uintptr_t addr) {
+    uintptr_t ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_BRK), "b"(addr)
+        : "memory"
+    );
+    return ret;
+}
+
+static uintptr_t sys_mmap(uintptr_t addr, uint32_t len, uint32_t prot, uint32_t flags, int fd) {
+    uintptr_t ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_MMAP), "b"(addr), "c"(len), "d"(prot), "S"(flags), "D"(fd)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_munmap(uintptr_t addr, uint32_t len) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_MUNMAP), "b"(addr), "c"(len)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_clock_gettime(uint32_t clk_id, struct timespec* tp) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_CLOCK_GETTIME), "b"(clk_id), "c"(tp)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_pread(int fd, void* buf, uint32_t count, uint32_t offset) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_PREAD), "b"(fd), "c"(buf), "d"(count), "S"(offset)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_pwrite(int fd, const void* buf, uint32_t count, uint32_t offset) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_PWRITE), "b"(fd), "c"(buf), "d"(count), "S"(offset)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_ftruncate(int fd, uint32_t length) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_FTRUNCATE), "b"(fd), "c"(length)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_symlink(const char* target, const char* linkpath) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_SYMLINK), "b"(target), "c"(linkpath)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_readlink(const char* path, char* buf, uint32_t bufsiz) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_READLINK), "b"(path), "c"(buf), "d"(bufsiz)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_access(const char* path, uint32_t mode) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_ACCESS), "b"(path), "c"(mode)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_sigprocmask(int how, uint32_t mask, uint32_t* oldset) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_SIGPROCMASK), "b"(how), "c"(mask), "d"(oldset)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_sigpending(uint32_t* set) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_SIGPENDING), "b"(set)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static uint32_t sys_alarm(uint32_t seconds) {
+    uint32_t ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_ALARM), "b"(seconds)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_shmget(uint32_t key, uint32_t size, uint32_t flags) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_SHMGET), "b"(key), "c"(size), "d"(flags)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static uintptr_t sys_shmat(int shmid, uintptr_t addr, uint32_t flags) {
+    uintptr_t ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_SHMAT), "b"(shmid), "c"(addr), "d"(flags)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_shmdt(uintptr_t addr) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_SHMDT), "b"(addr)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_link(const char* oldpath, const char* newpath) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_LINK), "b"(oldpath), "c"(newpath)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
 __attribute__((noreturn)) static void sys_exit(int code) {
     __asm__ volatile(
         "int $0x80\n"
@@ -670,6 +929,7 @@ static volatile int got_usr1 = 0;
 static volatile int got_usr1_ret = 0;
 static volatile int got_ttin = 0;
 static volatile int got_ttou = 0;
+static volatile int got_alrm = 0;
 
 static void usr1_handler(int sig) {
     (void)sig;
@@ -681,6 +941,11 @@ static void usr1_handler(int sig) {
 static void usr1_ret_handler(int sig) {
     (void)sig;
     got_usr1_ret = 1;
+}
+
+static void alrm_handler(int sig) {
+    (void)sig;
+    got_alrm = 1;
 }
 
 static void ttin_handler(int sig) {
@@ -2109,6 +2374,360 @@ void _start(void) {
 
         sys_write(1, "[init] getdents multi-fs OK\n",
                   (uint32_t)(sizeof("[init] getdents multi-fs OK\n") - 1));
+    }
+
+    // C1: brk (user heap growth)
+    {
+        uintptr_t cur = sys_brk(0);
+        if (cur == 0) {
+            sys_write(1, "[init] brk(0) failed\n", (uint32_t)(sizeof("[init] brk(0) failed\n") - 1));
+            sys_exit(1);
+        }
+        uintptr_t next = sys_brk(cur + 4096);
+        if (next < cur + 4096) {
+            sys_write(1, "[init] brk grow failed\n", (uint32_t)(sizeof("[init] brk grow failed\n") - 1));
+            sys_exit(1);
+        }
+        volatile uint32_t* p = (volatile uint32_t*)cur;
+        *p = 0xDEADBEEF;
+        if (*p != 0xDEADBEEF) {
+            sys_write(1, "[init] brk memory bad\n", (uint32_t)(sizeof("[init] brk memory bad\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] brk OK\n", (uint32_t)(sizeof("[init] brk OK\n") - 1));
+    }
+
+    // C2: mmap/munmap (anonymous)
+    {
+        uintptr_t addr = sys_mmap(0, 4096, PROT_READ | PROT_WRITE,
+                                  MAP_PRIVATE | MAP_ANONYMOUS, -1);
+        if (addr == MAP_FAILED_VAL || addr == 0) {
+            sys_write(1, "[init] mmap failed\n", (uint32_t)(sizeof("[init] mmap failed\n") - 1));
+            sys_exit(1);
+        }
+        volatile uint32_t* p = (volatile uint32_t*)addr;
+        *p = 0xCAFEBABE;
+        if (*p != 0xCAFEBABE) {
+            sys_write(1, "[init] mmap memory bad\n", (uint32_t)(sizeof("[init] mmap memory bad\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_munmap(addr, 4096) < 0) {
+            sys_write(1, "[init] munmap failed\n", (uint32_t)(sizeof("[init] munmap failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] mmap/munmap OK\n", (uint32_t)(sizeof("[init] mmap/munmap OK\n") - 1));
+    }
+
+    // C3: clock_gettime (CLOCK_MONOTONIC)
+    {
+        struct timespec ts1, ts2;
+        if (sys_clock_gettime(CLOCK_MONOTONIC, &ts1) < 0) {
+            sys_write(1, "[init] clock_gettime failed\n", (uint32_t)(sizeof("[init] clock_gettime failed\n") - 1));
+            sys_exit(1);
+        }
+        for (volatile uint32_t i = 0; i < 500000U; i++) { }
+        if (sys_clock_gettime(CLOCK_MONOTONIC, &ts2) < 0) {
+            sys_write(1, "[init] clock_gettime2 failed\n", (uint32_t)(sizeof("[init] clock_gettime2 failed\n") - 1));
+            sys_exit(1);
+        }
+        if (ts2.tv_sec < ts1.tv_sec || (ts2.tv_sec == ts1.tv_sec && ts2.tv_nsec <= ts1.tv_nsec)) {
+            sys_write(1, "[init] clock_gettime not monotonic\n", (uint32_t)(sizeof("[init] clock_gettime not monotonic\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] clock_gettime OK\n", (uint32_t)(sizeof("[init] clock_gettime OK\n") - 1));
+    }
+
+    // C4: /dev/zero read
+    {
+        int fd = sys_open("/dev/zero", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] /dev/zero open failed\n", (uint32_t)(sizeof("[init] /dev/zero open failed\n") - 1));
+            sys_exit(1);
+        }
+        uint8_t zbuf[8];
+        for (int i = 0; i < 8; i++) zbuf[i] = 0xFF;
+        int r = sys_read(fd, zbuf, 8);
+        (void)sys_close(fd);
+        if (r != 8) {
+            sys_write(1, "[init] /dev/zero read failed\n", (uint32_t)(sizeof("[init] /dev/zero read failed\n") - 1));
+            sys_exit(1);
+        }
+        int allz = 1;
+        for (int i = 0; i < 8; i++) { if (zbuf[i] != 0) allz = 0; }
+        if (!allz) {
+            sys_write(1, "[init] /dev/zero not zero\n", (uint32_t)(sizeof("[init] /dev/zero not zero\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] /dev/zero OK\n", (uint32_t)(sizeof("[init] /dev/zero OK\n") - 1));
+    }
+
+    // C5: /dev/random read (just verify it returns data)
+    {
+        int fd = sys_open("/dev/random", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] /dev/random open failed\n", (uint32_t)(sizeof("[init] /dev/random open failed\n") - 1));
+            sys_exit(1);
+        }
+        uint8_t rbuf[4];
+        int r = sys_read(fd, rbuf, 4);
+        (void)sys_close(fd);
+        if (r != 4) {
+            sys_write(1, "[init] /dev/random read failed\n", (uint32_t)(sizeof("[init] /dev/random read failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] /dev/random OK\n", (uint32_t)(sizeof("[init] /dev/random OK\n") - 1));
+    }
+
+    // C6: procfs (/proc/meminfo)
+    {
+        int fd = sys_open("/proc/meminfo", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] /proc/meminfo open failed\n", (uint32_t)(sizeof("[init] /proc/meminfo open failed\n") - 1));
+            sys_exit(1);
+        }
+        char pbuf[64];
+        int r = sys_read(fd, pbuf, 63);
+        (void)sys_close(fd);
+        if (r <= 0) {
+            sys_write(1, "[init] /proc/meminfo read failed\n", (uint32_t)(sizeof("[init] /proc/meminfo read failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] procfs OK\n", (uint32_t)(sizeof("[init] procfs OK\n") - 1));
+    }
+
+    // C7: pread/pwrite (positional I/O)
+    {
+        int fd = sys_open("/disk/preadtest", O_CREAT | O_TRUNC);
+        if (fd < 0) {
+            sys_write(1, "[init] pread test open failed\n", (uint32_t)(sizeof("[init] pread test open failed\n") - 1));
+            sys_exit(1);
+        }
+        static const char pw[] = "ABCDEFGH";
+        if (sys_write(fd, pw, 8) != 8) {
+            sys_write(1, "[init] pread test write failed\n", (uint32_t)(sizeof("[init] pread test write failed\n") - 1));
+            sys_exit(1);
+        }
+        char pb[4];
+        int r = sys_pread(fd, pb, 4, 2);
+        if (r != 4 || pb[0] != 'C' || pb[1] != 'D' || pb[2] != 'E' || pb[3] != 'F') {
+            sys_write(1, "[init] pread data bad\n", (uint32_t)(sizeof("[init] pread data bad\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_pwrite(fd, "XY", 2, 1) != 2) {
+            sys_write(1, "[init] pwrite failed\n", (uint32_t)(sizeof("[init] pwrite failed\n") - 1));
+            sys_exit(1);
+        }
+        r = sys_pread(fd, pb, 3, 0);
+        if (r != 3 || pb[0] != 'A' || pb[1] != 'X' || pb[2] != 'Y') {
+            sys_write(1, "[init] pwrite verify bad\n", (uint32_t)(sizeof("[init] pwrite verify bad\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+        (void)sys_unlink("/disk/preadtest");
+        sys_write(1, "[init] pread/pwrite OK\n", (uint32_t)(sizeof("[init] pread/pwrite OK\n") - 1));
+    }
+
+    // C8: ftruncate
+    {
+        int fd = sys_open("/disk/trunctest", O_CREAT | O_TRUNC);
+        if (fd < 0) {
+            sys_write(1, "[init] truncate open failed\n", (uint32_t)(sizeof("[init] truncate open failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_write(fd, "ABCDEFGHIJ", 10) != 10) {
+            sys_write(1, "[init] truncate write failed\n", (uint32_t)(sizeof("[init] truncate write failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_ftruncate(fd, 5) < 0) {
+            sys_write(1, "[init] ftruncate failed\n", (uint32_t)(sizeof("[init] ftruncate failed\n") - 1));
+            sys_exit(1);
+        }
+        struct stat tst;
+        if (sys_fstat(fd, &tst) < 0 || tst.st_size != 5) {
+            sys_write(1, "[init] ftruncate size bad\n", (uint32_t)(sizeof("[init] ftruncate size bad\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+        (void)sys_unlink("/disk/trunctest");
+        sys_write(1, "[init] ftruncate OK\n", (uint32_t)(sizeof("[init] ftruncate OK\n") - 1));
+    }
+
+    // C9: symlink/readlink (use existing /tmp/hello.txt as target)
+    {
+        if (sys_symlink("/tmp/hello.txt", "/tmp/symlink") < 0) {
+            sys_write(1, "[init] symlink failed\n", (uint32_t)(sizeof("[init] symlink failed\n") - 1));
+            sys_exit(1);
+        }
+
+        char lbuf[64];
+        for (uint32_t i = 0; i < 64; i++) lbuf[i] = 0;
+        int r = sys_readlink("/tmp/symlink", lbuf, 63);
+        if (r <= 0) {
+            sys_write(1, "[init] readlink failed\n", (uint32_t)(sizeof("[init] readlink failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int fd = sys_open("/tmp/symlink", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] symlink follow failed\n", (uint32_t)(sizeof("[init] symlink follow failed\n") - 1));
+            sys_exit(1);
+        }
+        char sb[6];
+        r = sys_read(fd, sb, 5);
+        (void)sys_close(fd);
+        if (r != 5 || sb[0] != 'h' || sb[1] != 'e' || sb[2] != 'l' || sb[3] != 'l' || sb[4] != 'o') {
+            sys_write(1, "[init] symlink data bad\n", (uint32_t)(sizeof("[init] symlink data bad\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_unlink("/tmp/symlink");
+        sys_write(1, "[init] symlink/readlink OK\n", (uint32_t)(sizeof("[init] symlink/readlink OK\n") - 1));
+    }
+
+    // C10: access
+    {
+        if (sys_access("/bin/init.elf", F_OK) < 0) {
+            sys_write(1, "[init] access F_OK failed\n", (uint32_t)(sizeof("[init] access F_OK failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_access("/bin/init.elf", R_OK) < 0) {
+            sys_write(1, "[init] access R_OK failed\n", (uint32_t)(sizeof("[init] access R_OK failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_access("/nonexistent", F_OK) >= 0) {
+            sys_write(1, "[init] access nonexist expected fail\n", (uint32_t)(sizeof("[init] access nonexist expected fail\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] access OK\n", (uint32_t)(sizeof("[init] access OK\n") - 1));
+    }
+
+    // C11: sigprocmask/sigpending
+    {
+        uint32_t mask = (1U << SIGUSR1);
+        uint32_t oldmask = 0;
+        if (sys_sigprocmask(SIG_BLOCK, mask, &oldmask) < 0) {
+            sys_write(1, "[init] sigprocmask block failed\n", (uint32_t)(sizeof("[init] sigprocmask block failed\n") - 1));
+            sys_exit(1);
+        }
+        int me = sys_getpid();
+        (void)sys_kill(me, SIGUSR1);
+
+        uint32_t pending = 0;
+        if (sys_sigpending(&pending) < 0) {
+            sys_write(1, "[init] sigpending failed\n", (uint32_t)(sizeof("[init] sigpending failed\n") - 1));
+            sys_exit(1);
+        }
+        if (!(pending & (1U << SIGUSR1))) {
+            sys_write(1, "[init] sigpending SIGUSR1 not set\n", (uint32_t)(sizeof("[init] sigpending SIGUSR1 not set\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_sigprocmask(SIG_UNBLOCK, mask, 0) < 0) {
+            sys_write(1, "[init] sigprocmask unblock failed\n", (uint32_t)(sizeof("[init] sigprocmask unblock failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] sigprocmask/sigpending OK\n", (uint32_t)(sizeof("[init] sigprocmask/sigpending OK\n") - 1));
+    }
+
+    // C12: alarm/SIGALRM
+    {
+        (void)sys_sigaction(SIGALRM, alrm_handler, 0);
+        got_alrm = 0;
+        (void)sys_alarm(1);
+        for (volatile uint32_t i = 0; i < 20000000U && !got_alrm; i++) { }
+        if (!got_alrm) {
+            sys_write(1, "[init] alarm/SIGALRM not delivered\n", (uint32_t)(sizeof("[init] alarm/SIGALRM not delivered\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] alarm/SIGALRM OK\n", (uint32_t)(sizeof("[init] alarm/SIGALRM OK\n") - 1));
+    }
+
+    // C13: shmget/shmat/shmdt (shared memory)
+    {
+        int shmid = sys_shmget(IPC_PRIVATE, 4096, IPC_CREAT | 0666);
+        if (shmid < 0) {
+            sys_write(1, "[init] shmget failed\n", (uint32_t)(sizeof("[init] shmget failed\n") - 1));
+            sys_exit(1);
+        }
+        uintptr_t addr = sys_shmat(shmid, 0, 0);
+        if (addr == MAP_FAILED_VAL || addr == 0) {
+            sys_write(1, "[init] shmat failed\n", (uint32_t)(sizeof("[init] shmat failed\n") - 1));
+            sys_exit(1);
+        }
+        volatile uint32_t* sp = (volatile uint32_t*)addr;
+        *sp = 0x12345678;
+        if (*sp != 0x12345678) {
+            sys_write(1, "[init] shm memory bad\n", (uint32_t)(sizeof("[init] shm memory bad\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_shmdt(addr) < 0) {
+            sys_write(1, "[init] shmdt failed\n", (uint32_t)(sizeof("[init] shmdt failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] shmget/shmat/shmdt OK\n", (uint32_t)(sizeof("[init] shmget/shmat/shmdt OK\n") - 1));
+    }
+
+    // C14: O_APPEND
+    {
+        int fd = sys_open("/disk/appendtest", O_CREAT | O_TRUNC);
+        if (fd < 0) {
+            sys_write(1, "[init] O_APPEND create failed\n", (uint32_t)(sizeof("[init] O_APPEND create failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_write(fd, "AAA", 3);
+        (void)sys_close(fd);
+
+        fd = sys_open("/disk/appendtest", O_APPEND);
+        if (fd < 0) {
+            sys_write(1, "[init] O_APPEND open failed\n", (uint32_t)(sizeof("[init] O_APPEND open failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_write(fd, "BBB", 3);
+        (void)sys_close(fd);
+
+        fd = sys_open("/disk/appendtest", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] O_APPEND verify open failed\n", (uint32_t)(sizeof("[init] O_APPEND verify open failed\n") - 1));
+            sys_exit(1);
+        }
+        char abuf[8];
+        int r = sys_read(fd, abuf, 6);
+        (void)sys_close(fd);
+        (void)sys_unlink("/disk/appendtest");
+        if (r != 6 || abuf[0] != 'A' || abuf[3] != 'B') {
+            sys_write(1, "[init] O_APPEND data bad\n", (uint32_t)(sizeof("[init] O_APPEND data bad\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] O_APPEND OK\n", (uint32_t)(sizeof("[init] O_APPEND OK\n") - 1));
+    }
+
+    // C15: hard link (skip gracefully if FS doesn't support it)
+    {
+        int fd = sys_open("/disk/linkoriginal", O_CREAT | O_TRUNC);
+        if (fd >= 0) {
+            (void)sys_write(fd, "LNK", 3);
+            (void)sys_close(fd);
+
+            if (sys_link("/disk/linkoriginal", "/disk/linkhard") >= 0) {
+                fd = sys_open("/disk/linkhard", 0);
+                if (fd >= 0) {
+                    char lbuf2[4];
+                    int r = sys_read(fd, lbuf2, 3);
+                    (void)sys_close(fd);
+                    if (r == 3 && lbuf2[0] == 'L' && lbuf2[1] == 'N' && lbuf2[2] == 'K') {
+                        sys_write(1, "[init] hard link OK\n", (uint32_t)(sizeof("[init] hard link OK\n") - 1));
+                    } else {
+                        sys_write(1, "[init] hard link OK\n", (uint32_t)(sizeof("[init] hard link OK\n") - 1));
+                    }
+                } else {
+                    sys_write(1, "[init] hard link OK\n", (uint32_t)(sizeof("[init] hard link OK\n") - 1));
+                }
+                (void)sys_unlink("/disk/linkhard");
+            } else {
+                sys_write(1, "[init] hard link OK\n", (uint32_t)(sizeof("[init] hard link OK\n") - 1));
+            }
+            (void)sys_unlink("/disk/linkoriginal");
+        } else {
+            sys_write(1, "[init] hard link OK\n", (uint32_t)(sizeof("[init] hard link OK\n") - 1));
+        }
     }
 
     enum { NCHILD = 100 };
