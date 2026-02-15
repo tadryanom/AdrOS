@@ -63,6 +63,21 @@ set tests {
     {"diskfs mkdir/unlink"  "\\[init\\] diskfs mkdir/unlink OK"}
     {"diskfs getdents"      "\\[init\\] diskfs getdents OK"}
     {"PING network"         "\\[PING\\] .*received.*network OK"}
+    {"brk heap"             "\\[init\\] brk OK"}
+    {"mmap/munmap"          "\\[init\\] mmap/munmap OK"}
+    {"clock_gettime"        "\\[init\\] clock_gettime OK"}
+    {"dev zero"             "\\[init\\] /dev/zero OK"}
+    {"dev random"           "\\[init\\] /dev/random OK"}
+    {"procfs"               "\\[init\\] procfs OK"}
+    {"pread/pwrite"         "\\[init\\] pread/pwrite OK"}
+    {"ftruncate"            "\\[init\\] ftruncate OK"}
+    {"symlink/readlink"     "\\[init\\] symlink/readlink OK"}
+    {"access"               "\\[init\\] access OK"}
+    {"sigprocmask"          "\\[init\\] sigprocmask/sigpending OK"}
+    {"alarm SIGALRM"        "\\[init\\] alarm/SIGALRM OK"}
+    {"shmget/shmat"         "\\[init\\] shmget/shmat/shmdt OK"}
+    {"O_APPEND"             "\\[init\\] O_APPEND OK"}
+    {"hard link"            "\\[init\\] hard link OK"}
 }
 
 # ---- Poll serial.log for results ----
