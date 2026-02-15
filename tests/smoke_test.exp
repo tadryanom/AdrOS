@@ -77,6 +77,12 @@ set tests {
     {"alarm SIGALRM"        "\\[init\\] alarm/SIGALRM OK"}
     {"shmget/shmat"         "\\[init\\] shmget/shmat/shmdt OK"}
     {"O_APPEND"             "\\[init\\] O_APPEND OK"}
+    {"umask"                "\\[init\\] umask OK"}
+    {"pipe capacity"        "\\[init\\] pipe capacity OK"}
+    {"waitid"               "\\[init\\] waitid OK"}
+    {"setitimer/getitimer"  "\\[init\\] setitimer/getitimer OK"}
+    {"select regfile"       "\\[init\\] select regfile OK"}
+    {"poll regfile"         "\\[init\\] poll regfile OK"}
     {"hard link"            "\\[init\\] hard link OK"}
 }
 
