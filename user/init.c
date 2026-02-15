@@ -102,7 +102,11 @@ enum {
     SYSCALL_ACCESS = 74,
     SYSCALL_TRUNCATE  = 78,
     SYSCALL_FTRUNCATE = 79,
+    SYSCALL_UMASK  = 75,
     SYSCALL_ALARM  = 83,
+    SYSCALL_SETITIMER = 92,
+    SYSCALL_GETITIMER = 93,
+    SYSCALL_WAITID    = 94,
 };
 
 enum {
@@ -112,6 +116,8 @@ enum {
 enum {
     F_GETFL = 3,
     F_SETFL = 4,
+    F_GETPIPE_SZ = 1032,
+    F_SETPIPE_SZ = 1033,
 };
 
 enum {
@@ -222,6 +228,30 @@ enum {
 enum {
     EAGAIN = 11,
     EINVAL = 22,
+    EEXIST = 17,
+};
+
+enum {
+    ITIMER_REAL    = 0,
+    ITIMER_VIRTUAL = 1,
+    ITIMER_PROF    = 2,
+};
+
+struct timeval {
+    uint32_t tv_sec;
+    uint32_t tv_usec;
+};
+
+struct itimerval {
+    struct timeval it_interval;
+    struct timeval it_value;
+};
+
+enum {
+    P_ALL  = 0,
+    P_PID  = 1,
+    P_PGID = 2,
+    WEXITED = 4,
 };
 
 #define S_IFMT  0170000
@@ -907,6 +937,50 @@ static int sys_link(const char* oldpath, const char* newpath) {
         "int $0x80"
         : "=a"(ret)
         : "a"(SYSCALL_LINK), "b"(oldpath), "c"(newpath)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_umask(uint32_t mask) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_UMASK), "b"(mask)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_setitimer(int which, const struct itimerval* newval, struct itimerval* oldval) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_SETITIMER), "b"(which), "c"(newval), "d"(oldval)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_getitimer(int which, struct itimerval* cur) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_GETITIMER), "b"(which), "c"(cur)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_waitid(uint32_t idtype, uint32_t id, void* infop, uint32_t options) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_WAITID), "b"(idtype), "c"(id), "d"(infop), "S"(options)
         : "memory"
     );
     return __syscall_fix(ret);
@@ -2699,7 +2773,131 @@ void _start(void) {
         sys_write(1, "[init] O_APPEND OK\n", (uint32_t)(sizeof("[init] O_APPEND OK\n") - 1));
     }
 
-    // C15: hard link (skip gracefully if FS doesn't support it)
+    // C15b: umask
+    {
+        int old = sys_umask(0077);
+        int cur = sys_umask((uint32_t)old);
+        if (cur != 0077) {
+            sys_write(1, "[init] umask set/get failed\n", (uint32_t)(sizeof("[init] umask set/get failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] umask OK\n", (uint32_t)(sizeof("[init] umask OK\n") - 1));
+    }
+
+    // C16: F_GETPIPE_SZ / F_SETPIPE_SZ
+    {
+        int fds[2];
+        if (sys_pipe(fds) < 0) {
+            sys_write(1, "[init] pipe for pipesz failed\n", (uint32_t)(sizeof("[init] pipe for pipesz failed\n") - 1));
+            sys_exit(1);
+        }
+        int sz = sys_fcntl(fds[0], F_GETPIPE_SZ, 0);
+        if (sz <= 0) {
+            sys_write(1, "[init] F_GETPIPE_SZ failed\n", (uint32_t)(sizeof("[init] F_GETPIPE_SZ failed\n") - 1));
+            sys_exit(1);
+        }
+        int nsz = sys_fcntl(fds[0], F_SETPIPE_SZ, 8192);
+        if (nsz < 0) {
+            sys_write(1, "[init] F_SETPIPE_SZ failed\n", (uint32_t)(sizeof("[init] F_SETPIPE_SZ failed\n") - 1));
+            sys_exit(1);
+        }
+        int sz2 = sys_fcntl(fds[0], F_GETPIPE_SZ, 0);
+        if (sz2 < 8192) {
+            sys_write(1, "[init] F_GETPIPE_SZ after set bad\n", (uint32_t)(sizeof("[init] F_GETPIPE_SZ after set bad\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fds[0]);
+        (void)sys_close(fds[1]);
+        sys_write(1, "[init] pipe capacity OK\n", (uint32_t)(sizeof("[init] pipe capacity OK\n") - 1));
+    }
+
+    // C17: waitid (P_PID, WEXITED)
+    {
+        int pid = sys_fork();
+        if (pid == 0) {
+            sys_exit(99);
+        }
+        if (pid < 0) {
+            sys_write(1, "[init] waitid fork failed\n", (uint32_t)(sizeof("[init] waitid fork failed\n") - 1));
+            sys_exit(1);
+        }
+        uint8_t infobuf[128];
+        for (uint32_t i = 0; i < 128; i++) infobuf[i] = 0;
+        int r = sys_waitid(P_PID, (uint32_t)pid, infobuf, WEXITED);
+        if (r < 0) {
+            sys_write(1, "[init] waitid failed\n", (uint32_t)(sizeof("[init] waitid failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] waitid OK\n", (uint32_t)(sizeof("[init] waitid OK\n") - 1));
+    }
+
+    // C18: setitimer/getitimer (ITIMER_REAL)
+    {
+        struct itimerval itv;
+        itv.it_value.tv_sec = 0;
+        itv.it_value.tv_usec = 500000;
+        itv.it_interval.tv_sec = 0;
+        itv.it_interval.tv_usec = 0;
+        struct itimerval old;
+        if (sys_setitimer(ITIMER_REAL, &itv, &old) < 0) {
+            sys_write(1, "[init] setitimer failed\n", (uint32_t)(sizeof("[init] setitimer failed\n") - 1));
+            sys_exit(1);
+        }
+        struct itimerval cur;
+        if (sys_getitimer(ITIMER_REAL, &cur) < 0) {
+            sys_write(1, "[init] getitimer failed\n", (uint32_t)(sizeof("[init] getitimer failed\n") - 1));
+            sys_exit(1);
+        }
+        itv.it_value.tv_sec = 0;
+        itv.it_value.tv_usec = 0;
+        itv.it_interval.tv_sec = 0;
+        itv.it_interval.tv_usec = 0;
+        (void)sys_setitimer(ITIMER_REAL, &itv, 0);
+        sys_write(1, "[init] setitimer/getitimer OK\n", (uint32_t)(sizeof("[init] setitimer/getitimer OK\n") - 1));
+    }
+
+    // C19: select on regular file (should return immediately readable)
+    {
+        int fd = sys_open("/bin/init.elf", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] select regfile open failed\n", (uint32_t)(sizeof("[init] select regfile open failed\n") - 1));
+            sys_exit(1);
+        }
+        uint64_t readfds = (1ULL << (uint32_t)fd);
+        int r = sys_select((uint32_t)(fd + 1), &readfds, 0, 0, 0);
+        (void)sys_close(fd);
+        if (r < 0) {
+            sys_write(1, "[init] select regfile failed\n", (uint32_t)(sizeof("[init] select regfile failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] select regfile OK\n", (uint32_t)(sizeof("[init] select regfile OK\n") - 1));
+    }
+
+    // C20: poll on regular file
+    {
+        int fd = sys_open("/bin/init.elf", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] poll regfile open failed\n", (uint32_t)(sizeof("[init] poll regfile open failed\n") - 1));
+            sys_exit(1);
+        }
+        struct pollfd pfd;
+        pfd.fd = fd;
+        pfd.events = POLLIN;
+        pfd.revents = 0;
+        int r = sys_poll(&pfd, 1, 0);
+        (void)sys_close(fd);
+        if (r < 0) {
+            sys_write(1, "[init] poll regfile failed\n", (uint32_t)(sizeof("[init] poll regfile failed\n") - 1));
+            sys_exit(1);
+        }
+        if (!(pfd.revents & POLLIN)) {
+            sys_write(1, "[init] poll regfile no POLLIN\n", (uint32_t)(sizeof("[init] poll regfile no POLLIN\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] poll regfile OK\n", (uint32_t)(sizeof("[init] poll regfile OK\n") - 1));
+    }
+
+    // C21: hard link (skip gracefully if FS doesn't support it)
     {
         int fd = sys_open("/disk/linkoriginal", O_CREAT | O_TRUNC);
         if (fd >= 0) {
