@@ -10,7 +10,7 @@ extern void kernel_main(const struct boot_info* bi);
     (void)args;
 
     uart_init();
-    kprintf("\n[AdrOS] Booting...\n");
+    kprintf("\n[AdrOS/arm64] Booting on QEMU virt...\n");
 
     struct boot_info bi;
     bi.arch_magic = 0;

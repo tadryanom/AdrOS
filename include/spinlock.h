@@ -45,7 +45,33 @@ static inline int spin_is_locked(spinlock_t* l) {
  *   ARM:    LDREX/STREX
  *   RISC-V: AMOSWAP.W.AQ
  *   MIPS:   LL/SC
+ *
+ * Note: AArch64/RISC-V without MMU may need simpler locking since
+ * exclusive monitors (LDAXR/STXR) require cacheable memory.
  */
+#if defined(__aarch64__) || defined(__riscv)
+/* Simple volatile flag lock — safe for single-core bring-up without MMU.
+ * Will be replaced with proper atomics once MMU is enabled. */
+static inline void spin_lock(spinlock_t* l) {
+    while (l->locked) {
+        cpu_relax();
+    }
+    l->locked = 1;
+    __sync_synchronize();
+}
+
+static inline int spin_trylock(spinlock_t* l) {
+    if (l->locked) return 0;
+    l->locked = 1;
+    __sync_synchronize();
+    return 1;
+}
+
+static inline void spin_unlock(spinlock_t* l) {
+    __sync_synchronize();
+    l->locked = 0;
+}
+#else
 static inline void spin_lock(spinlock_t* l) {
     while (__sync_lock_test_and_set(&l->locked, 1)) {
         while (l->locked) {
@@ -62,6 +88,7 @@ static inline void spin_unlock(spinlock_t* l) {
     __sync_synchronize();
     __sync_lock_release(&l->locked);
 }
+#endif
 
 #if defined(__i386__) || defined(__x86_64__)
 static inline uintptr_t irq_save(void) {
@@ -81,6 +108,17 @@ static inline void irq_restore(uintptr_t flags) {
     __asm__ volatile ("push %0; popf" :: "r"(flags) : "memory", "cc");
 #endif
 }
+#elif defined(__aarch64__)
+static inline uintptr_t irq_save(void) {
+    uintptr_t daif;
+    __asm__ volatile("mrs %0, daif\n\tmsr daifset, #2" : "=r"(daif) :: "memory");
+    return daif;
+}
+
+static inline void irq_restore(uintptr_t flags) {
+    __asm__ volatile("msr daif, %0" :: "r"(flags) : "memory");
+}
+
 #elif defined(__arm__)
 static inline uintptr_t irq_save(void) {
     uintptr_t cpsr;

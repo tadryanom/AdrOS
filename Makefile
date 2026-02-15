@@ -8,16 +8,21 @@ KERNEL_NAME := adros-$(ARCH).bin
 SRC_DIR := src
 BUILD_DIR := build/$(ARCH)
 
-# Common sources
-C_SOURCES := $(wildcard $(SRC_DIR)/kernel/*.c)
-C_SOURCES += $(wildcard $(SRC_DIR)/drivers/*.c)
-C_SOURCES += $(wildcard $(SRC_DIR)/mm/*.c)
- 
- # HAL sources (architecture-specific)
- C_SOURCES += $(wildcard $(SRC_DIR)/hal/$(ARCH)/*.c)
+# Minimal kernel sources shared across all architectures
+KERNEL_COMMON := main.c console.c utils.c cmdline.c driver.c cpu_features.c
+C_SOURCES := $(addprefix $(SRC_DIR)/kernel/,$(KERNEL_COMMON))
+
+# HAL sources (architecture-specific)
+C_SOURCES += $(wildcard $(SRC_DIR)/hal/$(ARCH)/*.c)
 
 # --- x86 Configuration ---
 ifeq ($(ARCH),x86)
+    # x86 gets ALL kernel sources, drivers, and mm
+    C_SOURCES := $(wildcard $(SRC_DIR)/kernel/*.c)
+    C_SOURCES += $(wildcard $(SRC_DIR)/drivers/*.c)
+    C_SOURCES += $(wildcard $(SRC_DIR)/mm/*.c)
+    C_SOURCES += $(wildcard $(SRC_DIR)/hal/$(ARCH)/*.c)
+
     # Default Toolchain Prefix (can be overridden)
     ifdef CROSS
         TOOLPREFIX ?= i686-elf-
@@ -86,9 +91,10 @@ ifeq ($(ARCH),arm)
     CC := aarch64-linux-gnu-gcc
     AS := aarch64-linux-gnu-as
     LD := aarch64-linux-gnu-ld
-    CFLAGS := -ffreestanding -O2 -Wall -Wextra -Werror -Wno-error=cpp -Iinclude
+    OBJCOPY := aarch64-linux-gnu-objcopy
+    CFLAGS := -ffreestanding -O2 -Wall -Wextra -Werror -Wno-error=cpp -mno-outline-atomics -Iinclude
     LDFLAGS := -T $(SRC_DIR)/arch/arm/linker.ld
-    ASFLAGS := 
+    ASFLAGS :=
     ASM_SOURCES := $(wildcard $(SRC_DIR)/arch/arm/*.S)
     C_SOURCES += $(wildcard $(SRC_DIR)/arch/arm/*.c)
 endif
@@ -98,9 +104,10 @@ ifeq ($(ARCH),riscv)
     CC := riscv64-linux-gnu-gcc
     AS := riscv64-linux-gnu-as
     LD := riscv64-linux-gnu-ld
+    OBJCOPY := riscv64-linux-gnu-objcopy
     CFLAGS := -ffreestanding -O2 -Wall -Wextra -Werror -Wno-error=cpp -Iinclude -mcmodel=medany
     LDFLAGS := -T $(SRC_DIR)/arch/riscv/linker.ld
-    ASFLAGS := 
+    ASFLAGS :=
     ASM_SOURCES := $(wildcard $(SRC_DIR)/arch/riscv/*.S)
     C_SOURCES += $(wildcard $(SRC_DIR)/arch/riscv/*.c)
 endif
@@ -134,7 +141,7 @@ ifneq ($(QEMU_INT),)
 QEMU_DFLAGS := $(QEMU_DFLAGS) -d int
 endif
 
-BOOT_OBJ := $(BUILD_DIR)/arch/x86/boot.o
+BOOT_OBJ := $(BUILD_DIR)/arch/$(ARCH)/boot.o
 KERNEL_OBJ := $(filter-out $(BOOT_OBJ), $(OBJ))
 
 all: $(KERNEL_NAME)
@@ -204,6 +211,16 @@ run: iso
 		-nic user,model=e1000 \
 		-serial file:serial.log -monitor none -no-reboot -no-shutdown \
 		$(QEMU_DFLAGS)
+
+run-arm: adros-arm.bin
+	@rm -f serial-arm.log
+	@qemu-system-aarch64 -M virt -cpu cortex-a57 -m 128M -nographic \
+		-kernel adros-arm.bin -serial mon:stdio $(QEMU_DFLAGS)
+
+run-riscv: adros-riscv.bin
+	@rm -f serial-riscv.log
+	@qemu-system-riscv64 -M virt -m 128M -nographic -bios none \
+		-kernel adros-riscv.bin -serial mon:stdio $(QEMU_DFLAGS)
 
 # ---- Static Analysis ----
 

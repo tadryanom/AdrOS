@@ -6,6 +6,6 @@ int hal_usermode_enter(uintptr_t user_eip, uintptr_t user_esp) {
     return -1;
 }
 
-void hal_usermode_enter_regs(const struct registers* regs) {
+void hal_usermode_enter_regs(const void* regs) {
     (void)regs;
 }

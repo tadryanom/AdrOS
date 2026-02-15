@@ -1,27 +1,33 @@
 /*
  * AdrOS - RISC-V 64-bit Bootstrap
- * Target: QEMU 'virt' machine (starts at 0x80000000)
+ * Target: QEMU 'virt' machine (-bios none, starts at 0x80000000)
  */
 
 .section .text
 .global _start
 
 _start:
-    /* Disable interrupts (sie = Supervisor Interrupt Enable) */
-    csrw sie, zero
+    /* Disable interrupts */
+    csrw mie, zero
 
-    /* Set up stack pointer.
-     * In linker.ld we will define a symbol for the stack top.
-     */
+    /* Set up stack pointer */
     la sp, stack_top
 
-    /* Build arch_boot_args (in .bss) and call arch_early_setup(args) */
+    /* Zero BSS section */
+    la t0, __bss_start
+    la t1, __bss_end
+1:  bge t0, t1, 2f
+    sd zero, 0(t0)
+    addi t0, t0, 8
+    j 1b
+2:
+    /* Call arch_early_setup(args) */
     la a0, arch_boot_args
     call arch_early_setup
 
     /* Hang if return */
-1:  wfi
-    j 1b
+3:  wfi
+    j 3b
 
 .section .bss
 .align 16
