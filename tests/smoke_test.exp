@@ -84,6 +84,9 @@ set tests {
     {"select regfile"       "\\[init\\] select regfile OK"}
     {"poll regfile"         "\\[init\\] poll regfile OK"}
     {"hard link"            "\\[init\\] hard link OK"}
+    {"epoll"                "\\[init\\] epoll OK"}
+    {"inotify"              "\\[init\\] inotify OK"}
+    {"aio"                  "\\[init\\] aio OK"}
 }
 
 # ---- Poll serial.log for results ----
