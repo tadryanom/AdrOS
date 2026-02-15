@@ -238,7 +238,8 @@ int ksocket_bind(int sid, const struct sockaddr_in* addr) {
     if (!s) return -EBADF;
 
     ip_addr_t ip;
-    ip_addr_set_ip4_u32(&ip, addr->sin_addr);
+    ip_addr_set_zero_ip4(&ip);
+    ip4_addr_set_u32(ip_2_ip4(&ip), addr->sin_addr);
     uint16_t port = ntohs(addr->sin_port);
 
     err_t err;
@@ -303,7 +304,8 @@ int ksocket_connect(int sid, const struct sockaddr_in* addr) {
     if (!s) return -EBADF;
 
     ip_addr_t ip;
-    ip_addr_set_ip4_u32(&ip, addr->sin_addr);
+    ip_addr_set_zero_ip4(&ip);
+    ip4_addr_set_u32(ip_2_ip4(&ip), addr->sin_addr);
     uint16_t port = ntohs(addr->sin_port);
 
     if (s->type == SOCK_STREAM) {
@@ -381,7 +383,8 @@ int ksocket_sendto(int sid, const void* buf, size_t len, int flags,
     if (s->type != SOCK_DGRAM) return -EOPNOTSUPP;
 
     ip_addr_t ip;
-    ip_addr_set_ip4_u32(&ip, dest->sin_addr);
+    ip_addr_set_zero_ip4(&ip);
+    ip4_addr_set_u32(ip_2_ip4(&ip), dest->sin_addr);
     uint16_t port = ntohs(dest->sin_port);
 
     struct pbuf* p = pbuf_alloc(PBUF_TRANSPORT, (u16_t)len, PBUF_RAM);

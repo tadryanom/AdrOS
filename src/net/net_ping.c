@@ -139,7 +139,8 @@ void net_ping_test(void) {
     process_sleep(2 * TIMER_HZ); /* ~2 seconds */
 
     ip_addr_t target;
-    IP4_ADDR(&target, 10, 0, 2, 2);
+    ip_addr_set_zero_ip4(&target);
+    IP4_ADDR(ip_2_ip4(&target), 10, 0, 2, 2);
 
     int ok = 0;
     for (int i = 0; i < PING_COUNT; i++) {

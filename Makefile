@@ -40,11 +40,15 @@ ifeq ($(ARCH),x86)
         $(LWIPDIR)/core/ipv4/ip4.c $(LWIPDIR)/core/ipv4/ip4_addr.c \
         $(LWIPDIR)/core/ipv4/ip4_frag.c $(LWIPDIR)/core/ipv4/dhcp.c \
         $(LWIPDIR)/core/ipv4/acd.c
+    LWIP_IPV6 := $(LWIPDIR)/core/ipv6/ethip6.c $(LWIPDIR)/core/ipv6/icmp6.c \
+        $(LWIPDIR)/core/ipv6/inet6.c $(LWIPDIR)/core/ipv6/ip6.c \
+        $(LWIPDIR)/core/ipv6/ip6_addr.c $(LWIPDIR)/core/ipv6/ip6_frag.c \
+        $(LWIPDIR)/core/ipv6/mld6.c $(LWIPDIR)/core/ipv6/nd6.c
     LWIP_NETIF := $(LWIPDIR)/netif/ethernet.c
     LWIP_API := $(LWIPDIR)/api/api_lib.c $(LWIPDIR)/api/api_msg.c \
         $(LWIPDIR)/api/err.c $(LWIPDIR)/api/if_api.c $(LWIPDIR)/api/netbuf.c \
         $(LWIPDIR)/api/netifapi.c $(LWIPDIR)/api/tcpip.c
-    LWIP_SOURCES := $(LWIP_CORE) $(LWIP_IPV4) $(LWIP_NETIF) $(LWIP_API)
+    LWIP_SOURCES := $(LWIP_CORE) $(LWIP_IPV4) $(LWIP_IPV6) $(LWIP_NETIF) $(LWIP_API)
     NET_SOURCES := $(wildcard $(SRC_DIR)/net/*.c) $(wildcard $(SRC_DIR)/net/lwip_port/*.c)
     C_SOURCES += $(NET_SOURCES)
 

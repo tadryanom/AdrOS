@@ -31,7 +31,17 @@
 
 /* ---- IPv4 ---- */
 #define LWIP_IPV4               1
-#define LWIP_IPV6               0
+#define LWIP_IPV6               1
+#define LWIP_IPV6_MLD           1
+#define LWIP_IPV6_AUTOCONFIG    1
+#define LWIP_ICMP6              1
+#define LWIP_IPV6_DHCP6         0
+#define MEMP_NUM_MLD6_GROUP     4
+#define LWIP_IPV6_NUM_ADDRESSES 3
+#define LWIP_ND6_NUM_NEIGHBORS  8
+#define LWIP_ND6_NUM_DESTINATIONS 8
+#define LWIP_ND6_NUM_PREFIXES   4
+#define LWIP_ND6_NUM_ROUTERS    2
 #define LWIP_ARP                1
 #define LWIP_ICMP               1
 #define LWIP_UDP                1

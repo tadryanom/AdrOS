@@ -7,10 +7,11 @@
 void dns_resolver_init(uint32_t server_ip) {
     dns_init();
     ip_addr_t dns_server;
-    IP4_ADDR(&dns_server, (server_ip >> 24) & 0xFF,
-                          (server_ip >> 16) & 0xFF,
-                          (server_ip >> 8) & 0xFF,
-                          server_ip & 0xFF);
+    ip_addr_set_zero_ip4(&dns_server);
+    IP4_ADDR(ip_2_ip4(&dns_server), (server_ip >> 24) & 0xFF,
+                                     (server_ip >> 16) & 0xFF,
+                                     (server_ip >> 8) & 0xFF,
+                                     server_ip & 0xFF);
     dns_setserver(0, &dns_server);
     kprintf("[DNS] Resolver initialized\n");
 }
