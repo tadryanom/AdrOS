@@ -63,4 +63,11 @@ void vmm_protect_range(uint64_t vaddr, uint64_t len, uint32_t flags);
  */
 void vmm_unmap_page(uint64_t virt);
 
+/*
+ * Find a contiguous free (unmapped) virtual address region.
+ * Scans page tables from 'start' up to 'end' for 'length' bytes of
+ * contiguous unmapped pages.  Returns the base VA, or 0 on failure.
+ */
+uintptr_t vmm_find_free_area(uintptr_t start, uintptr_t end, uint32_t length);
+
 #endif

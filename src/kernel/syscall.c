@@ -2267,21 +2267,7 @@ static uintptr_t mmap_find_free(uint32_t length) {
     const uintptr_t MMAP_BASE = 0x40000000U;
     const uintptr_t MMAP_END  = 0x7FF00000U;
 
-    for (uintptr_t candidate = MMAP_BASE; candidate + length <= MMAP_END; candidate += 0x1000U) {
-        int overlap = 0;
-        for (int i = 0; i < PROCESS_MAX_MMAPS; i++) {
-            if (current_process->mmaps[i].length == 0) continue;
-            uintptr_t mb = current_process->mmaps[i].base;
-            uint32_t ml = current_process->mmaps[i].length;
-            if (candidate < mb + ml && candidate + length > mb) {
-                overlap = 1;
-                candidate = ((mb + ml + 0xFFFU) & ~(uintptr_t)0xFFFU) - 0x1000U;
-                break;
-            }
-        }
-        if (!overlap) return candidate;
-    }
-    return 0;
+    return vmm_find_free_area(MMAP_BASE, MMAP_END, length);
 }
 
 __attribute__((noinline))

@@ -513,6 +513,44 @@ int vmm_handle_cow_fault(uintptr_t fault_addr) {
     return 1;
 }
 
+uintptr_t vmm_find_free_area(uintptr_t start, uintptr_t end, uint32_t length) {
+    if (length == 0) return 0;
+    uint32_t pages_needed = (length + 0xFFFU) >> 12;
+
+    uintptr_t irqf = spin_lock_irqsave(&vmm_lock);
+
+    uintptr_t run_start = start & ~(uintptr_t)0xFFF;
+    uint32_t run_len = 0;
+
+    for (uintptr_t va = run_start; va < end; va += 0x1000U) {
+        uint32_t pi = pae_pdpt_index((uint64_t)va);
+        uint32_t di = pae_pd_index((uint64_t)va);
+        uint32_t ti = pae_pt_index((uint64_t)va);
+
+        int mapped = 0;
+        volatile uint64_t* pd = pae_pd_recursive(pi);
+        if (pd[di] & X86_PTE_PRESENT) {
+            volatile uint64_t* pt = pae_pt_recursive(pi, di);
+            if (pt[ti] & X86_PTE_PRESENT)
+                mapped = 1;
+        }
+
+        if (!mapped) {
+            if (run_len == 0) run_start = va;
+            run_len++;
+            if (run_len >= pages_needed) {
+                spin_unlock_irqrestore(&vmm_lock, irqf);
+                return run_start;
+            }
+        } else {
+            run_len = 0;
+        }
+    }
+
+    spin_unlock_irqrestore(&vmm_lock, irqf);
+    return 0;
+}
+
 void vmm_init(void) {
     kprintf("[VMM] PAE paging active.\n");
 
