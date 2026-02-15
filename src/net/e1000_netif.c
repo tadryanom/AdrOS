@@ -15,6 +15,7 @@
 #include "lwip/tcpip.h"
 #include "lwip/sys.h"
 #include "netif/ethernet.h"
+#include "lwip/dhcp.h"
 #include "spinlock.h"
 
 #include "e1000.h"
@@ -146,6 +147,33 @@ void net_init(void) {
     net_initialized = 1;
 
     kprintf("[NET] lwIP initialized (interrupt-driven RX), IP=10.0.2.15\n");
+}
+
+void net_dhcp_start(void) {
+    if (!net_initialized) {
+        kprintf("[NET] DHCP: network not initialized.\n");
+        return;
+    }
+
+    kprintf("[NET] Starting DHCP client...\n");
+    dhcp_start(&e1000_nif);
+
+    /* Wait up to 10 seconds for DHCP to complete */
+    extern uint32_t get_tick_count(void);
+    uint32_t deadline = get_tick_count() + 500; /* 10s at ~50Hz */
+    while (get_tick_count() < deadline) {
+        if (dhcp_supplied_address(&e1000_nif)) {
+            kprintf("[NET] DHCP: got IP %d.%d.%d.%d\n",
+                    ip4_addr1(netif_ip4_addr(&e1000_nif)),
+                    ip4_addr2(netif_ip4_addr(&e1000_nif)),
+                    ip4_addr3(netif_ip4_addr(&e1000_nif)),
+                    ip4_addr4(netif_ip4_addr(&e1000_nif)));
+            return;
+        }
+        extern void process_sleep(uint32_t ticks);
+        process_sleep(5);
+    }
+    kprintf("[NET] DHCP: timeout, keeping static IP.\n");
 }
 
 void net_poll(void) {

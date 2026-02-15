@@ -38,7 +38,8 @@ ifeq ($(ARCH),x86)
         $(LWIPDIR)/core/udp.c $(LWIPDIR)/core/dns.c
     LWIP_IPV4 := $(LWIPDIR)/core/ipv4/etharp.c $(LWIPDIR)/core/ipv4/icmp.c \
         $(LWIPDIR)/core/ipv4/ip4.c $(LWIPDIR)/core/ipv4/ip4_addr.c \
-        $(LWIPDIR)/core/ipv4/ip4_frag.c
+        $(LWIPDIR)/core/ipv4/ip4_frag.c $(LWIPDIR)/core/ipv4/dhcp.c \
+        $(LWIPDIR)/core/ipv4/acd.c
     LWIP_NETIF := $(LWIPDIR)/netif/ethernet.c
     LWIP_API := $(LWIPDIR)/api/api_lib.c $(LWIPDIR)/api/api_msg.c \
         $(LWIPDIR)/api/err.c $(LWIPDIR)/api/if_api.c $(LWIPDIR)/api/netbuf.c \
