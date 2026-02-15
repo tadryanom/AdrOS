@@ -155,6 +155,8 @@ enum {
 
     SYSCALL_SENDMSG  = 118,
     SYSCALL_RECVMSG  = 119,
+
+    SYSCALL_PIVOT_ROOT = 120,
 };
 
 #endif
