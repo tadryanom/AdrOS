@@ -5,7 +5,7 @@
 All four testing layers are **implemented and operational**:
 
 - **Static analysis** (`make check`): cppcheck + sparse + gcc -fanalyzer (59 x86 C files)
-- **QEMU smoke tests** (`make test`): expect-based, 20 checks (incl. ICMP ping), 4-CPU SMP, 90s timeout
+- **QEMU smoke tests** (`make test`): expect-based, 35 checks (file I/O, signals, memory, IPC, devices, procfs, networking), 4-CPU SMP, 90s timeout
 - **Test battery** (`make test-battery`): 16 checks across 5 QEMU scenarios — multi-disk ATA, VFS mount, ping, diskfs
 - **Host unit tests** (`make test-host`): 47 tests — `test_utils.c` (28) + `test_security.c` (19)
 - **GDB scripted checks** (`make test-gdb`): heap/PMM/VGA integrity validation
@@ -107,7 +107,7 @@ To run manually: boot AdrOS with `-vga std`, then execute `/bin/doom.elf` from t
 
 ```makefile
 make check        # cppcheck + sparse + gcc -fanalyzer
-make test         # QEMU + expect automated smoke test (20 checks incl. ICMP ping)
+make test         # QEMU + expect automated smoke test (35 checks incl. ICMP ping)
 make test-battery # Full test battery: multi-disk ATA, VFS mount, ping, diskfs (16 checks)
 make test-host    # Host-side unit tests for pure functions
 make test-gdb     # QEMU + GDB scripted checks (optional)

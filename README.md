@@ -148,7 +148,7 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 
 ### Testing
 - **47 host-side unit tests** — `test_utils.c` (28) + `test_security.c` (19)
-- **20 QEMU smoke tests** — 4-CPU expect-based (includes ICMP ping network test)
+- **35 QEMU smoke tests** — 4-CPU expect-based (file I/O, signals, memory mgmt, IPC, devices, procfs, networking)
 - **16-check test battery** — multi-disk ATA (hda+hdb+hdd), VFS mount, ping, diskfs ops (`make test-battery`)
 - **Static analysis** — cppcheck, sparse, gcc -fanalyzer
 - **GDB scripted checks** — heap/PMM/VGA integrity
@@ -169,7 +169,7 @@ QEMU debug helpers:
 
 See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for a detailed checklist.
 
-**All 31 planned POSIX tasks are complete**, plus 10+ additional features: DOOM port, uid/gid/euid/egid, framebuffer, raw keyboard, fd-backed mmap, kernel stack guards, FAT12/16/32 full RW, ext2 full RW, ICMP ping, kernel command line parser. ~103K lines of C/ASM/headers across 255 commits. The kernel covers **~95%** of the core POSIX interfaces needed for a practical Unix-like system.
+**All 31 planned POSIX tasks are complete**, plus 17 additional features (48 total). ~103K lines of C/ASM/headers across 256+ commits. The kernel covers **~95%** of the core POSIX interfaces needed for a practical Unix-like system. All 35 smoke tests, 16 battery checks, and 47 host unit tests pass clean.
 
 ### Remaining work for full POSIX compliance
 - **Full `ld.so`** — relocation processing for shared libraries (`dlopen`/`dlsym`)
