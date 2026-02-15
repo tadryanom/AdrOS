@@ -6,7 +6,7 @@
 #include "uaccess.h"
 #include "console.h"
 #include "utils.h"
-#include "kernel_va_map.h"
+#include "arch/x86/kernel_va_map.h"
 
 #include <stddef.h>
 

@@ -1,5 +1,5 @@
 #include "vdso.h"
-#include "kernel_va_map.h"
+#include "arch/x86/kernel_va_map.h"
 #include "pmm.h"
 #include "vmm.h"
 #include "utils.h"

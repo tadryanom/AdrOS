@@ -12,7 +12,7 @@ static int g_acpi_valid = 0;
 /* The first 16MB is identity-mapped during early boot (boot.S maps 0-16MB).
  * For addresses < 16MB we can use phys + 0xC0000000.
  * For addresses >= 16MB we must temporarily map them via VMM. */
-#include "kernel_va_map.h"
+#include "arch/x86/kernel_va_map.h"
 
 #define KERNEL_VIRT_BASE 0xC0000000U
 #define IDENTITY_LIMIT   0x01000000U  /* 16MB */

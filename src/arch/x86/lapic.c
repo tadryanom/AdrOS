@@ -1,5 +1,5 @@
 #include "arch/x86/lapic.h"
-#include "kernel_va_map.h"
+#include "arch/x86/kernel_va_map.h"
 #include "hal/cpu_features.h"
 #include "vmm.h"
 #include "io.h"

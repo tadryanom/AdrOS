@@ -1,6 +1,6 @@
 #include "arch/x86/ioapic.h"
 #include "arch/x86/lapic.h"
-#include "kernel_va_map.h"
+#include "arch/x86/kernel_va_map.h"
 #include "vmm.h"
 #include "console.h"
 #include "utils.h"

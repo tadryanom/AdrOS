@@ -18,6 +18,7 @@
 #include "vmm.h"
 #include "interrupts.h"
 #include "hal/driver.h"
+#include "io.h"
 
 #include <stddef.h>
 
@@ -99,32 +100,6 @@ static uint8_t vblk_status_byte __attribute__((aligned(4)));
 
 static spinlock_t vblk_lock = {0};
 
-/* ---- Port I/O helpers ---- */
-static inline void outl(uint16_t port, uint32_t val) {
-    __asm__ volatile("outl %0, %w1" :: "a"(val), "Nd"(port));
-}
-static inline uint32_t inl(uint16_t port) {
-    uint32_t val;
-    __asm__ volatile("inl %w1, %0" : "=a"(val) : "Nd"(port));
-    return val;
-}
-static inline void outw(uint16_t port, uint16_t val) {
-    __asm__ volatile("outw %0, %w1" :: "a"(val), "Nd"(port));
-}
-static inline uint16_t inw(uint16_t port) {
-    uint16_t val;
-    __asm__ volatile("inw %w1, %0" : "=a"(val) : "Nd"(port));
-    return val;
-}
-static inline void outb_port(uint16_t port, uint8_t val) {
-    __asm__ volatile("outb %0, %w1" :: "a"(val), "Nd"(port));
-}
-static inline uint8_t inb_port(uint16_t port) {
-    uint8_t val;
-    __asm__ volatile("inb %w1, %0" : "=a"(val) : "Nd"(port));
-    return val;
-}
-
 /* ---- Vring size calculation (legacy) ---- */
 static uint32_t vring_size(uint32_t num) {
     /* desc table + avail ring (aligned to page) + used ring */
@@ -156,11 +131,11 @@ int virtio_blk_init(void) {
     pci_config_write(dev->bus, dev->slot, dev->func, 0x04, cmd);
 
     /* Reset device */
-    outb_port(vblk_iobase + VIRTIO_PCI_STATUS, 0);
+    outb(vblk_iobase + VIRTIO_PCI_STATUS, 0);
 
     /* Acknowledge */
-    outb_port(vblk_iobase + VIRTIO_PCI_STATUS, VIRTIO_STATUS_ACK);
-    outb_port(vblk_iobase + VIRTIO_PCI_STATUS,
+    outb(vblk_iobase + VIRTIO_PCI_STATUS, VIRTIO_STATUS_ACK);
+    outb(vblk_iobase + VIRTIO_PCI_STATUS,
               VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER);
 
     /* Read host features, accept none for simplicity */
@@ -177,7 +152,7 @@ int virtio_blk_init(void) {
     vblk_queue_size = inw(vblk_iobase + VIRTIO_PCI_QUEUE_SIZE);
     if (vblk_queue_size == 0) {
         kprintf("[VIRTIO-BLK] Queue size is 0.\n");
-        outb_port(vblk_iobase + VIRTIO_PCI_STATUS, VIRTIO_STATUS_FAILED);
+        outb(vblk_iobase + VIRTIO_PCI_STATUS, VIRTIO_STATUS_FAILED);
         return -1;
     }
 
@@ -191,7 +166,7 @@ int virtio_blk_init(void) {
         void* frame = pmm_alloc_page();
         if (!frame) {
             kprintf("[VIRTIO-BLK] Failed to alloc vring page.\n");
-            outb_port(vblk_iobase + VIRTIO_PCI_STATUS, VIRTIO_STATUS_FAILED);
+            outb(vblk_iobase + VIRTIO_PCI_STATUS, VIRTIO_STATUS_FAILED);
             return -1;
         }
         vmm_map_page((uint64_t)(uintptr_t)frame,
@@ -214,7 +189,7 @@ int virtio_blk_init(void) {
     outl(vblk_iobase + VIRTIO_PCI_QUEUE_PFN, vring_phys / 4096U);
 
     /* Mark driver ready */
-    outb_port(vblk_iobase + VIRTIO_PCI_STATUS,
+    outb(vblk_iobase + VIRTIO_PCI_STATUS,
               VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER | VIRTIO_STATUS_DRIVER_OK);
 
     vblk_ready = 1;
@@ -284,7 +259,7 @@ static int vblk_do_request(uint32_t type, uint64_t sector,
     vblk_last_used_idx++;
 
     /* Read ISR to clear interrupt */
-    (void)inb_port(vblk_iobase + VIRTIO_PCI_ISR);
+    (void)inb(vblk_iobase + VIRTIO_PCI_ISR);
 
     int ret = (vblk_status_byte == 0) ? 0 : -1;
     spin_unlock_irqrestore(&vblk_lock, fl);

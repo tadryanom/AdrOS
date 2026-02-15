@@ -1,6 +1,6 @@
 #include "e1000.h"
 #include "hal/driver.h"
-#include "kernel_va_map.h"
+#include "arch/x86/kernel_va_map.h"
 #include "pci.h"
 #include "vmm.h"
 #include "pmm.h"

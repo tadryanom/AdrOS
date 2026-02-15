@@ -1,5 +1,5 @@
 #include "ata_dma.h"
-#include "kernel_va_map.h"
+#include "arch/x86/kernel_va_map.h"
 #include "pci.h"
 #include "io.h"
 #include "pmm.h"
