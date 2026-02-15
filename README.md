@@ -57,13 +57,15 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **File I/O:** `open`, `openat`, `read`, `write`, `close`, `lseek`, `stat`, `fstat`, `fstatat`, `dup`, `dup2`, `dup3`, `pipe`, `pipe2`, `select`, `poll`, `ioctl`, `fcntl`, `getdents`, `pread`, `pwrite`, `readv`, `writev`, `truncate`, `ftruncate`, `fsync`, `fdatasync`
 - **Directory ops:** `mkdir`, `rmdir`, `unlink`, `unlinkat`, `rename`, `chdir`, `getcwd`, `link`, `symlink`, `readlink`, `chmod`, `chown`, `access`, `umask`
 - **Signals:** `sigaction` (`SA_SIGINFO`), `sigprocmask`, `kill`, `sigreturn` (full trampoline), `sigpending`, `sigsuspend`, `sigaltstack`, `sigqueue`
-- **Process:** `setuid`, `setgid`, `seteuid`, `setegid`, `getuid`, `getgid`, `geteuid`, `getegid`, `alarm`, `times`, `futex`, `waitid`, `posix_spawn`, `setitimer`, `getitimer`
+- **Process:** `setuid`, `setgid`, `seteuid`, `setegid`, `getuid`, `getgid`, `geteuid`, `getegid`, `alarm`, `times`, `futex`, `waitid`, `posix_spawn`, `setitimer`, `getitimer`, `pivot_root`
 - **IPC:** `mq_open`, `mq_close`, `mq_unlink`, `mq_send`, `mq_receive`, `mq_getattr`, `mq_setattr`, `sem_open`, `sem_close`, `sem_unlink`, `sem_wait`, `sem_post`, `sem_getvalue`
+- **I/O multiplexing (advanced):** `epoll_create`, `epoll_ctl`, `epoll_wait`, `inotify_init`, `inotify_add_watch`, `inotify_rm_watch`
+- **Async I/O:** `aio_read`, `aio_write`, `aio_error`, `aio_return`, `aio_suspend`
 - **FD flags:** `O_NONBLOCK`, `O_CLOEXEC`, `O_APPEND`, `FD_CLOEXEC` via `fcntl` (`F_GETFD`/`F_SETFD`/`F_GETFL`/`F_SETFL`)
 - **File locking:** `flock` (advisory, no-op stub)
 - **Shared memory:** `shmget`, `shmat`, `shmdt`, `shmctl`
 - **Threads:** `clone`, `gettid`, `set_thread_area`, `futex`
-- **Networking:** `socket`, `bind`, `listen`, `accept`, `connect`, `send`, `recv`, `sendto`, `recvfrom`
+- **Networking:** `socket`, `bind`, `listen`, `accept`, `connect`, `send`, `recv`, `sendto`, `recvfrom`, `sendmsg`, `recvmsg`
 - Per-process fd table with atomic refcounted file objects
 - Centralized user-pointer access API (`user_range_ok`, `copy_from_user`, `copy_to_user`)
 - Error returns use negative errno codes (Linux-style)
@@ -129,7 +131,7 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **Core utilities** — `/bin/cat`, `/bin/ls`, `/bin/mkdir`, `/bin/rm`, `/bin/echo`
 - `/bin/init.elf` — comprehensive smoke test suite
 - `/bin/doom.elf` — DOOM (doomgeneric port) — runs on `/dev/fb0` + `/dev/kbd`
-- `/lib/ld.so` — dynamic linker with full relocation processing
+- `/lib/ld.so` — dynamic linker with auxv parsing, PLT/GOT eager relocation
 
 ### Dynamic Linking
 - **Full `ld.so`** — kernel-side relocation processing for `R_386_RELATIVE`, `R_386_32`, `R_386_GLOB_DAT`, `R_386_JMP_SLOT`, `R_386_COPY`, `R_386_PC32`
@@ -157,7 +159,7 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 
 ### Testing
 - **47 host-side unit tests** — `test_utils.c` (28) + `test_security.c` (19)
-- **35 QEMU smoke tests** — 4-CPU expect-based (file I/O, signals, memory mgmt, IPC, devices, procfs, networking)
+- **44 QEMU smoke tests** — 4-CPU expect-based (file I/O, signals, memory mgmt, IPC, devices, procfs, networking, epoll, inotify, aio)
 - **16-check test battery** — multi-disk ATA (hda+hdb+hdd), VFS mount, ping, diskfs ops (`make test-battery`)
 - **Static analysis** — cppcheck, sparse, gcc -fanalyzer
 - **GDB scripted checks** — heap/PMM/VGA integrity
@@ -197,7 +199,7 @@ QEMU debug helpers:
 
 See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for a detailed checklist.
 
-**All 31 planned POSIX tasks are complete**, plus 35 additional features (66 total). The kernel covers **~98%** of the core POSIX interfaces needed for a practical Unix-like system. All 41 smoke tests, 16 battery checks, and 19 host unit tests pass clean. ARM64, RISC-V 64, and MIPS32 boot on QEMU.
+**All 31 planned POSIX tasks are complete**, plus 44 additional features (75 total). The kernel covers **~98%** of the core POSIX interfaces needed for a practical Unix-like system. All 44 smoke tests, 16 battery checks, and 19 host unit tests pass clean. ARM64, RISC-V 64, and MIPS32 boot on QEMU.
 
 ## Directory Structure
 - `src/kernel/` — Architecture-independent kernel (VFS, syscalls, scheduler, tmpfs, diskfs, devfs, overlayfs, procfs, FAT12/16/32, ext2, PTY, TTY, shm, signals, networking, threads, vDSO, KASLR, permissions)
