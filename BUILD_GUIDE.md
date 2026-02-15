@@ -2,7 +2,7 @@
 
 This guide explains how to build and run AdrOS on your local machine (Linux/WSL).
 
-AdrOS is a Unix-like, POSIX-compatible, multi-architecture OS kernel with threads, futex synchronization, networking (TCP/IP + DNS + ICMP + IPv6 + DHCP via lwIP), dynamic linking (`dlopen`/`dlsym`), FAT12/16/32 + ext2 filesystems, POSIX IPC (message queues, semaphores, shared memory), ASLR, SMAP/SMEP, vDSO, zero-copy DMA, virtio-blk, multi-drive ATA, interval timers, `posix_spawn`, a POSIX shell, framebuffer graphics, per-CPU runqueue infrastructure, and ARM64/RISC-V bring-up. See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for the full compatibility checklist.
+AdrOS is a Unix-like, POSIX-compatible, multi-architecture OS kernel with threads, futex synchronization, networking (TCP/IP + DNS + ICMP + IPv6 + DHCP via lwIP), dynamic linking (`dlopen`/`dlsym`), FAT12/16/32 + ext2 filesystems, POSIX IPC (message queues, semaphores, shared memory), ASLR, SMAP/SMEP, vDSO, zero-copy DMA, virtio-blk, multi-drive ATA, interval timers, `posix_spawn`, epoll, inotify, aio_*, sendmsg/recvmsg, pivot_root, a POSIX shell, framebuffer graphics, per-CPU runqueue infrastructure, and ARM64/RISC-V/MIPS bring-up. See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for the full compatibility checklist.
 
 ## 1. Dependencies
 
@@ -92,12 +92,12 @@ Syscall return convention note:
 
 ### Userland programs
 The following ELF binaries are bundled in the initrd:
-- `/bin/init.elf` — comprehensive smoke test suite (20+ checks)
+- `/bin/init.elf` — comprehensive smoke test suite (44 checks)
 - `/bin/echo` — argv/envp test
 - `/bin/sh` — POSIX sh-compatible shell with `$PATH` search, pipes, redirects, builtins
 - `/bin/cat`, `/bin/ls`, `/bin/mkdir`, `/bin/rm` — core utilities
 - `/bin/doom.elf` — DOOM (doomgeneric port) — included in initrd if built (see below)
-- `/lib/ld.so` — dynamic linker with full relocation processing
+- `/lib/ld.so` — dynamic linker with auxv parsing, PLT/GOT eager relocation
 
 The ulibc provides: `printf`, `malloc`/`free`/`calloc`/`realloc`, `string.h`, `unistd.h`, `errno.h`, `pthread.h`, `signal.h` (with `raise`, `sigaltstack`, `sigpending`, `sigsuspend`), `stdio.h` (buffered I/O with `fopen`/`fread`/`fwrite`/`fclose`), `stdlib.h` (`atof`, `strtol`, `getenv` stub, `system` stub), `ctype.h`, `sys/mman.h` (`mmap`/`munmap`), `sys/ioctl.h` (`ioctl`), `time.h` (`nanosleep`/`clock_gettime`), `sys/times.h`, `sys/uio.h`, `sys/types.h`, `sys/stat.h`, `math.h` (`fabs`), `assert.h`, `fcntl.h`, `strings.h`, `inttypes.h`, `linux/futex.h`, and `realpath()`.
 
@@ -120,6 +120,9 @@ The init program (`/bin/init.elf`) runs a comprehensive suite of smoke tests on 
 - diskfs mkdir/unlink/getdents
 - Persistent counter (`/persist/counter`)
 - `/dev/tty` write test
+- Memory: `brk`, `mmap`/`munmap`, `clock_gettime`, shared memory (`shmget`/`shmat`/`shmdt`)
+- Advanced: `pread`/`pwrite`, `ftruncate`, `symlink`/`readlink`, `access`, `sigprocmask`/`sigpending`, `alarm`/`SIGALRM`, `O_APPEND`, `umask`, pipe capacity (`F_GETPIPE_SZ`/`F_SETPIPE_SZ`), `waitid`, `setitimer`/`getitimer`, `select`/`poll` on regular files, hard links
+- New: `epoll` (create/ctl/wait on pipe), `inotify` (init/add_watch/rm_watch), `aio_*` (read/write/error/return)
 
 All tests print `[init] ... OK` on success. Any failure calls `sys_exit(1)`.
 
@@ -134,7 +137,7 @@ Individual test targets:
 ```bash
 make check        # cppcheck + sparse + gcc -fanalyzer
 make test-host    # 47 host-side unit tests (test_utils + test_security)
-make test         # QEMU smoke test (4 CPUs, 90s timeout, 20 checks incl. ICMP ping)
+make test         # QEMU smoke test (4 CPUs, 30s timeout, 44 checks incl. ICMP ping, epoll, inotify, aio)
 make test-1cpu    # Single-CPU smoke test (50s timeout)
 make test-battery # Full test battery: multi-disk ATA, VFS mount, ping, diskfs (16 checks)
 make test-gdb     # GDB scripted integrity checks (heap, PMM, VGA)

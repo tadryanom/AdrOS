@@ -104,6 +104,17 @@ Notes:
 | `sigqueue` | [x] | Queued real-time signals via `rt_sigqueueinfo` |
 | Signal defaults | [x] | `SIGKILL`/`SIGSEGV`/`SIGUSR1`/`SIGINT`/`SIGTSTP`/`SIGTTOU`/`SIGTTIN`/`SIGQUIT`/`SIGALRM` handled |
 
+## 4b. Syscalls — I/O Multiplexing (Advanced)
+
+| Syscall | Status | Notes |
+|---------|--------|-------|
+| `epoll_create` | [x] | Creates epoll instance; returns fd |
+| `epoll_ctl` | [x] | Add/modify/delete fd interest; `EPOLL_CTL_ADD`/`MOD`/`DEL` |
+| `epoll_wait` | [x] | Wait for events on epoll fd; timeout support |
+| `inotify_init` | [x] | Creates inotify instance; returns fd |
+| `inotify_add_watch` | [x] | Add watch on path with event mask |
+| `inotify_rm_watch` | [x] | Remove watch by descriptor |
+
 ## 5. File Descriptor Layer
 
 | Feature | Status | Notes |
@@ -213,6 +224,7 @@ Notes:
 | `bind`/`listen`/`accept` | [x] | TCP server support |
 | `connect`/`send`/`recv` | [x] | TCP client support |
 | `sendto`/`recvfrom` | [x] | UDP support |
+| `sendmsg`/`recvmsg` | [x] | Scatter-gather I/O via `struct msghdr` + `struct iovec` |
 | DNS resolver | [x] | lwIP DNS enabled; kernel `dns_resolve()` wrapper with async callback + timeout |
 | `/etc/hosts` | [x] | Kernel-level hosts file parsing and lookup |
 | `getaddrinfo` | [x] | Kernel-level hostname resolution with hosts file + DNS fallback |
@@ -232,6 +244,22 @@ Notes:
 | Per-thread errno | [x] | Via `set_thread_area` + TLS |
 | Futex | [x] | `FUTEX_WAIT`/`FUTEX_WAKE` with 32-entry global waiter table |
 
+## 11b. Asynchronous I/O
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| `aio_read` | [x] | Asynchronous file read (synchronous implementation) |
+| `aio_write` | [x] | Asynchronous file write (synchronous implementation) |
+| `aio_error` | [x] | Check completion status of aio operation |
+| `aio_return` | [x] | Get return value of completed aio operation |
+| `aio_suspend` | [x] | Wait for aio completion (no-op, operations complete synchronously) |
+
+## 11c. Filesystem Operations (Advanced)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| `pivot_root` | [x] | Swap root filesystem; mounts old root at specified path |
+
 ## 12. Dynamic Linking
 
 | Feature | Status | Notes |
@@ -242,15 +270,16 @@ Notes:
 | ELF auxiliary vector types | [x] | `AT_PHDR`, `AT_PHENT`, `AT_PHNUM`, `AT_ENTRY`, `AT_BASE`, `AT_PAGESZ` defined |
 | ELF relocation types | [x] | `R_386_RELATIVE`, `R_386_32`, `R_386_GLOB_DAT`, `R_386_JMP_SLOT` defined |
 | `Elf32_Dyn`/`Elf32_Rel`/`Elf32_Sym` | [x] | Full dynamic section structures in `elf.h` |
-| Userspace `ld.so` | [x] | Full relocation processing (`R_386_RELATIVE`, `R_386_32`, `R_386_GLOB_DAT`, `R_386_JMP_SLOT`, `R_386_COPY`, `R_386_PC32`) |
+| Userspace `ld.so` | [x] | Functional dynamic linker with auxv parsing; jumps to real entry via AT_ENTRY |
 | Shared libraries (.so) | [x] | `dlopen`/`dlsym`/`dlclose` syscalls for runtime shared library loading |
+| PLT/GOT support | [x] | Kernel-side eager relocation of `R_386_JMP_SLOT`; auxv (AT_ENTRY/AT_BASE) passed on user stack |
 
 ## 13. Userland
 
 | Feature | Status | Notes |
 |---------|--------|-------|
 | ELF32 loader | [x] | Secure with W^X + ASLR; supports `ET_EXEC` + `ET_DYN` + `PT_INTERP` |
-| `/bin/init.elf` (smoke tests) | [x] | Comprehensive test suite (41 checks: file I/O, signals, memory, IPC, devices, procfs) |
+| `/bin/init.elf` (smoke tests) | [x] | Comprehensive test suite (44 checks: file I/O, signals, memory, IPC, devices, procfs, epoll, inotify, aio) |
 | `/bin/echo` | [x] | argv/envp test |
 | `/bin/sh` | [x] | POSIX sh-compatible shell; builtins, pipes, redirects, `$PATH` search |
 | `/bin/cat` | [x] | |
@@ -258,7 +287,7 @@ Notes:
 | `/bin/mkdir` | [x] | |
 | `/bin/rm` | [x] | |
 | `/bin/doom.elf` | [x] | DOOM (doomgeneric port) running on `/dev/fb0` + `/dev/kbd` |
-| `/lib/ld.so` | [x] | Full dynamic linker with relocation processing + `dlopen`/`dlsym`/`dlclose` |
+| `/lib/ld.so` | [x] | Dynamic linker with auxv parsing, PLT/GOT eager relocation, `dlopen`/`dlsym`/`dlclose` |
 | Minimal libc (ulibc) | [x] | `printf`, `malloc`, `string.h`, `unistd.h`, `errno.h`, `pthread.h`, `signal.h`, `stdio.h`, `stdlib.h`, `ctype.h`, `sys/mman.h`, `sys/ioctl.h`, `time.h`, `math.h`, `assert.h`, `fcntl.h`, `strings.h`, `inttypes.h`, `sys/types.h`, `sys/stat.h`, `sys/times.h`, `sys/uio.h`, `linux/futex.h` |
 | `$PATH` search | [x] | Shell resolves commands via `$PATH` |
 
@@ -271,11 +300,19 @@ Notes:
 | Per-process CPU time accounting | [x] | `utime`/`stime` fields incremented per scheduler tick |
 | Per-CPU runqueues | [x] | Per-CPU load counters with atomics, least-loaded CPU query |
 
+## 14b. Synchronization (Kernel)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| VMM spinlock | [x] | `vmm_kernel_lock` protects page table operations for SMP safety |
+| `vmm_find_free_area()` | [x] | Scans user VA space for free holes; used by mmap without hint |
+| Spinlock debug | [x] | Name field, CPU ID tracking, nesting counter for deadlock detection |
+
 ---
 
 ## Implementation Progress
 
-### All 31 planned tasks completed ✅ + 35 additional features (66 total)
+### All 31 planned tasks completed ✅ + 44 additional features (75 total)
 
 **High Priority (8/8):**
 1. ~~`raise()` em ulibc~~ ✅
@@ -350,6 +387,15 @@ Notes:
 64. ~~Shared libraries .so — dlopen/dlsym/dlclose~~ ✅
 65. ~~Per-CPU scheduler runqueue infrastructure~~ ✅
 66. ~~Multi-arch ARM64/RISC-V bring-up (QEMU virt boot)~~ ✅
+67. ~~VMM spinlock — SMP-safe page table operations~~ ✅
+68. ~~`vmm_find_free_area()` — VA space scan for mmap without hint~~ ✅
+69. ~~Spinlock debug — name, CPU ID tracking, nesting counter~~ ✅
+70. ~~`epoll` — scalable I/O event notification~~ ✅
+71. ~~`inotify` — filesystem event monitoring~~ ✅
+72. ~~`sendmsg`/`recvmsg` — scatter-gather socket I/O~~ ✅
+73. ~~`pivot_root` — root filesystem swap syscall~~ ✅
+74. ~~Shared library lazy binding — functional ld.so with auxv, PLT/GOT~~ ✅
+75. ~~`aio_*` — POSIX asynchronous I/O~~ ✅
 
 ---
 
@@ -360,9 +406,8 @@ All previously identified gaps have been implemented. Potential future enhanceme
 | Area | Description |
 |------|-------------|
 | **Full SMP scheduling** | Move processes to AP runqueues (infrastructure in place) |
-| **ARM64/RISC-V subsystems** | PMM, VMM, scheduler, syscalls for non-x86 |
-| **`epoll`** | Scalable I/O event notification |
-| **`inotify`** | Filesystem event monitoring |
-| **`sendmsg`/`recvmsg`** | Advanced socket I/O with ancillary data |
-| **Shared library lazy binding** | PLT/GOT lazy resolution in ld.so |
-| **`aio_*`** | POSIX asynchronous I/O |
+| **ARM64/RISC-V/MIPS subsystems** | PMM, VMM, scheduler, syscalls for non-x86 |
+| **Intel HDA audio** | DMA ring buffer audio driver |
+| **USTAR+LZ4 InitRD** | Alternative initrd format (current: custom binary) |
+| **PLT/GOT lazy binding** | Userspace resolver trampoline in ld.so (currently eager) |
+| **epoll edge-triggered** | `EPOLLET` full implementation with level-to-edge semantics |
