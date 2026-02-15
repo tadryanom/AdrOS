@@ -3686,6 +3686,37 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         return;
     }
 
+    if (syscall_no == SYSCALL_GETADDRINFO) {
+        /* getaddrinfo(user_hostname, user_out_ip)
+         * Resolves hostname to IPv4 address (network byte order).
+         * Checks built-in hosts table first, then falls back to DNS. */
+        const char* user_host = (const char*)sc_arg0(regs);
+        uint32_t* user_out = (uint32_t*)sc_arg1(regs);
+        if (!user_host || !user_out) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
+        if (user_range_ok(user_out, 4) == 0) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
+
+        char host[128];
+        if (copy_from_user(host, user_host, 127) < 0) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
+        host[127] = 0;
+
+        /* Built-in /etc/hosts equivalent */
+        uint32_t ip = 0;
+        if (strcmp(host, "localhost") == 0 || strcmp(host, "localhost.localdomain") == 0) {
+            ip = 0x0100007FU; /* 127.0.0.1 in network byte order (little-endian) */
+        }
+
+        if (ip == 0) {
+            /* Try kernel DNS resolver */
+            extern int dns_resolve(const char* hostname, uint32_t* out_ip);
+            int rc = dns_resolve(host, &ip);
+            if (rc < 0) { sc_ret(regs) = (uint32_t)-ENOENT; return; }
+        }
+
+        if (copy_to_user(user_out, &ip, 4) < 0) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
+        sc_ret(regs) = 0;
+        return;
+    }
+
     sc_ret(regs) = (uint32_t)-ENOSYS;
 }
 
