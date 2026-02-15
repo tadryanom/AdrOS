@@ -193,6 +193,117 @@ static int syscall_mq_unlink_impl(const char* user_name) {
     return 0;
 }
 
+/* --- POSIX named semaphores --- */
+#define SEM_MAX  16
+
+struct ksem_named {
+    int      active;
+    char     name[32];
+    int32_t  value;
+    spinlock_t lock;
+};
+
+static struct ksem_named sem_table[SEM_MAX];
+static spinlock_t sem_table_lock = {0};
+
+static int syscall_sem_open_impl(const char* user_name, uint32_t oflag, uint32_t init_val) {
+    char name[32];
+    if (copy_from_user(name, user_name, 31) < 0) return -EFAULT;
+    name[31] = 0;
+
+    uintptr_t fl = spin_lock_irqsave(&sem_table_lock);
+    for (int i = 0; i < SEM_MAX; i++) {
+        if (sem_table[i].active && strcmp(sem_table[i].name, name) == 0) {
+            spin_unlock_irqrestore(&sem_table_lock, fl);
+            return i;
+        }
+    }
+    if (!(oflag & 0x40U)) { /* O_CREAT */
+        spin_unlock_irqrestore(&sem_table_lock, fl);
+        return -ENOENT;
+    }
+    for (int i = 0; i < SEM_MAX; i++) {
+        if (!sem_table[i].active) {
+            memset(&sem_table[i], 0, sizeof(sem_table[i]));
+            sem_table[i].active = 1;
+            strcpy(sem_table[i].name, name);
+            sem_table[i].value = (int32_t)init_val;
+            spin_unlock_irqrestore(&sem_table_lock, fl);
+            return i;
+        }
+    }
+    spin_unlock_irqrestore(&sem_table_lock, fl);
+    return -ENOSPC;
+}
+
+static int syscall_sem_close_impl(int sid) {
+    (void)sid;
+    return 0;
+}
+
+static int syscall_sem_wait_impl(int sid) {
+    if (sid < 0 || sid >= SEM_MAX) return -EINVAL;
+    extern void process_sleep(uint32_t ticks);
+
+    for (;;) {
+        uintptr_t fl = spin_lock_irqsave(&sem_table[sid].lock);
+        if (!sem_table[sid].active) {
+            spin_unlock_irqrestore(&sem_table[sid].lock, fl);
+            return -EINVAL;
+        }
+        if (sem_table[sid].value > 0) {
+            sem_table[sid].value--;
+            spin_unlock_irqrestore(&sem_table[sid].lock, fl);
+            return 0;
+        }
+        spin_unlock_irqrestore(&sem_table[sid].lock, fl);
+        process_sleep(1);
+    }
+}
+
+static int syscall_sem_post_impl(int sid) {
+    if (sid < 0 || sid >= SEM_MAX) return -EINVAL;
+    uintptr_t fl = spin_lock_irqsave(&sem_table[sid].lock);
+    if (!sem_table[sid].active) {
+        spin_unlock_irqrestore(&sem_table[sid].lock, fl);
+        return -EINVAL;
+    }
+    sem_table[sid].value++;
+    spin_unlock_irqrestore(&sem_table[sid].lock, fl);
+    return 0;
+}
+
+static int syscall_sem_unlink_impl(const char* user_name) {
+    char name[32];
+    if (copy_from_user(name, user_name, 31) < 0) return -EFAULT;
+    name[31] = 0;
+
+    uintptr_t fl = spin_lock_irqsave(&sem_table_lock);
+    for (int i = 0; i < SEM_MAX; i++) {
+        if (sem_table[i].active && strcmp(sem_table[i].name, name) == 0) {
+            sem_table[i].active = 0;
+            spin_unlock_irqrestore(&sem_table_lock, fl);
+            return 0;
+        }
+    }
+    spin_unlock_irqrestore(&sem_table_lock, fl);
+    return -ENOENT;
+}
+
+static int syscall_sem_getvalue_impl(int sid, int* user_val) {
+    if (sid < 0 || sid >= SEM_MAX) return -EINVAL;
+    if (!user_val || user_range_ok(user_val, 4) == 0) return -EFAULT;
+    uintptr_t fl = spin_lock_irqsave(&sem_table[sid].lock);
+    if (!sem_table[sid].active) {
+        spin_unlock_irqrestore(&sem_table[sid].lock, fl);
+        return -EINVAL;
+    }
+    int32_t v = sem_table[sid].value;
+    spin_unlock_irqrestore(&sem_table[sid].lock, fl);
+    if (copy_to_user(user_val, &v, 4) < 0) return -EFAULT;
+    return 0;
+}
+
 /* --- Advisory file locking (flock) --- */
 enum {
     FLOCK_SH = 1,
@@ -3545,6 +3656,33 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
     }
     if (syscall_no == SYSCALL_MQ_UNLINK) {
         sc_ret(regs) = (uint32_t)syscall_mq_unlink_impl((const char*)sc_arg0(regs));
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SEM_OPEN) {
+        sc_ret(regs) = (uint32_t)syscall_sem_open_impl(
+            (const char*)sc_arg0(regs), sc_arg1(regs), sc_arg2(regs));
+        return;
+    }
+    if (syscall_no == SYSCALL_SEM_CLOSE) {
+        sc_ret(regs) = (uint32_t)syscall_sem_close_impl((int)sc_arg0(regs));
+        return;
+    }
+    if (syscall_no == SYSCALL_SEM_WAIT) {
+        sc_ret(regs) = (uint32_t)syscall_sem_wait_impl((int)sc_arg0(regs));
+        return;
+    }
+    if (syscall_no == SYSCALL_SEM_POST) {
+        sc_ret(regs) = (uint32_t)syscall_sem_post_impl((int)sc_arg0(regs));
+        return;
+    }
+    if (syscall_no == SYSCALL_SEM_UNLINK) {
+        sc_ret(regs) = (uint32_t)syscall_sem_unlink_impl((const char*)sc_arg0(regs));
+        return;
+    }
+    if (syscall_no == SYSCALL_SEM_GETVALUE) {
+        sc_ret(regs) = (uint32_t)syscall_sem_getvalue_impl(
+            (int)sc_arg0(regs), (int*)sc_arg1(regs));
         return;
     }
 
