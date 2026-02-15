@@ -1237,6 +1237,229 @@ static int syscall_epoll_wait_impl(int epfd, struct epoll_event* user_events,
     }
 }
 
+/* ------------------------------------------------------------------ */
+/*  inotify implementation                                             */
+/* ------------------------------------------------------------------ */
+
+#define INOTIFY_MAX_WATCHES 32
+#define INOTIFY_EVENT_BUF   4096
+
+enum {
+    IN_ACCESS        = 0x00000001,
+    IN_MODIFY        = 0x00000002,
+    IN_ATTRIB        = 0x00000004,
+    IN_CLOSE_WRITE   = 0x00000008,
+    IN_CLOSE_NOWRITE = 0x00000010,
+    IN_OPEN          = 0x00000020,
+    IN_MOVED_FROM    = 0x00000040,
+    IN_MOVED_TO      = 0x00000080,
+    IN_CREATE        = 0x00000100,
+    IN_DELETE         = 0x00000200,
+    IN_DELETE_SELF    = 0x00000400,
+    IN_MOVE_SELF     = 0x00000800,
+};
+
+struct inotify_event_hdr {
+    int      wd;
+    uint32_t mask;
+    uint32_t cookie;
+    uint32_t len;
+};
+
+struct inotify_watch {
+    int   wd;
+    char  path[128];
+    uint32_t mask;
+    int   active;
+};
+
+struct inotify_instance {
+    struct inotify_watch watches[INOTIFY_MAX_WATCHES];
+    int next_wd;
+    uint8_t  event_buf[INOTIFY_EVENT_BUF];
+    uint32_t event_rpos;
+    uint32_t event_wpos;
+    uint32_t event_count;
+};
+
+__attribute__((unused))
+static void inotify_push_event(struct inotify_instance* in, int wd,
+                                uint32_t mask, const char* name) {
+    uint32_t name_len = 0;
+    if (name) {
+        while (name[name_len]) name_len++;
+        name_len++; /* include NUL */
+        name_len = (name_len + 3) & ~3U; /* align to 4 bytes */
+    }
+    uint32_t total = sizeof(struct inotify_event_hdr) + name_len;
+    if (in->event_count + total > INOTIFY_EVENT_BUF) return; /* drop if full */
+
+    struct inotify_event_hdr hdr;
+    hdr.wd = wd;
+    hdr.mask = mask;
+    hdr.cookie = 0;
+    hdr.len = name_len;
+
+    /* Write header byte by byte into ring */
+    const uint8_t* hp = (const uint8_t*)&hdr;
+    for (uint32_t i = 0; i < sizeof(hdr); i++) {
+        in->event_buf[in->event_wpos % INOTIFY_EVENT_BUF] = hp[i];
+        in->event_wpos++;
+    }
+    /* Write name (padded) */
+    if (name && name_len > 0) {
+        for (uint32_t i = 0; i < name_len; i++) {
+            uint8_t c = (i < name_len && name[i]) ? (uint8_t)name[i] : 0;
+            in->event_buf[in->event_wpos % INOTIFY_EVENT_BUF] = c;
+            in->event_wpos++;
+        }
+    }
+    in->event_count += total;
+}
+
+static uint32_t inotify_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
+    (void)offset;
+    if (!node || !buffer) return 0;
+    struct inotify_instance* in = (struct inotify_instance*)(uintptr_t)node->inode;
+    if (!in) return 0;
+
+    if (in->event_count == 0) return 0;
+
+    uint32_t copied = 0;
+    while (copied < size && in->event_count > 0) {
+        /* Peek at header to get total event size */
+        if (in->event_count < sizeof(struct inotify_event_hdr)) break;
+
+        struct inotify_event_hdr hdr = {0, 0, 0, 0};
+        uint8_t* hp = (uint8_t*)&hdr;
+        for (uint32_t i = 0; i < sizeof(hdr); i++)
+            hp[i] = in->event_buf[(in->event_rpos + i) % INOTIFY_EVENT_BUF];
+
+        uint32_t total = sizeof(hdr) + hdr.len;
+        if (in->event_count < total) break;
+        if (copied + total > size) break;
+
+        for (uint32_t i = 0; i < total; i++) {
+            buffer[copied + i] = in->event_buf[(in->event_rpos + i) % INOTIFY_EVENT_BUF];
+        }
+        in->event_rpos = (in->event_rpos + total) % INOTIFY_EVENT_BUF;
+        in->event_count -= total;
+        copied += total;
+    }
+    return copied;
+}
+
+static void inotify_close(fs_node_t* node) {
+    if (node && node->inode) {
+        kfree((void*)(uintptr_t)node->inode);
+        node->inode = 0;
+    }
+}
+
+static int inotify_poll(fs_node_t* node, int events) {
+    if (!node) return 0;
+    struct inotify_instance* in = (struct inotify_instance*)(uintptr_t)node->inode;
+    if (!in) return 0;
+    int rev = 0;
+    if ((events & VFS_POLL_IN) && in->event_count > 0) rev |= VFS_POLL_IN;
+    return rev;
+}
+
+static struct file_operations inotify_fops = {
+    .read  = inotify_read,
+    .write = NULL,
+    .open  = NULL,
+    .close = inotify_close,
+    .ioctl = NULL,
+    .mmap  = NULL,
+    .poll  = inotify_poll,
+};
+
+static int syscall_inotify_init_impl(void) {
+    if (!current_process) return -EINVAL;
+
+    struct inotify_instance* in = (struct inotify_instance*)kmalloc(sizeof(*in));
+    if (!in) return -ENOMEM;
+    memset(in, 0, sizeof(*in));
+    in->next_wd = 1;
+
+    fs_node_t* node = (fs_node_t*)kmalloc(sizeof(fs_node_t));
+    if (!node) { kfree(in); return -ENOMEM; }
+    memset(node, 0, sizeof(*node));
+    node->flags = FS_FILE;
+    node->f_ops = &inotify_fops;
+    node->inode = (uintptr_t)in;
+
+    struct file* f = (struct file*)kmalloc(sizeof(struct file));
+    if (!f) { kfree(node); kfree(in); return -ENOMEM; }
+    memset(f, 0, sizeof(*f));
+    f->node = node;
+    f->refcount = 1;
+
+    int fd = fd_alloc(f);
+    if (fd < 0) { kfree(f); kfree(node); kfree(in); }
+    return fd;
+}
+
+static int syscall_inotify_add_watch_impl(int infd, const char* user_path, uint32_t mask) {
+    if (!current_process) return -EINVAL;
+
+    struct file* ef = fd_get(infd);
+    if (!ef || !ef->node || ef->node->f_ops != &inotify_fops) return -EBADF;
+
+    struct inotify_instance* in = (struct inotify_instance*)(uintptr_t)ef->node->inode;
+    if (!in) return -EBADF;
+
+    char kpath[128];
+    if (path_resolve_user(user_path, kpath, sizeof(kpath)) < 0) return -EFAULT;
+
+    /* Check path exists */
+    fs_node_t* target = vfs_lookup(kpath);
+    if (!target) return -ENOENT;
+
+    /* Check if already watching this path */
+    for (int i = 0; i < INOTIFY_MAX_WATCHES; i++) {
+        if (in->watches[i].active && strcmp(in->watches[i].path, kpath) == 0) {
+            in->watches[i].mask = mask;
+            return in->watches[i].wd;
+        }
+    }
+
+    /* Find free slot */
+    int slot = -1;
+    for (int i = 0; i < INOTIFY_MAX_WATCHES; i++) {
+        if (!in->watches[i].active) { slot = i; break; }
+    }
+    if (slot < 0) return -ENOSPC;
+
+    int wd = in->next_wd++;
+    in->watches[slot].wd = wd;
+    strncpy(in->watches[slot].path, kpath, 127);
+    in->watches[slot].path[127] = 0;
+    in->watches[slot].mask = mask;
+    in->watches[slot].active = 1;
+
+    return wd;
+}
+
+static int syscall_inotify_rm_watch_impl(int infd, int wd) {
+    if (!current_process) return -EINVAL;
+
+    struct file* ef = fd_get(infd);
+    if (!ef || !ef->node || ef->node->f_ops != &inotify_fops) return -EBADF;
+
+    struct inotify_instance* in = (struct inotify_instance*)(uintptr_t)ef->node->inode;
+    if (!in) return -EBADF;
+
+    for (int i = 0; i < INOTIFY_MAX_WATCHES; i++) {
+        if (in->watches[i].active && in->watches[i].wd == wd) {
+            in->watches[i].active = 0;
+            return 0;
+        }
+    }
+    return -EINVAL;
+}
+
 static uint32_t pipe_read(fs_node_t* n, uint32_t offset, uint32_t size, uint8_t* buffer) {
     (void)offset;
     struct pipe_node* pn = (struct pipe_node*)n;
@@ -4174,6 +4397,21 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         sc_ret(regs) = (uint32_t)syscall_epoll_wait_impl(
             (int)sc_arg0(regs), (struct epoll_event*)sc_arg1(regs),
             (int)sc_arg2(regs), (int)sc_arg3(regs));
+        return;
+    }
+
+    if (syscall_no == SYSCALL_INOTIFY_INIT) {
+        sc_ret(regs) = (uint32_t)syscall_inotify_init_impl();
+        return;
+    }
+    if (syscall_no == SYSCALL_INOTIFY_ADD_WATCH) {
+        sc_ret(regs) = (uint32_t)syscall_inotify_add_watch_impl(
+            (int)sc_arg0(regs), (const char*)sc_arg1(regs), (uint32_t)sc_arg2(regs));
+        return;
+    }
+    if (syscall_no == SYSCALL_INOTIFY_RM_WATCH) {
+        sc_ret(regs) = (uint32_t)syscall_inotify_rm_watch_impl(
+            (int)sc_arg0(regs), (int)sc_arg1(regs));
         return;
     }
 
