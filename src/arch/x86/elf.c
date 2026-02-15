@@ -363,8 +363,6 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
             break;
         }
     }
-    (void)has_interp;
-
     /* 32 KB user stack with a 4 KB guard page below (unmapped).
      * Guard page at stack_base - 0x1000 is left unmapped so stack overflow
      * triggers a page fault → SIGSEGV instead of silent corruption.
@@ -383,6 +381,22 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
         return src2;
     }
 
+    uintptr_t sp = user_stack_base + user_stack_size;
+
+    /* When an interpreter is loaded, push auxv entries onto the user stack
+     * so ld.so can locate the program entry point and ELF headers. */
+    if (has_interp) {
+        elf32_auxv_t auxv[6];
+        auxv[0].a_type = AT_ENTRY;  auxv[0].a_val = (uint32_t)eh->e_entry;
+        auxv[1].a_type = AT_BASE;   auxv[1].a_val = INTERP_BASE;
+        auxv[2].a_type = AT_PAGESZ; auxv[2].a_val = 0x1000;
+        auxv[3].a_type = AT_PHDR;   auxv[3].a_val = (uint32_t)eh->e_phoff + (uint32_t)eh->e_entry;
+        auxv[4].a_type = AT_PHNUM;  auxv[4].a_val = eh->e_phnum;
+        auxv[5].a_type = AT_NULL;   auxv[5].a_val = 0;
+        sp -= sizeof(auxv);
+        memcpy((void*)sp, auxv, sizeof(auxv));
+    }
+
     /* Map vDSO shared page read-only into user address space */
     {
         extern uintptr_t vdso_get_phys(void);
@@ -394,7 +408,7 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
     }
 
     *entry_out = real_entry;
-    *user_stack_top_out = user_stack_base + user_stack_size;
+    *user_stack_top_out = sp;
     *addr_space_out = new_as;
     if (heap_break_out) {
         *heap_break_out = (highest_seg_end + 0xFFFU) & ~(uintptr_t)0xFFFU;
