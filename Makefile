@@ -117,9 +117,9 @@ ifeq ($(ARCH),mips)
     CC := mipsel-linux-gnu-gcc
     AS := mipsel-linux-gnu-as
     LD := mipsel-linux-gnu-ld
-    CFLAGS := -ffreestanding -O2 -Wall -Wextra -Werror -Wno-error=cpp -Iinclude -mabi=32 -march=mips32
+    CFLAGS := -ffreestanding -O2 -Wall -Wextra -Werror -Wno-error=cpp -Iinclude -mabi=32 -march=mips32r2 -mno-abicalls -fno-pic -G0
     LDFLAGS := -T $(SRC_DIR)/arch/mips/linker.ld
-    ASFLAGS :=
+    ASFLAGS := -march=mips32r2
     ASM_SOURCES := $(wildcard $(SRC_DIR)/arch/mips/*.S)
     C_SOURCES += $(wildcard $(SRC_DIR)/arch/mips/*.c)
 endif
@@ -221,6 +221,11 @@ run-riscv: adros-riscv.bin
 	@rm -f serial-riscv.log
 	@qemu-system-riscv64 -M virt -m 128M -nographic -bios none \
 		-kernel adros-riscv.bin -serial mon:stdio $(QEMU_DFLAGS)
+
+run-mips: adros-mips.bin
+	@rm -f serial-mips.log
+	@qemu-system-mipsel -M malta -m 128M -nographic \
+		-kernel adros-mips.bin -serial mon:stdio $(QEMU_DFLAGS)
 
 # ---- Static Analysis ----
 

@@ -2,29 +2,32 @@
 #define SPINLOCK_H
 
 #include <stdint.h>
-
 #include <stddef.h>
 
 /*
- * Per-architecture spin-wait hint.
- * Reduces power consumption and avoids memory-order pipeline stalls
- * while spinning. Essential for SMP correctness and performance.
+ * Architecture-specific primitives: cpu_relax(), irq_save(), irq_restore().
+ * Each arch header provides these as static inline functions with the
+ * appropriate inline assembly.  The agnostic layer below only uses them
+ * through the function interface — no arch #ifdefs leak here.
  */
-static inline void cpu_relax(void) {
 #if defined(__i386__) || defined(__x86_64__)
-    __asm__ volatile("pause" ::: "memory");
-#elif defined(__arm__)
-    __asm__ volatile("yield" ::: "memory");
-#elif defined(__aarch64__)
-    __asm__ volatile("yield" ::: "memory");
+#include "arch/x86/spinlock.h"
+#elif defined(__aarch64__) || defined(__arm__)
+#include "arch/arm/spinlock.h"
 #elif defined(__riscv)
-    __asm__ volatile("fence" ::: "memory");
+#include "arch/riscv/spinlock.h"
 #elif defined(__mips__)
-    __asm__ volatile("pause" ::: "memory");
+#include "arch/mips/spinlock.h"
 #else
-    __sync_synchronize();
+/* Generic fallback — no interrupt masking, memory barrier as relax hint */
+static inline void cpu_relax(void) { __sync_synchronize(); }
+static inline uintptr_t irq_save(void) { return 0; }
+static inline void irq_restore(uintptr_t flags) { (void)flags; }
 #endif
-}
+
+/* ------------------------------------------------------------------ */
+/*  Architecture-agnostic spinlock implementation                     */
+/* ------------------------------------------------------------------ */
 
 typedef struct {
     volatile uint32_t locked;
@@ -90,79 +93,9 @@ static inline void spin_unlock(spinlock_t* l) {
 }
 #endif
 
-#if defined(__i386__) || defined(__x86_64__)
-static inline uintptr_t irq_save(void) {
-    uintptr_t flags;
-#if defined(__x86_64__)
-    __asm__ volatile ("pushfq; pop %0; cli" : "=r"(flags) :: "memory");
-#else
-    __asm__ volatile ("pushf; pop %0; cli" : "=r"(flags) :: "memory");
-#endif
-    return flags;
-}
-
-static inline void irq_restore(uintptr_t flags) {
-#if defined(__x86_64__)
-    __asm__ volatile ("push %0; popfq" :: "r"(flags) : "memory", "cc");
-#else
-    __asm__ volatile ("push %0; popf" :: "r"(flags) : "memory", "cc");
-#endif
-}
-#elif defined(__aarch64__)
-static inline uintptr_t irq_save(void) {
-    uintptr_t daif;
-    __asm__ volatile("mrs %0, daif\n\tmsr daifset, #2" : "=r"(daif) :: "memory");
-    return daif;
-}
-
-static inline void irq_restore(uintptr_t flags) {
-    __asm__ volatile("msr daif, %0" :: "r"(flags) : "memory");
-}
-
-#elif defined(__arm__)
-static inline uintptr_t irq_save(void) {
-    uintptr_t cpsr;
-    __asm__ volatile("mrs %0, cpsr\n\tcpsid i" : "=r"(cpsr) :: "memory");
-    return cpsr;
-}
-
-static inline void irq_restore(uintptr_t flags) {
-    __asm__ volatile("msr cpsr_c, %0" :: "r"(flags) : "memory");
-}
-
-#elif defined(__riscv)
-static inline uintptr_t irq_save(void) {
-    uintptr_t mstatus;
-    __asm__ volatile("csrrci %0, mstatus, 0x8" : "=r"(mstatus) :: "memory");
-    return mstatus & 0x8;
-}
-
-static inline void irq_restore(uintptr_t flags) {
-    if (flags) {
-        __asm__ volatile("csrsi mstatus, 0x8" ::: "memory");
-    }
-}
-
-#elif defined(__mips__)
-static inline uintptr_t irq_save(void) {
-    uintptr_t status;
-    __asm__ volatile(
-        "mfc0 %0, $12\n\t"
-        "di"
-        : "=r"(status) :: "memory");
-    return status & 1U;
-}
-
-static inline void irq_restore(uintptr_t flags) {
-    if (flags) {
-        __asm__ volatile("ei" ::: "memory");
-    }
-}
-
-#else
-static inline uintptr_t irq_save(void) { return 0; }
-static inline void irq_restore(uintptr_t flags) { (void)flags; }
-#endif
+/* ------------------------------------------------------------------ */
+/*  Convenience wrappers (fully agnostic)                             */
+/* ------------------------------------------------------------------ */
 
 static inline uintptr_t spin_lock_irqsave(spinlock_t* l) {
     uintptr_t flags = irq_save();

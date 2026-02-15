@@ -3,9 +3,11 @@
 #include <stdint.h>
 
 /*
- * QEMU MIPS Malta exposes a 16550-compatible UART at 0xBFD003F8.
+ * QEMU MIPS Malta: ISA I/O base = physical 0x18000000
+ * 16550 UART at ISA port 0x3F8 → physical 0x180003F8
+ * Accessed via KSEG1 (uncached) at 0xB80003F8.
  */
-#define UART_BASE 0xBFD003F8
+#define UART_BASE 0xB80003F8
 
 void hal_uart_init(void) {
     /* Minimal init: assume firmware/QEMU defaults are usable */
