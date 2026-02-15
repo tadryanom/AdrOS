@@ -250,7 +250,7 @@ Notes:
 | Feature | Status | Notes |
 |---------|--------|-------|
 | ELF32 loader | [x] | Secure with W^X + ASLR; supports `ET_EXEC` + `ET_DYN` + `PT_INTERP` |
-| `/bin/init.elf` (smoke tests) | [x] | Comprehensive test suite (35 checks: file I/O, signals, memory, IPC, devices, procfs) |
+| `/bin/init.elf` (smoke tests) | [x] | Comprehensive test suite (41 checks: file I/O, signals, memory, IPC, devices, procfs) |
 | `/bin/echo` | [x] | argv/envp test |
 | `/bin/sh` | [x] | POSIX sh-compatible shell; builtins, pipes, redirects, `$PATH` search |
 | `/bin/cat` | [x] | |
@@ -258,7 +258,7 @@ Notes:
 | `/bin/mkdir` | [x] | |
 | `/bin/rm` | [x] | |
 | `/bin/doom.elf` | [x] | DOOM (doomgeneric port) running on `/dev/fb0` + `/dev/kbd` |
-| `/lib/ld.so` | [~] | Stub dynamic linker (placeholder for future shared library support) |
+| `/lib/ld.so` | [x] | Full dynamic linker with relocation processing + `dlopen`/`dlsym`/`dlclose` |
 | Minimal libc (ulibc) | [x] | `printf`, `malloc`, `string.h`, `unistd.h`, `errno.h`, `pthread.h`, `signal.h`, `stdio.h`, `stdlib.h`, `ctype.h`, `sys/mman.h`, `sys/ioctl.h`, `time.h`, `math.h`, `assert.h`, `fcntl.h`, `strings.h`, `inttypes.h`, `sys/types.h`, `sys/stat.h`, `sys/times.h`, `sys/uio.h`, `linux/futex.h` |
 | `$PATH` search | [x] | Shell resolves commands via `$PATH` |
 
