@@ -1460,6 +1460,95 @@ static int syscall_inotify_rm_watch_impl(int infd, int wd) {
     return -EINVAL;
 }
 
+/* ------------------------------------------------------------------ */
+/*  aio_* — POSIX asynchronous I/O (synchronous implementation)        */
+/* ------------------------------------------------------------------ */
+
+struct aiocb {
+    int      aio_fildes;
+    void*    aio_buf;
+    uint32_t aio_nbytes;
+    uint32_t aio_offset;
+    int32_t  aio_error;     /* 0 = done, EINPROGRESS = pending */
+    int32_t  aio_return;    /* bytes transferred or -errno */
+};
+
+__attribute__((noinline))
+static int syscall_aio_rw_impl(void* user_cb, int is_write) {
+    if (!current_process || !user_cb) return -EINVAL;
+    if (user_range_ok(user_cb, sizeof(struct aiocb)) == 0) return -EFAULT;
+
+    struct aiocb cb;
+    if (copy_from_user(&cb, user_cb, sizeof(cb)) < 0) return -EFAULT;
+
+    int fd = cb.aio_fildes;
+    struct file* f = fd_get(fd);
+    if (!f || !f->node) {
+        cb.aio_error = EBADF;
+        cb.aio_return = -EBADF;
+        (void)copy_to_user(user_cb, &cb, sizeof(cb));
+        return 0;
+    }
+
+    if (!cb.aio_buf || cb.aio_nbytes == 0) {
+        cb.aio_error = 0;
+        cb.aio_return = 0;
+        (void)copy_to_user(user_cb, &cb, sizeof(cb));
+        return 0;
+    }
+
+    if (user_range_ok(cb.aio_buf, cb.aio_nbytes) == 0) {
+        cb.aio_error = EFAULT;
+        cb.aio_return = -EFAULT;
+        (void)copy_to_user(user_cb, &cb, sizeof(cb));
+        return 0;
+    }
+
+    int32_t result;
+    if (is_write) {
+        uint32_t (*fn_write)(fs_node_t*, uint32_t, uint32_t, const uint8_t*) = NULL;
+        if (f->node->f_ops && f->node->f_ops->write) fn_write = f->node->f_ops->write;
+        if (fn_write) {
+            result = (int32_t)fn_write(f->node, cb.aio_offset, cb.aio_nbytes,
+                                        (const uint8_t*)cb.aio_buf);
+        } else {
+            result = -ENOSYS;
+        }
+    } else {
+        uint32_t (*fn_read)(fs_node_t*, uint32_t, uint32_t, uint8_t*) = NULL;
+        if (f->node->f_ops && f->node->f_ops->read) fn_read = f->node->f_ops->read;
+        if (fn_read) {
+            result = (int32_t)fn_read(f->node, cb.aio_offset, cb.aio_nbytes,
+                                       (uint8_t*)cb.aio_buf);
+        } else {
+            result = -ENOSYS;
+        }
+    }
+
+    cb.aio_error = (result < 0) ? -result : 0;
+    cb.aio_return = result;
+    (void)copy_to_user(user_cb, &cb, sizeof(cb));
+    return 0;
+}
+
+__attribute__((noinline))
+static int syscall_aio_error_impl(void* user_cb) {
+    if (!user_cb) return -EINVAL;
+    if (user_range_ok(user_cb, sizeof(struct aiocb)) == 0) return -EFAULT;
+    struct aiocb cb;
+    if (copy_from_user(&cb, user_cb, sizeof(cb)) < 0) return -EFAULT;
+    return cb.aio_error;
+}
+
+__attribute__((noinline))
+static int syscall_aio_return_impl(void* user_cb) {
+    if (!user_cb) return -EINVAL;
+    if (user_range_ok(user_cb, sizeof(struct aiocb)) == 0) return -EFAULT;
+    struct aiocb cb;
+    if (copy_from_user(&cb, user_cb, sizeof(cb)) < 0) return -EFAULT;
+    return cb.aio_return;
+}
+
 static uint32_t pipe_read(fs_node_t* n, uint32_t offset, uint32_t size, uint8_t* buffer) {
     (void)offset;
     struct pipe_node* pn = (struct pipe_node*)n;
@@ -4491,6 +4580,24 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
     if (syscall_no == SYSCALL_INOTIFY_RM_WATCH) {
         sc_ret(regs) = (uint32_t)syscall_inotify_rm_watch_impl(
             (int)sc_arg0(regs), (int)sc_arg1(regs));
+        return;
+    }
+
+    if (syscall_no == SYSCALL_AIO_READ || syscall_no == SYSCALL_AIO_WRITE) {
+        sc_ret(regs) = (uint32_t)syscall_aio_rw_impl(
+            (void*)sc_arg0(regs), syscall_no == SYSCALL_AIO_WRITE);
+        return;
+    }
+    if (syscall_no == SYSCALL_AIO_ERROR) {
+        sc_ret(regs) = (uint32_t)syscall_aio_error_impl((void*)sc_arg0(regs));
+        return;
+    }
+    if (syscall_no == SYSCALL_AIO_RETURN) {
+        sc_ret(regs) = (uint32_t)syscall_aio_return_impl((void*)sc_arg0(regs));
+        return;
+    }
+    if (syscall_no == SYSCALL_AIO_SUSPEND) {
+        sc_ret(regs) = 0;
         return;
     }
 
