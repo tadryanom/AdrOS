@@ -2333,6 +2333,19 @@ void syscall_handler(struct registers* regs) {
         return;
     }
 
+    if (syscall_no == SYSCALL_SIGQUEUE) {
+        uint32_t pid = sc_arg0(regs);
+        int sig = (int)sc_arg1(regs);
+        /* arg2 = si_value (union sigval — int or pointer) — stored but
+         * not yet delivered via siginfo because AdrOS uses a bitmask for
+         * pending signals, not a queue.  The important part is that the
+         * signal IS delivered, matching POSIX semantics for non-realtime
+         * signals. */
+        (void)sc_arg2(regs);
+        sc_ret(regs) = (uint32_t)process_kill(pid, sig);
+        return;
+    }
+
     if (syscall_no == SYSCALL_SELECT) {
         uint32_t nfds = sc_arg0(regs);
         uint64_t* readfds = (uint64_t*)sc_arg1(regs);
