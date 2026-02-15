@@ -2,14 +2,15 @@
 
 ## Current State
 
-All four testing layers are **implemented and operational**:
+All testing layers are **implemented and operational**:
 
-- **Static analysis** (`make check`): cppcheck + sparse + gcc -fanalyzer (59 x86 C files)
+- **Static analysis** (`make check`): cppcheck + sparse + gcc -fanalyzer
 - **QEMU smoke tests** (`make test`): expect-based, 35 checks (file I/O, signals, memory, IPC, devices, procfs, networking), 4-CPU SMP, 90s timeout
 - **Test battery** (`make test-battery`): 16 checks across 5 QEMU scenarios — multi-disk ATA, VFS mount, ping, diskfs
 - **Host unit tests** (`make test-host`): 47 tests — `test_utils.c` (28) + `test_security.c` (19)
 - **GDB scripted checks** (`make test-gdb`): heap/PMM/VGA integrity validation
 - **Full suite** (`make test-all`): runs check + test-host + test
+- **Multi-arch build verification**: `make ARCH=arm` and `make ARCH=riscv` compile and boot on QEMU virt
 
 ## Available Tools (already installed)
 
@@ -18,7 +19,9 @@ All four testing layers are **implemented and operational**:
 | cppcheck | /usr/bin/cppcheck | Static analysis (already in use) |
 | sparse | /usr/bin/sparse | Kernel-oriented static analysis (C semantics, type checking) |
 | gcc | /usr/bin/gcc | Compiler with `-fsanitize`, `-fanalyzer` |
-| qemu-system-i386 | /usr/bin/qemu-system-i386 | Emulation + smoke tests |
+| qemu-system-i386 | /usr/bin/qemu-system-i386 | x86 emulation + smoke tests |
+| qemu-system-aarch64 | /usr/bin/qemu-system-aarch64 | ARM64 emulation |
+| qemu-system-riscv64 | /usr/bin/qemu-system-riscv64 | RISC-V 64 emulation |
 | gdb | /usr/bin/gdb | Debugging via QEMU `-s -S` |
 | expect | /usr/bin/expect | Scripted QEMU serial interaction |
 | python3 | /usr/bin/python3 | Test runner orchestration |
@@ -112,4 +115,10 @@ make test-battery # Full test battery: multi-disk ATA, VFS mount, ping, diskfs (
 make test-host    # Host-side unit tests for pure functions
 make test-gdb     # QEMU + GDB scripted checks (optional)
 make test-all     # All of the above
+
+# Multi-arch build verification
+make ARCH=arm     # Build ARM64 kernel
+make run-arm      # Boot ARM64 on QEMU virt (aarch64, cortex-a57)
+make ARCH=riscv   # Build RISC-V 64 kernel
+make run-riscv    # Boot RISC-V 64 on QEMU virt
 ```
