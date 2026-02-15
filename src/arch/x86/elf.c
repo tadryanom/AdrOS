@@ -140,6 +140,97 @@ static int elf32_load_segments(const uint8_t* file, uint32_t file_len,
     return 0;
 }
 
+/* Process ELF relocations from PT_DYNAMIC segment.
+ * base_offset is 0 for ET_EXEC, non-zero for PIE/shared objects.
+ * The target address space must already be activated. */
+static void elf32_process_relocations(const uint8_t* file, uint32_t file_len,
+                                       uintptr_t base_offset) {
+    const elf32_ehdr_t* eh = (const elf32_ehdr_t*)file;
+    const elf32_phdr_t* ph = (const elf32_phdr_t*)(file + eh->e_phoff);
+
+    /* Find PT_DYNAMIC */
+    const elf32_phdr_t* dyn_ph = NULL;
+    for (uint16_t i = 0; i < eh->e_phnum; i++) {
+        if (ph[i].p_type == PT_DYNAMIC) {
+            dyn_ph = &ph[i];
+            break;
+        }
+    }
+    if (!dyn_ph) return;
+    if (dyn_ph->p_offset + dyn_ph->p_filesz > file_len) return;
+
+    /* Parse dynamic entries */
+    const elf32_dyn_t* dyn = (const elf32_dyn_t*)(file + dyn_ph->p_offset);
+    uint32_t dyn_count = dyn_ph->p_filesz / sizeof(elf32_dyn_t);
+
+    uint32_t rel_addr = 0, rel_sz = 0;
+    uint32_t jmprel_addr = 0, pltrelsz = 0;
+    uint32_t symtab_addr = 0;
+
+    for (uint32_t i = 0; i < dyn_count && dyn[i].d_tag != DT_NULL; i++) {
+        switch (dyn[i].d_tag) {
+        case DT_REL:     rel_addr = dyn[i].d_val; break;
+        case DT_RELSZ:   rel_sz = dyn[i].d_val; break;
+        case DT_JMPREL:  jmprel_addr = dyn[i].d_val; break;
+        case DT_PLTRELSZ: pltrelsz = dyn[i].d_val; break;
+        case DT_SYMTAB:  symtab_addr = dyn[i].d_val; break;
+        }
+    }
+
+    /* Helper: apply a single relocation */
+    #define APPLY_REL(rel_va, count) do { \
+        for (uint32_t _r = 0; _r < (count); _r++) { \
+            const elf32_rel_t* r = &((const elf32_rel_t*)(rel_va))[_r]; \
+            uint32_t type = ELF32_R_TYPE(r->r_info); \
+            uint32_t* target = (uint32_t*)(r->r_offset + base_offset); \
+            if ((uintptr_t)target >= hal_mm_kernel_virt_base()) continue; \
+            switch (type) { \
+            case R_386_RELATIVE: \
+                *target += (uint32_t)base_offset; \
+                break; \
+            case R_386_GLOB_DAT: \
+            case R_386_JMP_SLOT: { \
+                uint32_t sym_idx = ELF32_R_SYM(r->r_info); \
+                if (symtab_addr && sym_idx) { \
+                    const elf32_sym_t* sym = &((const elf32_sym_t*) \
+                        (symtab_addr + base_offset))[sym_idx]; \
+                    *target = sym->st_value + (uint32_t)base_offset; \
+                } \
+                break; \
+            } \
+            case R_386_32: { \
+                uint32_t sym_idx = ELF32_R_SYM(r->r_info); \
+                if (symtab_addr && sym_idx) { \
+                    const elf32_sym_t* sym = &((const elf32_sym_t*) \
+                        (symtab_addr + base_offset))[sym_idx]; \
+                    *target += sym->st_value + (uint32_t)base_offset; \
+                } \
+                break; \
+            } \
+            default: break; \
+            } \
+        } \
+    } while (0)
+
+    /* Process .rel.dyn */
+    if (rel_addr && rel_sz) {
+        uint32_t va = rel_addr + (uint32_t)base_offset;
+        uint32_t cnt = rel_sz / sizeof(elf32_rel_t);
+        if (va < hal_mm_kernel_virt_base())
+            APPLY_REL(va, cnt);
+    }
+
+    /* Process .rel.plt (JMPREL) */
+    if (jmprel_addr && pltrelsz) {
+        uint32_t va = jmprel_addr + (uint32_t)base_offset;
+        uint32_t cnt = pltrelsz / sizeof(elf32_rel_t);
+        if (va < hal_mm_kernel_virt_base())
+            APPLY_REL(va, cnt);
+    }
+
+    #undef APPLY_REL
+}
+
 /* Load an interpreter ELF (ld.so) at INTERP_BASE.
  * Returns 0 on success, sets *interp_entry. */
 #define INTERP_BASE 0x40000000U
@@ -243,6 +334,9 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
         vmm_as_destroy(new_as);
         return lrc;
     }
+
+    /* Process relocations (R_386_RELATIVE, GLOB_DAT, JMP_SLOT, R_386_32) */
+    elf32_process_relocations(file, file_len, 0);
 
     /* Check for PT_INTERP — if present, load the dynamic linker */
     const elf32_phdr_t* ph = (const elf32_phdr_t*)(file + eh->e_phoff);
