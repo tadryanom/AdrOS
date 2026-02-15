@@ -4,6 +4,7 @@
 #include "console.h"
 #include "utils.h"
 #include "hal/cpu.h"
+#include "spinlock.h"
 #include <stddef.h>
 
 /*
@@ -56,6 +57,7 @@ extern uint64_t boot_pd2[512];
 extern uint64_t boot_pd3[512];
 
 static uintptr_t g_kernel_as = 0;
+static spinlock_t vmm_lock = {0};
 
 static inline void invlpg(uintptr_t vaddr) {
     __asm__ volatile("invlpg (%0)" : : "r" (vaddr) : "memory");
@@ -115,9 +117,9 @@ static void* pmm_alloc_page_low(void) {
  * PDPT[3] is kernel (0xC0000000 - 0xFFFFFFFF). */
 #define PAE_USER_PDPT_MAX 3
 
-/* --- Core page operations --- */
+/* --- Internal _nolock helpers (caller must hold vmm_lock) --- */
 
-void vmm_map_page(uint64_t phys, uint64_t virt, uint32_t flags) {
+static void vmm_map_page_nolock(uint64_t phys, uint64_t virt, uint32_t flags) {
     uint32_t pi = pae_pdpt_index(virt);
     uint32_t di = pae_pd_index(virt);
     uint32_t ti = pae_pt_index(virt);
@@ -149,7 +151,7 @@ void vmm_map_page(uint64_t phys, uint64_t virt, uint32_t flags) {
     invlpg((uintptr_t)(uint32_t)virt);
 }
 
-void vmm_unmap_page(uint64_t virt) {
+static void vmm_unmap_page_nolock(uint64_t virt) {
     uint32_t pi = pae_pdpt_index(virt);
     uint32_t di = pae_pd_index(virt);
     uint32_t ti = pae_pt_index(virt);
@@ -161,7 +163,7 @@ void vmm_unmap_page(uint64_t virt) {
     invlpg((uintptr_t)(uint32_t)virt);
 }
 
-void vmm_set_page_flags(uint64_t virt, uint32_t flags) {
+static void vmm_set_page_flags_nolock(uint64_t virt, uint32_t flags) {
     uint32_t pi = pae_pdpt_index(virt);
     uint32_t di = pae_pd_index(virt);
     uint32_t ti = pae_pt_index(virt);
@@ -178,6 +180,38 @@ void vmm_set_page_flags(uint64_t virt, uint32_t flags) {
     invlpg((uintptr_t)(uint32_t)virt);
 }
 
+static void vmm_as_map_page_nolock(uintptr_t as, uint64_t phys, uint64_t virt, uint32_t flags) {
+    if (!as) return;
+    uintptr_t old_as = hal_cpu_get_address_space();
+    if (old_as != as) {
+        vmm_as_activate(as);
+        vmm_map_page_nolock(phys, virt, flags);
+        vmm_as_activate(old_as);
+    } else {
+        vmm_map_page_nolock(phys, virt, flags);
+    }
+}
+
+/* --- Core page operations (public, locking) --- */
+
+void vmm_map_page(uint64_t phys, uint64_t virt, uint32_t flags) {
+    uintptr_t irqf = spin_lock_irqsave(&vmm_lock);
+    vmm_map_page_nolock(phys, virt, flags);
+    spin_unlock_irqrestore(&vmm_lock, irqf);
+}
+
+void vmm_unmap_page(uint64_t virt) {
+    uintptr_t irqf = spin_lock_irqsave(&vmm_lock);
+    vmm_unmap_page_nolock(virt);
+    spin_unlock_irqrestore(&vmm_lock, irqf);
+}
+
+void vmm_set_page_flags(uint64_t virt, uint32_t flags) {
+    uintptr_t irqf = spin_lock_irqsave(&vmm_lock);
+    vmm_set_page_flags_nolock(virt, flags);
+    spin_unlock_irqrestore(&vmm_lock, irqf);
+}
+
 /* vmm_protect_range, vmm_as_activate, vmm_as_map_page are
  * architecture-independent and live in src/mm/vmm.c. */
 
@@ -188,9 +222,14 @@ void vmm_set_page_flags(uint64_t virt, uint32_t flags) {
  * Returns the *physical* address of the new PDPT (suitable for CR3).
  */
 uintptr_t vmm_as_create_kernel_clone(void) {
+    uintptr_t irqf = spin_lock_irqsave(&vmm_lock);
+
     /* Allocate PDPT (32 bytes, but occupies one page for simplicity) */
     uint32_t pdpt_phys = (uint32_t)(uintptr_t)pmm_alloc_page_low();
-    if (!pdpt_phys) return 0;
+    if (!pdpt_phys) {
+        spin_unlock_irqrestore(&vmm_lock, irqf);
+        return 0;
+    }
 
     /* Allocate 4 page directories */
     uint32_t pd_phys[4];
@@ -199,6 +238,7 @@ uintptr_t vmm_as_create_kernel_clone(void) {
         if (!pd_phys[i]) {
             for (int j = 0; j < i; j++) pmm_free_page((void*)(uintptr_t)pd_phys[j]);
             pmm_free_page((void*)(uintptr_t)pdpt_phys);
+            spin_unlock_irqrestore(&vmm_lock, irqf);
             return 0;
         }
     }
@@ -206,17 +246,17 @@ uintptr_t vmm_as_create_kernel_clone(void) {
     const uint64_t TMP_VA = 0xBFFFE000ULL;
 
     /* --- Initialize PDPT --- */
-    vmm_map_page((uint64_t)pdpt_phys, TMP_VA, VMM_FLAG_PRESENT | VMM_FLAG_RW);
+    vmm_map_page_nolock((uint64_t)pdpt_phys, TMP_VA, VMM_FLAG_PRESENT | VMM_FLAG_RW);
     uint64_t* pdpt_tmp = (uint64_t*)(uintptr_t)TMP_VA;
     memset(pdpt_tmp, 0, PAGE_SIZE);
     for (int i = 0; i < 4; i++) {
         pdpt_tmp[i] = (uint64_t)pd_phys[i] | 0x1ULL; /* PRESENT */
     }
-    vmm_unmap_page(TMP_VA);
+    vmm_unmap_page_nolock(TMP_VA);
 
     /* --- Initialize each PD --- */
     for (int i = 0; i < 4; i++) {
-        vmm_map_page((uint64_t)pd_phys[i], TMP_VA, VMM_FLAG_PRESENT | VMM_FLAG_RW);
+        vmm_map_page_nolock((uint64_t)pd_phys[i], TMP_VA, VMM_FLAG_PRESENT | VMM_FLAG_RW);
         uint64_t* pd_tmp = (uint64_t*)(uintptr_t)TMP_VA;
         memset(pd_tmp, 0, PAGE_SIZE);
 
@@ -233,15 +273,18 @@ uintptr_t vmm_as_create_kernel_clone(void) {
             pd_tmp[511] = (uint64_t)pd_phys[3] | X86_PTE_PRESENT | X86_PTE_RW;
         }
 
-        vmm_unmap_page(TMP_VA);
+        vmm_unmap_page_nolock(TMP_VA);
     }
 
+    spin_unlock_irqrestore(&vmm_lock, irqf);
     return (uintptr_t)pdpt_phys;
 }
 
 void vmm_as_destroy(uintptr_t as) {
     if (!as) return;
     if (as == g_kernel_as) return;
+
+    uintptr_t irqf = spin_lock_irqsave(&vmm_lock);
 
     uintptr_t old_as = hal_cpu_get_address_space();
     vmm_as_activate(as);
@@ -284,6 +327,8 @@ void vmm_as_destroy(uintptr_t as) {
         if (pd_phys[i]) pmm_free_page((void*)(uintptr_t)pd_phys[i]);
     }
     pmm_free_page((void*)(uintptr_t)as);
+
+    spin_unlock_irqrestore(&vmm_lock, irqf);
 }
 
 uintptr_t vmm_as_clone_user(uintptr_t src_as) {
@@ -299,6 +344,8 @@ uintptr_t vmm_as_clone_user(uintptr_t src_as) {
         vmm_as_destroy(new_as);
         return 0;
     }
+
+    uintptr_t irqf = spin_lock_irqsave(&vmm_lock);
 
     uintptr_t old_as = hal_cpu_get_address_space();
     vmm_as_activate(src_as);
@@ -320,21 +367,27 @@ uintptr_t vmm_as_clone_user(uintptr_t src_as) {
                 if (pte & X86_PTE_USER) flags |= VMM_FLAG_USER;
 
                 void* dst_frame = pmm_alloc_page_low();
-                if (!dst_frame) { kfree(tmp); vmm_as_destroy(new_as); return 0; }
+                if (!dst_frame) {
+                    vmm_as_activate(old_as);
+                    spin_unlock_irqrestore(&vmm_lock, irqf);
+                    kfree(tmp);
+                    vmm_as_destroy(new_as);
+                    return 0;
+                }
 
                 uint32_t src_frame = (uint32_t)(pte & 0xFFFFF000ULL);
                 uintptr_t va = ((uintptr_t)pi << 30) | ((uintptr_t)di << 21) | ((uintptr_t)ti << 12);
 
-                vmm_as_map_page(new_as, (uint64_t)(uintptr_t)dst_frame, (uint64_t)va, flags);
+                vmm_as_map_page_nolock(new_as, (uint64_t)(uintptr_t)dst_frame, (uint64_t)va, flags);
 
-                vmm_map_page((uint64_t)src_frame, (uint64_t)TMP_MAP_VA, VMM_FLAG_PRESENT | VMM_FLAG_RW);
+                vmm_map_page_nolock((uint64_t)src_frame, (uint64_t)TMP_MAP_VA, VMM_FLAG_PRESENT | VMM_FLAG_RW);
                 memcpy(tmp, (const void*)TMP_MAP_VA, 4096);
-                vmm_unmap_page((uint64_t)TMP_MAP_VA);
+                vmm_unmap_page_nolock((uint64_t)TMP_MAP_VA);
 
                 vmm_as_activate(new_as);
-                vmm_map_page((uint64_t)(uintptr_t)dst_frame, (uint64_t)TMP_MAP_VA, VMM_FLAG_PRESENT | VMM_FLAG_RW);
+                vmm_map_page_nolock((uint64_t)(uintptr_t)dst_frame, (uint64_t)TMP_MAP_VA, VMM_FLAG_PRESENT | VMM_FLAG_RW);
                 memcpy((void*)TMP_MAP_VA, tmp, 4096);
-                vmm_unmap_page((uint64_t)TMP_MAP_VA);
+                vmm_unmap_page_nolock((uint64_t)TMP_MAP_VA);
 
                 vmm_as_activate(src_as);
             }
@@ -342,6 +395,8 @@ uintptr_t vmm_as_clone_user(uintptr_t src_as) {
     }
 
     vmm_as_activate(old_as);
+
+    spin_unlock_irqrestore(&vmm_lock, irqf);
     kfree(tmp);
     return new_as;
 }
@@ -351,6 +406,8 @@ uintptr_t vmm_as_clone_user_cow(uintptr_t src_as) {
 
     uintptr_t new_as = vmm_as_create_kernel_clone();
     if (!new_as) return 0;
+
+    uintptr_t irqf = spin_lock_irqsave(&vmm_lock);
 
     uintptr_t old_as = hal_cpu_get_address_space();
     vmm_as_activate(src_as);
@@ -381,33 +438,49 @@ uintptr_t vmm_as_clone_user_cow(uintptr_t src_as) {
 
                 pmm_incref((uintptr_t)frame_phys);
 
-                vmm_as_map_page(new_as, (uint64_t)frame_phys, (uint64_t)va,
-                                VMM_FLAG_PRESENT | VMM_FLAG_USER |
-                                ((new_pte & X86_PTE_COW) ? VMM_FLAG_COW : 0));
+                vmm_as_map_page_nolock(new_as, (uint64_t)frame_phys, (uint64_t)va,
+                                       VMM_FLAG_PRESENT | VMM_FLAG_USER |
+                                       ((new_pte & X86_PTE_COW) ? VMM_FLAG_COW : 0));
             }
         }
     }
 
     vmm_as_activate(old_as);
+
+    spin_unlock_irqrestore(&vmm_lock, irqf);
     return new_as;
 }
 
 int vmm_handle_cow_fault(uintptr_t fault_addr) {
+    uintptr_t irqf = spin_lock_irqsave(&vmm_lock);
+
     uintptr_t va = fault_addr & ~(uintptr_t)0xFFF;
     uint32_t pi = pae_pdpt_index((uint64_t)va);
     uint32_t di = pae_pd_index((uint64_t)va);
     uint32_t ti = pae_pt_index((uint64_t)va);
 
-    if (pi >= PAE_USER_PDPT_MAX) return 0;  /* Kernel space, not CoW */
+    if (pi >= PAE_USER_PDPT_MAX) {
+        spin_unlock_irqrestore(&vmm_lock, irqf);
+        return 0;
+    }
 
     volatile uint64_t* pd = pae_pd_recursive(pi);
-    if ((pd[di] & X86_PTE_PRESENT) == 0) return 0;
+    if ((pd[di] & X86_PTE_PRESENT) == 0) {
+        spin_unlock_irqrestore(&vmm_lock, irqf);
+        return 0;
+    }
 
     volatile uint64_t* pt = pae_pt_recursive(pi, di);
     uint64_t pte = pt[ti];
 
-    if (!(pte & X86_PTE_PRESENT)) return 0;
-    if (!(pte & X86_PTE_COW)) return 0;
+    if (!(pte & X86_PTE_PRESENT)) {
+        spin_unlock_irqrestore(&vmm_lock, irqf);
+        return 0;
+    }
+    if (!(pte & X86_PTE_COW)) {
+        spin_unlock_irqrestore(&vmm_lock, irqf);
+        return 0;
+    }
 
     uint32_t old_frame = (uint32_t)(pte & 0xFFFFF000ULL);
     uint16_t rc = pmm_get_refcount((uintptr_t)old_frame);
@@ -415,23 +488,28 @@ int vmm_handle_cow_fault(uintptr_t fault_addr) {
     if (rc <= 1) {
         pt[ti] = (uint64_t)old_frame | X86_PTE_PRESENT | X86_PTE_RW | X86_PTE_USER;
         invlpg(va);
+        spin_unlock_irqrestore(&vmm_lock, irqf);
         return 1;
     }
 
     void* new_frame = pmm_alloc_page();
-    if (!new_frame) return 0;
+    if (!new_frame) {
+        spin_unlock_irqrestore(&vmm_lock, irqf);
+        return 0;
+    }
 
     const uintptr_t TMP_COW_VA = 0xBFFFD000U;
-    vmm_map_page((uint64_t)(uintptr_t)new_frame, (uint64_t)TMP_COW_VA,
-                 VMM_FLAG_PRESENT | VMM_FLAG_RW);
+    vmm_map_page_nolock((uint64_t)(uintptr_t)new_frame, (uint64_t)TMP_COW_VA,
+                        VMM_FLAG_PRESENT | VMM_FLAG_RW);
     memcpy((void*)TMP_COW_VA, (const void*)va, 4096);
-    vmm_unmap_page((uint64_t)TMP_COW_VA);
+    vmm_unmap_page_nolock((uint64_t)TMP_COW_VA);
 
     pmm_decref((uintptr_t)old_frame);
 
     pt[ti] = (uint64_t)(uintptr_t)new_frame | X86_PTE_PRESENT | X86_PTE_RW | X86_PTE_USER;
     invlpg(va);
 
+    spin_unlock_irqrestore(&vmm_lock, irqf);
     return 1;
 }
 
