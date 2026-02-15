@@ -36,6 +36,7 @@
 #define ECONNRESET 54
 #define ETIMEDOUT 60
 #define ENOLCK 37
+#define EBUSY 16
 #define EWOULDBLOCK EAGAIN
 
 #endif

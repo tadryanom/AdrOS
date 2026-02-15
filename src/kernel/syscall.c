@@ -174,6 +174,8 @@ enum {
     FCNTL_F_SETLK = 6,
     FCNTL_F_SETLKW = 7,
     FCNTL_F_DUPFD_CLOEXEC = 1030,
+    FCNTL_F_GETPIPE_SZ = 1032,
+    FCNTL_F_SETPIPE_SZ = 1033,
 };
 
 enum {
@@ -1250,6 +1252,36 @@ static int syscall_fcntl_impl(int fd, int cmd, uint32_t arg) {
 
         return rlock_setlk(ino, current_process->pid, kfl.l_type,
                            start, end, cmd == FCNTL_F_SETLKW);
+    }
+    if (cmd == FCNTL_F_GETPIPE_SZ) {
+        if (!f->node) return -EBADF;
+        if (f->node->f_ops != &pipe_read_fops && f->node->f_ops != &pipe_write_fops)
+            return -ENOTTY;
+        struct pipe_node* pn = (struct pipe_node*)f->node;
+        return (int)pn->ps->cap;
+    }
+    if (cmd == FCNTL_F_SETPIPE_SZ) {
+        if (!f->node) return -EBADF;
+        if (f->node->f_ops != &pipe_read_fops && f->node->f_ops != &pipe_write_fops)
+            return -ENOTTY;
+        struct pipe_node* pn = (struct pipe_node*)f->node;
+        struct pipe_state* ps = pn->ps;
+        uint32_t new_cap = arg;
+        if (new_cap < 512) new_cap = 512;
+        if (new_cap > 65536) new_cap = 65536;
+        if (new_cap == ps->cap) return (int)ps->cap;
+        if (new_cap < ps->count) return -EBUSY;
+        uint8_t* new_buf = (uint8_t*)kmalloc(new_cap);
+        if (!new_buf) return -ENOMEM;
+        for (uint32_t i = 0; i < ps->count; i++) {
+            new_buf[i] = ps->buf[(ps->rpos + i) % ps->cap];
+        }
+        kfree(ps->buf);
+        ps->buf = new_buf;
+        ps->rpos = 0;
+        ps->wpos = ps->count;
+        ps->cap = new_cap;
+        return (int)ps->cap;
     }
     if (cmd == FCNTL_F_DUPFD_CLOEXEC) {
         if (!current_process) return -EINVAL;

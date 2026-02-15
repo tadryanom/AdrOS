@@ -21,6 +21,8 @@
 #define F_SETLK     6
 #define F_SETLKW    7
 #define F_DUPFD_CLOEXEC 1030
+#define F_GETPIPE_SZ    1032
+#define F_SETPIPE_SZ    1033
 
 #define FD_CLOEXEC  1
 
