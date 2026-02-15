@@ -4494,6 +4494,34 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         return;
     }
 
+    if (syscall_no == SYSCALL_PIVOT_ROOT) {
+        if (!current_process || current_process->euid != 0) {
+            sc_ret(regs) = (uint32_t)-EPERM;
+            return;
+        }
+        const char* user_new = (const char*)sc_arg0(regs);
+        const char* user_put = (const char*)sc_arg1(regs);
+        char knew[128], kput[128];
+        if (path_resolve_user(user_new, knew, sizeof(knew)) < 0 ||
+            path_resolve_user(user_put, kput, sizeof(kput)) < 0) {
+            sc_ret(regs) = (uint32_t)-EFAULT;
+            return;
+        }
+        fs_node_t* new_root = vfs_lookup(knew);
+        if (!new_root || !(new_root->flags & FS_DIRECTORY)) {
+            sc_ret(regs) = (uint32_t)-EINVAL;
+            return;
+        }
+        fs_node_t* old_root = fs_root;
+        fs_root = new_root;
+        (void)vfs_mount("/", new_root);
+        if (old_root) {
+            (void)vfs_mount(kput, old_root);
+        }
+        sc_ret(regs) = 0;
+        return;
+    }
+
     sc_ret(regs) = (uint32_t)-ENOSYS;
 }
 
