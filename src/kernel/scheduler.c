@@ -10,6 +10,7 @@
 #include "hal/cpu.h"
 #include "hal/usermode.h"
 #include "arch_process.h"
+#include "sched_pcpu.h"
 #include <stddef.h>
 
 struct process* current_process = NULL;
@@ -211,6 +212,7 @@ void sched_enqueue_ready(struct process* p) {
     sleep_queue_remove(p);
     if (p->state == PROCESS_READY) {
         rq_enqueue(rq_active, p);
+        sched_pcpu_inc_load(0);
     }
     spin_unlock_irqrestore(&sched_lock, flags);
 }
@@ -894,6 +896,7 @@ void schedule(void) {
     if (next) {
         // next came from rq_active — safe to dequeue.
         rq_dequeue(rq_active, next);
+        sched_pcpu_dec_load(0);
     } else {
         // Nothing in runqueues.
         if (prev->state == PROCESS_READY) {

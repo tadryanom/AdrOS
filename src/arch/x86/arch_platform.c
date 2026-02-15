@@ -155,6 +155,9 @@ int arch_platform_setup(const struct boot_info* bi) {
         percpu_init();
         percpu_setup_gs(0);
 
+        extern void sched_pcpu_init(uint32_t);
+        sched_pcpu_init(smp_get_cpu_count());
+
         /* Phase 2: Send INIT-SIPI-SIPI to wake APs */
         smp_start_aps();
     }

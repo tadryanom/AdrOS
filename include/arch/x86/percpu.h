@@ -15,7 +15,8 @@ struct percpu_data {
     struct process*  current_process; /* Currently running process on this CPU */
     uintptr_t        kernel_stack;    /* Top of this CPU's kernel stack */
     uint32_t         nested_irq;      /* IRQ nesting depth */
-    uint32_t         reserved[3];     /* Padding to 32 bytes */
+    uint32_t         rq_load;         /* Number of READY processes on this CPU */
+    uint32_t         reserved[2];     /* Padding to 32 bytes */
 };
 
 /* Initialize per-CPU data for all CPUs. Called once from BSP after SMP init. */
