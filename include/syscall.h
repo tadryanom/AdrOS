@@ -120,6 +120,11 @@ enum {
     SYSCALL_WAITID     = 94,
     SYSCALL_SIGQUEUE   = 95,
     SYSCALL_POSIX_SPAWN = 96,
+    SYSCALL_MQ_OPEN     = 97,
+    SYSCALL_MQ_CLOSE    = 98,
+    SYSCALL_MQ_SEND     = 99,
+    SYSCALL_MQ_RECEIVE  = 100,
+    SYSCALL_MQ_UNLINK   = 101,
 };
 
 #endif

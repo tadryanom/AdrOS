@@ -64,6 +64,135 @@ enum {
     FD_CLOEXEC = 1,
 };
 
+/* --- POSIX message queues --- */
+#define MQ_MAX_QUEUES  8
+#define MQ_MAX_MSGS    16
+#define MQ_MSG_SIZE    256
+
+struct mq_msg {
+    uint8_t  data[MQ_MSG_SIZE];
+    uint32_t len;
+    uint32_t prio;
+};
+
+struct mq_queue {
+    int      active;
+    char     name[32];
+    struct mq_msg msgs[MQ_MAX_MSGS];
+    uint32_t head;
+    uint32_t tail;
+    uint32_t count;
+    uint32_t maxmsg;
+    uint32_t msgsize;
+};
+
+static struct mq_queue mq_table[MQ_MAX_QUEUES];
+static spinlock_t mq_lock = {0};
+
+static int mq_find_by_name(const char* name) {
+    for (int i = 0; i < MQ_MAX_QUEUES; i++) {
+        if (mq_table[i].active && strcmp(mq_table[i].name, name) == 0)
+            return i;
+    }
+    return -1;
+}
+
+static int syscall_mq_open_impl(const char* user_name, uint32_t oflag) {
+    char name[32];
+    if (copy_from_user(name, user_name, 31) < 0) return -EFAULT;
+    name[31] = 0;
+
+    uintptr_t fl = spin_lock_irqsave(&mq_lock);
+    int idx = mq_find_by_name(name);
+    if (idx >= 0) {
+        spin_unlock_irqrestore(&mq_lock, fl);
+        return idx;
+    }
+    if (!(oflag & 0x40U)) { /* O_CREAT */
+        spin_unlock_irqrestore(&mq_lock, fl);
+        return -ENOENT;
+    }
+    for (int i = 0; i < MQ_MAX_QUEUES; i++) {
+        if (!mq_table[i].active) {
+            memset(&mq_table[i], 0, sizeof(mq_table[i]));
+            mq_table[i].active = 1;
+            strcpy(mq_table[i].name, name);
+            mq_table[i].maxmsg = MQ_MAX_MSGS;
+            mq_table[i].msgsize = MQ_MSG_SIZE;
+            spin_unlock_irqrestore(&mq_lock, fl);
+            return i;
+        }
+    }
+    spin_unlock_irqrestore(&mq_lock, fl);
+    return -ENOSPC;
+}
+
+static int syscall_mq_close_impl(int mqd) {
+    (void)mqd;
+    return 0;
+}
+
+static int syscall_mq_send_impl(int mqd, const void* user_buf, uint32_t len, uint32_t prio) {
+    if (mqd < 0 || mqd >= MQ_MAX_QUEUES) return -EBADF;
+    if (len > MQ_MSG_SIZE) return -EMSGSIZE;
+
+    uintptr_t fl = spin_lock_irqsave(&mq_lock);
+    struct mq_queue* q = &mq_table[mqd];
+    if (!q->active) { spin_unlock_irqrestore(&mq_lock, fl); return -EBADF; }
+    if (q->count >= q->maxmsg) { spin_unlock_irqrestore(&mq_lock, fl); return -EAGAIN; }
+
+    struct mq_msg* m = &q->msgs[q->tail];
+    spin_unlock_irqrestore(&mq_lock, fl);
+
+    if (copy_from_user(m->data, user_buf, len) < 0) return -EFAULT;
+    m->len = len;
+    m->prio = prio;
+
+    fl = spin_lock_irqsave(&mq_lock);
+    q->tail = (q->tail + 1) % q->maxmsg;
+    q->count++;
+    spin_unlock_irqrestore(&mq_lock, fl);
+    return 0;
+}
+
+static int syscall_mq_receive_impl(int mqd, void* user_buf, uint32_t len, uint32_t* user_prio) {
+    if (mqd < 0 || mqd >= MQ_MAX_QUEUES) return -EBADF;
+
+    uintptr_t fl = spin_lock_irqsave(&mq_lock);
+    struct mq_queue* q = &mq_table[mqd];
+    if (!q->active) { spin_unlock_irqrestore(&mq_lock, fl); return -EBADF; }
+    if (q->count == 0) { spin_unlock_irqrestore(&mq_lock, fl); return -EAGAIN; }
+
+    struct mq_msg* m = &q->msgs[q->head];
+    uint32_t mlen = m->len;
+    uint32_t mprio = m->prio;
+    if (mlen > len) mlen = len;
+
+    q->head = (q->head + 1) % q->maxmsg;
+    q->count--;
+    spin_unlock_irqrestore(&mq_lock, fl);
+
+    if (copy_to_user(user_buf, m->data, mlen) < 0) return -EFAULT;
+    if (user_prio) {
+        if (user_range_ok(user_prio, 4))
+            (void)copy_to_user(user_prio, &mprio, 4);
+    }
+    return (int)mlen;
+}
+
+static int syscall_mq_unlink_impl(const char* user_name) {
+    char name[32];
+    if (copy_from_user(name, user_name, 31) < 0) return -EFAULT;
+    name[31] = 0;
+
+    uintptr_t fl = spin_lock_irqsave(&mq_lock);
+    int idx = mq_find_by_name(name);
+    if (idx < 0) { spin_unlock_irqrestore(&mq_lock, fl); return -ENOENT; }
+    mq_table[idx].active = 0;
+    spin_unlock_irqrestore(&mq_lock, fl);
+    return 0;
+}
+
 /* --- Advisory file locking (flock) --- */
 enum {
     FLOCK_SH = 1,
@@ -3389,6 +3518,33 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         }
         if (copy_to_user(user_val, out, 8) < 0) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
         sc_ret(regs) = 0;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_MQ_OPEN) {
+        const char* name = (const char*)sc_arg0(regs);
+        uint32_t oflag = sc_arg1(regs);
+        sc_ret(regs) = (uint32_t)syscall_mq_open_impl(name, oflag);
+        return;
+    }
+    if (syscall_no == SYSCALL_MQ_CLOSE) {
+        sc_ret(regs) = (uint32_t)syscall_mq_close_impl((int)sc_arg0(regs));
+        return;
+    }
+    if (syscall_no == SYSCALL_MQ_SEND) {
+        sc_ret(regs) = (uint32_t)syscall_mq_send_impl(
+            (int)sc_arg0(regs), (const void*)sc_arg1(regs),
+            sc_arg2(regs), sc_arg3(regs));
+        return;
+    }
+    if (syscall_no == SYSCALL_MQ_RECEIVE) {
+        sc_ret(regs) = (uint32_t)syscall_mq_receive_impl(
+            (int)sc_arg0(regs), (void*)sc_arg1(regs),
+            sc_arg2(regs), (uint32_t*)sc_arg3(regs));
+        return;
+    }
+    if (syscall_no == SYSCALL_MQ_UNLINK) {
+        sc_ret(regs) = (uint32_t)syscall_mq_unlink_impl((const char*)sc_arg0(regs));
         return;
     }
 

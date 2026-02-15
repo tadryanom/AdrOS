@@ -37,6 +37,7 @@
 #define ETIMEDOUT 60
 #define ENOLCK 37
 #define EBUSY 16
+#define EMSGSIZE 90
 #define EWOULDBLOCK EAGAIN
 
 #endif
