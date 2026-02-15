@@ -84,7 +84,7 @@ void ksem_signal(ksem_t* s) {
     uintptr_t flags = spin_lock_irqsave(&s->lock);
 
     /* Find a waiter still blocked/sleeping (skip those already woken by timeout) */
-    int woke = 0;
+    struct process* to_wake = NULL;
     for (uint32_t i = 0; i < s->nwaiters; i++) {
         struct process* p = s->waiters[i];
         if (p && (p->state == PROCESS_BLOCKED || p->state == PROCESS_SLEEPING)) {
@@ -95,17 +95,22 @@ void ksem_signal(ksem_t* s) {
 
             p->state = PROCESS_READY;
             p->wake_at_tick = 0;
-            sched_enqueue_ready(p);
-            woke = 1;
+            to_wake = p;
             break;
         }
     }
 
-    if (!woke) {
+    if (!to_wake) {
         s->count++;
     }
 
     spin_unlock_irqrestore(&s->lock, flags);
+
+    /* Enqueue outside the semaphore lock to avoid lock-order issues
+     * (sched_enqueue_ready acquires sched_lock internally). */
+    if (to_wake) {
+        sched_enqueue_ready(to_wake);
+    }
 }
 
 /* ------------------------------------------------------------------ */
