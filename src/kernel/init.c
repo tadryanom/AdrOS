@@ -212,6 +212,8 @@ int init_start(const struct boot_info* bi) {
     /* Register hardware drivers with HAL and init in priority order */
     pci_driver_register();      /* priority 10: bus */
     e1000_driver_register();    /* priority 20: NIC (probes PCI) */
+    extern void virtio_blk_driver_register(void);
+    virtio_blk_driver_register(); /* priority 25: virtio-blk */
     hal_drivers_init_all();
 
     net_init();
