@@ -5,9 +5,9 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 
 ## Architectures Targeted
 - **x86** (32-bit, PAE) — primary, fully functional target
-- **ARM** (64-bit) — build infrastructure only
+- **ARM64** (AArch64) — boots on QEMU virt, UART console, minimal kernel
+- **RISC-V 64** — boots on QEMU virt, UART console, minimal kernel
 - **MIPS** — build infrastructure only
-- **RISC-V** (64-bit) — build infrastructure only
 
 ## Technical Stack
 - **Language:** C and Assembly
@@ -18,7 +18,7 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 ## Features
 
 ### Boot & Architecture
-- **Multi-arch build system** — `make ARCH=x86|arm|riscv|mips` (x86 is the primary, working target)
+- **Multi-arch build system** — `make ARCH=x86|arm|riscv|mips`; ARM64 and RISC-V boot on QEMU virt with UART console
 - **Multiboot2** (via GRUB), higher-half kernel mapping (3GB+)
 - **CPUID feature detection** — leaf 0/1/7/extended; SMEP/SMAP detection
 - **SYSENTER fast syscall path** — MSR setup + handler
@@ -33,6 +33,7 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **Shared memory** — System V IPC style (`shmget`/`shmat`/`shmdt`/`shmctl`)
 - **`mmap`/`munmap`** — anonymous mappings, shared memory backing, and file-backed (fd) mappings
 - **SMEP** — Supervisor Mode Execution Prevention enabled in CR4
+- **SMAP** — Supervisor Mode Access Prevention enabled in CR4 (bit 21)
 - **W^X** — user `.text` segments marked read-only after ELF load; NX on data segments
 - **Guard pages** — 32KB user stack with unmapped guard page below (triggers SIGSEGV on overflow); kernel stacks use dedicated guard-paged region at `0xC8000000`
 - **ASLR** — TSC-seeded xorshift32 PRNG randomizes user stack base by up to 1MB per `execve`
@@ -40,6 +41,9 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 
 ### Process & Scheduling
 - **O(1) scheduler** — bitmap + active/expired arrays, 32 priority levels, decay-based priority adjustment
+- **Per-CPU runqueue infrastructure** — per-CPU load counters with atomic operations, least-loaded CPU query
+- **`posix_spawn`** — efficient fork+exec in single syscall with file actions and attributes
+- **Interval timers** — `setitimer`/`getitimer` (`ITIMER_REAL`, `ITIMER_VIRTUAL`, `ITIMER_PROF`)
 - **Process model** — `fork` (CoW), `execve`, `exit`, `waitpid` (`WNOHANG`), `getpid`, `getppid`
 - **Threads** — `clone` syscall with `CLONE_VM`/`CLONE_FILES`/`CLONE_THREAD`/`CLONE_SETTLS`
 - **TLS** — `set_thread_area` via GDT entry 22 (user GS segment, ring 3)
@@ -52,8 +56,9 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 ### Syscalls (x86, `int 0x80` + SYSENTER)
 - **File I/O:** `open`, `openat`, `read`, `write`, `close`, `lseek`, `stat`, `fstat`, `fstatat`, `dup`, `dup2`, `dup3`, `pipe`, `pipe2`, `select`, `poll`, `ioctl`, `fcntl`, `getdents`, `pread`, `pwrite`, `readv`, `writev`, `truncate`, `ftruncate`, `fsync`, `fdatasync`
 - **Directory ops:** `mkdir`, `rmdir`, `unlink`, `unlinkat`, `rename`, `chdir`, `getcwd`, `link`, `symlink`, `readlink`, `chmod`, `chown`, `access`, `umask`
-- **Signals:** `sigaction` (`SA_SIGINFO`), `sigprocmask`, `kill`, `sigreturn` (full trampoline), `sigpending`, `sigsuspend`, `sigaltstack`
-- **Process:** `setuid`, `setgid`, `seteuid`, `setegid`, `getuid`, `getgid`, `geteuid`, `getegid`, `alarm`, `times`, `futex`
+- **Signals:** `sigaction` (`SA_SIGINFO`), `sigprocmask`, `kill`, `sigreturn` (full trampoline), `sigpending`, `sigsuspend`, `sigaltstack`, `sigqueue`
+- **Process:** `setuid`, `setgid`, `seteuid`, `setegid`, `getuid`, `getgid`, `geteuid`, `getegid`, `alarm`, `times`, `futex`, `waitid`, `posix_spawn`, `setitimer`, `getitimer`
+- **IPC:** `mq_open`, `mq_close`, `mq_unlink`, `mq_send`, `mq_receive`, `mq_getattr`, `mq_setattr`, `sem_open`, `sem_close`, `sem_unlink`, `sem_wait`, `sem_post`, `sem_getvalue`
 - **FD flags:** `O_NONBLOCK`, `O_CLOEXEC`, `O_APPEND`, `FD_CLOEXEC` via `fcntl` (`F_GETFD`/`F_SETFD`/`F_GETFL`/`F_SETFL`)
 - **File locking:** `flock` (advisory, no-op stub)
 - **Shared memory:** `shmget`, `shmat`, `shmdt`, `shmctl`
@@ -91,8 +96,11 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **lwIP TCP/IP stack** — NO_SYS=0 threaded mode, IPv4, static IP (10.0.2.15 via QEMU user-net)
 - **Socket API** — `socket`/`bind`/`listen`/`accept`/`connect`/`send`/`recv`/`sendto`/`recvfrom`
 - **Protocols** — TCP (`SOCK_STREAM`) + UDP (`SOCK_DGRAM`) + ICMP
+- **IPv6** — lwIP dual-stack (IPv4 + IPv6), link-local auto-configuration
 - **ICMP ping** — kernel-level ping test to QEMU gateway (10.0.2.2) during boot
 - **DNS resolver** — lwIP-based with async callback and timeout; kernel `dns_resolve()` wrapper
+- **DHCP client** — automatic IPv4 configuration via lwIP DHCP; fallback to static IP
+- **`getaddrinfo`** / `/etc/hosts` — kernel-level hostname resolution with hosts file lookup
 
 ### Drivers & Hardware
 - **PCI** — full bus/slot/func enumeration with BAR + IRQ
@@ -104,7 +112,8 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **UART**, **VGA text**, **PS/2 keyboard**, **PIT timer**, **LAPIC timer**
 - **Kernel console (kconsole)** — interactive debug shell with readline, scrollback, command history
 - **RTC** — CMOS real-time clock driver for wall-clock time (`CLOCK_REALTIME`)
-- **E1000 NIC** — Intel 82540EM Ethernet controller
+- **E1000 NIC** — Intel 82540EM Ethernet controller (interrupt-driven RX thread)
+- **Virtio-blk driver** — PCI legacy virtio-blk with virtqueue, interrupt-driven I/O
 - **MTRR** — write-combining support via variable-range MTRR programming
 
 ### Boot & Kernel Infrastructure
@@ -120,13 +129,13 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **Core utilities** — `/bin/cat`, `/bin/ls`, `/bin/mkdir`, `/bin/rm`, `/bin/echo`
 - `/bin/init.elf` — comprehensive smoke test suite
 - `/bin/doom.elf` — DOOM (doomgeneric port) — runs on `/dev/fb0` + `/dev/kbd`
-- `/lib/ld.so` — stub dynamic linker (placeholder for future shared library support)
+- `/lib/ld.so` — dynamic linker with full relocation processing
 
-### Dynamic Linking (infrastructure)
-- **Kernel-side** — `PT_INTERP` detection, interpreter loading at `0x40000000`, `ET_DYN` support
+### Dynamic Linking
+- **Full `ld.so`** — kernel-side relocation processing for `R_386_RELATIVE`, `R_386_32`, `R_386_GLOB_DAT`, `R_386_JMP_SLOT`, `R_386_COPY`, `R_386_PC32`
+- **Shared libraries (.so)** — `dlopen`/`dlsym`/`dlclose` syscalls for runtime shared library loading
 - **ELF types** — `Elf32_Dyn`, `Elf32_Rel`, `Elf32_Sym`, auxiliary vector (`AT_PHDR`, `AT_ENTRY`, `AT_BASE`)
-- **Relocation types** — `R_386_RELATIVE`, `R_386_32`, `R_386_GLOB_DAT`, `R_386_JMP_SLOT`
-- **Userspace `ld.so`** — stub built into initrd; full relocation processing is future work
+- **`PT_INTERP`** — interpreter loading at `0x40000000`, `ET_DYN` support
 
 ### Threads & Synchronization
 - **`clone` syscall** — `CLONE_VM`, `CLONE_FILES`, `CLONE_SIGHAND`, `CLONE_THREAD`, `CLONE_SETTLS`
@@ -154,12 +163,25 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **GDB scripted checks** — heap/PMM/VGA integrity
 - `make test-all` runs everything
 
-## Running (x86)
-- `make ARCH=x86 iso`
-- `make ARCH=x86 run`
-- Logs:
-  - `serial.log`: kernel UART output
-  - `qemu.log`: QEMU debug output when enabled
+## Running
+
+### x86 (primary)
+```
+make ARCH=x86 iso
+make ARCH=x86 run
+```
+
+### ARM64 (QEMU virt)
+```
+make ARCH=arm
+make run-arm
+```
+
+### RISC-V 64 (QEMU virt)
+```
+make ARCH=riscv
+make run-riscv
+```
 
 QEMU debug helpers:
 - `make ARCH=x86 run QEMU_DEBUG=1`
@@ -169,21 +191,13 @@ QEMU debug helpers:
 
 See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for a detailed checklist.
 
-**All 31 planned POSIX tasks are complete**, plus 17 additional features (48 total). ~103K lines of C/ASM/headers across 256+ commits. The kernel covers **~95%** of the core POSIX interfaces needed for a practical Unix-like system. All 35 smoke tests, 16 battery checks, and 47 host unit tests pass clean.
-
-### Remaining work for full POSIX compliance
-- **Full `ld.so`** — relocation processing for shared libraries (`dlopen`/`dlsym`)
-- **`getaddrinfo`** / `/etc/hosts` — userland name resolution
-- **`sigqueue`** — queued real-time signals
-- **`setitimer`/`getitimer`** — interval timers
-- **Per-CPU scheduler runqueues** — SMP scalability (currently all processes run on BSP)
-- **SMAP** — Supervisor Mode Access Prevention
-- **DHCP client** — currently static IP only
-- **Multi-arch bring-up** — ARM/RISC-V functional kernels
+**All 31 planned POSIX tasks are complete**, plus 35 additional features (66 total). The kernel covers **~98%** of the core POSIX interfaces needed for a practical Unix-like system. All 35 smoke tests, 16 battery checks, and 47 host unit tests pass clean. ARM64 and RISC-V 64 boot on QEMU virt.
 
 ## Directory Structure
 - `src/kernel/` — Architecture-independent kernel (VFS, syscalls, scheduler, tmpfs, diskfs, devfs, overlayfs, procfs, FAT12/16/32, ext2, PTY, TTY, shm, signals, networking, threads, vDSO, KASLR, permissions)
 - `src/arch/x86/` — x86-specific (boot, VMM, IDT, LAPIC, IOAPIC, SMP, ACPI, CPUID, SYSENTER, ELF loader, MTRR)
+- `src/arch/arm/` — ARM64-specific (boot, EL2→EL1, PL011 UART, stubs)
+- `src/arch/riscv/` — RISC-V 64-specific (boot, NS16550 UART, stubs)
 - `src/hal/x86/` — HAL x86 (CPU, keyboard, timer, UART, PCI, ATA PIO/DMA, E1000 NIC, RTC)
 - `src/drivers/` — Device drivers (VBE, initrd, VGA, timer)
 - `src/mm/` — Memory management (PMM, heap, slab, arch-independent VMM wrappers)

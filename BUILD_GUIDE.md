@@ -2,7 +2,7 @@
 
 This guide explains how to build and run AdrOS on your local machine (Linux/WSL).
 
-AdrOS is a Unix-like, POSIX-compatible OS kernel with threads, futex synchronization, networking (TCP/IP + DNS + ICMP via lwIP in threaded mode), dynamic linking infrastructure, FAT12/16/32 + ext2 filesystems, ASLR, vDSO, zero-copy DMA, multi-drive ATA, a POSIX shell, framebuffer graphics (`/dev/fb0`), raw keyboard input (`/dev/kbd`), uid/gid/euid/egid permission enforcement, an interactive kernel console, and a working DOOM port. See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for the full compatibility checklist.
+AdrOS is a Unix-like, POSIX-compatible, multi-architecture OS kernel with threads, futex synchronization, networking (TCP/IP + DNS + ICMP + IPv6 + DHCP via lwIP), dynamic linking (`dlopen`/`dlsym`), FAT12/16/32 + ext2 filesystems, POSIX IPC (message queues, semaphores, shared memory), ASLR, SMAP/SMEP, vDSO, zero-copy DMA, virtio-blk, multi-drive ATA, interval timers, `posix_spawn`, a POSIX shell, framebuffer graphics, per-CPU runqueue infrastructure, and ARM64/RISC-V bring-up. See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for the full compatibility checklist.
 
 ## 1. Dependencies
 
@@ -97,7 +97,7 @@ The following ELF binaries are bundled in the initrd:
 - `/bin/sh` — POSIX sh-compatible shell with `$PATH` search, pipes, redirects, builtins
 - `/bin/cat`, `/bin/ls`, `/bin/mkdir`, `/bin/rm` — core utilities
 - `/bin/doom.elf` — DOOM (doomgeneric port) — included in initrd if built (see below)
-- `/lib/ld.so` — stub dynamic linker (placeholder for future shared library support)
+- `/lib/ld.so` — dynamic linker with full relocation processing
 
 The ulibc provides: `printf`, `malloc`/`free`/`calloc`/`realloc`, `string.h`, `unistd.h`, `errno.h`, `pthread.h`, `signal.h` (with `raise`, `sigaltstack`, `sigpending`, `sigsuspend`), `stdio.h` (buffered I/O with `fopen`/`fread`/`fwrite`/`fclose`), `stdlib.h` (`atof`, `strtol`, `getenv` stub, `system` stub), `ctype.h`, `sys/mman.h` (`mmap`/`munmap`), `sys/ioctl.h` (`ioctl`), `time.h` (`nanosleep`/`clock_gettime`), `sys/times.h`, `sys/uio.h`, `sys/types.h`, `sys/stat.h`, `math.h` (`fabs`), `assert.h`, `fcntl.h`, `strings.h`, `inttypes.h`, `linux/futex.h`, and `realpath()`.
 
@@ -200,15 +200,26 @@ make ARCH=arm
 This produces `adros-arm.bin`.
 
 ### Run on QEMU
-ARM does not use GRUB/ISO in the same way. The kernel is loaded directly into memory.
+ARM does not use GRUB/ISO. The kernel is loaded directly into memory.
 
 ```bash
+make run-arm
+# or manually:
 qemu-system-aarch64 -M virt -cpu cortex-a57 -m 128M -nographic \
-    -kernel adros-arm.bin
+    -kernel adros-arm.bin -serial mon:stdio
 ```
-- To quit QEMU when using `-nographic`: press `Ctrl+A`, release, then `x`.
 
-## 4. Building & Running (RISC-V)
+Expected output:
+```
+[AdrOS/arm64] Booting on QEMU virt...
+[CPU] No arch-specific feature detection.
+Welcome to AdrOS (x86/ARM/RISC-V/MIPS)!
+```
+
+- To quit QEMU when using `-nographic`: press `Ctrl+A`, release, then `x`.
+- ARM64 boots with PL011 UART at 0x09000000, EL2→EL1 transition, FP/SIMD enabled.
+
+## 5. Building & Running (RISC-V 64)
 
 ### Build
 ```bash
@@ -218,12 +229,23 @@ This produces `adros-riscv.bin`.
 
 ### Run on QEMU
 ```bash
-qemu-system-riscv64 -machine virt -m 128M -nographic \
-    -bios default -kernel adros-riscv.bin
+make run-riscv
+# or manually:
+qemu-system-riscv64 -M virt -m 128M -nographic -bios none \
+    -kernel adros-riscv.bin -serial mon:stdio
 ```
-- To quit: `Ctrl+A`, then `x`.
 
-## 5. Common Troubleshooting
+Expected output:
+```
+[AdrOS/riscv64] Booting on QEMU virt...
+[CPU] No arch-specific feature detection.
+Welcome to AdrOS (x86/ARM/RISC-V/MIPS)!
+```
+
+- To quit: `Ctrl+A`, then `x`.
+- RISC-V boots with NS16550 UART at 0x10000000, M-mode, `-bios none`.
+
+## 6. Common Troubleshooting
 
 - **"Multiboot header not found"**: Check whether `grub-file --is-x86-multiboot2 adros-x86.bin` returns success (0). If it fails, the section order in `linker.ld` may be wrong.
 - **"Triple Fault (infinite reset)"**: Usually caused by paging (VMM) issues or a misconfigured IDT. Run `make ARCH=x86 run QEMU_DEBUG=1` and inspect `qemu.log`.
