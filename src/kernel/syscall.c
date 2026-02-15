@@ -1026,6 +1026,217 @@ static int syscall_poll_impl(struct pollfd* user_fds, uint32_t nfds, int32_t tim
     return rc;
 }
 
+/* ------------------------------------------------------------------ */
+/*  epoll implementation                                               */
+/* ------------------------------------------------------------------ */
+
+#define EPOLL_MAX_EVENTS 64
+
+enum {
+    EPOLL_CTL_ADD = 1,
+    EPOLL_CTL_DEL = 2,
+    EPOLL_CTL_MOD = 3,
+};
+
+enum {
+    EPOLLIN  = 0x001,
+    EPOLLOUT = 0x004,
+    EPOLLERR = 0x008,
+    EPOLLHUP = 0x010,
+    EPOLLET  = (1U << 31),
+};
+
+struct epoll_event {
+    uint32_t events;
+    uint64_t data;
+};
+
+struct epoll_interest {
+    int fd;
+    uint32_t events;
+    uint64_t data;
+};
+
+struct epoll_instance {
+    struct epoll_interest items[EPOLL_MAX_EVENTS];
+    int count;
+};
+
+static void epoll_close(fs_node_t* node) {
+    if (node && node->inode) {
+        kfree((void*)(uintptr_t)node->inode);
+        node->inode = 0;
+    }
+}
+
+static int epoll_poll(fs_node_t* node, int events) {
+    (void)node; (void)events;
+    return 0;
+}
+
+static struct file_operations epoll_fops = {
+    .read  = NULL,
+    .write = NULL,
+    .open  = NULL,
+    .close = epoll_close,
+    .ioctl = NULL,
+    .mmap  = NULL,
+    .poll  = epoll_poll,
+};
+
+static int syscall_epoll_create_impl(void) {
+    if (!current_process) return -EINVAL;
+
+    struct epoll_instance* ep = (struct epoll_instance*)kmalloc(sizeof(*ep));
+    if (!ep) return -ENOMEM;
+    memset(ep, 0, sizeof(*ep));
+
+    fs_node_t* node = (fs_node_t*)kmalloc(sizeof(fs_node_t));
+    if (!node) { kfree(ep); return -ENOMEM; }
+    memset(node, 0, sizeof(*node));
+    node->flags = FS_FILE;
+    node->f_ops = &epoll_fops;
+    node->inode = (uintptr_t)ep;
+
+    struct file* f = (struct file*)kmalloc(sizeof(struct file));
+    if (!f) { kfree(node); kfree(ep); return -ENOMEM; }
+    memset(f, 0, sizeof(*f));
+    f->node = node;
+    f->refcount = 1;
+
+    int fd = fd_alloc(f);
+    if (fd < 0) { kfree(f); kfree(node); kfree(ep); }
+    return fd;
+}
+
+static int syscall_epoll_ctl_impl(int epfd, int op, int fd,
+                                   struct epoll_event* user_event) {
+    if (!current_process) return -EINVAL;
+
+    struct file* ef = fd_get(epfd);
+    if (!ef || !ef->node || ef->node->f_ops != &epoll_fops) return -EBADF;
+
+    struct epoll_instance* ep = (struct epoll_instance*)(uintptr_t)ef->node->inode;
+    if (!ep) return -EBADF;
+
+    if (fd < 0 || !fd_get(fd)) return -EBADF;
+    if (fd == epfd) return -EINVAL;
+
+    int idx = -1;
+    for (int i = 0; i < ep->count; i++) {
+        if (ep->items[i].fd == fd) { idx = i; break; }
+    }
+
+    if (op == EPOLL_CTL_ADD) {
+        if (idx >= 0) return -EEXIST;
+        if (ep->count >= EPOLL_MAX_EVENTS) return -ENOSPC;
+        if (!user_event) return -EFAULT;
+        struct epoll_event ev;
+        if (copy_from_user(&ev, user_event, sizeof(ev)) < 0) return -EFAULT;
+        ep->items[ep->count].fd = fd;
+        ep->items[ep->count].events = ev.events;
+        ep->items[ep->count].data = ev.data;
+        ep->count++;
+        return 0;
+    }
+
+    if (op == EPOLL_CTL_MOD) {
+        if (idx < 0) return -ENOENT;
+        if (!user_event) return -EFAULT;
+        struct epoll_event ev;
+        if (copy_from_user(&ev, user_event, sizeof(ev)) < 0) return -EFAULT;
+        ep->items[idx].events = ev.events;
+        ep->items[idx].data = ev.data;
+        return 0;
+    }
+
+    if (op == EPOLL_CTL_DEL) {
+        if (idx < 0) return -ENOENT;
+        ep->items[idx] = ep->items[ep->count - 1];
+        ep->count--;
+        return 0;
+    }
+
+    return -EINVAL;
+}
+
+__attribute__((noinline))
+static int syscall_epoll_wait_impl(int epfd, struct epoll_event* user_events,
+                                    int maxevents, int timeout) {
+    if (!current_process) return -EINVAL;
+    if (maxevents <= 0 || maxevents > EPOLL_MAX_EVENTS) return -EINVAL;
+    if (!user_events) return -EFAULT;
+    if (user_range_ok(user_events, sizeof(struct epoll_event) * (size_t)maxevents) == 0)
+        return -EFAULT;
+
+    struct file* ef = fd_get(epfd);
+    if (!ef || !ef->node || ef->node->f_ops != &epoll_fops) return -EBADF;
+
+    struct epoll_instance* ep = (struct epoll_instance*)(uintptr_t)ef->node->inode;
+    if (!ep) return -EBADF;
+
+    extern uint32_t get_tick_count(void);
+    uint32_t start_tick = get_tick_count();
+
+    for (;;) {
+        struct epoll_event out[EPOLL_MAX_EVENTS];
+        int ready = 0;
+
+        for (int i = 0; i < ep->count && ready < maxevents; i++) {
+            int fd = ep->items[i].fd;
+            struct file* f = fd_get(fd);
+            if (!f || !f->node) {
+                out[ready].events = EPOLLERR;
+                out[ready].data = ep->items[i].data;
+                ready++;
+                continue;
+            }
+
+            int vfs_req = 0;
+            if (ep->items[i].events & EPOLLIN) vfs_req |= VFS_POLL_IN;
+            if (ep->items[i].events & EPOLLOUT) vfs_req |= VFS_POLL_OUT;
+
+            int vfs_rev = 0;
+            int (*fn_poll)(fs_node_t*, int) = NULL;
+            if (f->node->f_ops && f->node->f_ops->poll) fn_poll = f->node->f_ops->poll;
+            if (fn_poll) {
+                vfs_rev = fn_poll(f->node, vfs_req);
+            } else {
+                vfs_rev = vfs_req;
+            }
+
+            uint32_t revents = 0;
+            if (vfs_rev & VFS_POLL_IN)  revents |= EPOLLIN;
+            if (vfs_rev & VFS_POLL_OUT) revents |= EPOLLOUT;
+            if (vfs_rev & VFS_POLL_ERR) revents |= EPOLLERR;
+            if (vfs_rev & VFS_POLL_HUP) revents |= EPOLLHUP;
+
+            if (revents) {
+                out[ready].events = revents;
+                out[ready].data = ep->items[i].data;
+                ready++;
+            }
+        }
+
+        if (ready > 0) {
+            if (copy_to_user(user_events, out,
+                             sizeof(struct epoll_event) * (size_t)ready) < 0)
+                return -EFAULT;
+            return ready;
+        }
+
+        if (timeout == 0) return 0;
+
+        if (timeout > 0) {
+            uint32_t now = get_tick_count();
+            uint32_t elapsed = now - start_tick;
+            if (elapsed >= (uint32_t)timeout) return 0;
+        }
+
+        process_sleep(1);
+    }
+}
+
 static uint32_t pipe_read(fs_node_t* n, uint32_t offset, uint32_t size, uint8_t* buffer) {
     (void)offset;
     struct pipe_node* pn = (struct pipe_node*)n;
@@ -3946,6 +4157,23 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
     }
     if (syscall_no == SYSCALL_DLCLOSE) {
         sc_ret(regs) = (uint32_t)syscall_dlclose_impl((int)sc_arg0(regs));
+        return;
+    }
+
+    if (syscall_no == SYSCALL_EPOLL_CREATE) {
+        sc_ret(regs) = (uint32_t)syscall_epoll_create_impl();
+        return;
+    }
+    if (syscall_no == SYSCALL_EPOLL_CTL) {
+        sc_ret(regs) = (uint32_t)syscall_epoll_ctl_impl(
+            (int)sc_arg0(regs), (int)sc_arg1(regs),
+            (int)sc_arg2(regs), (struct epoll_event*)sc_arg3(regs));
+        return;
+    }
+    if (syscall_no == SYSCALL_EPOLL_WAIT) {
+        sc_ret(regs) = (uint32_t)syscall_epoll_wait_impl(
+            (int)sc_arg0(regs), (struct epoll_event*)sc_arg1(regs),
+            (int)sc_arg2(regs), (int)sc_arg3(regs));
         return;
     }
 

@@ -135,6 +135,10 @@ enum {
     SYSCALL_DLOPEN       = 109,
     SYSCALL_DLSYM        = 110,
     SYSCALL_DLCLOSE      = 111,
+
+    SYSCALL_EPOLL_CREATE = 112,
+    SYSCALL_EPOLL_CTL    = 113,
+    SYSCALL_EPOLL_WAIT   = 114,
 };
 
 #endif
