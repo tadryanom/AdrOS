@@ -5,12 +5,12 @@
 All testing layers are **implemented and operational**:
 
 - **Static analysis** (`make check`): cppcheck + sparse + gcc -fanalyzer
-- **QEMU smoke tests** (`make test`): expect-based, 35 checks (file I/O, signals, memory, IPC, devices, procfs, networking), 4-CPU SMP, 90s timeout
+- **QEMU smoke tests** (`make test`): expect-based, 41 checks (file I/O, signals, memory, IPC, devices, procfs, networking, umask, pipe capacity, waitid, setitimer/getitimer, select/poll on regular files), 4-CPU SMP, 120s timeout
 - **Test battery** (`make test-battery`): 16 checks across 5 QEMU scenarios — multi-disk ATA, VFS mount, ping, diskfs
-- **Host unit tests** (`make test-host`): 47 tests — `test_utils.c` (28) + `test_security.c` (19)
+- **Host unit tests** (`make test-host`): 19 tests — `test_utils.c` + `test_security.c`
 - **GDB scripted checks** (`make test-gdb`): heap/PMM/VGA integrity validation
 - **Full suite** (`make test-all`): runs check + test-host + test
-- **Multi-arch build verification**: `make ARCH=arm` and `make ARCH=riscv` compile and boot on QEMU virt
+- **Multi-arch build verification**: `make ARCH=arm`, `make ARCH=riscv`, and `make ARCH=mips` compile and boot on QEMU
 
 ## Available Tools (already installed)
 
@@ -22,6 +22,7 @@ All testing layers are **implemented and operational**:
 | qemu-system-i386 | /usr/bin/qemu-system-i386 | x86 emulation + smoke tests |
 | qemu-system-aarch64 | /usr/bin/qemu-system-aarch64 | ARM64 emulation |
 | qemu-system-riscv64 | /usr/bin/qemu-system-riscv64 | RISC-V 64 emulation |
+| qemu-system-mipsel | /usr/bin/qemu-system-mipsel | MIPS32 little-endian emulation |
 | gdb | /usr/bin/gdb | Debugging via QEMU `-s -S` |
 | expect | /usr/bin/expect | Scripted QEMU serial interaction |
 | python3 | /usr/bin/python3 | Test runner orchestration |
@@ -110,7 +111,7 @@ To run manually: boot AdrOS with `-vga std`, then execute `/bin/doom.elf` from t
 
 ```makefile
 make check        # cppcheck + sparse + gcc -fanalyzer
-make test         # QEMU + expect automated smoke test (35 checks incl. ICMP ping)
+make test         # QEMU + expect automated smoke test (41 checks incl. ICMP ping)
 make test-battery # Full test battery: multi-disk ATA, VFS mount, ping, diskfs (16 checks)
 make test-host    # Host-side unit tests for pure functions
 make test-gdb     # QEMU + GDB scripted checks (optional)
@@ -121,4 +122,6 @@ make ARCH=arm     # Build ARM64 kernel
 make run-arm      # Boot ARM64 on QEMU virt (aarch64, cortex-a57)
 make ARCH=riscv   # Build RISC-V 64 kernel
 make run-riscv    # Boot RISC-V 64 on QEMU virt
+make ARCH=mips    # Build MIPS32 kernel
+make run-mips     # Boot MIPS32 on QEMU Malta
 ```

@@ -7,7 +7,7 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **x86** (32-bit, PAE) — primary, fully functional target
 - **ARM64** (AArch64) — boots on QEMU virt, UART console, minimal kernel
 - **RISC-V 64** — boots on QEMU virt, UART console, minimal kernel
-- **MIPS** — build infrastructure only
+- **MIPS32** (little-endian) — boots on QEMU Malta, UART console, minimal kernel
 
 ## Technical Stack
 - **Language:** C and Assembly
@@ -183,6 +183,12 @@ make ARCH=riscv
 make run-riscv
 ```
 
+### MIPS32 (QEMU Malta)
+```
+make ARCH=mips
+make run-mips
+```
+
 QEMU debug helpers:
 - `make ARCH=x86 run QEMU_DEBUG=1`
 - `make ARCH=x86 run QEMU_DEBUG=1 QEMU_INT=1`
@@ -191,13 +197,14 @@ QEMU debug helpers:
 
 See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for a detailed checklist.
 
-**All 31 planned POSIX tasks are complete**, plus 35 additional features (66 total). The kernel covers **~98%** of the core POSIX interfaces needed for a practical Unix-like system. All 35 smoke tests, 16 battery checks, and 47 host unit tests pass clean. ARM64 and RISC-V 64 boot on QEMU virt.
+**All 31 planned POSIX tasks are complete**, plus 35 additional features (66 total). The kernel covers **~98%** of the core POSIX interfaces needed for a practical Unix-like system. All 41 smoke tests, 16 battery checks, and 19 host unit tests pass clean. ARM64, RISC-V 64, and MIPS32 boot on QEMU.
 
 ## Directory Structure
 - `src/kernel/` — Architecture-independent kernel (VFS, syscalls, scheduler, tmpfs, diskfs, devfs, overlayfs, procfs, FAT12/16/32, ext2, PTY, TTY, shm, signals, networking, threads, vDSO, KASLR, permissions)
 - `src/arch/x86/` — x86-specific (boot, VMM, IDT, LAPIC, IOAPIC, SMP, ACPI, CPUID, SYSENTER, ELF loader, MTRR)
 - `src/arch/arm/` — ARM64-specific (boot, EL2→EL1, PL011 UART, stubs)
 - `src/arch/riscv/` — RISC-V 64-specific (boot, NS16550 UART, stubs)
+- `src/arch/mips/` — MIPS32-specific (boot, 16550 UART, stubs)
 - `src/hal/x86/` — HAL x86 (CPU, keyboard, timer, UART, PCI, ATA PIO/DMA, E1000 NIC, RTC)
 - `src/drivers/` — Device drivers (VBE, initrd, VGA, timer)
 - `src/mm/` — Memory management (PMM, heap, slab, arch-independent VMM wrappers)

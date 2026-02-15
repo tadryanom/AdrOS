@@ -245,7 +245,33 @@ Welcome to AdrOS (x86/ARM/RISC-V/MIPS)!
 - To quit: `Ctrl+A`, then `x`.
 - RISC-V boots with NS16550 UART at 0x10000000, M-mode, `-bios none`.
 
-## 6. Common Troubleshooting
+## 6. Building & Running (MIPS32)
+
+### Build
+```bash
+make ARCH=mips
+```
+This produces `adros-mips.bin`.
+
+### Run on QEMU
+```bash
+make run-mips
+# or manually:
+qemu-system-mipsel -M malta -m 128M -nographic \
+    -kernel adros-mips.bin -serial mon:stdio
+```
+
+Expected output:
+```
+[AdrOS/mips32] Booting on QEMU Malta...
+[CPU] No arch-specific feature detection.
+Welcome to AdrOS (x86/ARM/RISC-V/MIPS)!
+```
+
+- To quit: `Ctrl+A`, then `x`.
+- MIPS32 boots with 16550 UART at ISA I/O 0x3F8 (KSEG1 0xB80003F8), `-march=mips32r2`.
+
+## 7. Common Troubleshooting
 
 - **"Multiboot header not found"**: Check whether `grub-file --is-x86-multiboot2 adros-x86.bin` returns success (0). If it fails, the section order in `linker.ld` may be wrong.
 - **"Triple Fault (infinite reset)"**: Usually caused by paging (VMM) issues or a misconfigured IDT. Run `make ARCH=x86 run QEMU_DEBUG=1` and inspect `qemu.log`.
