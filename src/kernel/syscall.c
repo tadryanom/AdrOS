@@ -304,6 +304,238 @@ static int syscall_sem_getvalue_impl(int sid, int* user_val) {
     return 0;
 }
 
+/* --- Shared library loading (dlopen/dlsym/dlclose) --- */
+#define DLOPEN_MAX_LIBS 8
+#define DLOPEN_MAX_SYMS 64
+#define DLOPEN_BASE     0x30000000U
+#define DLOPEN_STRIDE   0x00400000U  /* 4 MB per library */
+
+struct dl_sym {
+    char     name[64];
+    uint32_t value;
+};
+
+struct dl_lib {
+    int      active;
+    char     path[128];
+    uint32_t base;          /* load base address */
+    struct dl_sym syms[DLOPEN_MAX_SYMS];
+    uint32_t nsyms;
+};
+
+static struct dl_lib dl_table[DLOPEN_MAX_LIBS];
+static spinlock_t dl_lock = {0};
+
+static int syscall_dlopen_impl(const char* user_path) {
+    char path[128];
+    if (copy_from_user(path, user_path, 127) < 0) return -EFAULT;
+    path[127] = 0;
+
+    uintptr_t fl = spin_lock_irqsave(&dl_lock);
+
+    /* Check if already loaded */
+    for (int i = 0; i < DLOPEN_MAX_LIBS; i++) {
+        if (dl_table[i].active && strcmp(dl_table[i].path, path) == 0) {
+            spin_unlock_irqrestore(&dl_lock, fl);
+            return i + 1; /* handle = 1-based index */
+        }
+    }
+
+    /* Find free slot */
+    int slot = -1;
+    for (int i = 0; i < DLOPEN_MAX_LIBS; i++) {
+        if (!dl_table[i].active) { slot = i; break; }
+    }
+    if (slot < 0) {
+        spin_unlock_irqrestore(&dl_lock, fl);
+        return -ENOMEM;
+    }
+
+    spin_unlock_irqrestore(&dl_lock, fl);
+
+    /* Load the ELF .so file */
+    extern fs_node_t* vfs_lookup(const char* path);
+    fs_node_t* node = vfs_lookup(path);
+    if (!node) return -ENOENT;
+
+    uint32_t flen = node->length;
+    if (flen < 52) return -EINVAL; /* minimum ELF header */
+
+    extern void* kmalloc(size_t);
+    extern void kfree(void*);
+    uint8_t* fbuf = (uint8_t*)kmalloc(flen);
+    if (!fbuf) return -ENOMEM;
+
+    extern uint32_t vfs_read(fs_node_t*, uint32_t, uint32_t, uint8_t*);
+    if (vfs_read(node, 0, flen, fbuf) != flen) {
+        kfree(fbuf);
+        return -EIO;
+    }
+
+    /* Basic ELF validation */
+    if (fbuf[0] != 0x7F || fbuf[1] != 'E' || fbuf[2] != 'L' || fbuf[3] != 'F') {
+        kfree(fbuf);
+        return -EINVAL;
+    }
+
+    /* Load segments into current process address space at slot base */
+    uint32_t base = DLOPEN_BASE + (uint32_t)slot * DLOPEN_STRIDE;
+
+    /* Parse program headers and load PT_LOAD segments */
+    uint32_t e_phoff = *(uint32_t*)(fbuf + 28);
+    uint16_t e_phnum = *(uint16_t*)(fbuf + 44);
+    uint16_t e_phentsize = *(uint16_t*)(fbuf + 42);
+
+    if (e_phentsize < 32 || e_phoff + (uint32_t)e_phnum * e_phentsize > flen) {
+        kfree(fbuf);
+        return -EINVAL;
+    }
+
+    for (uint16_t i = 0; i < e_phnum; i++) {
+        uint8_t* ph = fbuf + e_phoff + (uint32_t)i * e_phentsize;
+        uint32_t p_type   = *(uint32_t*)(ph + 0);
+        uint32_t p_offset = *(uint32_t*)(ph + 4);
+        uint32_t p_vaddr  = *(uint32_t*)(ph + 8);
+        uint32_t p_filesz = *(uint32_t*)(ph + 16);
+        uint32_t p_memsz  = *(uint32_t*)(ph + 20);
+
+        if (p_type != 1) continue; /* PT_LOAD = 1 */
+        if (p_memsz == 0) continue;
+
+        uint32_t vaddr = p_vaddr + base;
+        if (vaddr >= 0xC0000000U) continue;
+
+        /* Map pages */
+        uint32_t start_page = vaddr & ~0xFFFU;
+        uint32_t end_page = (vaddr + p_memsz - 1) & ~0xFFFU;
+        for (uint32_t va = start_page; va <= end_page; va += 0x1000) {
+            extern void* pmm_alloc_page(void);
+            void* frame = pmm_alloc_page();
+            if (!frame) { kfree(fbuf); return -ENOMEM; }
+            vmm_map_page((uint64_t)(uintptr_t)frame, (uint64_t)va,
+                         VMM_FLAG_PRESENT | VMM_FLAG_RW | VMM_FLAG_USER);
+        }
+
+        if (p_filesz && p_offset + p_filesz <= flen)
+            memcpy((void*)vaddr, fbuf + p_offset, p_filesz);
+        if (p_memsz > p_filesz)
+            memset((void*)(vaddr + p_filesz), 0, p_memsz - p_filesz);
+    }
+
+    /* Extract symbols from .dynsym + .dynstr via PT_DYNAMIC */
+    fl = spin_lock_irqsave(&dl_lock);
+    memset(&dl_table[slot], 0, sizeof(dl_table[slot]));
+    dl_table[slot].active = 1;
+    strcpy(dl_table[slot].path, path);
+    dl_table[slot].base = base;
+
+    /* Parse PT_DYNAMIC to find SYMTAB and STRTAB */
+    uint32_t symtab_va = 0, strtab_va = 0, strsz = 0;
+    uint32_t hash_va = 0;
+    for (uint16_t i = 0; i < e_phnum; i++) {
+        uint8_t* ph = fbuf + e_phoff + (uint32_t)i * e_phentsize;
+        uint32_t p_type   = *(uint32_t*)(ph + 0);
+        uint32_t p_offset = *(uint32_t*)(ph + 4);
+        uint32_t p_filesz = *(uint32_t*)(ph + 16);
+
+        if (p_type != 2) continue; /* PT_DYNAMIC = 2 */
+        if (p_offset + p_filesz > flen) break;
+
+        uint32_t* dyn = (uint32_t*)(fbuf + p_offset);
+        uint32_t dyn_entries = p_filesz / 8;
+        for (uint32_t d = 0; d < dyn_entries; d++) {
+            int32_t tag = (int32_t)dyn[d * 2];
+            uint32_t val = dyn[d * 2 + 1];
+            if (tag == 0) break; /* DT_NULL */
+            if (tag == 6)  symtab_va = val + base; /* DT_SYMTAB */
+            if (tag == 5)  strtab_va = val + base; /* DT_STRTAB */
+            if (tag == 10) strsz = val;            /* DT_STRSZ */
+            if (tag == 4)  hash_va = val + base;   /* DT_HASH */
+        }
+        break;
+    }
+
+    /* Read symbol count from DT_HASH if available: hash[1] = nchain = nsyms */
+    uint32_t nsyms = 0;
+    if (hash_va && hash_va < 0xC0000000U) {
+        nsyms = *(uint32_t*)(hash_va + 4);
+    }
+
+    /* Extract exported symbols */
+    if (symtab_va && strtab_va && nsyms > 0) {
+        uint32_t cnt = 0;
+        for (uint32_t s = 1; s < nsyms && cnt < DLOPEN_MAX_SYMS; s++) {
+            uint32_t* sym = (uint32_t*)(symtab_va + s * 16);
+            uint32_t st_name  = sym[0];
+            uint32_t st_value = sym[1];
+            uint8_t  st_info  = ((uint8_t*)sym)[12];
+            uint16_t st_shndx = *(uint16_t*)((uint8_t*)sym + 14);
+
+            /* Only global/weak defined symbols */
+            uint8_t bind = st_info >> 4;
+            if ((bind != 1 && bind != 2) || st_shndx == 0) continue;
+            if (st_name >= strsz) continue;
+
+            const char* name = (const char*)(strtab_va + st_name);
+            if (name[0] == 0) continue;
+
+            uint32_t nlen = 0;
+            while (nlen < 63 && name[nlen]) nlen++;
+            memcpy(dl_table[slot].syms[cnt].name, name, nlen);
+            dl_table[slot].syms[cnt].name[nlen] = 0;
+            dl_table[slot].syms[cnt].value = st_value + base;
+            cnt++;
+        }
+        dl_table[slot].nsyms = cnt;
+    }
+
+    spin_unlock_irqrestore(&dl_lock, fl);
+    kfree(fbuf);
+    return slot + 1; /* 1-based handle */
+}
+
+static int syscall_dlsym_impl(int handle, const char* user_name, uint32_t* user_addr) {
+    if (handle < 1 || handle > DLOPEN_MAX_LIBS) return -EINVAL;
+    if (!user_name || !user_addr) return -EFAULT;
+    if (user_range_ok(user_addr, 4) == 0) return -EFAULT;
+
+    char name[64];
+    if (copy_from_user(name, user_name, 63) < 0) return -EFAULT;
+    name[63] = 0;
+
+    int slot = handle - 1;
+    uintptr_t fl = spin_lock_irqsave(&dl_lock);
+    if (!dl_table[slot].active) {
+        spin_unlock_irqrestore(&dl_lock, fl);
+        return -EINVAL;
+    }
+
+    for (uint32_t i = 0; i < dl_table[slot].nsyms; i++) {
+        if (strcmp(dl_table[slot].syms[i].name, name) == 0) {
+            uint32_t addr = dl_table[slot].syms[i].value;
+            spin_unlock_irqrestore(&dl_lock, fl);
+            if (copy_to_user(user_addr, &addr, 4) < 0) return -EFAULT;
+            return 0;
+        }
+    }
+
+    spin_unlock_irqrestore(&dl_lock, fl);
+    return -ENOENT;
+}
+
+static int syscall_dlclose_impl(int handle) {
+    if (handle < 1 || handle > DLOPEN_MAX_LIBS) return -EINVAL;
+    int slot = handle - 1;
+    uintptr_t fl = spin_lock_irqsave(&dl_lock);
+    if (!dl_table[slot].active) {
+        spin_unlock_irqrestore(&dl_lock, fl);
+        return -EINVAL;
+    }
+    dl_table[slot].active = 0;
+    spin_unlock_irqrestore(&dl_lock, fl);
+    return 0;
+}
+
 /* --- Advisory file locking (flock) --- */
 enum {
     FLOCK_SH = 1,
@@ -3714,6 +3946,20 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
 
         if (copy_to_user(user_out, &ip, 4) < 0) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
         sc_ret(regs) = 0;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_DLOPEN) {
+        sc_ret(regs) = (uint32_t)syscall_dlopen_impl((const char*)sc_arg0(regs));
+        return;
+    }
+    if (syscall_no == SYSCALL_DLSYM) {
+        sc_ret(regs) = (uint32_t)syscall_dlsym_impl(
+            (int)sc_arg0(regs), (const char*)sc_arg1(regs), (uint32_t*)sc_arg2(regs));
+        return;
+    }
+    if (syscall_no == SYSCALL_DLCLOSE) {
+        sc_ret(regs) = (uint32_t)syscall_dlclose_impl((int)sc_arg0(regs));
         return;
     }
 

@@ -132,6 +132,9 @@ enum {
     SYSCALL_SEM_UNLINK  = 106,
     SYSCALL_SEM_GETVALUE = 107,
     SYSCALL_GETADDRINFO  = 108,
+    SYSCALL_DLOPEN       = 109,
+    SYSCALL_DLSYM        = 110,
+    SYSCALL_DLCLOSE      = 111,
 };
 
 #endif
