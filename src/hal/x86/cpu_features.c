@@ -17,6 +17,8 @@ static inline void write_cr4(uint32_t val) {
     __asm__ volatile("mov %0, %%cr4" :: "r"(val) : "memory");
 }
 
+int g_smap_enabled = 0;
+
 static struct cpu_features g_features;
 static struct x86_cpu_features g_x86_features;
 
@@ -59,10 +61,16 @@ void hal_cpu_detect_features(void) {
         kprintf("[CPU] SMEP enabled.\n");
     }
 
-    /* SMAP (Supervisor Mode Access Prevention) is NOT enabled yet because
-     * copy_from_user/copy_to_user do not bracket accesses with STAC/CLAC.
-     * Enabling SMAP without STAC/CLAC would fault on every user memory access.
-     * TODO: Add STAC/CLAC to x86 uaccess.c, then enable SMAP here. */
+    /* Enable SMAP if supported: prevents kernel from accidentally reading/writing
+     * user-mapped pages.  copy_from_user/copy_to_user bracket accesses with
+     * STAC/CLAC so legitimate user copies still work. */
+    if (g_x86_features.smap) {
+        uint32_t cr4 = read_cr4();
+        cr4 |= CR4_SMAP;
+        write_cr4(cr4);
+        g_smap_enabled = 1;
+        kprintf("[CPU] SMAP enabled.\n");
+    }
 }
 
 const struct cpu_features* hal_cpu_get_features(void) {

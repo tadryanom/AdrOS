@@ -6,6 +6,21 @@
 
 #include <stdint.h>
 
+/* Global flag set by hal_cpu_detect_features() when SMAP is enabled in CR4. */
+extern int g_smap_enabled;
+
+/* STAC/CLAC — toggle EFLAGS.AC for SMAP bypass.
+ * Encoded as raw bytes for compatibility with older assemblers.
+ * Only executed when SMAP is actually enabled to avoid #UD. */
+static inline void stac(void) {
+    if (g_smap_enabled)
+        __asm__ volatile(".byte 0x0F, 0x01, 0xCB" ::: "memory");
+}
+static inline void clac(void) {
+    if (g_smap_enabled)
+        __asm__ volatile(".byte 0x0F, 0x01, 0xCA" ::: "memory");
+}
+
 static int x86_user_range_basic_ok(uintptr_t uaddr, size_t len) {
     if (len == 0) return 1;
     if (uaddr == 0) return 0;
@@ -108,10 +123,12 @@ int copy_from_user(void* dst, const void* src_user, size_t len) {
     g_uaccess_recover_eip = (uintptr_t)&&uaccess_fault;
     g_uaccess_active = 1;
 
+    stac();
     uintptr_t up = (uintptr_t)src_user;
     for (size_t i = 0; i < len; i++) {
         ((uint8_t*)dst)[i] = ((const volatile uint8_t*)up)[i];
     }
+    clac();
 
     g_uaccess_active = 0;
     g_uaccess_recover_eip = 0;
@@ -119,6 +136,7 @@ int copy_from_user(void* dst, const void* src_user, size_t len) {
     return 0;
 
 uaccess_fault:
+    clac();
     g_uaccess_active = 0;
     g_uaccess_faulted = 0;
     g_uaccess_recover_eip = 0;
@@ -134,10 +152,12 @@ int copy_to_user(void* dst_user, const void* src, size_t len) {
     g_uaccess_recover_eip = (uintptr_t)&&uaccess_fault2;
     g_uaccess_active = 1;
 
+    stac();
     uintptr_t up = (uintptr_t)dst_user;
     for (size_t i = 0; i < len; i++) {
         ((volatile uint8_t*)up)[i] = ((const uint8_t*)src)[i];
     }
+    clac();
 
     g_uaccess_active = 0;
     g_uaccess_recover_eip = 0;
@@ -145,6 +165,7 @@ int copy_to_user(void* dst_user, const void* src, size_t len) {
     return 0;
 
 uaccess_fault2:
+    clac();
     g_uaccess_active = 0;
     g_uaccess_faulted = 0;
     g_uaccess_recover_eip = 0;
