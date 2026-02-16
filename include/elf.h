@@ -77,6 +77,7 @@ typedef struct {
 #define DT_REL     17
 #define DT_RELSZ   18
 #define DT_RELENT  19
+#define DT_PLTGOT  3
 #define DT_JMPREL  23
 #define DT_PLTRELSZ 2
 #define DT_PLTREL  20
@@ -122,5 +123,9 @@ typedef struct {
 #define AT_ENTRY  9   /* Program entry point */
 
 int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uintptr_t* user_stack_top_out, uintptr_t* addr_space_out, uintptr_t* heap_break_out);
+
+/* Retrieve and consume pending auxv entries (set by elf32_load_user_from_initrd
+ * when an interpreter is present).  Returns number of entries copied, 0 if none. */
+int elf32_pop_pending_auxv(elf32_auxv_t* out, int max);
 
 #endif

@@ -14,16 +14,19 @@
 
 #include <stdint.h>
 
-static void* pmm_alloc_page_low_16mb(void) {
-    for (int tries = 0; tries < 4096; tries++) {
-        void* p = pmm_alloc_page();
-        if (!p) return NULL;
-        if ((uintptr_t)p < 0x01000000U) {
-            return p;
-        }
-        pmm_free_page(p);
-    }
-    return NULL;
+/* Pending auxv buffer — filled by elf32_load_user_from_initrd when an
+ * interpreter is present, consumed by execve to push onto the user stack
+ * in the correct position (right after envp[]). */
+static elf32_auxv_t g_pending_auxv[8];
+static int          g_pending_auxv_count = 0;
+
+int elf32_pop_pending_auxv(elf32_auxv_t* out, int max) {
+    int n = g_pending_auxv_count;
+    if (n == 0) return 0;
+    if (n > max) n = max;
+    for (int i = 0; i < n; i++) out[i] = g_pending_auxv[i];
+    g_pending_auxv_count = 0;
+    return n;
 }
 
 static int elf32_validate(const elf32_ehdr_t* eh, size_t file_len) {
@@ -49,8 +52,7 @@ static int elf32_validate(const elf32_ehdr_t* eh, size_t file_len) {
     if (ph_end < eh->e_phoff) return -EINVAL;
     if (ph_end > file_len) return -EINVAL;
 
-    if (eh->e_entry == 0) return -EINVAL;
-    if (eh->e_entry >= hal_mm_kernel_virt_base()) return -EINVAL;
+    if (eh->e_entry != 0 && eh->e_entry >= hal_mm_kernel_virt_base()) return -EINVAL;
 
     return 0;
 }
@@ -85,7 +87,7 @@ static int elf32_map_user_range(uintptr_t as, uintptr_t vaddr, size_t len, uint3
         }
 
         if (!already_mapped) {
-            void* phys = pmm_alloc_page_low_16mb();
+            void* phys = pmm_alloc_page();
             if (!phys) {
                 vmm_as_activate(old_as);
                 return -ENOMEM;
@@ -142,9 +144,10 @@ static int elf32_load_segments(const uint8_t* file, uint32_t file_len,
 
 /* Process ELF relocations from PT_DYNAMIC segment.
  * base_offset is 0 for ET_EXEC, non-zero for PIE/shared objects.
+ * skip_jmpslot: if true, skip R_386_JMP_SLOT (let ld.so handle lazily).
  * The target address space must already be activated. */
 static void elf32_process_relocations(const uint8_t* file, uint32_t file_len,
-                                       uintptr_t base_offset) {
+                                       uintptr_t base_offset, int skip_jmpslot) {
     const elf32_ehdr_t* eh = (const elf32_ehdr_t*)file;
     const elf32_phdr_t* ph = (const elf32_phdr_t*)(file + eh->e_phoff);
 
@@ -188,8 +191,10 @@ static void elf32_process_relocations(const uint8_t* file, uint32_t file_len,
             case R_386_RELATIVE: \
                 *target += (uint32_t)base_offset; \
                 break; \
-            case R_386_GLOB_DAT: \
-            case R_386_JMP_SLOT: { \
+            case R_386_JMP_SLOT: \
+                if (skip_jmpslot) break; \
+                /* fall through */ \
+            case R_386_GLOB_DAT: { \
                 uint32_t sym_idx = ELF32_R_SYM(r->r_info); \
                 if (symtab_addr && sym_idx) { \
                     const elf32_sym_t* sym = &((const elf32_sym_t*) \
@@ -231,9 +236,97 @@ static void elf32_process_relocations(const uint8_t* file, uint32_t file_len,
     #undef APPLY_REL
 }
 
+/* Load a shared library ELF at the given base VA.
+ * Returns 0 on success, fills *loaded_end with highest mapped address. */
+static int elf32_load_shared_lib_at(const char* path, uintptr_t as,
+                                     uintptr_t base, uintptr_t* loaded_end) {
+    fs_node_t* node = vfs_lookup(path);
+    if (!node) return -ENOENT;
+
+    uint32_t flen = node->length;
+    if (flen < sizeof(elf32_ehdr_t)) return -EINVAL;
+
+    uint8_t* fbuf = (uint8_t*)kmalloc(flen);
+    if (!fbuf) return -ENOMEM;
+
+    if (vfs_read(node, 0, flen, fbuf) != flen) {
+        kfree(fbuf);
+        return -EIO;
+    }
+
+    const elf32_ehdr_t* eh = (const elf32_ehdr_t*)fbuf;
+    int vrc = elf32_validate(eh, flen);
+    if (vrc < 0) { kfree(fbuf); return vrc; }
+
+    uintptr_t seg_end = 0;
+    int rc = elf32_load_segments(fbuf, flen, as, base, &seg_end);
+    if (rc < 0) { kfree(fbuf); return rc; }
+
+    elf32_process_relocations(fbuf, flen, base, 0);
+
+    if (loaded_end) *loaded_end = seg_end;
+    kfree(fbuf);
+    return 0;
+}
+
+/* Load DT_NEEDED shared libraries from the main binary's PT_DYNAMIC.
+ * Libraries are loaded sequentially starting at *next_base.
+ * Returns number of libraries loaded. */
+#define SHLIB_BASE 0x11000000U
+
+static int elf32_load_needed_libs(const uint8_t* file, uint32_t file_len,
+                                   uintptr_t as, uintptr_t base_offset) {
+    const elf32_ehdr_t* eh = (const elf32_ehdr_t*)file;
+    const elf32_phdr_t* ph = (const elf32_phdr_t*)(file + eh->e_phoff);
+
+    const elf32_phdr_t* dyn_ph = NULL;
+    for (uint16_t i = 0; i < eh->e_phnum; i++) {
+        if (ph[i].p_type == PT_DYNAMIC) { dyn_ph = &ph[i]; break; }
+    }
+    if (!dyn_ph) return 0;
+    if (dyn_ph->p_offset + dyn_ph->p_filesz > file_len) return 0;
+
+    const elf32_dyn_t* dyn = (const elf32_dyn_t*)(file + dyn_ph->p_offset);
+    uint32_t dyn_count = dyn_ph->p_filesz / sizeof(elf32_dyn_t);
+
+    uint32_t strtab_addr = 0;
+    for (uint32_t i = 0; i < dyn_count && dyn[i].d_tag != DT_NULL; i++) {
+        if (dyn[i].d_tag == DT_STRTAB) { strtab_addr = dyn[i].d_val; break; }
+    }
+    if (!strtab_addr) return 0;
+
+    const char* strtab = (const char*)(strtab_addr + base_offset);
+    uintptr_t lib_base = SHLIB_BASE;
+    int loaded = 0;
+
+    for (uint32_t i = 0; i < dyn_count && dyn[i].d_tag != DT_NULL; i++) {
+        if (dyn[i].d_tag != DT_NEEDED) continue;
+        const char* libname = strtab + dyn[i].d_val;
+
+        char path[128];
+        int plen = 0;
+        const char* pfx = "/lib/";
+        while (*pfx && plen < 122) path[plen++] = *pfx++;
+        const char* s = libname;
+        while (*s && plen < 127) path[plen++] = *s++;
+        path[plen] = '\0';
+
+        uintptr_t seg_end = 0;
+        int rc = elf32_load_shared_lib_at(path, as, lib_base, &seg_end);
+        if (rc == 0) {
+            kprintf("[ELF] loaded shared lib: %s at 0x%x\n", path, (unsigned)lib_base);
+            lib_base = (seg_end + 0xFFFU) & ~(uintptr_t)0xFFFU;
+            loaded++;
+        } else {
+            kprintf("[ELF] warning: could not load %s (%d)\n", path, rc);
+        }
+    }
+    return loaded;
+}
+
 /* Load an interpreter ELF (ld.so) at INTERP_BASE.
  * Returns 0 on success, sets *interp_entry. */
-#define INTERP_BASE 0x40000000U
+#define INTERP_BASE 0x12000000U
 
 static int elf32_load_interp(const char* interp_path, uintptr_t as,
                               uintptr_t* interp_entry, uintptr_t* interp_base_out) {
@@ -263,15 +356,23 @@ static int elf32_load_interp(const char* interp_path, uintptr_t as,
         return vrc;
     }
 
+    /* ET_EXEC interpreter has absolute addresses (no offset needed).
+     * ET_DYN interpreter is position-independent, loaded at INTERP_BASE. */
+    uintptr_t base_off = (eh->e_type == ET_DYN) ? INTERP_BASE : 0;
+
     uintptr_t dummy = 0;
-    int rc = elf32_load_segments(fbuf, flen, as, INTERP_BASE, &dummy);
+    int rc = elf32_load_segments(fbuf, flen, as, base_off, &dummy);
     if (rc < 0) {
         kfree(fbuf);
         return rc;
     }
 
-    *interp_entry = (uintptr_t)eh->e_entry + INTERP_BASE;
-    if (interp_base_out) *interp_base_out = INTERP_BASE;
+    if (eh->e_type == ET_DYN) {
+        elf32_process_relocations(fbuf, flen, base_off, 0);
+    }
+
+    *interp_entry = (uintptr_t)eh->e_entry + base_off;
+    if (interp_base_out) *interp_base_out = (base_off ? base_off : (uintptr_t)eh->e_entry);
 
     kfree(fbuf);
     return 0;
@@ -317,12 +418,12 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
 
     const elf32_ehdr_t* eh = (const elf32_ehdr_t*)file;
     int vrc = elf32_validate(eh, file_len);
-    if (vrc < 0) {
+    if (vrc < 0 || eh->e_entry == 0) {
         kprintf("[ELF] invalid ELF header\n");
         kfree(file);
         vmm_as_activate(old_as);
         vmm_as_destroy(new_as);
-        return vrc;
+        return vrc < 0 ? vrc : -EINVAL;
     }
 
     uintptr_t highest_seg_end = 0;
@@ -335,10 +436,7 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
         return lrc;
     }
 
-    /* Process relocations (R_386_RELATIVE, GLOB_DAT, JMP_SLOT, R_386_32) */
-    elf32_process_relocations(file, file_len, 0);
-
-    /* Check for PT_INTERP — if present, load the dynamic linker */
+    /* Check for PT_INTERP first — determines relocation strategy */
     const elf32_phdr_t* ph = (const elf32_phdr_t*)(file + eh->e_phoff);
     uintptr_t real_entry = (uintptr_t)eh->e_entry;
     int has_interp = 0;
@@ -363,6 +461,14 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
             break;
         }
     }
+
+    /* Process relocations — skip JMP_SLOT when ld.so will handle them lazily */
+    elf32_process_relocations(file, file_len, 0, has_interp);
+
+    /* Load DT_NEEDED shared libraries (kernel loads segments, ld.so resolves PLT) */
+    if (has_interp) {
+        elf32_load_needed_libs(file, file_len, new_as, 0);
+    }
     /* 32 KB user stack with a 4 KB guard page below (unmapped).
      * Guard page at stack_base - 0x1000 is left unmapped so stack overflow
      * triggers a page fault → SIGSEGV instead of silent corruption.
@@ -383,18 +489,28 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
 
     uintptr_t sp = user_stack_base + user_stack_size;
 
-    /* When an interpreter is loaded, push auxv entries onto the user stack
-     * so ld.so can locate the program entry point and ELF headers. */
+    /* When an interpreter is loaded, save auxv entries into a static buffer.
+     * The execve handler will push them onto the user stack in the correct
+     * position (right after envp[]) so ld.so can find them. */
     if (has_interp) {
-        elf32_auxv_t auxv[6];
-        auxv[0].a_type = AT_ENTRY;  auxv[0].a_val = (uint32_t)eh->e_entry;
-        auxv[1].a_type = AT_BASE;   auxv[1].a_val = INTERP_BASE;
-        auxv[2].a_type = AT_PAGESZ; auxv[2].a_val = 0x1000;
-        auxv[3].a_type = AT_PHDR;   auxv[3].a_val = (uint32_t)eh->e_phoff + (uint32_t)eh->e_entry;
-        auxv[4].a_type = AT_PHNUM;  auxv[4].a_val = eh->e_phnum;
-        auxv[5].a_type = AT_NULL;   auxv[5].a_val = 0;
-        sp -= sizeof(auxv);
-        memcpy((void*)sp, auxv, sizeof(auxv));
+        /* Compute AT_PHDR: find the first PT_LOAD that covers e_phoff */
+        uint32_t phdr_va = 0;
+        for (uint16_t i = 0; i < eh->e_phnum; i++) {
+            if (ph[i].p_type == PT_LOAD &&
+                eh->e_phoff >= ph[i].p_offset &&
+                eh->e_phoff < ph[i].p_offset + ph[i].p_filesz) {
+                phdr_va = ph[i].p_vaddr + (eh->e_phoff - ph[i].p_offset);
+                break;
+            }
+        }
+        g_pending_auxv[0].a_type = AT_ENTRY;  g_pending_auxv[0].a_val = (uint32_t)eh->e_entry;
+        g_pending_auxv[1].a_type = AT_BASE;   g_pending_auxv[1].a_val = INTERP_BASE;
+        g_pending_auxv[2].a_type = AT_PAGESZ; g_pending_auxv[2].a_val = 0x1000;
+        g_pending_auxv[3].a_type = AT_PHDR;   g_pending_auxv[3].a_val = phdr_va;
+        g_pending_auxv[4].a_type = AT_PHNUM;  g_pending_auxv[4].a_val = eh->e_phnum;
+        g_pending_auxv[5].a_type = AT_PHENT;  g_pending_auxv[5].a_val = eh->e_phentsize;
+        g_pending_auxv[6].a_type = AT_NULL;   g_pending_auxv[6].a_val = 0;
+        g_pending_auxv_count = 7;
     }
 
     /* Map vDSO shared page read-only into user address space */

@@ -1986,6 +1986,17 @@ static int syscall_execve_impl(struct registers* regs, const char* user_path, co
 
     sp &= ~(uintptr_t)0xF;
 
+    // Push auxv entries (if interpreter present) — must come right after envp[]
+    // so ld.so can find them by walking: argc → argv[] → envp[] → auxv.
+    {
+        elf32_auxv_t auxv_buf[8];
+        int auxv_n = elf32_pop_pending_auxv(auxv_buf, 8);
+        if (auxv_n > 0) {
+            sp -= (uintptr_t)(auxv_n * sizeof(elf32_auxv_t));
+            memcpy((void*)sp, auxv_buf, (size_t)auxv_n * sizeof(elf32_auxv_t));
+        }
+    }
+
     // Push envp[] pointers
     sp -= (uintptr_t)(sizeof(uintptr_t) * (envc + 1));
     memcpy((void*)sp, envp_ptrs_va, sizeof(uintptr_t) * (envc + 1));

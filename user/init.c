@@ -3722,6 +3722,21 @@ void _start(void) {
         }
     }
 
+    // PIE lazy PLT/GOT binding test
+    {
+        int pid = sys_fork();
+        if (pid == 0) {
+            static const char* const av[] = {"pie_test.elf", 0};
+            static const char* const ev[] = {0};
+            (void)sys_execve("/bin/pie_test.elf", av, ev);
+            sys_exit(99);
+        }
+        if (pid > 0) {
+            int st = 0;
+            (void)sys_waitpid(pid, &st, 0);
+        }
+    }
+
     {
         int pid = sys_fork();
         if (pid < 0) {

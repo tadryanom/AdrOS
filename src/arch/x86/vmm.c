@@ -126,7 +126,7 @@ static void vmm_map_page_nolock(uint64_t phys, uint64_t virt, uint32_t flags) {
 
     volatile uint64_t* pd = pae_pd_recursive(pi);
     if ((pd[di] & X86_PTE_PRESENT) == 0) {
-        uint32_t pt_phys = (uint32_t)(uintptr_t)pmm_alloc_page_low();
+        uint32_t pt_phys = (uint32_t)(uintptr_t)pmm_alloc_page();
         if (!pt_phys) {
             kprintf("[VMM] OOM allocating page table.\n");
             return;
