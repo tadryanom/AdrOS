@@ -497,6 +497,31 @@ void process_exit_notify(int status) {
     current_process->state = PROCESS_ZOMBIE;
     alarm_queue_remove(current_process);
 
+    /* Reparent children to PID 1 (init) so orphaned zombies can be reaped.
+     * If init is waiting on pid==-1, wake it to collect newly-adopted zombies. */
+    {
+        struct process* init_proc = process_find_locked(1);
+        struct process* it = ready_queue_head;
+        if (it && init_proc) {
+            const struct process* const start = it;
+            do {
+                if (it->parent_pid == current_process->pid && it != current_process) {
+                    it->parent_pid = 1;
+                    /* If the child is already a zombie and init is waiting, wake init */
+                    if (it->state == PROCESS_ZOMBIE &&
+                        init_proc->state == PROCESS_BLOCKED && init_proc->waiting &&
+                        init_proc->wait_pid == -1) {
+                        init_proc->wait_result_pid = (int)it->pid;
+                        init_proc->wait_result_status = it->exit_status;
+                        init_proc->state = PROCESS_READY;
+                        rq_enqueue(pcpu_rq[init_proc->cpu_id].active, init_proc);
+                    }
+                }
+                it = it->next;
+            } while (it && it != start);
+        }
+    }
+
     if (current_process->pid != 0) {
         struct process* parent = process_find_locked(current_process->parent_pid);
         if (parent && parent->state == PROCESS_BLOCKED && parent->waiting) {
@@ -579,8 +604,23 @@ struct process* process_fork_create(uintptr_t child_as, const void* child_regs) 
         arch_fpu_init_state(proc->fpu_state);
     }
 
-    for (int i = 0; i < PROCESS_MAX_FILES; i++) {
-        proc->files[i] = NULL;
+    /* Copy parent's file descriptors under sched_lock so the child
+     * cannot be scheduled before its FD table is fully populated.
+     * Refcounts are bumped atomically for each shared struct file. */
+    if (current_process) {
+        for (int i = 0; i < PROCESS_MAX_FILES; i++) {
+            struct file* f = current_process->files[i];
+            if (f) {
+                __sync_fetch_and_add(&f->refcount, 1);
+                proc->files[i] = f;
+                proc->fd_flags[i] = current_process->fd_flags[i];
+            } else {
+                proc->files[i] = NULL;
+            }
+        }
+    } else {
+        for (int i = 0; i < PROCESS_MAX_FILES; i++)
+            proc->files[i] = NULL;
     }
     for (int i = 0; i < PROCESS_MAX_MMAPS; i++) {
         proc->mmaps[i] = current_process ? current_process->mmaps[i]
@@ -589,6 +629,13 @@ struct process* process_fork_create(uintptr_t child_as, const void* child_regs) 
 
     void* stack = kstack_alloc();
     if (!stack) {
+        /* Undo FD refcount bumps on failure */
+        if (current_process) {
+            for (int i = 0; i < PROCESS_MAX_FILES; i++) {
+                if (proc->files[i])
+                    __sync_sub_and_fetch(&proc->files[i]->refcount, 1);
+            }
+        }
         kfree(proc);
         spin_unlock_irqrestore(&sched_lock, flags);
         return NULL;

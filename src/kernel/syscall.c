@@ -902,13 +902,8 @@ static int syscall_fork_impl(struct registers* regs) {
     child->heap_start = current_process->heap_start;
     child->heap_break = current_process->heap_break;
 
-    for (int fd = 0; fd < PROCESS_MAX_FILES; fd++) {
-        struct file* f = current_process->files[fd];
-        if (!f) continue;
-        __sync_fetch_and_add(&f->refcount, 1);
-        child->files[fd] = f;
-        child->fd_flags[fd] = current_process->fd_flags[fd];
-    }
+    /* FDs are already copied inside process_fork_create under sched_lock
+     * to prevent race where child runs before FDs are set up. */
 
     return (int)child->pid;
 }
