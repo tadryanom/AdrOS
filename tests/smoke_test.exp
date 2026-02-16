@@ -122,6 +122,8 @@ set tests {
     {"waitpid WNOHANG"      "\\[init\\] waitpid WNOHANG OK"}
     {"SIGSEGV handler"      "\\[init\\] SIGSEGV OK"}
     {"waitpid 100 children" "\\[init\\] waitpid OK \\(100 children"}
+    {"lazy PLT"             "\\[init\\] lazy PLT OK"}
+    {"PLT cached"           "\\[init\\] PLT cached OK"}
     {"PING network"         "\\[PING\\] .*received.*network OK"}
     {"echo.elf execve"      "\\[echo\\] hello from echo.elf"}
 }
