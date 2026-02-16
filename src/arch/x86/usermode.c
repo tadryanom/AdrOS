@@ -60,17 +60,7 @@ static void patch_rel8(uint8_t* buf, size_t at, size_t target) {
     buf[at] = (uint8_t)(int8_t)rel;
 }
 
-static void* pmm_alloc_page_low_16mb(void) {
-    for (int tries = 0; tries < 4096; tries++) {
-        void* p = pmm_alloc_page();
-        if (!p) return NULL;
-        if ((uintptr_t)p < 0x01000000U) {
-            return p;
-        }
-        pmm_free_page(p);
-    }
-    return NULL;
-}
+/* User pages can be anywhere in physical memory on 32-bit PAE. */
 
 __attribute__((noreturn)) void x86_enter_usermode(uintptr_t user_eip, uintptr_t user_esp) {
     kprintf("[USER] enter ring3 eip=0x%x esp=0x%x\n",
@@ -148,8 +138,8 @@ void x86_usermode_test_start(void) {
     const uintptr_t user_code_vaddr = 0x00400000U;
     const uintptr_t user_stack_vaddr = 0x00800000U;
 
-    void* code_phys = pmm_alloc_page_low_16mb();
-    void* stack_phys = pmm_alloc_page_low_16mb();
+    void* code_phys = pmm_alloc_page();
+    void* stack_phys = pmm_alloc_page();
     if (!code_phys || !stack_phys) {
         kprintf("[USER] OOM allocating user pages.\n");
         return;

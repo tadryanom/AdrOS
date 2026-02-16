@@ -3742,7 +3742,7 @@ void _start(void) {
         if (pid < 0) {
             static const char msg[] = "[init] sigsegv test fork failed\n";
             (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
-            sys_exit(1);
+            goto sigsegv_done;
         }
 
         if (pid == 0) {
@@ -3770,8 +3770,8 @@ void _start(void) {
         } else {
             static const char msg[] = "[init] SIGSEGV failed\n";
             (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
-            sys_exit(1);
         }
+    sigsegv_done:;
     }
 
     int ok = 1;

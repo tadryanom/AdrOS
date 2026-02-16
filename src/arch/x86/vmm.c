@@ -101,18 +101,6 @@ static uint64_t vmm_flags_to_x86(uint32_t flags) {
     return x86_flags;
 }
 
-/* --- Low-memory page allocator --- */
-
-static void* pmm_alloc_page_low(void) {
-    for (int tries = 0; tries < 1024; tries++) {
-        void* p = pmm_alloc_page();
-        if (!p) return 0;
-        if ((uintptr_t)p < 0x01000000) return p;
-        pmm_free_page(p);
-    }
-    return 0;
-}
-
 /* User space covers PDPT indices 0-2 (0x00000000 - 0xBFFFFFFF).
  * PDPT[3] is kernel (0xC0000000 - 0xFFFFFFFF). */
 #define PAE_USER_PDPT_MAX 3
@@ -225,7 +213,7 @@ uintptr_t vmm_as_create_kernel_clone(void) {
     uintptr_t irqf = spin_lock_irqsave(&vmm_lock);
 
     /* Allocate PDPT (32 bytes, but occupies one page for simplicity) */
-    uint32_t pdpt_phys = (uint32_t)(uintptr_t)pmm_alloc_page_low();
+    uint32_t pdpt_phys = (uint32_t)(uintptr_t)pmm_alloc_page();
     if (!pdpt_phys) {
         spin_unlock_irqrestore(&vmm_lock, irqf);
         return 0;
@@ -234,7 +222,7 @@ uintptr_t vmm_as_create_kernel_clone(void) {
     /* Allocate 4 page directories */
     uint32_t pd_phys[4];
     for (int i = 0; i < 4; i++) {
-        pd_phys[i] = (uint32_t)(uintptr_t)pmm_alloc_page_low();
+        pd_phys[i] = (uint32_t)(uintptr_t)pmm_alloc_page();
         if (!pd_phys[i]) {
             for (int j = 0; j < i; j++) pmm_free_page((void*)(uintptr_t)pd_phys[j]);
             pmm_free_page((void*)(uintptr_t)pdpt_phys);
@@ -366,7 +354,7 @@ uintptr_t vmm_as_clone_user(uintptr_t src_as) {
                 if (pte & X86_PTE_RW)   flags |= VMM_FLAG_RW;
                 if (pte & X86_PTE_USER) flags |= VMM_FLAG_USER;
 
-                void* dst_frame = pmm_alloc_page_low();
+                void* dst_frame = pmm_alloc_page();
                 if (!dst_frame) {
                     vmm_as_activate(old_as);
                     spin_unlock_irqrestore(&vmm_lock, irqf);
