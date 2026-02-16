@@ -821,6 +821,61 @@ void process_init(void) {
     spin_unlock_irqrestore(&sched_lock, flags);
 }
 
+void sched_ap_init(uint32_t cpu) {
+    if (cpu == 0 || cpu >= SCHED_MAX_CPUS) return;
+
+    /* Allocate OUTSIDE sched_lock to avoid ABBA deadlock with heap lock:
+     * AP: sched_lock → heap_lock (kmalloc)
+     * BSP: heap_lock → timer ISR → sched_lock  ← deadlock */
+    struct process* idle = (struct process*)kmalloc(sizeof(*idle));
+    if (!idle) {
+        kprintf("[SCHED] CPU%u: OOM allocating idle process.\n", cpu);
+        return;
+    }
+    memset(idle, 0, sizeof(*idle));
+
+    void* kstack = kstack_alloc();
+    if (!kstack) {
+        kfree(idle);
+        kprintf("[SCHED] CPU%u: OOM allocating idle kstack.\n", cpu);
+        return;
+    }
+
+    /* Fill in idle process fields (no lock needed — not yet visible) */
+    idle->parent_pid = 0;
+    idle->priority = SCHED_NUM_PRIOS - 1;
+    idle->nice = 19;
+    idle->state = PROCESS_RUNNING;
+    idle->addr_space = kernel_as;
+    idle->cpu_id = cpu;
+    strcpy(idle->cwd, "/");
+    for (int i = 0; i < PROCESS_MAX_MMAPS; i++)
+        idle->mmaps[i].shmid = -1;
+    idle->kernel_stack = (uint32_t*)kstack;
+    arch_fpu_init_state(idle->fpu_state);
+
+    /* Take sched_lock only for PID assignment + list insertion */
+    uintptr_t flags = spin_lock_irqsave(&sched_lock);
+
+    idle->pid = next_pid++;
+    idle->tgid = idle->pid;
+
+    /* Insert into global process list */
+    idle->next = ready_queue_head;
+    idle->prev = ready_queue_tail;
+    ready_queue_tail->next = idle;
+    ready_queue_head->prev = idle;
+    ready_queue_tail = idle;
+
+    /* Register as this CPU's idle process and current process */
+    pcpu_rq[cpu].idle = idle;
+    percpu_set_current(idle);
+
+    spin_unlock_irqrestore(&sched_lock, flags);
+
+    kprintf("[SCHED] CPU%u idle process PID %u ready.\n", cpu, idle->pid);
+}
+
 extern spinlock_t sched_lock;
 
 void thread_wrapper(void (*fn)(void)) {
@@ -980,7 +1035,9 @@ void schedule(void) {
         hal_cpu_set_address_space(current_process->addr_space);
     }
 
-    if (current_process->kernel_stack) {
+    /* Only update TSS kernel stack on CPU 0 — the TSS is shared and
+     * only the BSP runs user processes that need ring 0 stack in TSS. */
+    if (cpu == 0 && current_process->kernel_stack) {
         hal_cpu_set_kernel_stack((uintptr_t)current_process->kernel_stack + KSTACK_SIZE);
     }
 

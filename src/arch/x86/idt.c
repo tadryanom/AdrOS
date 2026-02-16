@@ -312,6 +312,10 @@ void idt_init(void) {
     kprintf("[IDT] Loaded.\n");
 }
 
+void idt_load_ap(void) {
+    __asm__ volatile("lidt %0" : : "m"(idtp));
+}
+
 void register_interrupt_handler(uint8_t n, isr_handler_t handler) {
     uintptr_t flags = spin_lock_irqsave(&idt_handlers_lock);
 

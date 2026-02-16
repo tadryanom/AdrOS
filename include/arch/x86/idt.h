@@ -30,6 +30,9 @@ struct registers {
 // Initialize IDT and PIC
 void idt_init(void);
 
+// Load IDT on an AP (same IDT as BSP, just needs lidt)
+void idt_load_ap(void);
+
 // Register a custom handler for a specific interrupt
 typedef void (*isr_handler_t)(struct registers*);
 void register_interrupt_handler(uint8_t n, isr_handler_t handler);

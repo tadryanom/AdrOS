@@ -79,6 +79,12 @@ void kernel_main(const struct boot_info* bi) {
     // 8. Start Timer (Preemption!) - 100Hz (like Linux CONFIG_HZ=100)
     timer_init(TIMER_HZ);
 
+    // 8b. Signal APs to start their per-CPU schedulers
+    {
+        extern volatile uint32_t ap_sched_go;
+        __atomic_store_n(&ap_sched_go, 1, __ATOMIC_RELEASE);
+    }
+
     hal_cpu_enable_interrupts();
 
     int init_ret = init_start(bi);

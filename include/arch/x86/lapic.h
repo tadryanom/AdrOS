@@ -55,6 +55,9 @@ uint32_t lapic_get_id(void);
 /* Start the LAPIC timer at the given frequency (approximate). */
 void lapic_timer_start(uint32_t frequency_hz);
 
+/* Start LAPIC timer on an AP using BSP-calibrated ticks (no PIT recalibration). */
+void lapic_timer_start_ap(void);
+
 /* Stop the LAPIC timer. */
 void lapic_timer_stop(void);
 

@@ -11,10 +11,13 @@ static hal_timer_tick_cb_t g_tick_cb = 0;
 
 static void timer_irq(struct registers* regs) {
     (void)regs;
-    /* Only the BSP (LAPIC ID 0) drives the global tick, scheduling,
-     * and VGA refresh.  APs have no processes to run and would only
-     * add spinlock contention on sched_lock / vga_lock. */
-    if (lapic_is_enabled() && lapic_get_id() != 0) return;
+    if (lapic_is_enabled() && lapic_get_id() != 0) {
+        /* AP: only run the local scheduler — tick accounting, VGA flush,
+         * UART poll, and sleep-queue wake are handled by the BSP. */
+        extern void schedule(void);
+        schedule();
+        return;
+    }
     if (g_tick_cb) g_tick_cb();
 }
 

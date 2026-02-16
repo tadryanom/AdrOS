@@ -22,13 +22,18 @@ extern uint8_t ap_pm_target[];
 #define AP_TRAMPOLINE_PHYS  0x8000U
 #define AP_DATA_PHYS        0x8F00U
 
-/* Per-AP kernel stack size */
-#define AP_STACK_SIZE       4096U
+/* Per-AP kernel stack size — must be large enough for sched_ap_init()
+ * which calls kmalloc, kstack_alloc, kprintf under sched_lock. */
+#define AP_STACK_SIZE       8192U
 
 #define KERNEL_VIRT_BASE    0xC0000000U
 
 static struct cpu_info g_cpus[SMP_MAX_CPUS];
 static volatile uint32_t g_cpu_count = 0;
+
+/* Flag set by BSP after process_init + timer_init to signal APs
+ * that they can safely initialize their per-CPU schedulers. */
+volatile uint32_t ap_sched_go = 0;
 
 /* AP kernel stacks — statically allocated */
 static uint8_t ap_stacks[SMP_MAX_CPUS][AP_STACK_SIZE] __attribute__((aligned(16)));
@@ -51,6 +56,9 @@ static inline uint32_t read_cr3(void) {
 /* Called by each AP after it enters protected mode + paging.
  * This runs on the AP's own stack. */
 void ap_entry(void) {
+    /* Load the IDT on this AP (BSP already initialized it, APs just need lidt) */
+    idt_load_ap();
+
     /* Enable LAPIC on this AP */
     uint64_t apic_base_msr = rdmsr(0x1B);
     if (!(apic_base_msr & (1ULL << 11))) {
@@ -67,16 +75,33 @@ void ap_entry(void) {
     uint32_t my_id = lapic_get_id();
 
     /* Find our cpu_info slot, set up per-CPU GS, and mark started */
+    uint32_t my_cpu = 0;
     for (uint32_t i = 0; i < g_cpu_count; i++) {
         if (g_cpus[i].lapic_id == (uint8_t)my_id) {
+            my_cpu = i;
             percpu_setup_gs(i);
             __atomic_store_n(&g_cpus[i].started, 1, __ATOMIC_SEQ_CST);
             break;
         }
     }
 
-    /* AP is now idle — halt until needed.
-     * In the future, each AP will run its own scheduler. */
+    /* Wait for BSP to finish scheduler init (process_init sets PID 0).
+     * We check by waiting for the ap_sched_go flag set by the BSP after
+     * timer_init completes. */
+    while (!__atomic_load_n(&ap_sched_go, __ATOMIC_ACQUIRE)) {
+        __asm__ volatile("pause");
+    }
+
+    /* Initialize this AP's scheduler: create idle process + set current */
+    extern void sched_ap_init(uint32_t);
+    sched_ap_init(my_cpu);
+
+    /* Start LAPIC timer using BSP-calibrated ticks */
+    lapic_timer_start_ap();
+    kprintf("[SMP] CPU%u scheduler active.\n", my_cpu);
+    (void)my_cpu;
+
+    /* AP enters idle loop — timer interrupts will call schedule() */
     for (;;) {
         __asm__ volatile("sti; hlt");
     }

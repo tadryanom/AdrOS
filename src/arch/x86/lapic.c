@@ -16,6 +16,7 @@
 
 static volatile uint32_t* lapic_base = 0;
 static int lapic_active = 0;
+static uint32_t lapic_timer_ticks_saved = 0; /* BSP-calibrated ticks for AP reuse */
 
 uint64_t rdmsr(uint32_t msr) {
     uint32_t lo, hi;
@@ -187,6 +188,9 @@ void lapic_timer_start(uint32_t frequency_hz) {
 
     if (ticks_per_interrupt == 0) ticks_per_interrupt = 1;
 
+    /* Save calibrated value for AP reuse */
+    lapic_timer_ticks_saved = ticks_per_interrupt;
+
     /* Configure periodic timer */
     lapic_write(LAPIC_TIMER_LVT, LAPIC_TIMER_PERIODIC | LAPIC_TIMER_VEC);
     lapic_write(LAPIC_TIMER_DCR, LAPIC_TIMER_DIV_16);
@@ -194,6 +198,16 @@ void lapic_timer_start(uint32_t frequency_hz) {
 
     kprintf("[LAPIC] Timer started at %uHz (ticks=0x%x)\n",
             (unsigned)frequency_hz, ticks_per_interrupt);
+}
+
+void lapic_timer_start_ap(void) {
+    /* Start LAPIC timer on an AP using BSP-calibrated ticks.
+     * All CPUs share the same bus clock, so the same ticks value works. */
+    if (!lapic_active || lapic_timer_ticks_saved == 0) return;
+
+    lapic_write(LAPIC_TIMER_LVT, LAPIC_TIMER_PERIODIC | LAPIC_TIMER_VEC);
+    lapic_write(LAPIC_TIMER_DCR, LAPIC_TIMER_DIV_16);
+    lapic_write(LAPIC_TIMER_ICR, lapic_timer_ticks_saved);
 }
 
 void lapic_timer_stop(void) {
