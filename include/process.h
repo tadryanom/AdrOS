@@ -36,7 +36,7 @@ struct file {
     uint32_t refcount;
 };
 
-#define PROCESS_MAX_FILES 16
+#define PROCESS_MAX_FILES 64
 
 #define PROCESS_MAX_SIG 32
 
