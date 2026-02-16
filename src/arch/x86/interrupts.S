@@ -15,20 +15,28 @@ isr_common_stub:
     push %eax
     push %gs
 
-    /* Load Kernel Data Segment for DS/ES/FS.
-     * GS is NOT touched — it holds the per-CPU selector set by
-     * percpu_setup_gs() and must survive ISR entry/exit. */
+    /* Load Kernel Data Segment for DS/ES/FS */
     mov $0x10, %ax
     mov %ax, %ds
     mov %ax, %es
     mov %ax, %fs
+
+    /* Reload per-CPU GS: read LAPIC ID from MMIO, look up GS selector.
+     * This is necessary because user mode may have changed GS (e.g. TLS).
+     * LAPIC_ID register is at KVA_LAPIC (0xC0400000) + 0x20.
+     * The ID is in bits 31:24 of the register value. */
+    mov 0xC0400020, %eax
+    shr $24, %eax
+    lea _percpu_gs_lut, %ecx
+    movzwl (%ecx,%eax,2), %eax
+    mov %ax, %gs
 
     /* Call C handler */
     push %esp   /* Pass pointer to stack structure */
     call isr_handler
     add $4, %esp
 
-    /* Restore GS (per-CPU) then DS/ES/FS */
+    /* Restore user GS then DS/ES/FS */
     pop %gs
     pop %eax
     mov %ax, %ds

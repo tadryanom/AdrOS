@@ -57,10 +57,9 @@ uint64_t hal_cpu_read_timestamp(void) {
 void hal_cpu_set_tls(uintptr_t base) {
     /* GDT entry 22: user TLS segment (ring 3, data RW) */
     gdt_set_gate_ext(22, (uint32_t)base, 0xFFFFF, 0xF2, 0xCF);
-    __asm__ volatile(
-        "mov $0xB3, %%ax\n"
-        "mov %%ax, %%gs\n" : : : "ax"
-    ); /* selector = 22*8 | RPL=3 = 0xB3 */
+    /* Do NOT reload GS here — kernel GS must stay as percpu selector.
+     * The user TLS GS (selector 0xB3) is loaded when returning to ring3
+     * via the saved register state on the interrupt/syscall stack. */
 }
 
 #else

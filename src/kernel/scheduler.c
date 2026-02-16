@@ -14,7 +14,9 @@
 #include "sched_pcpu.h"
 #include <stddef.h>
 
+#ifndef __i386__
 struct process* current_process = NULL;
+#endif
 struct process* ready_queue_head = NULL;
 struct process* ready_queue_tail = NULL;
 static uint32_t next_pid = 1;
@@ -783,7 +785,7 @@ void process_init(void) {
     }
     kernel_proc->kernel_stack = (uint32_t*)kstack0;
 
-    current_process = kernel_proc;
+    percpu_set_current(kernel_proc);
     ready_queue_head = kernel_proc;
     ready_queue_tail = kernel_proc;
     kernel_proc->next = kernel_proc;
@@ -938,7 +940,7 @@ void schedule(void) {
         return;
     }
 
-    current_process = next;
+    percpu_set_current(next);
     current_process->state = PROCESS_RUNNING;
     current_process->time_slice = SCHED_TIME_SLICE;
 

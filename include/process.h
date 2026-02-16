@@ -133,8 +133,15 @@ struct process {
     uint8_t fpu_state[FPU_STATE_SIZE] __attribute__((aligned(FPU_STATE_ALIGN)));
 };
 
-// Global pointer to the currently running process
+// Per-CPU pointer to the currently running process.
+// On x86 SMP this reads from the GS-based percpu_data; on non-x86 it
+// falls back to a plain global (single-CPU only).
+#ifdef __i386__
+#include "arch/x86/percpu.h"
+#define current_process  percpu_current()
+#else
 extern struct process* current_process;
+#endif
 
 // Initialize the multitasking system
 void process_init(void);
