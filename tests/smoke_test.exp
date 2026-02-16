@@ -15,7 +15,7 @@ set smp [lindex $argv 0]
 if {$smp eq ""} { set smp 4 }
 
 set timeout_sec [lindex $argv 1]
-if {$timeout_sec eq ""} { set timeout_sec 30 }
+if {$timeout_sec eq ""} { set timeout_sec 60 }
 
 set iso "adros-x86.iso"
 set disk "disk.img"
@@ -57,12 +57,27 @@ set tests {
     {"kill SIGKILL"         "\\[init\\] kill\\(SIGKILL\\) OK"}
     {"poll pipe"            "\\[init\\] poll\\(pipe\\) OK"}
     {"select pipe"          "\\[init\\] select\\(pipe\\) OK"}
+    {"ioctl tty"            "\\[init\\] ioctl\\(/dev/tty\\) OK"}
+    {"job control"          "\\[init\\] job control \\(SIGTTIN/SIGTTOU\\) OK"}
+    {"poll /dev/null"       "\\[init\\] poll\\(/dev/null\\) OK"}
+    {"pty bidirectional"    "\\[init\\] pty OK"}
+    {"setsid/setpgid"       "\\[init\\] setsid/setpgid/getpgrp OK"}
+    {"sigaction SIGUSR1"    "\\[init\\] sigaction/kill\\(SIGUSR1\\) OK"}
+    {"sigreturn"            "\\[init\\] sigreturn OK"}
+    {"tmpfs/mount"          "\\[init\\] tmpfs/mount OK"}
+    {"dev null"             "\\[init\\] /dev/null OK"}
     {"persist counter"      "\\[init\\] /persist/counter="}
     {"dev tty write"        "\\[init\\] /dev/tty write OK"}
     {"diskfs test"          "\\[init\\] /disk/test prev="}
     {"diskfs mkdir/unlink"  "\\[init\\] diskfs mkdir/unlink OK"}
     {"diskfs getdents"      "\\[init\\] diskfs getdents OK"}
-    {"PING network"         "\\[PING\\] .*received.*network OK"}
+    {"isatty"               "\\[init\\] isatty OK"}
+    {"O_NONBLOCK"           "\\[init\\] O_NONBLOCK OK"}
+    {"pipe2/dup3"           "\\[init\\] pipe2/dup3 OK"}
+    {"chdir/getcwd"         "\\[init\\] chdir/getcwd OK"}
+    {"*at syscalls"         "\\[init\\] \\*at OK"}
+    {"rename/rmdir"         "\\[init\\] rename/rmdir OK"}
+    {"getdents multi-fs"    "\\[init\\] getdents multi-fs OK"}
     {"brk heap"             "\\[init\\] brk OK"}
     {"mmap/munmap"          "\\[init\\] mmap/munmap OK"}
     {"clock_gettime"        "\\[init\\] clock_gettime OK"}
@@ -87,6 +102,27 @@ set tests {
     {"epoll"                "\\[init\\] epoll OK"}
     {"inotify"              "\\[init\\] inotify OK"}
     {"aio"                  "\\[init\\] aio OK"}
+    {"nanosleep"            "\\[init\\] nanosleep OK"}
+    {"CLOCK_REALTIME"       "\\[init\\] CLOCK_REALTIME OK"}
+    {"dev urandom"          "\\[init\\] /dev/urandom OK"}
+    {"proc cmdline"         "\\[init\\] /proc/cmdline OK"}
+    {"CoW fork"             "\\[init\\] CoW fork OK"}
+    {"readv/writev"         "\\[init\\] readv/writev OK"}
+    {"fsync"                "\\[init\\] fsync OK"}
+    {"truncate path"        "\\[init\\] truncate OK"}
+    {"getuid/getgid"        "\\[init\\] getuid/getgid OK"}
+    {"chmod"                "\\[init\\] chmod OK"}
+    {"flock"                "\\[init\\] flock OK"}
+    {"times"                "\\[init\\] times OK"}
+    {"gettid"               "\\[init\\] gettid OK"}
+    {"posix_spawn"          "\\[init\\] posix_spawn OK"}
+    {"clock_ns precision"   "\\[init\\] clock_ns precision OK"}
+    {"getppid"              "\\[init\\] getppid OK"}
+    {"waitpid WNOHANG"      "\\[init\\] waitpid WNOHANG OK"}
+    {"SIGSEGV handler"      "\\[init\\] SIGSEGV OK"}
+    {"waitpid 100 children" "\\[init\\] waitpid OK \\(100 children"}
+    {"PING network"         "\\[PING\\] .*received.*network OK"}
+    {"echo.elf execve"      "\\[echo\\] hello from echo.elf"}
 }
 
 # ---- Poll serial.log for results ----
