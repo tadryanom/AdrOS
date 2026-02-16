@@ -1064,6 +1064,7 @@ struct epoll_interest {
     int fd;
     uint32_t events;
     uint64_t data;
+    uint32_t last_revents;
 };
 
 struct epoll_instance {
@@ -1145,6 +1146,7 @@ static int syscall_epoll_ctl_impl(int epfd, int op, int fd,
         ep->items[ep->count].fd = fd;
         ep->items[ep->count].events = ev.events;
         ep->items[ep->count].data = ev.data;
+        ep->items[ep->count].last_revents = 0;
         ep->count++;
         return 0;
     }
@@ -1156,6 +1158,7 @@ static int syscall_epoll_ctl_impl(int epfd, int op, int fd,
         if (copy_from_user(&ev, user_event, sizeof(ev)) < 0) return -EFAULT;
         ep->items[idx].events = ev.events;
         ep->items[idx].data = ev.data;
+        ep->items[idx].last_revents = 0;
         return 0;
     }
 
@@ -1221,9 +1224,19 @@ static int syscall_epoll_wait_impl(int epfd, struct epoll_event* user_events,
             if (vfs_rev & VFS_POLL_HUP) revents |= EPOLLHUP;
 
             if (revents) {
-                out[ready].events = revents;
-                out[ready].data = ep->items[i].data;
-                ready++;
+                int report = 1;
+                if (ep->items[i].events & EPOLLET) {
+                    uint32_t new_bits = revents & ~ep->items[i].last_revents;
+                    if (!new_bits) report = 0;
+                }
+                ep->items[i].last_revents = revents;
+                if (report) {
+                    out[ready].events = revents;
+                    out[ready].data = ep->items[i].data;
+                    ready++;
+                }
+            } else {
+                ep->items[i].last_revents = 0;
             }
         }
 
