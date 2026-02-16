@@ -51,11 +51,23 @@ uint64_t clock_gettime_ns(void) {
 }
 
 static void hal_tick_bridge(void) {
-    tick++;
-    vdso_update_tick(tick);
-    vga_flush();
-    hal_uart_poll_rx();
-    process_wake_check(tick);
+#ifdef __i386__
+    extern uint32_t smp_current_cpu(void);
+    uint32_t cpu = smp_current_cpu();
+#else
+    uint32_t cpu = 0;
+#endif
+
+    if (cpu == 0) {
+        /* BSP: maintain tick counter, wake sleepers, flush display */
+        tick++;
+        vdso_update_tick(tick);
+        vga_flush();
+        hal_uart_poll_rx();
+        process_wake_check(tick);
+    }
+
+    /* All CPUs: run the scheduler to pick up new work */
     schedule();
 }
 

@@ -1,4 +1,5 @@
 #include "arch/x86/gdt.h"
+#include "arch/x86/smp.h"
 
 #include "console.h"
  #include "utils.h"
@@ -45,11 +46,14 @@ struct tss_entry {
 extern void gdt_flush(uint32_t gdt_ptr_addr);
 extern void tss_flush(uint16_t tss_selector);
 
-/* 6 base entries + up to SMP_MAX_CPUS per-CPU GS segments */
-#define GDT_MAX_ENTRIES 24
+/* 6 base + 16 percpu GS + 1 user TLS + 16 per-CPU TSS = 39 max */
+#define GDT_MAX_ENTRIES 40
+/* AP TSS entries start at GDT slot 23 (after user TLS at 22) */
+#define TSS_AP_GDT_BASE 23
+
 static struct gdt_entry gdt[GDT_MAX_ENTRIES];
 struct gdt_ptr gp;
-static struct tss_entry tss;
+static struct tss_entry tss_array[SMP_MAX_CPUS];
 
 static void gdt_set_gate(int num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran) {
     gdt[num].base_low = (base & 0xFFFF);
@@ -71,26 +75,44 @@ void gdt_set_gate_ext(int num, uint32_t base, uint32_t limit, uint8_t access, ui
     __asm__ volatile("lgdt %0" : : "m"(gp));
 }
 
-static void tss_write(uint32_t idx, uint16_t kernel_ss, uint32_t kernel_esp) {
-    uintptr_t base = (uintptr_t)&tss;
-    uint32_t limit = (uint32_t)(sizeof(tss) - 1);
+static void tss_write(uint32_t gdt_idx, uint32_t cpu, uint16_t kernel_ss, uint32_t kernel_esp) {
+    struct tss_entry* t = &tss_array[cpu];
+    uintptr_t base = (uintptr_t)t;
+    uint32_t limit = (uint32_t)(sizeof(*t) - 1);
 
-    gdt_set_gate((int)idx, (uint32_t)base, limit, 0x89, 0x00);
+    gdt_set_gate((int)gdt_idx, (uint32_t)base, limit, 0x89, 0x00);
 
-    for (size_t i = 0; i < sizeof(tss); i++) {
-        ((uint8_t*)&tss)[i] = 0;
+    for (size_t i = 0; i < sizeof(*t); i++) {
+        ((uint8_t*)t)[i] = 0;
     }
 
-    tss.ss0 = kernel_ss;
-    tss.esp0 = kernel_esp;
-    tss.iomap_base = (uint16_t)sizeof(tss);
+    t->ss0 = kernel_ss;
+    t->esp0 = kernel_esp;
+    t->iomap_base = (uint16_t)sizeof(*t);
 }
 
 extern void x86_sysenter_set_kernel_stack(uintptr_t esp0);
 
 void tss_set_kernel_stack(uintptr_t esp0) {
-    tss.esp0 = (uint32_t)esp0;
+    /* Determine which CPU we're on and update that CPU's TSS */
+    extern uint32_t lapic_get_id(void);
+    extern int lapic_is_enabled(void);
+    uint32_t cpu = 0;
+    if (lapic_is_enabled()) {
+        extern uint32_t smp_current_cpu(void);
+        cpu = smp_current_cpu();
+    }
+    if (cpu >= SMP_MAX_CPUS) cpu = 0;
+    tss_array[cpu].esp0 = (uint32_t)esp0;
     x86_sysenter_set_kernel_stack(esp0);
+}
+
+void tss_init_ap(uint32_t cpu_index) {
+    if (cpu_index == 0 || cpu_index >= SMP_MAX_CPUS) return;
+    uint32_t gdt_idx = TSS_AP_GDT_BASE + (cpu_index - 1);
+    tss_write(gdt_idx, cpu_index, 0x10, 0);
+    uint16_t sel = (uint16_t)(gdt_idx * 8);
+    tss_flush(sel);
 }
 
 void gdt_init(void) {
@@ -107,7 +129,7 @@ void gdt_init(void) {
     gdt_set_gate(3, 0, 0xFFFFFFFF, 0xFA, 0xCF);
     gdt_set_gate(4, 0, 0xFFFFFFFF, 0xF2, 0xCF);
 
-    tss_write(5, 0x10, 0);
+    tss_write(5, 0, 0x10, 0);
 
     gdt_flush((uint32_t)(uintptr_t)&gp);
     tss_flush(0x28);

@@ -1,6 +1,7 @@
 #include "hal/cpu_features.h"
 #include "interrupts.h"
 #include "console.h"
+#include "arch/x86/smp.h"
 
 #include <stdint.h>
 
@@ -23,11 +24,11 @@ static inline uint64_t rdmsr(uint32_t msr) {
 #define IA32_SYSENTER_ESP 0x175
 #define IA32_SYSENTER_EIP 0x176
 
-/* Fixed kernel stack for SYSENTER entry — used only briefly before
+/* Per-CPU kernel stacks for SYSENTER entry — used only briefly before
  * the handler switches to the per-task kernel stack via TSS.ESP0.
- * For now, since we're single-core and the handler runs with IRQs
- * disabled until it reads the real stack, this is safe. */
-static uint8_t sysenter_stack[4096] __attribute__((aligned(16)));
+ * Each CPU needs its own stack to avoid corruption when multiple CPUs
+ * enter SYSENTER simultaneously. */
+static uint8_t sysenter_stacks[SMP_MAX_CPUS][4096] __attribute__((aligned(16)));
 static int sysenter_enabled = 0;
 
 static void x86_sysenter_init(void);
@@ -52,8 +53,8 @@ static void x86_sysenter_init(void) {
      * Our GDT: 0x08=KernelCS, 0x10=KernelSS, 0x18=UserCS, 0x20=UserSS ✓ */
     wrmsr(IA32_SYSENTER_CS, 0x08);
 
-    /* MSR 0x175: kernel ESP — top of our fixed sysenter stack */
-    wrmsr(IA32_SYSENTER_ESP, (uintptr_t)&sysenter_stack[sizeof(sysenter_stack)]);
+    /* MSR 0x175: kernel ESP — top of BSP's sysenter stack */
+    wrmsr(IA32_SYSENTER_ESP, (uintptr_t)&sysenter_stacks[0][4096]);
 
     /* MSR 0x176: kernel EIP — our assembly entry point */
     wrmsr(IA32_SYSENTER_EIP, (uintptr_t)sysenter_entry);
@@ -66,4 +67,12 @@ void x86_sysenter_set_kernel_stack(uintptr_t esp0) {
     if (sysenter_enabled) {
         wrmsr(IA32_SYSENTER_ESP, (uint64_t)esp0);
     }
+}
+
+void sysenter_init_ap(uint32_t cpu_index) {
+    if (!sysenter_enabled) return;
+    if (cpu_index >= SMP_MAX_CPUS) return;
+    wrmsr(IA32_SYSENTER_CS, 0x08);
+    wrmsr(IA32_SYSENTER_ESP, (uintptr_t)&sysenter_stacks[cpu_index][4096]);
+    wrmsr(IA32_SYSENTER_EIP, (uintptr_t)sysenter_entry);
 }

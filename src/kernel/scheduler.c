@@ -937,7 +937,8 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
     proc->flags = 0;
     proc->tls_base = 0;
     proc->clear_child_tid = NULL;
-    proc->cpu_id = 0;
+    uint32_t target = sched_pcpu_least_loaded();
+    proc->cpu_id = target;
 
     arch_fpu_init_state(proc->fpu_state);
 
@@ -966,10 +967,11 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
     ready_queue_head->prev = proc;
     ready_queue_tail = proc;
 
-    rq_enqueue(pcpu_rq[0].active, proc);
-    sched_pcpu_inc_load(0);
+    rq_enqueue(pcpu_rq[target].active, proc);
+    sched_pcpu_inc_load(target);
 
     spin_unlock_irqrestore(&sched_lock, flags);
+    /* IPI disabled for testing */
     return proc;
 }
 
@@ -1057,9 +1059,9 @@ void schedule(void) {
         hal_cpu_set_address_space(current_process->addr_space);
     }
 
-    /* Only update TSS kernel stack on CPU 0 — the TSS is shared and
-     * only the BSP runs user processes that need ring 0 stack in TSS. */
-    if (cpu == 0 && current_process->kernel_stack) {
+    /* Update this CPU's TSS kernel stack so ring 3→0 transitions
+     * use the correct per-task kernel stack. Each CPU has its own TSS. */
+    if (current_process->kernel_stack) {
         hal_cpu_set_kernel_stack((uintptr_t)current_process->kernel_stack + KSTACK_SIZE);
     }
 

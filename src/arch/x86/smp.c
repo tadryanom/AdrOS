@@ -56,6 +56,25 @@ static inline uint32_t read_cr3(void) {
 /* Called by each AP after it enters protected mode + paging.
  * This runs on the AP's own stack. */
 void ap_entry(void) {
+    /* Reload the GDT with virtual base address.  The trampoline loaded
+     * the GDT using a physical base for the real→protected mode transition.
+     * Now that paging is active we must switch to the virtual base so
+     * segment loads, LTR, and ring transitions read the correct GDT. */
+    extern struct gdt_ptr gp;
+    __asm__ volatile("lgdt %0" : : "m"(gp));
+
+    /* Reload segment registers with the virtual-base GDT */
+    __asm__ volatile(
+        "mov $0x10, %%ax\n\t"
+        "mov %%ax, %%ds\n\t"
+        "mov %%ax, %%es\n\t"
+        "mov %%ax, %%fs\n\t"
+        "mov %%ax, %%ss\n\t"
+        "ljmp $0x08, $1f\n\t"
+        "1:\n\t"
+        ::: "eax", "memory"
+    );
+
     /* Load the IDT on this AP (BSP already initialized it, APs just need lidt) */
     idt_load_ap();
 
@@ -84,6 +103,13 @@ void ap_entry(void) {
             break;
         }
     }
+
+    /* Set up per-CPU TSS so this AP can handle ring 0↔3 transitions */
+    tss_init_ap(my_cpu);
+
+    /* Set up SYSENTER MSRs on this AP (per-CPU MSRs + per-CPU stack) */
+    extern void sysenter_init_ap(uint32_t cpu_index);
+    sysenter_init_ap(my_cpu);
 
     /* Wait for BSP to finish scheduler init (process_init sets PID 0).
      * We check by waiting for the ap_sched_go flag set by the BSP after
