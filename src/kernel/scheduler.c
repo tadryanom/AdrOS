@@ -20,6 +20,7 @@ struct process* current_process = NULL;
 struct process* ready_queue_head = NULL;
 struct process* ready_queue_tail = NULL;
 static uint32_t next_pid = 1;
+static uint32_t init_pid = 0;  /* PID of the first userspace process ("init") */
 
 static spinlock_t sched_lock = {0};
 static uintptr_t kernel_as = 0;
@@ -488,6 +489,10 @@ int process_waitpid(int pid, int* status_out, uint32_t options) {
     }
 }
 
+void sched_set_init_pid(uint32_t pid) {
+    init_pid = pid;
+}
+
 void process_exit_notify(int status) {
     if (!current_process) return;
 
@@ -497,16 +502,16 @@ void process_exit_notify(int status) {
     current_process->state = PROCESS_ZOMBIE;
     alarm_queue_remove(current_process);
 
-    /* Reparent children to PID 1 (init) so orphaned zombies can be reaped.
+    /* Reparent children to the init process so orphaned zombies can be reaped.
      * If init is waiting on pid==-1, wake it to collect newly-adopted zombies. */
     {
-        struct process* init_proc = process_find_locked(1);
+        struct process* init_proc = init_pid ? process_find_locked(init_pid) : NULL;
         struct process* it = ready_queue_head;
         if (it && init_proc) {
             const struct process* const start = it;
             do {
                 if (it->parent_pid == current_process->pid && it != current_process) {
-                    it->parent_pid = 1;
+                    it->parent_pid = init_pid;
                     /* If the child is already a zombie and init is waiting, wake init */
                     if (it->state == PROCESS_ZOMBIE &&
                         init_proc->state == PROCESS_BLOCKED && init_proc->waiting &&

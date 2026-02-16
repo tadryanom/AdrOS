@@ -59,6 +59,10 @@ static void userspace_init_thread(void) {
     current_process->heap_break = heap_brk;
     vmm_as_activate(user_as);
 
+    /* Register this process as "init" for orphan reparenting */
+    extern void sched_set_init_pid(uint32_t);
+    sched_set_init_pid(current_process->pid);
+
     /* Open /dev/console as fd 0, 1, 2 — mirrors Linux kernel_init:
      *   sys_open("/dev/console", O_RDWR, 0);
      *   sys_dup(0); sys_dup(0);                                     */

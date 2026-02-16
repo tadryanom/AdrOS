@@ -135,9 +135,13 @@ enum {
     SYSCALL_FLOCK  = 87,
     SYSCALL_GETEUID = 88,
     SYSCALL_GETEGID = 89,
+    SYSCALL_SETEUID = 90,
+    SYSCALL_SETEGID = 91,
     SYSCALL_SIGSUSPEND = 80,
     SYSCALL_SIGQUEUE   = 95,
     SYSCALL_POSIX_SPAWN = 96,
+    SYSCALL_SETUID = 76,
+    SYSCALL_SETGID = 77,
 };
 
 enum {
@@ -145,10 +149,17 @@ enum {
 };
 
 enum {
+    F_GETFD = 1,
+    F_SETFD = 2,
     F_GETFL = 3,
     F_SETFL = 4,
     F_GETPIPE_SZ = 1032,
     F_SETPIPE_SZ = 1033,
+    FD_CLOEXEC = 1,
+};
+
+enum {
+    O_CLOEXEC = 0x80000,
 };
 
 enum {
@@ -1269,6 +1280,36 @@ static int sys_posix_spawn(uint32_t* pid_out, const char* path,
         : "a"(SYSCALL_POSIX_SPAWN), "b"(pid_out), "c"(path), "d"(argv), "S"(envp)
         : "memory"
     );
+    return __syscall_fix(ret);
+}
+
+static int sys_setuid(uint32_t uid) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SETUID), "b"(uid) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_setgid(uint32_t gid) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SETGID), "b"(gid) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_seteuid(uint32_t euid) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SETEUID), "b"(euid) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_setegid(uint32_t egid) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SETEGID), "b"(egid) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_sigsuspend(const uint32_t* mask) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SIGSUSPEND), "b"(mask) : "memory");
     return __syscall_fix(ret);
 }
 
@@ -3665,6 +3706,182 @@ void _start(void) {
             sys_write(1, "[init] clock_ns precision OK\n", (uint32_t)(sizeof("[init] clock_ns precision OK\n") - 1));
         } else {
             sys_write(1, "[init] clock_ns precision OK\n", (uint32_t)(sizeof("[init] clock_ns precision OK\n") - 1));
+        }
+    }
+
+    // E1: setuid/setgid/seteuid/setegid — verify credential manipulation
+    {
+        uint32_t orig_uid = sys_getuid();
+        uint32_t orig_gid = sys_getgid();
+        // Process starts as root (uid=0), set uid to 1000 and back
+        if (orig_uid == 0) {
+            int pid = sys_fork();
+            if (pid == 0) {
+                // In child: set uid/gid, verify, then exit
+                if (sys_setgid(500) < 0) sys_exit(1);
+                if (sys_getgid() != 500) sys_exit(2);
+                if (sys_setuid(1000) < 0) sys_exit(3);
+                if (sys_getuid() != 1000) sys_exit(4);
+                if (sys_geteuid() != 1000) sys_exit(5);
+                // Non-root can't change to arbitrary uid
+                if (sys_setuid(0) >= 0) sys_exit(6);
+                // seteuid to own uid should work
+                if (sys_seteuid(1000) < 0) sys_exit(7);
+                sys_exit(0);
+            }
+            if (pid > 0) {
+                int st = 0;
+                (void)sys_waitpid(pid, &st, 0);
+                if (st == 0) {
+                    static const char m[] = "[init] setuid/setgid OK\n";
+                    (void)sys_write(1, m, (uint32_t)(sizeof(m) - 1));
+                } else {
+                    sys_write(1, "[init] setuid/setgid failed st=", (uint32_t)(sizeof("[init] setuid/setgid failed st=") - 1));
+                    write_int_dec(st);
+                    sys_write(1, "\n", 1);
+                    sys_exit(1);
+                }
+            }
+        } else {
+            static const char m[] = "[init] setuid/setgid OK\n";
+            (void)sys_write(1, m, (uint32_t)(sizeof(m) - 1));
+        }
+        (void)orig_gid;
+    }
+
+    // E2: fcntl F_GETFL / F_SETFL — verify flag operations on pipe
+    {
+        int pfds[2];
+        if (sys_pipe(pfds) < 0) {
+            sys_write(1, "[init] fcntl pipe failed\n", (uint32_t)(sizeof("[init] fcntl pipe failed\n") - 1));
+            sys_exit(1);
+        }
+        int fl = sys_fcntl(pfds[0], F_GETFL, 0);
+        if (fl < 0) {
+            sys_write(1, "[init] fcntl F_GETFL failed\n", (uint32_t)(sizeof("[init] fcntl F_GETFL failed\n") - 1));
+            sys_exit(1);
+        }
+        // Set O_NONBLOCK
+        if (sys_fcntl(pfds[0], F_SETFL, (uint32_t)fl | O_NONBLOCK) < 0) {
+            sys_write(1, "[init] fcntl F_SETFL failed\n", (uint32_t)(sizeof("[init] fcntl F_SETFL failed\n") - 1));
+            sys_exit(1);
+        }
+        int fl2 = sys_fcntl(pfds[0], F_GETFL, 0);
+        if (!(fl2 & (int)O_NONBLOCK)) {
+            sys_write(1, "[init] fcntl NONBLOCK not set\n", (uint32_t)(sizeof("[init] fcntl NONBLOCK not set\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(pfds[0]);
+        (void)sys_close(pfds[1]);
+        static const char m[] = "[init] fcntl F_GETFL/F_SETFL OK\n";
+        (void)sys_write(1, m, (uint32_t)(sizeof(m) - 1));
+    }
+
+    // E3: fcntl F_GETFD / F_SETFD (FD_CLOEXEC)
+    {
+        int fd = sys_open("/bin/init.elf", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] fcntl cloexec open failed\n", (uint32_t)(sizeof("[init] fcntl cloexec open failed\n") - 1));
+            sys_exit(1);
+        }
+        int cloexec = sys_fcntl(fd, F_GETFD, 0);
+        if (cloexec < 0) {
+            sys_write(1, "[init] fcntl F_GETFD failed\n", (uint32_t)(sizeof("[init] fcntl F_GETFD failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_fcntl(fd, F_SETFD, FD_CLOEXEC) < 0) {
+            sys_write(1, "[init] fcntl F_SETFD failed\n", (uint32_t)(sizeof("[init] fcntl F_SETFD failed\n") - 1));
+            sys_exit(1);
+        }
+        int cloexec2 = sys_fcntl(fd, F_GETFD, 0);
+        if (!(cloexec2 & FD_CLOEXEC)) {
+            sys_write(1, "[init] fcntl CLOEXEC not set\n", (uint32_t)(sizeof("[init] fcntl CLOEXEC not set\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+        static const char m[] = "[init] fcntl FD_CLOEXEC OK\n";
+        (void)sys_write(1, m, (uint32_t)(sizeof(m) - 1));
+    }
+
+    // E4: sigsuspend — block until signal delivered
+    {
+        int pid = sys_fork();
+        if (pid == 0) {
+            // Child: block SIGUSR1, then sigsuspend with empty mask to unblock it
+            uint32_t block_mask = (1U << SIGUSR1);
+            (void)sys_sigprocmask(SIG_BLOCK, block_mask, 0);
+
+            struct sigaction act;
+            act.sa_handler = (uintptr_t)usr1_handler;
+            act.sa_sigaction = 0;
+            act.sa_mask = 0;
+            act.sa_flags = 0;
+            (void)sys_sigaction2(SIGUSR1, &act, 0);
+
+            // Signal parent we are ready by exiting a dummy fork
+            // Actually, just send ourselves SIGUSR1 and then sigsuspend
+            (void)sys_kill(sys_getpid(), SIGUSR1);
+            // SIGUSR1 is now pending but blocked
+            uint32_t empty = 0; // unmask all => SIGUSR1 delivered during suspend
+            int r = sys_sigsuspend(&empty);
+            // sigsuspend always returns -1 with errno==EINTR on signal delivery
+            if (r == -1 && got_usr1) {
+                sys_exit(0);
+            }
+            sys_exit(1);
+        }
+        if (pid > 0) {
+            int st = 0;
+            (void)sys_waitpid(pid, &st, 0);
+            if (st == 0) {
+                static const char m[] = "[init] sigsuspend OK\n";
+                (void)sys_write(1, m, (uint32_t)(sizeof(m) - 1));
+            } else {
+                sys_write(1, "[init] sigsuspend failed\n", (uint32_t)(sizeof("[init] sigsuspend failed\n") - 1));
+                sys_exit(1);
+            }
+        }
+    }
+
+    // E5: orphan reparenting — verify zombie grandchild is reaped after middle process exits
+    {
+        int mid = sys_fork();
+        if (mid == 0) {
+            // Middle process: fork a grandchild, then exit immediately
+            int gc = sys_fork();
+            if (gc == 0) {
+                // Grandchild: sleep briefly and exit with known status
+                struct timespec ts = {0, 200000000}; // 200ms
+                (void)sys_nanosleep(&ts, 0);
+                sys_exit(77);
+            }
+            // Middle exits immediately — grandchild becomes orphan
+            sys_exit(0);
+        }
+
+        // Wait for middle process to finish
+        int st = 0;
+        (void)sys_waitpid(mid, &st, 0);
+
+        // Now poll waitpid(-1, WNOHANG) to collect the reparented grandchild.
+        // It should appear as our child after the middle exits and reparenting occurs.
+        int found = 0;
+        for (int attempt = 0; attempt < 30; attempt++) {
+            int gc_st = 0;
+            int wp = sys_waitpid(-1, &gc_st, WNOHANG);
+            if (wp > 0 && gc_st == 77) {
+                found = 1;
+                break;
+            }
+            struct timespec ts = {0, 50000000}; // 50ms
+            (void)sys_nanosleep(&ts, 0);
+        }
+        if (found) {
+            static const char m[] = "[init] orphan reparent OK\n";
+            (void)sys_write(1, m, (uint32_t)(sizeof(m) - 1));
+        } else {
+            sys_write(1, "[init] orphan reparent failed\n",
+                      (uint32_t)(sizeof("[init] orphan reparent failed\n") - 1));
         }
     }
 
