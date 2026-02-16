@@ -10,6 +10,7 @@
 #include "hal/cpu.h"
 #include "hal/usermode.h"
 #include "arch_process.h"
+#include "arch_fpu.h"
 #include "sched_pcpu.h"
 #include <stddef.h>
 
@@ -532,6 +533,12 @@ struct process* process_fork_create(uintptr_t child_as, const void* child_regs) 
     proc->tls_base = 0;
     proc->clear_child_tid = NULL;
 
+    if (current_process) {
+        memcpy(proc->fpu_state, current_process->fpu_state, FPU_STATE_SIZE);
+    } else {
+        arch_fpu_init_state(proc->fpu_state);
+    }
+
     for (int i = 0; i < PROCESS_MAX_FILES; i++) {
         proc->files[i] = NULL;
     }
@@ -665,6 +672,8 @@ struct process* process_clone_create(uint32_t clone_flags,
     proc->heap_start = current_process->heap_start;
     proc->heap_break = current_process->heap_break;
 
+    memcpy(proc->fpu_state, current_process->fpu_state, FPU_STATE_SIZE);
+
     for (int i = 0; i < PROCESS_MAX_MMAPS; i++) {
         proc->mmaps[i] = current_process->mmaps[i];
     }
@@ -762,6 +771,8 @@ void process_init(void) {
     kernel_proc->tls_base = 0;
     kernel_proc->clear_child_tid = NULL;
 
+    arch_fpu_init_state(kernel_proc->fpu_state);
+
     /* Allocate a dedicated kernel stack for PID 0 with guard page. */
     void* kstack0 = kstack_alloc();
     if (!kstack0) {
@@ -823,6 +834,8 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
     proc->flags = 0;
     proc->tls_base = 0;
     proc->clear_child_tid = NULL;
+
+    arch_fpu_init_state(proc->fpu_state);
 
     for (int i = 0; i < PROCESS_MAX_FILES; i++) {
         proc->files[i] = NULL;
@@ -950,7 +963,9 @@ void schedule(void) {
      *
      * For brand-new processes, context_switch's `ret` goes to
      * thread_wrapper which releases the lock explicitly. */
+    arch_fpu_save(prev->fpu_state);
     context_switch(&prev->sp, current_process->sp);
+    arch_fpu_restore(current_process->fpu_state);
 
     spin_unlock_irqrestore(&sched_lock, irq_flags);
 }

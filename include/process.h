@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "arch_types.h"
+#include "arch_fpu.h"
 #include "fs.h"
 #include "signal.h"
 
@@ -128,6 +129,8 @@ struct process {
     uint32_t flags;             /* PROCESS_FLAG_* */
     uintptr_t tls_base;         /* User-space TLS base (set via SET_THREAD_AREA) */
     uint32_t* clear_child_tid;  /* User address to clear + futex-wake on exit */
+
+    uint8_t fpu_state[FPU_STATE_SIZE] __attribute__((aligned(FPU_STATE_ALIGN)));
 };
 
 // Global pointer to the currently running process

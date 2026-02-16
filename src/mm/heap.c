@@ -32,7 +32,8 @@ typedef struct block_hdr {
     uint8_t  order;       /* 5..23 */
     uint8_t  is_free;     /* 1 = free, 0 = allocated */
     uint16_t pad;
-} block_hdr_t;            /* 8 bytes → keeps 8-byte alignment */
+    uint32_t pad2[2];     /* Pad to 16 bytes for 16-byte aligned returns */
+} block_hdr_t;            /* 16 bytes → FXSAVE-safe alignment */
 
 /* Free-list node, embedded in the data area of a free block */
 typedef struct free_node {

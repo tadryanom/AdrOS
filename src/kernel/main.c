@@ -21,6 +21,7 @@
 
 #include "hal/cpu.h"
 #include "hal/cpu_features.h"
+#include "arch_fpu.h"
 #include "shm.h"
 #include "net.h"
 
@@ -39,6 +40,7 @@ void kernel_main(const struct boot_info* bi) {
 
     hal_cpu_detect_features();
     hal_cpu_print_features();
+    arch_fpu_init();
 
     kprintf("[AdrOS] Initializing PMM...\n");
     
