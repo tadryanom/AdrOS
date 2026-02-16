@@ -51,7 +51,7 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **Sessions & groups** — `setsid`, `setpgid`, `getpgrp`
 - **Permissions** — per-process `uid`/`gid`/`euid`/`egid`; `chmod`, `chown`, `setuid`, `setgid`, `seteuid`, `setegid`, `access`, `umask`; VFS permission enforcement on `open()`
 - **User heap** — `brk`/`sbrk` syscall
-- **Time** — `nanosleep`, `clock_gettime` (`CLOCK_REALTIME` via RTC, `CLOCK_MONOTONIC`), `alarm`/`SIGALRM`, `times` (CPU accounting)
+- **Time** — `nanosleep`, `clock_gettime` (`CLOCK_REALTIME` via RTC, `CLOCK_MONOTONIC` with TSC nanosecond precision), `alarm`/`SIGALRM`, `times` (CPU accounting)
 
 ### Syscalls (x86, `int 0x80` + SYSENTER)
 - **File I/O:** `open`, `openat`, `read`, `write`, `close`, `lseek`, `stat`, `fstat`, `fstatat`, `dup`, `dup2`, `dup3`, `pipe`, `pipe2`, `select`, `poll`, `ioctl`, `fcntl`, `getdents`, `pread`, `pwrite`, `readv`, `writev`, `truncate`, `ftruncate`, `fsync`, `fdatasync`
@@ -62,7 +62,7 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **I/O multiplexing (advanced):** `epoll_create`, `epoll_ctl`, `epoll_wait`, `inotify_init`, `inotify_add_watch`, `inotify_rm_watch`
 - **Async I/O:** `aio_read`, `aio_write`, `aio_error`, `aio_return`, `aio_suspend`
 - **FD flags:** `O_NONBLOCK`, `O_CLOEXEC`, `O_APPEND`, `FD_CLOEXEC` via `fcntl` (`F_GETFD`/`F_SETFD`/`F_GETFL`/`F_SETFL`)
-- **File locking:** `flock` (advisory, no-op stub)
+- **File locking:** `flock` (advisory locking with per-inode lock table)
 - **Shared memory:** `shmget`, `shmat`, `shmdt`, `shmctl`
 - **Threads:** `clone`, `gettid`, `set_thread_area`, `futex`
 - **Networking:** `socket`, `bind`, `listen`, `accept`, `connect`, `send`, `recv`, `sendto`, `recvfrom`, `sendmsg`, `recvmsg`
@@ -122,7 +122,11 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **Kernel command line** — Linux-like parser (`init=`, `root=`, `console=`, `ring3`, `quiet`, `noapic`, `nosmp`); unknown tokens forwarded to init as argv/envp
 - **`/proc/cmdline`** — exposes raw kernel command line to userspace
 - **`root=` parameter** — auto-detect and mount filesystem from specified ATA device at `/disk`
-- **Kernel synchronization** — counting semaphores (`ksem_t`), mutexes (`kmutex_t`), mailboxes (`kmbox_t`) with IRQ-safe signaling
+- **Kernel synchronization** — counting semaphores (`ksem_t`), mutexes (`kmutex_t`), condition variables (`kcond_t`), mailboxes (`kmbox_t`) with IRQ-safe signaling
+- **TSC nanosecond clock** — `clock_gettime_ns()` calibrated during LAPIC/PIT window; `CLOCK_MONOTONIC` uses sub-microsecond TSC precision
+- **IRQ chaining** — shared-IRQ support via static pool of handler nodes; `register_interrupt_handler` auto-chains, `unregister_interrupt_handler` removes
+- **FPU/SSE context** — per-process FXSAVE/FXRSTOR save/restore across context switches; 16-byte aligned heap
+- **Rump Kernel scaffold** — `rumpuser` hypercall layer (init, malloc/free, console, clock, random); Phase 1+3 complete
 
 ### Userland
 - **ulibc** — `printf`, `malloc`/`free`/`calloc`/`realloc`, `string.h`, `unistd.h`, `errno.h`, `pthread.h`, `signal.h`, `stdio.h` (buffered I/O with line-buffered stdout, unbuffered stderr, `setvbuf`/`setbuf`, `isatty`), `stdlib.h` (`atof`, `strtol`), `ctype.h`, `sys/mman.h` (`mmap`/`munmap`), `sys/ioctl.h`, `sys/times.h`, `sys/uio.h`, `sys/types.h`, `sys/stat.h`, `time.h` (`nanosleep`/`clock_gettime`), `math.h`, `assert.h`, `fcntl.h`, `strings.h`, `inttypes.h`, `linux/futex.h`, `realpath()`
@@ -159,7 +163,7 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 
 ### Testing
 - **47 host-side unit tests** — `test_utils.c` (28) + `test_security.c` (19)
-- **44 QEMU smoke tests** — 4-CPU expect-based (file I/O, signals, memory mgmt, IPC, devices, procfs, networking, epoll, inotify, aio)
+- **80 QEMU smoke tests** — 4-CPU expect-based (file I/O, signals, memory mgmt, IPC, devices, procfs, networking, epoll, inotify, aio, nanosleep, CoW fork, readv/writev, fsync, flock, posix_spawn, TSC precision, execve)
 - **16-check test battery** — multi-disk ATA (hda+hdb+hdd), VFS mount, ping, diskfs ops (`make test-battery`)
 - **Static analysis** — cppcheck, sparse, gcc -fanalyzer
 - **GDB scripted checks** — heap/PMM/VGA integrity
@@ -199,7 +203,9 @@ QEMU debug helpers:
 
 See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for a detailed checklist.
 
-**All 31 planned POSIX tasks are complete**, plus 44 additional features (75 total). The kernel covers **~98%** of the core POSIX interfaces needed for a practical Unix-like system. All 44 smoke tests, 16 battery checks, and 19 host unit tests pass clean. ARM64, RISC-V 64, and MIPS32 boot on QEMU.
+**All 31 planned POSIX tasks are complete**, plus 44 additional features (75 total). The kernel covers **~98%** of the core POSIX interfaces needed for a practical Unix-like system. All 80 smoke tests, 16 battery checks, and 47 host unit tests pass clean. ARM64, RISC-V 64, and MIPS32 boot on QEMU.
+
+Rump Kernel integration is in progress — prerequisites (condition variables, TSC nanosecond clock, IRQ chaining) are implemented and the `rumpuser` hypercall scaffold is in place.
 
 ## Directory Structure
 - `src/kernel/` — Architecture-independent kernel (VFS, syscalls, scheduler, tmpfs, diskfs, devfs, overlayfs, procfs, FAT12/16/32, ext2, PTY, TTY, shm, signals, networking, threads, vDSO, KASLR, permissions)
@@ -211,6 +217,7 @@ See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for a detailed checklist.
 - `src/drivers/` — Device drivers (VBE, initrd, VGA, timer)
 - `src/mm/` — Memory management (PMM, heap, slab, arch-independent VMM wrappers)
 - `src/net/` — Networking (lwIP port, E1000 netif, DNS resolver, ICMP ping test)
+- `src/rump/` — Rump Kernel hypercall scaffold (`rumpuser_adros.c`)
 - `include/` — Header files
 - `user/` — Userland programs (`init.c`, `echo.c`, `sh.c`, `cat.c`, `ls.c`, `mkdir.c`, `rm.c`, `ldso.c`)
 - `user/doom/` — DOOM port (doomgeneric engine + AdrOS platform adapter)
