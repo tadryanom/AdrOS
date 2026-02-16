@@ -82,10 +82,22 @@ struct runqueue {
     struct prio_queue queue[SCHED_NUM_PRIOS];
 };
 
-static struct runqueue rq_active_store;
-static struct runqueue rq_expired_store;
-static struct runqueue* rq_active  = &rq_active_store;
-static struct runqueue* rq_expired = &rq_expired_store;
+/* Per-CPU runqueue: each CPU has its own active/expired pair + idle process */
+struct cpu_rq {
+    struct runqueue stores[2];
+    struct runqueue *active;
+    struct runqueue *expired;
+    struct process  *idle;       /* per-CPU idle (PID 0 on BSP) */
+};
+
+#ifdef __i386__
+#include "arch/x86/smp.h"
+#define SCHED_MAX_CPUS SMP_MAX_CPUS
+#else
+#define SCHED_MAX_CPUS 1
+#endif
+
+static struct cpu_rq pcpu_rq[SCHED_MAX_CPUS];
 
 static inline uint32_t bsf32(uint32_t v) {
     return (uint32_t)__builtin_ctz(v);
@@ -117,16 +129,17 @@ static void rq_dequeue(struct runqueue* rq, struct process* p) {
 static void rq_remove_if_queued(struct process* p) {
     uint8_t prio = p->priority;
     struct process* it;
+    struct cpu_rq *crq = &pcpu_rq[p->cpu_id < SCHED_MAX_CPUS ? p->cpu_id : 0];
 
-    it = rq_active->queue[prio].head;
+    it = crq->active->queue[prio].head;
     while (it) {
-        if (it == p) { rq_dequeue(rq_active, p); return; }
+        if (it == p) { rq_dequeue(crq->active, p); return; }
         it = it->rq_next;
     }
 
-    it = rq_expired->queue[prio].head;
+    it = crq->expired->queue[prio].head;
     while (it) {
-        if (it == p) { rq_dequeue(rq_expired, p); return; }
+        if (it == p) { rq_dequeue(crq->expired, p); return; }
         it = it->rq_next;
     }
 }
@@ -193,18 +206,19 @@ static void alarm_queue_remove(struct process* p) {
     p->in_alarm_queue = 0;
 }
 
-static struct process* rq_pick_next(void) {
-    if (rq_active->bitmap) {
-        uint32_t prio = bsf32(rq_active->bitmap);
-        return rq_active->queue[prio].head;
+static struct process* rq_pick_next(uint32_t cpu) {
+    struct cpu_rq *crq = &pcpu_rq[cpu];
+    if (crq->active->bitmap) {
+        uint32_t prio = bsf32(crq->active->bitmap);
+        return crq->active->queue[prio].head;
     }
     // Swap active <-> expired
-    struct runqueue* tmp = rq_active;
-    rq_active = rq_expired;
-    rq_expired = tmp;
-    if (rq_active->bitmap) {
-        uint32_t prio = bsf32(rq_active->bitmap);
-        return rq_active->queue[prio].head;
+    struct runqueue* tmp = crq->active;
+    crq->active = crq->expired;
+    crq->expired = tmp;
+    if (crq->active->bitmap) {
+        uint32_t prio = bsf32(crq->active->bitmap);
+        return crq->active->queue[prio].head;
     }
     return NULL;  // only idle task left
 }
@@ -214,8 +228,9 @@ void sched_enqueue_ready(struct process* p) {
     uintptr_t flags = spin_lock_irqsave(&sched_lock);
     sleep_queue_remove(p);
     if (p->state == PROCESS_READY) {
-        rq_enqueue(rq_active, p);
-        sched_pcpu_inc_load(0);
+        uint32_t cpu = p->cpu_id < SCHED_MAX_CPUS ? p->cpu_id : 0;
+        rq_enqueue(pcpu_rq[cpu].active, p);
+        sched_pcpu_inc_load(cpu);
     }
     spin_unlock_irqrestore(&sched_lock, flags);
 }
@@ -336,7 +351,7 @@ int process_kill(uint32_t pid, int sig) {
                     parent->wait_result_pid = (int)p->pid;
                     parent->wait_result_status = p->exit_status;
                     parent->state = PROCESS_READY;
-                    rq_enqueue(rq_active, parent);
+                    rq_enqueue(pcpu_rq[parent->cpu_id].active, parent);
                 }
             }
         }
@@ -345,7 +360,7 @@ int process_kill(uint32_t pid, int sig) {
         if (p->state == PROCESS_BLOCKED || p->state == PROCESS_SLEEPING) {
             sleep_queue_remove(p);
             p->state = PROCESS_READY;
-            rq_enqueue(rq_active, p);
+            rq_enqueue(pcpu_rq[p->cpu_id].active, p);
         }
     }
 
@@ -369,7 +384,7 @@ int process_kill_pgrp(uint32_t pgrp, int sig) {
                 if (it->state == PROCESS_BLOCKED || it->state == PROCESS_SLEEPING) {
                     sleep_queue_remove(it);
                     it->state = PROCESS_READY;
-                    rq_enqueue(rq_active, it);
+                    rq_enqueue(pcpu_rq[it->cpu_id].active, it);
                 }
                 found = 1;
             }
@@ -468,7 +483,7 @@ void process_exit_notify(int status) {
                 parent->wait_result_pid = (int)current_process->pid;
                 parent->wait_result_status = status;
                 parent->state = PROCESS_READY;
-                rq_enqueue(rq_active, parent);
+                rq_enqueue(pcpu_rq[parent->cpu_id].active, parent);
             }
         }
     }
@@ -534,6 +549,7 @@ struct process* process_fork_create(uintptr_t child_as, const void* child_regs) 
     proc->flags = 0;
     proc->tls_base = 0;
     proc->clear_child_tid = NULL;
+    proc->cpu_id = 0;
 
     if (current_process) {
         memcpy(proc->fpu_state, current_process->fpu_state, FPU_STATE_SIZE);
@@ -566,7 +582,7 @@ struct process* process_fork_create(uintptr_t child_as, const void* child_regs) 
     ready_queue_head->prev = proc;
     ready_queue_tail = proc;
 
-    rq_enqueue(rq_active, proc);
+    rq_enqueue(pcpu_rq[proc->cpu_id].active, proc);
 
     spin_unlock_irqrestore(&sched_lock, flags);
     return proc;
@@ -704,6 +720,8 @@ struct process* process_clone_create(uint32_t clone_flags,
     proc->sp = arch_kstack_init((uint8_t*)kstack + KSTACK_SIZE,
                                   thread_wrapper, clone_child_trampoline);
 
+    proc->cpu_id = 0;
+
     /* Insert into process list */
     proc->next = ready_queue_head;
     proc->prev = ready_queue_tail;
@@ -711,7 +729,7 @@ struct process* process_clone_create(uint32_t clone_flags,
     ready_queue_head->prev = proc;
     ready_queue_tail = proc;
 
-    rq_enqueue(rq_active, proc);
+    rq_enqueue(pcpu_rq[proc->cpu_id].active, proc);
 
     spin_unlock_irqrestore(&sched_lock, flags);
     return proc;
@@ -740,8 +758,13 @@ void process_init(void) {
 
     memset(kernel_proc, 0, sizeof(*kernel_proc));
 
-    memset(&rq_active_store, 0, sizeof(rq_active_store));
-    memset(&rq_expired_store, 0, sizeof(rq_expired_store));
+    /* Initialize per-CPU runqueues */
+    for (uint32_t c = 0; c < SCHED_MAX_CPUS; c++) {
+        memset(&pcpu_rq[c], 0, sizeof(pcpu_rq[c]));
+        pcpu_rq[c].active  = &pcpu_rq[c].stores[0];
+        pcpu_rq[c].expired = &pcpu_rq[c].stores[1];
+        pcpu_rq[c].idle    = NULL;
+    }
 
     kernel_proc->pid = 0;
     kernel_proc->parent_pid = 0;
@@ -772,6 +795,7 @@ void process_init(void) {
     kernel_proc->flags = 0;
     kernel_proc->tls_base = 0;
     kernel_proc->clear_child_tid = NULL;
+    kernel_proc->cpu_id = 0;
 
     arch_fpu_init_state(kernel_proc->fpu_state);
 
@@ -785,6 +809,7 @@ void process_init(void) {
     }
     kernel_proc->kernel_stack = (uint32_t*)kstack0;
 
+    pcpu_rq[0].idle = kernel_proc;
     percpu_set_current(kernel_proc);
     ready_queue_head = kernel_proc;
     ready_queue_tail = kernel_proc;
@@ -836,6 +861,7 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
     proc->flags = 0;
     proc->tls_base = 0;
     proc->clear_child_tid = NULL;
+    proc->cpu_id = 0;
 
     arch_fpu_init_state(proc->fpu_state);
 
@@ -864,7 +890,7 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
     ready_queue_head->prev = proc;
     ready_queue_tail = proc;
 
-    rq_enqueue(rq_active, proc);
+    rq_enqueue(pcpu_rq[proc->cpu_id].active, proc);
 
     spin_unlock_irqrestore(&sched_lock, flags);
     return proc;
@@ -878,11 +904,13 @@ void schedule(void) {
         return;
     }
 
+    uint32_t cpu = percpu_cpu_index();
+    struct cpu_rq *crq = &pcpu_rq[cpu];
     struct process* prev = current_process;
 
     // Time-slice preemption: if the process is still running (timer
     // preemption, not a voluntary yield) and has quantum left, do NOT
-    // preempt.  Woken processes accumulate in rq_active and get their
+    // preempt.  Woken processes accumulate in active and get their
     // turn when the slice expires.  This limits context-switch rate to
     // TIMER_HZ/SCHED_TIME_SLICE while keeping full tick resolution for
     // sleep/wake timing.
@@ -895,7 +923,7 @@ void schedule(void) {
         // Slice exhausted — enqueue to expired with priority decay.
         prev->state = PROCESS_READY;
         if (prev->priority < SCHED_NUM_PRIOS - 1) prev->priority++;
-        rq_enqueue(rq_expired, prev);
+        rq_enqueue(crq->expired, prev);
     } else if (prev->state == PROCESS_SLEEPING && !prev->in_sleep_queue) {
         /* Deferred sleep queue insertion: the caller set SLEEPING + wake_at_tick
          * under its own lock (e.g. semaphore), then called schedule().
@@ -904,31 +932,35 @@ void schedule(void) {
         sleep_queue_insert(prev);
     }
 
-    // Pick highest-priority READY process from runqueues (O(1) bitmap).
+    // Pick highest-priority READY process from this CPU's runqueues (O(1) bitmap).
     // rq_pick_next() may swap active/expired internally.
-    struct process* next = rq_pick_next();
+    struct process* next = rq_pick_next(cpu);
 
     if (next) {
-        // next came from rq_active — safe to dequeue.
-        rq_dequeue(rq_active, next);
-        sched_pcpu_dec_load(0);
+        // next came from active — safe to dequeue.
+        rq_dequeue(crq->active, next);
+        sched_pcpu_dec_load(cpu);
     } else {
         // Nothing in runqueues.
         if (prev->state == PROCESS_READY) {
-            // prev was just enqueued to rq_expired — pull it back.
-            rq_dequeue(rq_expired, prev);
+            // prev was just enqueued to expired — pull it back.
+            rq_dequeue(crq->expired, prev);
             next = prev;
         } else {
-            // Fall back to idle (PID 0).  PID 0 is NOT in any
-            // runqueue, so we must NOT call rq_dequeue on it.
-            struct process* it = ready_queue_head;
-            next = it;
-            if (it) {
-                const struct process* start = it;
-                do {
-                    if (it->pid == 0) { next = it; break; }
-                    it = it->next;
-                } while (it && it != start);
+            // Fall back to this CPU's idle process.
+            if (crq->idle) {
+                next = crq->idle;
+            } else {
+                // Legacy fallback: find PID 0 in process list.
+                struct process* it = ready_queue_head;
+                next = it;
+                if (it) {
+                    const struct process* start = it;
+                    do {
+                        if (it->pid == 0) { next = it; break; }
+                        it = it->next;
+                    } while (it && it != start);
+                }
             }
         }
     }
@@ -1012,7 +1044,7 @@ void process_wake_check(uint32_t current_tick) {
         if (p->state == PROCESS_SLEEPING) {
             p->state = PROCESS_READY;
             if (p->priority > 0) p->priority--;
-            rq_enqueue(rq_active, p);
+            rq_enqueue(pcpu_rq[p->cpu_id].active, p);
         }
     }
 

@@ -130,6 +130,9 @@ struct process {
     uintptr_t tls_base;         /* User-space TLS base (set via SET_THREAD_AREA) */
     uint32_t* clear_child_tid;  /* User address to clear + futex-wake on exit */
 
+    /* SMP: which CPU's runqueue this process is assigned to */
+    uint32_t cpu_id;
+
     uint8_t fpu_state[FPU_STATE_SIZE] __attribute__((aligned(FPU_STATE_ALIGN)));
 };
 
