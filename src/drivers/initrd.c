@@ -3,6 +3,7 @@
 #include "heap.h"
 #include "console.h"
 #include "errno.h"
+#include "lz4.h"
 
 #define TAR_BLOCK 512
 
@@ -223,13 +224,42 @@ static void initrd_finalize_nodes(void) {
 }
 
 fs_node_t* initrd_init(uint32_t location) {
+    const uint8_t* raw = (const uint8_t*)(uintptr_t)location;
+    uint8_t* decomp_buf = NULL;
+
+    /* Detect LZ4B compressed initrd */
+    if (raw[0] == 'L' && raw[1] == 'Z' && raw[2] == '4' && raw[3] == 'B') {
+        uint32_t orig_sz = (uint32_t)raw[4]  | ((uint32_t)raw[5]  << 8) |
+                           ((uint32_t)raw[6]  << 16) | ((uint32_t)raw[7]  << 24);
+        uint32_t comp_sz = (uint32_t)raw[8]  | ((uint32_t)raw[9]  << 8) |
+                           ((uint32_t)raw[10] << 16) | ((uint32_t)raw[11] << 24);
+
+        decomp_buf = (uint8_t*)kmalloc(orig_sz);
+        if (!decomp_buf) {
+            kprintf("[INITRD] OOM decompressing LZ4 (%u bytes)\n", orig_sz);
+            return 0;
+        }
+
+        int ret = lz4_decompress_block(raw + LZ4B_HDR_SIZE, comp_sz,
+                                       decomp_buf, orig_sz);
+        if (ret < 0 || (uint32_t)ret != orig_sz) {
+            kprintf("[INITRD] LZ4 decompress failed (ret=%d, expected=%u)\n",
+                    ret, orig_sz);
+            kfree(decomp_buf);
+            return 0;
+        }
+
+        kprintf("[INITRD] LZ4: %u -> %u bytes\n", comp_sz, orig_sz);
+        location = (uint32_t)(uintptr_t)decomp_buf;
+    }
+
     initrd_location_base = location;
 
     // Initialize root
     entry_count = 0;
 
     int root = entry_alloc();
-    if (root < 0) return 0;
+    if (root < 0) { kfree(decomp_buf); return 0; }
     strcpy(entries[root].name, "");
     entries[root].flags = FS_DIRECTORY;
     entries[root].data_offset = 0;
