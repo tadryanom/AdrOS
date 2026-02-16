@@ -159,8 +159,8 @@ iso: $(KERNEL_NAME) $(INITRD_IMG)
 	@echo "  GRUB-MKRESCUE  adros-$(ARCH).iso"
 	@grub-mkrescue -o adros-$(ARCH).iso iso > /dev/null
 
-$(MKINITRD): tools/mkinitrd.c
-	@gcc tools/mkinitrd.c -o $(MKINITRD)
+$(MKINITRD): tools/mkinitrd.c include/xxhash32.h
+	@gcc -Iinclude tools/mkinitrd.c -o $(MKINITRD)
 
 ULIBC_DIR := user/ulibc
 ULIBC_LIB := $(ULIBC_DIR)/libulibc.a

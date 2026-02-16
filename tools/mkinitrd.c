@@ -3,7 +3,12 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "xxhash32.h"
+
 #define TAR_BLOCK 512
+
+/* Official LZ4 Frame magic */
+#define LZ4_FRAME_MAGIC 0x184D2204U
 
 /* ---- LZ4 block compressor (standalone, no external dependency) ---- */
 
@@ -11,6 +16,7 @@
 #define LZ4_HASH_SIZE  (1 << LZ4_HASH_BITS)
 #define LZ4_MIN_MATCH  4
 #define LZ4_LAST_LITERALS 5   /* last 5 bytes are always literals */
+#define LZ4_MFLIMIT     12   /* last match must start >= 12 bytes before end */
 
 static uint32_t lz4_hash4(const uint8_t *p) {
     uint32_t v;
@@ -33,7 +39,8 @@ static size_t lz4_compress_block(const uint8_t *src, size_t src_size,
 
     const uint8_t *ip = src;
     const uint8_t *ip_end = src + src_size;
-    const uint8_t *ip_limit = ip_end - LZ4_LAST_LITERALS;
+    const uint8_t *match_limit = ip_end - LZ4_LAST_LITERALS;
+    const uint8_t *ip_limit = ip_end - LZ4_MFLIMIT;
     const uint8_t *anchor = ip; /* start of pending literals */
     uint8_t *op = dst;
     uint8_t *op_end = dst + dst_cap;
@@ -52,9 +59,9 @@ static size_t lz4_compress_block(const uint8_t *src, size_t src_size,
             continue;
         }
 
-        /* extend match forward */
+        /* extend match forward (stop at match_limit = srcEnd - 5) */
         size_t match_len = LZ4_MIN_MATCH;
-        while (ip + match_len < ip_end && ip[match_len] == ref[match_len])
+        while (ip + match_len < match_limit && ip[match_len] == ref[match_len])
             match_len++;
 
         /* emit sequence */
@@ -118,14 +125,16 @@ static size_t lz4_compress_block(const uint8_t *src, size_t src_size,
     return (size_t)(op - dst);
 }
 
-/* LZ4B header: magic(4) + orig_size(4) + comp_size(4) */
-#define LZ4B_HDR_SIZE 12
-
 static void write_le32(uint8_t *p, uint32_t v) {
     p[0] = (uint8_t)(v);
     p[1] = (uint8_t)(v >> 8);
     p[2] = (uint8_t)(v >> 16);
     p[3] = (uint8_t)(v >> 24);
+}
+
+static void write_le64(uint8_t *p, uint64_t v) {
+    write_le32(p, (uint32_t)v);
+    write_le32(p + 4, (uint32_t)(v >> 32));
 }
 
 /* ---- end LZ4 ---- */
@@ -312,17 +321,54 @@ int main(int argc, char* argv[]) {
         FILE* out = fopen(out_name, "wb");
         if (!out) { perror("fopen"); free(tar_buf); free(comp_buf); return 1; }
 
-        /* Write LZ4B header */
-        uint8_t hdr[LZ4B_HDR_SIZE];
-        memcpy(hdr, "LZ4B", 4);
-        write_le32(hdr + 4, (uint32_t)tar_len);
-        write_le32(hdr + 8, (uint32_t)comp_sz);
-        fwrite(hdr, 1, LZ4B_HDR_SIZE, out);
+        /*
+         * Write official LZ4 Frame format:
+         *   Magic(4) + FLG(1) + BD(1) + ContentSize(8) + HC(1)
+         *   + BlockSize(4) + BlockData(comp_sz)
+         *   + EndMark(4)
+         *   + ContentChecksum(4)
+         */
+
+        /* Magic number */
+        uint8_t magic[4];
+        write_le32(magic, LZ4_FRAME_MAGIC);
+        fwrite(magic, 1, 4, out);
+
+        /* Frame descriptor: FLG + BD + ContentSize */
+        uint8_t desc[10];
+        /* FLG: version=01, B.Indep=1, B.Checksum=0,
+         *      ContentSize=1, ContentChecksum=1, Reserved=0, DictID=0 */
+        desc[0] = 0x6C;  /* 0b01101100 */
+        /* BD: Block MaxSize=7 (4MB) */
+        desc[1] = 0x70;  /* 0b01110000 */
+        /* Content size (8 bytes LE) */
+        write_le64(desc + 2, (uint64_t)tar_len);
+
+        /* Header checksum = (xxHash32(descriptor) >> 8) & 0xFF */
+        uint8_t hc = (uint8_t)((xxh32(desc, 10, 0) >> 8) & 0xFF);
+        fwrite(desc, 1, 10, out);
+        fwrite(&hc, 1, 1, out);
+
+        /* Data block: size (4 bytes) + compressed data */
+        uint8_t bsz[4];
+        write_le32(bsz, (uint32_t)comp_sz);
+        fwrite(bsz, 1, 4, out);
         fwrite(comp_buf, 1, comp_sz, out);
+
+        /* EndMark (0x00000000) */
+        uint8_t endmark[4] = {0, 0, 0, 0};
+        fwrite(endmark, 1, 4, out);
+
+        /* Content checksum (xxHash32 of original data) */
+        uint32_t content_cksum = xxh32(tar_buf, tar_len, 0);
+        uint8_t cc[4];
+        write_le32(cc, content_cksum);
+        fwrite(cc, 1, 4, out);
+
         fclose(out);
 
-        printf("Done. InitRD size: %zu bytes (LZ4B header + compressed).\n",
-               LZ4B_HDR_SIZE + comp_sz);
+        size_t frame_sz = 4 + 10 + 1 + 4 + comp_sz + 4 + 4;
+        printf("Done. InitRD size: %zu bytes (LZ4 Frame).\n", frame_sz);
     }
 
     free(tar_buf);

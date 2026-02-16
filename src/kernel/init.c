@@ -186,7 +186,8 @@ int init_start(const struct boot_info* bi) {
         uintptr_t initrd_virt = 0;
         if (hal_mm_map_physical_range((uintptr_t)bi->initrd_start, (uintptr_t)bi->initrd_end,
                                       HAL_MM_MAP_RW, &initrd_virt) == 0) {
-            fs_root = initrd_init((uint32_t)initrd_virt);
+            uint32_t initrd_sz = (uint32_t)(bi->initrd_end - bi->initrd_start);
+            fs_root = initrd_init((uint32_t)initrd_virt, initrd_sz);
         } else {
             kprintf("[INITRD] Failed to map initrd physical range.\n");
         }

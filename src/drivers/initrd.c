@@ -223,12 +223,42 @@ static void initrd_finalize_nodes(void) {
     }
 }
 
-fs_node_t* initrd_init(uint32_t location) {
+fs_node_t* initrd_init(uint32_t location, uint32_t size) {
     const uint8_t* raw = (const uint8_t*)(uintptr_t)location;
     uint8_t* decomp_buf = NULL;
 
-    /* Detect LZ4B compressed initrd */
-    if (raw[0] == 'L' && raw[1] == 'Z' && raw[2] == '4' && raw[3] == 'B') {
+    /* Detect LZ4-compressed initrd */
+    uint32_t magic32 = (uint32_t)raw[0] | ((uint32_t)raw[1] << 8) |
+                       ((uint32_t)raw[2] << 16) | ((uint32_t)raw[3] << 24);
+
+    if (magic32 == LZ4_FRAME_MAGIC) {
+        /* Official LZ4 Frame format — extract content size from header */
+        uint8_t flg = raw[4];
+        uint32_t orig_sz = 0;
+        if (flg & 0x08) {  /* Content Size flag */
+            orig_sz = (uint32_t)raw[6] | ((uint32_t)raw[7] << 8) |
+                      ((uint32_t)raw[8] << 16) | ((uint32_t)raw[9] << 24);
+        } else {
+            orig_sz = 4U * 1024U * 1024U;
+        }
+
+        decomp_buf = (uint8_t*)kmalloc(orig_sz);
+        if (!decomp_buf) {
+            kprintf("[INITRD] OOM decompressing LZ4 (%u bytes)\n", orig_sz);
+            return 0;
+        }
+
+        int ret = lz4_decompress_frame(raw, size, decomp_buf, orig_sz);
+        if (ret < 0) {
+            kprintf("[INITRD] LZ4 Frame decompress failed (ret=%d)\n", ret);
+            kfree(decomp_buf);
+            return 0;
+        }
+
+        kprintf("[INITRD] LZ4: %u -> %d bytes\n", size, ret);
+        location = (uint32_t)(uintptr_t)decomp_buf;
+    } else if (magic32 == LZ4B_MAGIC_U32) {
+        /* Legacy LZ4B format (backward compatibility) */
         uint32_t orig_sz = (uint32_t)raw[4]  | ((uint32_t)raw[5]  << 8) |
                            ((uint32_t)raw[6]  << 16) | ((uint32_t)raw[7]  << 24);
         uint32_t comp_sz = (uint32_t)raw[8]  | ((uint32_t)raw[9]  << 8) |
