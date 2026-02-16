@@ -37,6 +37,9 @@
 /* LAPIC timer IRQ vector — we use IDT slot 32 (same as PIT was) */
 #define LAPIC_TIMER_VEC       32
 
+/* IPI reschedule vector — sent to wake an idle AP when work arrives */
+#define IPI_RESCHED_VEC       0xFD
+
 /* Initialize the Local APIC. Returns 1 if APIC enabled, 0 if not available. */
 int lapic_init(void);
 

@@ -99,6 +99,23 @@ struct cpu_rq {
 
 static struct cpu_rq pcpu_rq[SCHED_MAX_CPUS];
 
+#ifdef __i386__
+#include "arch/x86/lapic.h"
+#include "arch/x86/percpu.h"
+/* Send IPI reschedule to wake a remote CPU when work arrives */
+static void sched_ipi_resched(uint32_t target_cpu) {
+    uint32_t my_cpu = percpu_cpu_index();
+    if (target_cpu == my_cpu) return;
+    if (!lapic_is_enabled()) return;
+    extern const struct cpu_info* smp_get_cpu(uint32_t index);
+    const struct cpu_info* ci = smp_get_cpu(target_cpu);
+    if (!ci) return;
+    lapic_send_ipi(ci->lapic_id, IPI_RESCHED_VEC);
+}
+#else
+static void sched_ipi_resched(uint32_t target_cpu) { (void)target_cpu; }
+#endif
+
 static inline uint32_t bsf32(uint32_t v) {
     return (uint32_t)__builtin_ctz(v);
 }
@@ -225,14 +242,18 @@ static struct process* rq_pick_next(uint32_t cpu) {
 
 void sched_enqueue_ready(struct process* p) {
     if (!p) return;
+    uint32_t target_cpu = 0;
+    int need_ipi = 0;
     uintptr_t flags = spin_lock_irqsave(&sched_lock);
     sleep_queue_remove(p);
     if (p->state == PROCESS_READY) {
-        uint32_t cpu = p->cpu_id < SCHED_MAX_CPUS ? p->cpu_id : 0;
-        rq_enqueue(pcpu_rq[cpu].active, p);
-        sched_pcpu_inc_load(cpu);
+        target_cpu = p->cpu_id < SCHED_MAX_CPUS ? p->cpu_id : 0;
+        rq_enqueue(pcpu_rq[target_cpu].active, p);
+        sched_pcpu_inc_load(target_cpu);
+        need_ipi = 1;
     }
     spin_unlock_irqrestore(&sched_lock, flags);
+    if (need_ipi) sched_ipi_resched(target_cpu);
 }
 
 void thread_wrapper(void (*fn)(void));
@@ -945,7 +966,8 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
     ready_queue_head->prev = proc;
     ready_queue_tail = proc;
 
-    rq_enqueue(pcpu_rq[proc->cpu_id].active, proc);
+    rq_enqueue(pcpu_rq[0].active, proc);
+    sched_pcpu_inc_load(0);
 
     spin_unlock_irqrestore(&sched_lock, flags);
     return proc;

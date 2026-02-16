@@ -303,6 +303,10 @@ void idt_init(void) {
     // Syscall gate (int 0x80) must be callable from user mode (DPL=3)
     idt_set_gate(128, (uint32_t)isr128, 0x08, 0xEE);
 
+    // IPI reschedule vector (0xFD = 253) — wakes idle APs to run schedule()
+    extern void isr253(void);
+    idt_set_gate(253, (uint32_t)isr253, 0x08, 0x8E);
+
     // LAPIC spurious interrupt vector (must have an IDT entry or CPU triple-faults)
     idt_set_gate(255, (uint32_t)isr255, 0x08, 0x8E);
 
@@ -393,6 +397,14 @@ void print_reg(const char* name, uint32_t val) {
 void isr_handler(struct registers* regs) {
     // LAPIC spurious interrupt (vector 255): do NOT send EOI per Intel spec
     if (regs->int_no == 255) {
+        return;
+    }
+
+    // IPI reschedule (vector 253): send EOI and call schedule()
+    if (regs->int_no == 253) {
+        lapic_eoi();
+        extern void schedule(void);
+        schedule();
         return;
     }
 
