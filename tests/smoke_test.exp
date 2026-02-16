@@ -126,6 +126,12 @@ set tests {
     {"PLT cached"           "\\[init\\] PLT cached OK"}
     {"PING network"         "\\[PING\\] .*received.*network OK"}
     {"echo.elf execve"      "\\[echo\\] hello from echo.elf"}
+    {"setuid/setgid"        "\\[init\\] setuid/setgid OK"}
+    {"fcntl F_GETFL/SETFL"  "\\[init\\] fcntl F_GETFL/F_SETFL OK"}
+    {"fcntl FD_CLOEXEC"     "\\[init\\] fcntl FD_CLOEXEC OK"}
+    {"sigsuspend"           "\\[init\\] sigsuspend OK"}
+    {"orphan reparent"      "\\[init\\] orphan reparent OK"}
+    {"LZ4 Frame decomp"    "\\[INITRD\\] LZ4"}
 }
 
 # ---- Poll serial.log for results ----
