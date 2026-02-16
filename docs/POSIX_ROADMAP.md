@@ -84,7 +84,7 @@ Notes:
 | `clone` | [x] | Thread creation with `CLONE_VM`/`CLONE_FILES`/`CLONE_THREAD`/`CLONE_SETTLS` |
 | `set_thread_area` | [x] | GDT-based TLS via GS segment (GDT entry 22, ring 3) |
 | `nanosleep`/`sleep` | [x] | `syscall_nanosleep_impl()` with tick-based sleep |
-| `clock_gettime` | [x] | `CLOCK_REALTIME` (RTC-backed) and `CLOCK_MONOTONIC` (tick-based) |
+| `clock_gettime` | [x] | `CLOCK_REALTIME` (RTC-backed) and `CLOCK_MONOTONIC` (TSC nanosecond precision) |
 | `alarm` | [x] | Per-process alarm timer; delivers `SIGALRM` on expiry |
 | `times` | [x] | Returns `struct tms` with per-process `utime`/`stime` accounting |
 | `futex` | [x] | `FUTEX_WAIT`/`FUTEX_WAKE` with global waiter table |
@@ -126,7 +126,7 @@ Notes:
 | `O_CLOEXEC` | [x] | Close-on-exec via `pipe2`, `open` flags |
 | `O_APPEND` | [x] | Append mode for `write()` — seeks to end before writing |
 | `FD_CLOEXEC` via `fcntl` | [x] | `F_GETFD`/`F_SETFD` implemented; `execve` closes marked FDs |
-| File locking (`flock`) | [x] | Advisory locking no-op stub (validates fd, always succeeds) |
+| File locking (`flock`) | [x] | Advisory locking with per-inode lock table |
 
 ## 6. Filesystem / VFS
 
@@ -279,7 +279,7 @@ Notes:
 | Feature | Status | Notes |
 |---------|--------|-------|
 | ELF32 loader | [x] | Secure with W^X + ASLR; supports `ET_EXEC` + `ET_DYN` + `PT_INTERP` |
-| `/bin/init.elf` (smoke tests) | [x] | Comprehensive test suite (44 checks: file I/O, signals, memory, IPC, devices, procfs, epoll, inotify, aio) |
+| `/bin/init.elf` (smoke tests) | [x] | Comprehensive test suite (80 checks: file I/O, signals, memory, IPC, devices, procfs, networking, epoll, inotify, aio, nanosleep, CoW fork, readv/writev, fsync, flock, posix_spawn, TSC precision, execve) |
 | `/bin/echo` | [x] | argv/envp test |
 | `/bin/sh` | [x] | POSIX sh-compatible shell; builtins, pipes, redirects, `$PATH` search |
 | `/bin/cat` | [x] | |
@@ -401,10 +401,14 @@ Notes:
 
 ## Remaining Work
 
-All previously identified gaps have been implemented. Potential future enhancements:
+All previously identified gaps have been implemented. Rump Kernel integration prerequisites (condition variables, TSC nanosecond clock, IRQ chaining) are complete, and the `rumpuser` hypercall scaffold is in place.
+
+Potential future enhancements:
 
 | Area | Description |
 |------|-------------|
+| **Rump Kernel Phase 2** | Thread/sync hypercalls (`rumpuser_thread_create`, `rumpuser_mutex_*`, `rumpuser_cv_*`) |
+| **Rump Kernel Phase 4** | File/block I/O hypercalls for rump filesystem drivers |
 | **Full SMP scheduling** | Move processes to AP runqueues (infrastructure in place) |
 | **ARM64/RISC-V/MIPS subsystems** | PMM, VMM, scheduler, syscalls for non-x86 |
 | **Intel HDA audio** | DMA ring buffer audio driver |

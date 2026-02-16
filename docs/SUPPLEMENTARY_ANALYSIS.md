@@ -353,7 +353,11 @@ zero-copy DMA, vDSO, E1000 networking, and PAE+NX are all implemented. AdrOS is
 TTY/PTY, driver support, networking, userland tooling, and security hardening (ASLR,
 guard pages, SMEP/SMAP).
 
-The remaining enhancements are: **full SMP scheduling** (moving processes to AP
-runqueues), **non-x86 subsystems** (PMM/VMM/scheduler for ARM64/RISC-V/MIPS),
-Intel HDA audio, USTAR+LZ4 initrd, PLT/GOT lazy binding (currently eager),
-and `EPOLLET` edge-triggered mode.
+The remaining enhancements are: **Rump Kernel integration** (Phase 2 thread/sync
+hypercalls and Phase 4 file/block I/O — prerequisites including condition variables,
+TSC nanosecond clock, and IRQ chaining are already implemented), **full SMP scheduling**
+(moving processes to AP runqueues), **non-x86 subsystems** (PMM/VMM/scheduler for
+ARM64/RISC-V/MIPS), Intel HDA audio, USTAR+LZ4 initrd, PLT/GOT lazy binding
+(currently eager), and `EPOLLET` edge-triggered mode.
+
+80 QEMU smoke tests, 16 battery checks, and 47 host unit tests pass clean.
