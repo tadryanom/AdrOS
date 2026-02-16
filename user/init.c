@@ -184,8 +184,9 @@ struct pollfd {
 };
 
 enum {
-    POLLIN = 0x0001,
+    POLLIN  = 0x0001,
     POLLOUT = 0x0004,
+    EPOLLET = (1U << 31),
 };
 
 enum {
@@ -3254,6 +3255,66 @@ void _start(void) {
         (void)sys_close(fds[1]);
         (void)sys_close(epfd);
         sys_write(1, "[init] epoll OK\n", (uint32_t)(sizeof("[init] epoll OK\n") - 1));
+    }
+
+    // C22b: EPOLLET edge-triggered mode
+    {
+        int epfd = sys_epoll_create(1);
+        if (epfd < 0) {
+            sys_write(1, "[init] epollet create failed\n", (uint32_t)(sizeof("[init] epollet create failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int fds[2];
+        if (sys_pipe(fds) < 0) {
+            sys_write(1, "[init] epollet pipe failed\n", (uint32_t)(sizeof("[init] epollet pipe failed\n") - 1));
+            sys_exit(1);
+        }
+
+        struct { uint32_t events; uint32_t data; } ev;
+        ev.events = POLLIN | EPOLLET;
+        ev.data = 42;
+        if (sys_epoll_ctl(epfd, 1, fds[0], &ev) < 0) {
+            sys_write(1, "[init] epollet ctl failed\n", (uint32_t)(sizeof("[init] epollet ctl failed\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_write(fds[1], "X", 1);
+
+        struct { uint32_t events; uint32_t data; } out;
+        int n = sys_epoll_wait(epfd, &out, 1, 0);
+        if (n != 1 || !(out.events & POLLIN)) {
+            sys_write(1, "[init] epollet first wait failed\n", (uint32_t)(sizeof("[init] epollet first wait failed\n") - 1));
+            sys_exit(1);
+        }
+
+        n = sys_epoll_wait(epfd, &out, 1, 0);
+        if (n != 0) {
+            sys_write(1, "[init] epollet second wait should be 0\n", (uint32_t)(sizeof("[init] epollet second wait should be 0\n") - 1));
+            sys_exit(1);
+        }
+
+        char tmp;
+        (void)sys_read(fds[0], &tmp, 1);
+
+        n = sys_epoll_wait(epfd, &out, 1, 0);
+        if (n != 0) {
+            sys_write(1, "[init] epollet post-drain should be 0\n", (uint32_t)(sizeof("[init] epollet post-drain should be 0\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_write(fds[1], "Y", 1);
+
+        n = sys_epoll_wait(epfd, &out, 1, 0);
+        if (n != 1 || !(out.events & POLLIN)) {
+            sys_write(1, "[init] epollet re-arm failed\n", (uint32_t)(sizeof("[init] epollet re-arm failed\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_close(fds[0]);
+        (void)sys_close(fds[1]);
+        (void)sys_close(epfd);
+        sys_write(1, "[init] epollet OK\n", (uint32_t)(sizeof("[init] epollet OK\n") - 1));
     }
 
     // C23: inotify_init/add_watch/rm_watch smoke
