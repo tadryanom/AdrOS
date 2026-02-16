@@ -570,7 +570,8 @@ struct process* process_fork_create(uintptr_t child_as, const void* child_regs) 
     proc->flags = 0;
     proc->tls_base = 0;
     proc->clear_child_tid = NULL;
-    proc->cpu_id = 0;
+    uint32_t fork_target = sched_pcpu_least_loaded();
+    proc->cpu_id = fork_target;
 
     if (current_process) {
         memcpy(proc->fpu_state, current_process->fpu_state, FPU_STATE_SIZE);
@@ -603,9 +604,11 @@ struct process* process_fork_create(uintptr_t child_as, const void* child_regs) 
     ready_queue_head->prev = proc;
     ready_queue_tail = proc;
 
-    rq_enqueue(pcpu_rq[proc->cpu_id].active, proc);
+    rq_enqueue(pcpu_rq[fork_target].active, proc);
+    sched_pcpu_inc_load(fork_target);
 
     spin_unlock_irqrestore(&sched_lock, flags);
+    sched_ipi_resched(fork_target);
     return proc;
 }
 
@@ -741,7 +744,8 @@ struct process* process_clone_create(uint32_t clone_flags,
     proc->sp = arch_kstack_init((uint8_t*)kstack + KSTACK_SIZE,
                                   thread_wrapper, clone_child_trampoline);
 
-    proc->cpu_id = 0;
+    uint32_t clone_target = sched_pcpu_least_loaded();
+    proc->cpu_id = clone_target;
 
     /* Insert into process list */
     proc->next = ready_queue_head;
@@ -750,9 +754,11 @@ struct process* process_clone_create(uint32_t clone_flags,
     ready_queue_head->prev = proc;
     ready_queue_tail = proc;
 
-    rq_enqueue(pcpu_rq[proc->cpu_id].active, proc);
+    rq_enqueue(pcpu_rq[clone_target].active, proc);
+    sched_pcpu_inc_load(clone_target);
 
     spin_unlock_irqrestore(&sched_lock, flags);
+    sched_ipi_resched(clone_target);
     return proc;
 }
 
@@ -971,7 +977,7 @@ struct process* process_create_kernel(void (*entry_point)(void)) {
     sched_pcpu_inc_load(target);
 
     spin_unlock_irqrestore(&sched_lock, flags);
-    /* IPI disabled for testing */
+    sched_ipi_resched(target);
     return proc;
 }
 
