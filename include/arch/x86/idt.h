@@ -33,5 +33,6 @@ void idt_init(void);
 // Register a custom handler for a specific interrupt
 typedef void (*isr_handler_t)(struct registers*);
 void register_interrupt_handler(uint8_t n, isr_handler_t handler);
+void unregister_interrupt_handler(uint8_t n, isr_handler_t handler);
 
 #endif

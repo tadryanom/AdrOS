@@ -21,6 +21,10 @@ static inline void register_interrupt_handler(uint8_t n, isr_handler_t handler) 
     (void)n;
     (void)handler;
 }
+static inline void unregister_interrupt_handler(uint8_t n, isr_handler_t handler) {
+    (void)n;
+    (void)handler;
+}
 
 #endif
 

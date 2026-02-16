@@ -148,7 +148,7 @@ all: $(KERNEL_NAME)
 
 $(KERNEL_NAME): $(OBJ)
 	@echo "  LD      $@"
-	@$(LD) $(LDFLAGS) -n -o $@ $(BOOT_OBJ) $(KERNEL_OBJ)
+	@$(LD) $(LDFLAGS) -n -o $@ $(BOOT_OBJ) $(KERNEL_OBJ) $(shell $(CC) $(ARCH_CFLAGS) -print-libgcc-file-name)
 
 iso: $(KERNEL_NAME) $(INITRD_IMG)
 	@mkdir -p iso/boot

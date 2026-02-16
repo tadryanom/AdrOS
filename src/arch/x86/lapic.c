@@ -1,6 +1,7 @@
 #include "arch/x86/lapic.h"
 #include "arch/x86/kernel_va_map.h"
 #include "hal/cpu_features.h"
+#include "timer.h"
 #include "vmm.h"
 #include "io.h"
 #include "console.h"
@@ -151,16 +152,33 @@ void lapic_timer_start(uint32_t frequency_hz) {
     /* Reset LAPIC timer to max count */
     lapic_write(LAPIC_TIMER_ICR, 0xFFFFFFFF);
 
+    /* Read TSC before and after to calibrate TSC frequency */
+    uint32_t tsc_lo0, tsc_hi0, tsc_lo1, tsc_hi1;
+    __asm__ volatile("rdtsc" : "=a"(tsc_lo0), "=d"(tsc_hi0));
+
     /* Wait for PIT to count down */
     while (!(inb(0x61) & 0x20)) {
         __asm__ volatile("pause");
     }
+
+    __asm__ volatile("rdtsc" : "=a"(tsc_lo1), "=d"(tsc_hi1));
 
     /* Stop LAPIC timer */
     lapic_write(LAPIC_TIMER_LVT, LAPIC_LVT_MASKED);
 
     /* Read how many ticks elapsed in ~10ms */
     uint32_t elapsed = 0xFFFFFFFF - lapic_read(LAPIC_TIMER_CCR);
+
+    /* Calibrate TSC: tsc_delta ticks in ~10ms → tsc_khz = tsc_delta / 10 */
+    uint64_t tsc0 = ((uint64_t)tsc_hi0 << 32) | tsc_lo0;
+    uint64_t tsc1 = ((uint64_t)tsc_hi1 << 32) | tsc_lo1;
+    uint64_t tsc_delta = tsc1 - tsc0;
+    uint32_t tsc_khz = (uint32_t)(tsc_delta / 10);
+    if (tsc_khz > 0) {
+        tsc_calibrate(tsc_khz);
+        kprintf("[TSC] Calibrated: %u kHz (%u MHz)\n",
+                (unsigned)tsc_khz, (unsigned)(tsc_khz / 1000));
+    }
 
     /* Calculate ticks per desired frequency:
      * ticks_per_second = elapsed * 100 (since we measured 10ms)

@@ -67,4 +67,28 @@ int  kmbox_trypost(kmbox_t* mb, void* msg);
 int  kmbox_fetch(kmbox_t* mb, void** msg, uint32_t timeout_ms);
 int  kmbox_tryfetch(kmbox_t* mb, void** msg);
 
+/* ------------------------------------------------------------------ */
+/* Kernel condition variable (paired with kmutex_t)                    */
+/* ------------------------------------------------------------------ */
+
+#define KCOND_MAX_WAITERS 16
+
+typedef struct kcond {
+    spinlock_t      lock;
+    struct process* waiters[KCOND_MAX_WAITERS];
+    uint32_t        nwaiters;
+} kcond_t;
+
+void kcond_init(kcond_t* cv);
+
+/* Release mutex, sleep until signaled, re-acquire mutex.
+ * Returns 0 on success, 1 on timeout (timeout_ms == 0 means wait forever). */
+int  kcond_wait(kcond_t* cv, kmutex_t* mtx, uint32_t timeout_ms);
+
+/* Wake one waiter. */
+void kcond_signal(kcond_t* cv);
+
+/* Wake all waiters. */
+void kcond_broadcast(kcond_t* cv);
+
 #endif /* SYNC_H */

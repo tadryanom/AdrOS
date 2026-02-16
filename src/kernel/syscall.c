@@ -2761,10 +2761,9 @@ static int syscall_clock_gettime_impl(uint32_t clk_id, struct timespec* user_tp)
         tp.tv_sec = rtc_unix_timestamp();
         tp.tv_nsec = 0;
     } else {
-        uint32_t ticks = get_tick_count();
-        uint32_t total_ms = ticks * TIMER_MS_PER_TICK;
-        tp.tv_sec = total_ms / 1000U;
-        tp.tv_nsec = (total_ms % 1000U) * 1000000U;
+        uint64_t ns = clock_gettime_ns();
+        tp.tv_sec = (uint32_t)(ns / 1000000000ULL);
+        tp.tv_nsec = (uint32_t)(ns % 1000000000ULL);
     }
 
     if (copy_to_user(user_tp, &tp, sizeof(tp)) < 0) return -EFAULT;

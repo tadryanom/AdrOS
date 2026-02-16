@@ -13,14 +13,33 @@
 #include "arch/x86/signal.h"
 
 #define IDT_ENTRIES 256
+#define IRQ_CHAIN_POOL_SIZE 32
 
 struct idt_entry idt[IDT_ENTRIES];
 struct idt_ptr idtp;
 
-// Array of function pointers for handlers
+struct irq_chain_node {
+    isr_handler_t handler;
+    struct irq_chain_node* next;
+};
+
+static struct irq_chain_node irq_chain_pool[IRQ_CHAIN_POOL_SIZE];
+static struct irq_chain_node* irq_chain_heads[IDT_ENTRIES];
+
+/* Legacy single-handler array kept for backward compatibility.
+ * New registrations via register_interrupt_handler go through the chain. */
 isr_handler_t interrupt_handlers[IDT_ENTRIES];
 
 static spinlock_t idt_handlers_lock = {0};
+
+static struct irq_chain_node* irq_chain_alloc(void) {
+    for (int i = 0; i < IRQ_CHAIN_POOL_SIZE; i++) {
+        if (irq_chain_pool[i].handler == 0) {
+            return &irq_chain_pool[i];
+        }
+    }
+    return 0;
+}
 
 // Extern prototypes for Assembly stubs
 extern void isr0();  extern void isr1();  extern void isr2();  extern void isr3();
@@ -295,7 +314,66 @@ void idt_init(void) {
 
 void register_interrupt_handler(uint8_t n, isr_handler_t handler) {
     uintptr_t flags = spin_lock_irqsave(&idt_handlers_lock);
-    interrupt_handlers[n] = handler;
+
+    /* If this vector has no handler yet, use the fast legacy slot */
+    if (!interrupt_handlers[n] && !irq_chain_heads[n]) {
+        interrupt_handlers[n] = handler;
+        spin_unlock_irqrestore(&idt_handlers_lock, flags);
+        return;
+    }
+
+    /* Migrate legacy handler to chain if needed */
+    if (interrupt_handlers[n] && !irq_chain_heads[n]) {
+        struct irq_chain_node* first = irq_chain_alloc();
+        if (first) {
+            first->handler = interrupt_handlers[n];
+            first->next = 0;
+            irq_chain_heads[n] = first;
+        }
+        interrupt_handlers[n] = 0;
+    }
+
+    /* Add new handler to chain */
+    struct irq_chain_node* node = irq_chain_alloc();
+    if (node) {
+        node->handler = handler;
+        node->next = irq_chain_heads[n];
+        irq_chain_heads[n] = node;
+    }
+
+    spin_unlock_irqrestore(&idt_handlers_lock, flags);
+}
+
+void unregister_interrupt_handler(uint8_t n, isr_handler_t handler) {
+    uintptr_t flags = spin_lock_irqsave(&idt_handlers_lock);
+
+    /* Check legacy slot */
+    if (interrupt_handlers[n] == handler) {
+        interrupt_handlers[n] = 0;
+        spin_unlock_irqrestore(&idt_handlers_lock, flags);
+        return;
+    }
+
+    /* Search chain */
+    struct irq_chain_node** pp = &irq_chain_heads[n];
+    while (*pp) {
+        if ((*pp)->handler == handler) {
+            struct irq_chain_node* victim = *pp;
+            *pp = victim->next;
+            victim->handler = 0;
+            victim->next = 0;
+            break;
+        }
+        pp = &(*pp)->next;
+    }
+
+    /* If only one handler left in chain, migrate back to legacy slot */
+    if (irq_chain_heads[n] && !irq_chain_heads[n]->next) {
+        interrupt_handlers[n] = irq_chain_heads[n]->handler;
+        irq_chain_heads[n]->handler = 0;
+        irq_chain_heads[n] = 0;
+    }
+
     spin_unlock_irqrestore(&idt_handlers_lock, flags);
 }
 
@@ -329,8 +407,15 @@ void isr_handler(struct registers* regs) {
         }
     }
 
-    // Check if we have a custom handler
-    if (interrupt_handlers[regs->int_no] != 0) {
+    // Check if we have custom handler(s)
+    if (irq_chain_heads[regs->int_no]) {
+        /* Shared IRQ: call all chained handlers */
+        struct irq_chain_node* node = irq_chain_heads[regs->int_no];
+        while (node) {
+            if (node->handler) node->handler(regs);
+            node = node->next;
+        }
+    } else if (interrupt_handlers[regs->int_no] != 0) {
         isr_handler_t handler = interrupt_handlers[regs->int_no];
         handler(regs);
     } else {

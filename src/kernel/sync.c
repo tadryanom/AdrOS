@@ -226,3 +226,114 @@ int kmbox_tryfetch(kmbox_t* mb, void** msg) {
     ksem_signal(&mb->not_full);
     return 0;
 }
+
+/* ------------------------------------------------------------------ */
+/* Kernel Condition Variable                                           */
+/* ------------------------------------------------------------------ */
+
+void kcond_init(kcond_t* cv) {
+    if (!cv) return;
+    spinlock_init(&cv->lock);
+    cv->nwaiters = 0;
+    for (uint32_t i = 0; i < KCOND_MAX_WAITERS; i++)
+        cv->waiters[i] = 0;
+}
+
+int kcond_wait(kcond_t* cv, kmutex_t* mtx, uint32_t timeout_ms) {
+    if (!cv || !mtx) return 1;
+
+    uintptr_t flags = spin_lock_irqsave(&cv->lock);
+
+    if (!current_process || cv->nwaiters >= KCOND_MAX_WAITERS) {
+        spin_unlock_irqrestore(&cv->lock, flags);
+        return 1;
+    }
+
+    cv->waiters[cv->nwaiters++] = current_process;
+
+    if (timeout_ms > 0) {
+        uint32_t ticks = (timeout_ms + TIMER_MS_PER_TICK - 1) / TIMER_MS_PER_TICK;
+        current_process->wake_at_tick = get_tick_count() + ticks;
+        current_process->state = PROCESS_SLEEPING;
+    } else {
+        current_process->state = PROCESS_BLOCKED;
+    }
+
+    spin_unlock_irqrestore(&cv->lock, flags);
+
+    /* Release the mutex before sleeping */
+    kmutex_unlock(mtx);
+    schedule();
+
+    /* Re-acquire the mutex after waking */
+    kmutex_lock(mtx);
+
+    /* Check if we timed out (still in waiters list) */
+    flags = spin_lock_irqsave(&cv->lock);
+    int found = 0;
+    for (uint32_t i = 0; i < cv->nwaiters; i++) {
+        if (cv->waiters[i] == current_process) {
+            for (uint32_t j = i; j + 1 < cv->nwaiters; j++)
+                cv->waiters[j] = cv->waiters[j + 1];
+            cv->waiters[--cv->nwaiters] = 0;
+            found = 1;
+            break;
+        }
+    }
+    spin_unlock_irqrestore(&cv->lock, flags);
+
+    return found ? 1 : 0;
+}
+
+void kcond_signal(kcond_t* cv) {
+    if (!cv) return;
+
+    uintptr_t flags = spin_lock_irqsave(&cv->lock);
+
+    struct process* to_wake = NULL;
+    for (uint32_t i = 0; i < cv->nwaiters; i++) {
+        struct process* p = cv->waiters[i];
+        if (p && (p->state == PROCESS_BLOCKED || p->state == PROCESS_SLEEPING)) {
+            for (uint32_t j = i; j + 1 < cv->nwaiters; j++)
+                cv->waiters[j] = cv->waiters[j + 1];
+            cv->waiters[--cv->nwaiters] = 0;
+
+            p->state = PROCESS_READY;
+            p->wake_at_tick = 0;
+            to_wake = p;
+            break;
+        }
+    }
+
+    spin_unlock_irqrestore(&cv->lock, flags);
+
+    if (to_wake) {
+        sched_enqueue_ready(to_wake);
+    }
+}
+
+void kcond_broadcast(kcond_t* cv) {
+    if (!cv) return;
+
+    struct process* wake_list[KCOND_MAX_WAITERS];
+    uint32_t wake_count = 0;
+
+    uintptr_t flags = spin_lock_irqsave(&cv->lock);
+
+    for (uint32_t i = 0; i < cv->nwaiters; i++) {
+        struct process* p = cv->waiters[i];
+        if (p && (p->state == PROCESS_BLOCKED || p->state == PROCESS_SLEEPING)) {
+            p->state = PROCESS_READY;
+            p->wake_at_tick = 0;
+            wake_list[wake_count++] = p;
+            cv->waiters[i] = 0;
+        }
+    }
+    cv->nwaiters = 0;
+
+    spin_unlock_irqrestore(&cv->lock, flags);
+
+    for (uint32_t i = 0; i < wake_count; i++) {
+        sched_enqueue_ready(wake_list[i]);
+    }
+}
