@@ -109,9 +109,60 @@ static void render_scrollback_view(void) {
     hal_video_set_cursor(VGA_HEIGHT, 0);
 }
 
+static int ansi_state = 0; /* 0=normal, 1=after ESC, 2=after ESC[, 3=after ESC[2 */
+
 static void vga_put_char_unlocked(char c) {
     /* Any new output auto-returns to live view */
     vga_unscroll();
+
+    /* Minimal ANSI support for common terminal clear/home sequences.
+     * Handles:
+     *   ESC [ 2 J  (clear screen)
+     *   ESC [ H    (cursor home)
+     */
+    if (ansi_state != 0) {
+        if (ansi_state == 1) {
+            if (c == '[') {
+                ansi_state = 2;
+                return;
+            }
+            ansi_state = 0;
+        }
+        if (ansi_state == 2) {
+            if (c == 'H') {
+                term_col = 0;
+                term_row = 0;
+                ansi_state = 0;
+                return;
+            }
+            if (c == '2') {
+                ansi_state = 3;
+                return;
+            }
+            ansi_state = 0;
+        }
+        if (ansi_state == 3) {
+            if (c == 'J') {
+                uint16_t blank = (uint16_t)' ' | (uint16_t)term_color << 8;
+                for (int i = 0; i < VGA_CELLS; i++) {
+                    shadow[i] = blank;
+                }
+                dirty_mark(0, VGA_CELLS - 1);
+                term_col = 0;
+                term_row = 0;
+                view_offset = 0;
+                sb_count = 0;
+                sb_head = 0;
+            }
+            ansi_state = 0;
+            return;
+        }
+    }
+
+    if ((unsigned char)c == 0x1B) {
+        ansi_state = 1;
+        return;
+    }
 
     switch (c) {
     case '\n':
