@@ -28,8 +28,13 @@ int main(void) {
                 char cmd[64] = "?";
                 if (cfd >= 0) {
                     int n = read(cfd, cmd, sizeof(cmd) - 1);
-                    if (n > 0) cmd[n] = '\0';
-                    else strcpy(cmd, "?");
+                    if (n > 0) {
+                        cmd[n] = '\0';
+                        while (n > 0 && (cmd[n-1] == '\n' || cmd[n-1] == '\0')) {
+                            cmd[--n] = '\0';
+                        }
+                    }
+                    if (n <= 0) strcpy(cmd, "[kernel]");
                     close(cfd);
                 }
                 printf("%5s %s\n", d->d_name, cmd);

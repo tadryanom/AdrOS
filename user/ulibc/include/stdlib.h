@@ -16,6 +16,9 @@ char*   getenv(const char* name);
 int     abs(int x);
 long    labs(long x);
 
+void    qsort(void* base, size_t nmemb, size_t size,
+              int (*compar)(const void*, const void*));
+
 int     system(const char* cmd);
 void    exit(int status) __attribute__((noreturn));
 

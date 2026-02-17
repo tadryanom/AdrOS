@@ -11,7 +11,8 @@ int write(int fd, const void* buf, size_t count) {
     return __syscall_ret(_syscall3(SYS_WRITE, fd, (int)buf, (int)count));
 }
 
-int open(const char* path, int flags) {
+int open(const char* path, int flags, ...) {
+    (void)flags; /* mode arg unused by kernel currently */
     return __syscall_ret(_syscall2(SYS_OPEN, (int)path, flags));
 }
 

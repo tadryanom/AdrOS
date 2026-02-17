@@ -176,6 +176,31 @@ long labs(long x) {
     return x < 0 ? -x : x;
 }
 
+void qsort(void* base, size_t nmemb, size_t size,
+           int (*compar)(const void*, const void*)) {
+    if (nmemb < 2 || !base || !compar) return;
+    char* b = (char*)base;
+    char tmp[256];
+    for (size_t i = 1; i < nmemb; i++) {
+        size_t j = i;
+        while (j > 0 && compar(b + (j - 1) * size, b + j * size) > 0) {
+            /* swap elements — use stack buffer for small, byte-swap for large */
+            char* a1 = b + (j - 1) * size;
+            char* a2 = b + j * size;
+            if (size <= sizeof(tmp)) {
+                memcpy(tmp, a1, size);
+                memcpy(a1, a2, size);
+                memcpy(a2, tmp, size);
+            } else {
+                for (size_t k = 0; k < size; k++) {
+                    char t = a1[k]; a1[k] = a2[k]; a2[k] = t;
+                }
+            }
+            j--;
+        }
+    }
+}
+
 int system(const char* cmd) {
     (void)cmd;
     return -1;
