@@ -263,6 +263,80 @@ int ata_pio_write28(int drive, uint32_t lba, const uint8_t* buf512) {
     return 0;
 }
 
+/* --- Register detected ATA drives in devfs --- */
+
+#include "devfs.h"
+
+static fs_node_t ata_dev_nodes[ATA_MAX_DRIVES];
+
+static uint32_t ata_dev_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
+    int drive = (int)node->inode;
+    if (!buffer || size == 0) return 0;
+
+    uint32_t lba = offset / 512;
+    uint32_t off_in_sect = offset % 512;
+    uint32_t total = 0;
+    uint8_t tmp[512];
+
+    while (total < size) {
+        if (ata_pio_read28(drive, lba, tmp) < 0) break;
+        uint32_t avail = 512 - off_in_sect;
+        uint32_t want = size - total;
+        if (want > avail) want = avail;
+        memcpy(buffer + total, tmp + off_in_sect, want);
+        total += want;
+        lba++;
+        off_in_sect = 0;
+    }
+    return total;
+}
+
+static uint32_t ata_dev_write(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer) {
+    int drive = (int)node->inode;
+    if (!buffer || size == 0) return 0;
+
+    uint32_t lba = offset / 512;
+    uint32_t off_in_sect = offset % 512;
+    uint32_t total = 0;
+    uint8_t tmp[512];
+
+    while (total < size) {
+        uint32_t want = size - total;
+        if (off_in_sect != 0 || want < 512) {
+            /* Read-modify-write for partial sector */
+            if (ata_pio_read28(drive, lba, tmp) < 0) break;
+            uint32_t avail = 512 - off_in_sect;
+            if (want > avail) want = avail;
+            memcpy(tmp + off_in_sect, buffer + total, want);
+        } else {
+            want = 512;
+            memcpy(tmp, buffer + total, 512);
+        }
+        if (ata_pio_write28(drive, lba, tmp) < 0) break;
+        total += want;
+        lba++;
+        off_in_sect = 0;
+    }
+    return total;
+}
+
+static const struct file_operations ata_dev_fops = {
+    .read  = ata_dev_read,
+    .write = ata_dev_write,
+};
+
+void ata_register_devfs(void) {
+    for (int i = 0; i < ATA_MAX_DRIVES; i++) {
+        if (!drive_present[i]) continue;
+        memset(&ata_dev_nodes[i], 0, sizeof(fs_node_t));
+        strcpy(ata_dev_nodes[i].name, drive_names[i]);
+        ata_dev_nodes[i].flags = FS_BLOCKDEVICE;
+        ata_dev_nodes[i].inode = (uint32_t)i;
+        ata_dev_nodes[i].f_ops = &ata_dev_fops;
+        devfs_register_device(&ata_dev_nodes[i]);
+    }
+}
+
 int ata_name_to_drive(const char* name) {
     if (!name) return -1;
     for (int i = 0; i < ATA_MAX_DRIVES; i++) {

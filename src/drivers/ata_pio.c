@@ -26,3 +26,6 @@ int ata_name_to_drive(const char* name) { (void)name; return -1; }
 
 __attribute__((weak))
 const char* ata_drive_to_name(int drive) { (void)drive; return 0; }
+
+__attribute__((weak))
+void ata_register_devfs(void) { }

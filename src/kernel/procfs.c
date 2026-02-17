@@ -16,6 +16,7 @@ static fs_node_t g_proc_self_status;
 static fs_node_t g_proc_uptime;
 static fs_node_t g_proc_meminfo;
 static fs_node_t g_proc_cmdline;
+static fs_node_t g_proc_dmesg;
 
 #define PID_NODE_POOL 8
 static fs_node_t g_pid_dir[PID_NODE_POOL];
@@ -79,6 +80,25 @@ static uint32_t proc_self_status_read(fs_node_t* node, uint32_t offset, uint32_t
     if (size > avail) size = avail;
     memcpy(buffer, tmp + offset, size);
     return size;
+}
+
+extern size_t klog_read(char* out, size_t out_size);
+
+static uint32_t proc_dmesg_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
+    (void)node;
+    /* Allocate from heap — too large for kernel stack */
+    char* tmp = kmalloc(16384);
+    if (!tmp) return 0;
+    size_t len = klog_read(tmp, 16384);
+    uint32_t ret = 0;
+    if (offset < (uint32_t)len) {
+        uint32_t avail = (uint32_t)len - offset;
+        if (size > avail) size = avail;
+        memcpy(buffer, tmp + offset, size);
+        ret = size;
+    }
+    kfree(tmp);
+    return ret;
 }
 
 static uint32_t proc_cmdline_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
@@ -378,6 +398,7 @@ static fs_node_t* proc_root_finddir(fs_node_t* node, const char* name) {
     if (strcmp(name, "uptime") == 0) return &g_proc_uptime;
     if (strcmp(name, "meminfo") == 0) return &g_proc_meminfo;
     if (strcmp(name, "cmdline") == 0) return &g_proc_cmdline;
+    if (strcmp(name, "dmesg") == 0) return &g_proc_dmesg;
     if (is_numeric(name)) return proc_get_pid_dir(parse_uint(name));
     return NULL;
 }
@@ -390,8 +411,8 @@ static int proc_root_readdir(fs_node_t* node, uint32_t* inout_index, void* buf, 
     uint32_t idx = *inout_index;
     struct vfs_dirent* d = (struct vfs_dirent*)buf;
 
-    static const char* fixed[] = { "self", "uptime", "meminfo", "cmdline" };
-    if (idx < 4) {
+    static const char* fixed[] = { "self", "uptime", "meminfo", "cmdline", "dmesg" };
+    if (idx < 5) {
         d->d_ino = 200 + idx;
         d->d_type = (idx == 0) ? FS_DIRECTORY : FS_FILE;
         d->d_reclen = sizeof(struct vfs_dirent);
@@ -404,7 +425,7 @@ static int proc_root_readdir(fs_node_t* node, uint32_t* inout_index, void* buf, 
     }
 
     /* After fixed entries, list numeric PIDs (under sched_lock) */
-    uint32_t pi = idx - 4;
+    uint32_t pi = idx - 5;
     uint32_t count = 0;
     int found = 0;
     {
@@ -468,6 +489,10 @@ static const struct file_operations procfs_cmdline_fops = {
     .read = proc_cmdline_read,
 };
 
+static const struct file_operations procfs_dmesg_fops = {
+    .read = proc_dmesg_read,
+};
+
 static const struct file_operations procfs_pid_dir_fops = {0};
 
 static const struct inode_operations procfs_pid_dir_iops = {
@@ -519,6 +544,11 @@ fs_node_t* procfs_create_root(void) {
     strcpy(g_proc_cmdline.name, "cmdline");
     g_proc_cmdline.flags = FS_FILE;
     g_proc_cmdline.f_ops = &procfs_cmdline_fops;
+
+    memset(&g_proc_dmesg, 0, sizeof(g_proc_dmesg));
+    strcpy(g_proc_dmesg.name, "dmesg");
+    g_proc_dmesg.flags = FS_FILE;
+    g_proc_dmesg.f_ops = &procfs_dmesg_fops;
 
     return &g_proc_root;
 }

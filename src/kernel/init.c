@@ -254,6 +254,10 @@ int init_start(const struct boot_info* bi) {
      * (primary/secondary x master/slave). */
     (void)ata_pio_init();
 
+    /* Register detected ATA drives as /dev/hdX block device nodes */
+    extern void ata_register_devfs(void);
+    ata_register_devfs();
+
     /* If root= is specified on the kernel command line, mount that device
      * as the disk root filesystem.  The filesystem type is auto-detected
      * by trying each supported type in order.
