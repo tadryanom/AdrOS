@@ -11,6 +11,7 @@ static hal_keyboard_scan_cb_t g_scan_cb = 0;
 /* Modifier state */
 static volatile int shift_held = 0;
 static volatile int ctrl_held = 0;
+static volatile int alt_held = 0;
 
 /* Extended scancode state (0xE0 prefix) */
 static volatile int e0_prefix = 0;
@@ -106,6 +107,8 @@ static void emit_escape_seq(const char* seq) {
 #define SC_RSHIFT_REL    0xB6
 #define SC_LCTRL_PRESS   0x1D
 #define SC_LCTRL_REL     0x9D
+#define SC_LALT_PRESS    0x38
+#define SC_LALT_REL      0xB8
 
 /* Extended (0xE0-prefixed) scancodes */
 #define SC_E0_UP    0x48
@@ -166,6 +169,12 @@ static void kbd_irq(struct registers* regs) {
 
     if (e0_prefix) {
         e0_prefix = 0;
+        /* Right CTRL (E0 1D / E0 9D) */
+        if (scancode == SC_LCTRL_PRESS) { ctrl_held = 1; return; }
+        if (scancode == SC_LCTRL_REL)  { ctrl_held = 0; return; }
+        /* Right ALT (E0 38 / E0 B8) */
+        if (scancode == SC_LALT_PRESS) { alt_held = 1; return; }
+        if (scancode == SC_LALT_REL)  { alt_held = 0; return; }
         if (!(scancode & 0x80)) {
             handle_extended_press(scancode);
         }
@@ -189,6 +198,14 @@ static void kbd_irq(struct registers* regs) {
         ctrl_held = 0;
         return;
     }
+    if (scancode == SC_LALT_PRESS) {
+        alt_held = 1;
+        return;
+    }
+    if (scancode == SC_LALT_REL) {
+        alt_held = 0;
+        return;
+    }
 
     /* Ignore key releases for normal keys */
     if (scancode & 0x80) return;
@@ -200,6 +217,9 @@ static void kbd_irq(struct registers* regs) {
                 g_cb(c - 'a' + 1);  /* Ctrl+A=0x01 .. Ctrl+Z=0x1A */
             } else if (ctrl_held && c >= 'A' && c <= 'Z') {
                 g_cb(c - 'A' + 1);
+            } else if (alt_held) {
+                g_cb('\033');  /* ESC prefix for Alt+key */
+                g_cb(c);
             } else {
                 g_cb(c);
             }
