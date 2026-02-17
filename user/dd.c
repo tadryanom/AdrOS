@@ -47,7 +47,7 @@ int main(int argc, char** argv) {
         if (ifd < 0) { fprintf(stderr, "dd: cannot open '%s'\n", inf); return 1; }
     }
     if (outf) {
-        ofd = open(outf, O_WRONLY | O_CREAT | O_TRUNC);
+        ofd = open(outf, O_WRONLY | O_CREAT | O_TRUNC, 0644);
         if (ofd < 0) { fprintf(stderr, "dd: cannot open '%s'\n", outf); return 1; }
     }
 
