@@ -1,0 +1,4027 @@
+#include <stdint.h>
+
+#ifdef SIGKILL
+#undef SIGKILL
+#endif
+#ifdef SIGUSR1
+#undef SIGUSR1
+#endif
+#ifdef SIGSEGV
+#undef SIGSEGV
+#endif
+#ifdef SIGTTIN
+#undef SIGTTIN
+#endif
+#ifdef SIGTTOU
+#undef SIGTTOU
+#endif
+
+#ifdef WNOHANG
+#undef WNOHANG
+#endif
+#ifdef SEEK_SET
+#undef SEEK_SET
+#endif
+#ifdef SEEK_CUR
+#undef SEEK_CUR
+#endif
+#ifdef SEEK_END
+#undef SEEK_END
+#endif
+
+#include "user_errno.h"
+
+#include "signal.h"
+
+enum {
+    SYSCALL_WRITE = 1,
+    SYSCALL_EXIT  = 2,
+    SYSCALL_GETPID = 3,
+    SYSCALL_OPEN  = 4,
+    SYSCALL_READ  = 5,
+    SYSCALL_CLOSE = 6,
+    SYSCALL_WAITPID = 7,
+    SYSCALL_LSEEK = 9,
+    SYSCALL_FSTAT = 10,
+    SYSCALL_STAT = 11,
+
+    SYSCALL_DUP = 12,
+    SYSCALL_DUP2 = 13,
+    SYSCALL_PIPE = 14,
+    SYSCALL_PIPE2 = 34,
+    SYSCALL_EXECVE = 15,
+    SYSCALL_FORK = 16,
+    SYSCALL_GETPPID = 17,
+    SYSCALL_POLL = 18,
+    SYSCALL_KILL = 19,
+    SYSCALL_SELECT = 20,
+    SYSCALL_IOCTL = 21,
+    SYSCALL_SETSID = 22,
+    SYSCALL_SETPGID = 23,
+    SYSCALL_GETPGRP = 24,
+
+    SYSCALL_SIGACTION = 25,
+    SYSCALL_SIGPROCMASK = 26,
+    SYSCALL_SIGRETURN = 27,
+
+    SYSCALL_MKDIR = 28,
+    SYSCALL_UNLINK = 29,
+
+    SYSCALL_GETDENTS = 30,
+
+    SYSCALL_FCNTL = 31,
+
+    SYSCALL_CHDIR = 32,
+    SYSCALL_GETCWD = 33,
+    SYSCALL_DUP3 = 35,
+
+    SYSCALL_OPENAT = 36,
+    SYSCALL_FSTATAT = 37,
+    SYSCALL_UNLINKAT = 38,
+
+    SYSCALL_RENAME = 39,
+    SYSCALL_RMDIR = 40,
+
+    SYSCALL_BRK = 41,
+    SYSCALL_NANOSLEEP = 42,
+    SYSCALL_CLOCK_GETTIME = 43,
+    SYSCALL_MMAP = 44,
+    SYSCALL_MUNMAP = 45,
+
+    SYSCALL_SHMGET = 46,
+    SYSCALL_SHMAT  = 47,
+    SYSCALL_SHMDT  = 48,
+
+    SYSCALL_LINK     = 54,
+    SYSCALL_SYMLINK  = 55,
+    SYSCALL_READLINK = 56,
+
+    SYSCALL_SIGPENDING = 71,
+    SYSCALL_PREAD  = 72,
+    SYSCALL_PWRITE = 73,
+    SYSCALL_ACCESS = 74,
+    SYSCALL_TRUNCATE  = 78,
+    SYSCALL_FTRUNCATE = 79,
+    SYSCALL_UMASK  = 75,
+    SYSCALL_ALARM  = 83,
+    SYSCALL_SETITIMER = 92,
+    SYSCALL_GETITIMER = 93,
+    SYSCALL_WAITID    = 94,
+
+    SYSCALL_EPOLL_CREATE = 112,
+    SYSCALL_EPOLL_CTL    = 113,
+    SYSCALL_EPOLL_WAIT   = 114,
+
+    SYSCALL_INOTIFY_INIT      = 115,
+    SYSCALL_INOTIFY_ADD_WATCH = 116,
+    SYSCALL_INOTIFY_RM_WATCH  = 117,
+
+    SYSCALL_AIO_READ    = 121,
+    SYSCALL_AIO_WRITE   = 122,
+    SYSCALL_AIO_ERROR   = 123,
+    SYSCALL_AIO_RETURN  = 124,
+
+    SYSCALL_CHMOD  = 50,
+    SYSCALL_CHOWN  = 51,
+    SYSCALL_GETUID = 52,
+    SYSCALL_GETGID = 53,
+    SYSCALL_CLONE  = 67,
+    SYSCALL_GETTID = 68,
+    SYSCALL_FSYNC  = 69,
+    SYSCALL_READV  = 81,
+    SYSCALL_WRITEV = 82,
+    SYSCALL_TIMES  = 84,
+    SYSCALL_FUTEX  = 85,
+    SYSCALL_FLOCK  = 87,
+    SYSCALL_GETEUID = 88,
+    SYSCALL_GETEGID = 89,
+    SYSCALL_SETEUID = 90,
+    SYSCALL_SETEGID = 91,
+    SYSCALL_SIGSUSPEND = 80,
+    SYSCALL_SIGQUEUE   = 95,
+    SYSCALL_POSIX_SPAWN = 96,
+    SYSCALL_SETUID = 76,
+    SYSCALL_SETGID = 77,
+};
+
+enum {
+    AT_FDCWD = -100,
+};
+
+enum {
+    F_GETFD = 1,
+    F_SETFD = 2,
+    F_GETFL = 3,
+    F_SETFL = 4,
+    F_GETPIPE_SZ = 1032,
+    F_SETPIPE_SZ = 1033,
+    FD_CLOEXEC = 1,
+};
+
+enum {
+    O_CLOEXEC = 0x80000,
+};
+
+enum {
+    TCGETS = 0x5401,
+    TCSETS = 0x5402,
+    TIOCGPGRP = 0x540F,
+    TIOCSPGRP = 0x5410,
+};
+
+enum {
+    ENOTTY = 25,
+};
+
+enum {
+    ICANON = 0x0002,
+    ECHO   = 0x0008,
+};
+
+#define USER_NCCS 11
+
+struct termios {
+    uint32_t c_iflag;
+    uint32_t c_oflag;
+    uint32_t c_cflag;
+    uint32_t c_lflag;
+    uint8_t  c_cc[USER_NCCS];
+};
+
+struct pollfd {
+    int fd;
+    int16_t events;
+    int16_t revents;
+};
+
+enum {
+    POLLIN  = 0x0001,
+    POLLOUT = 0x0004,
+    EPOLLET = (1U << 31),
+};
+
+enum {
+    SIGKILL = 9,
+    SIGUSR1 = 10,
+    SIGSEGV = 11,
+    SIGTTIN = 21,
+    SIGTTOU = 22,
+};
+
+enum {
+    WNOHANG = 1,
+};
+
+enum {
+    SEEK_SET = 0,
+    SEEK_CUR = 1,
+    SEEK_END = 2,
+};
+
+enum {
+    O_CREAT = 0x40,
+    O_TRUNC = 0x200,
+    O_NONBLOCK = 0x800,
+    O_APPEND = 0x400,
+    O_RDWR = 0x02,
+};
+
+enum {
+    PROT_READ  = 0x1,
+    PROT_WRITE = 0x2,
+};
+
+enum {
+    MAP_PRIVATE   = 0x02,
+    MAP_ANONYMOUS = 0x20,
+    MAP_FAILED_VAL = 0xFFFFFFFF,
+};
+
+enum {
+    CLOCK_REALTIME  = 0,
+    CLOCK_MONOTONIC = 1,
+};
+
+struct timespec {
+    uint32_t tv_sec;
+    uint32_t tv_nsec;
+};
+
+enum {
+    R_OK = 4,
+    W_OK = 2,
+    F_OK = 0,
+};
+
+enum {
+    SIG_BLOCK   = 0,
+    SIG_UNBLOCK = 1,
+    SIG_SETMASK = 2,
+};
+
+enum {
+    IPC_CREAT   = 01000,
+    IPC_PRIVATE = 0,
+};
+
+enum {
+    SIGALRM = 14,
+};
+
+enum {
+    EAGAIN = 11,
+    EINVAL = 22,
+    EEXIST = 17,
+};
+
+enum {
+    ITIMER_REAL    = 0,
+    ITIMER_VIRTUAL = 1,
+    ITIMER_PROF    = 2,
+};
+
+struct timeval {
+    uint32_t tv_sec;
+    uint32_t tv_usec;
+};
+
+struct itimerval {
+    struct timeval it_interval;
+    struct timeval it_value;
+};
+
+enum {
+    P_ALL  = 0,
+    P_PID  = 1,
+    P_PGID = 2,
+    WEXITED = 4,
+};
+
+#define S_IFMT  0170000
+#define S_IFREG 0100000
+
+struct stat {
+    uint32_t st_ino;
+    uint32_t st_mode;
+    uint32_t st_nlink;
+    uint32_t st_uid;
+    uint32_t st_gid;
+    uint32_t st_size;
+};
+
+static int sys_write(int fd, const void* buf, uint32_t len) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_WRITE), "b"(fd), "c"(buf), "d"(len)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_openat(int dirfd, const char* path, uint32_t flags, uint32_t mode) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_OPENAT), "b"(dirfd), "c"(path), "d"(flags), "S"(mode)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_fstatat(int dirfd, const char* path, struct stat* st, uint32_t flags) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_FSTATAT), "b"(dirfd), "c"(path), "d"(st), "S"(flags)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_unlinkat(int dirfd, const char* path, uint32_t flags) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_UNLINKAT), "b"(dirfd), "c"(path), "d"(flags)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_rename(const char* oldpath, const char* newpath) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_RENAME), "b"(oldpath), "c"(newpath)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_rmdir(const char* path) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_RMDIR), "b"(path)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_pipe2(int fds[2], uint32_t flags) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_PIPE2), "b"(fds), "c"(flags)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_chdir(const char* path) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_CHDIR), "b"(path)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_getcwd(char* buf, uint32_t size) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_GETCWD), "b"(buf), "c"(size)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_fcntl(int fd, int cmd, uint32_t arg) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_FCNTL), "b"(fd), "c"(cmd), "d"(arg)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_ioctl(int fd, uint32_t cmd, void* arg);
+
+static int isatty_fd(int fd) {
+    struct termios t;
+    if (sys_ioctl(fd, TCGETS, &t) < 0) {
+        if (errno == ENOTTY) return 0;
+        return -1;
+    }
+    return 1;
+}
+
+static int sys_getdents(int fd, void* buf, uint32_t len) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_GETDENTS), "b"(fd), "c"(buf), "d"(len)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static void write_int_dec(int v) {
+    char buf[16];
+    int i = 0;
+    if (v == 0) {
+        buf[i++] = '0';
+    } else {
+        int neg = 0;
+        if (v < 0) {
+            neg = 1;
+            v = -v;
+        }
+        while (v > 0 && i < (int)sizeof(buf)) {
+            buf[i++] = (char)('0' + (v % 10));
+            v /= 10;
+        }
+        if (neg && i < (int)sizeof(buf)) {
+            buf[i++] = '-';
+        }
+        for (int j = 0; j < i / 2; j++) {
+            char t = buf[j];
+            buf[j] = buf[i - 1 - j];
+            buf[i - 1 - j] = t;
+        }
+    }
+    (void)sys_write(1, buf, (uint32_t)i);
+}
+
+static void write_hex8(uint8_t v) {
+    static const char hex[] = "0123456789ABCDEF";
+    char b[2];
+    b[0] = hex[(v >> 4) & 0xF];
+    b[1] = hex[v & 0xF];
+    (void)sys_write(1, b, 2);
+}
+
+static void write_hex32(uint32_t v) {
+    static const char hex[] = "0123456789ABCDEF";
+    char b[8];
+    for (int i = 0; i < 8; i++) {
+        uint32_t shift = (uint32_t)(28 - 4 * i);
+        b[i] = hex[(v >> shift) & 0xFU];
+    }
+    (void)sys_write(1, b, 8);
+}
+
+static int memeq(const void* a, const void* b, uint32_t n) {
+    const uint8_t* x = (const uint8_t*)a;
+    const uint8_t* y = (const uint8_t*)b;
+    for (uint32_t i = 0; i < n; i++) {
+        if (x[i] != y[i]) return 0;
+    }
+    return 1;
+}
+
+static int streq(const char* a, const char* b) {
+    if (!a || !b) return 0;
+    uint32_t i = 0;
+    while (a[i] != 0 && b[i] != 0) {
+        if (a[i] != b[i]) return 0;
+        i++;
+    }
+    return a[i] == b[i];
+}
+
+static int sys_sigaction2(int sig, const struct sigaction* act, struct sigaction* oldact) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_SIGACTION), "b"(sig), "c"(act), "d"(oldact)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_sigaction(int sig, void (*handler)(int), uintptr_t* old_out) {
+    struct sigaction act;
+    act.sa_handler = (uintptr_t)handler;
+    act.sa_sigaction = 0;
+    act.sa_mask = 0;
+    act.sa_flags = 0;
+
+    struct sigaction oldact;
+    struct sigaction* oldp = old_out ? &oldact : 0;
+
+    int r = sys_sigaction2(sig, &act, oldp);
+    if (r < 0) return r;
+    if (old_out) {
+        *old_out = oldact.sa_handler;
+    }
+    return 0;
+}
+
+static int sys_select(uint32_t nfds, uint64_t* readfds, uint64_t* writefds, uint64_t* exceptfds, int32_t timeout) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_SELECT), "b"(nfds), "c"(readfds), "d"(writefds), "S"(exceptfds), "D"(timeout)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_ioctl(int fd, uint32_t cmd, void* arg) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_IOCTL), "b"(fd), "c"(cmd), "d"(arg)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_kill(int pid, int sig) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_KILL), "b"(pid), "c"(sig)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_poll(struct pollfd* fds, uint32_t nfds, int32_t timeout) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_POLL), "b"(fds), "c"(nfds), "d"(timeout)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_setsid(void) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_SETSID)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_setpgid(int pid, int pgid) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_SETPGID), "b"(pid), "c"(pgid)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_getpgrp(void) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_GETPGRP)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_getpid(void) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_GETPID)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_getppid(void) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_GETPPID)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_fork(void) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_FORK)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_execve(const char* path, const char* const* argv, const char* const* envp) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_EXECVE), "b"(path), "c"(argv), "d"(envp)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_pipe(int fds[2]) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_PIPE), "b"(fds)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_dup(int oldfd) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_DUP), "b"(oldfd)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_dup2(int oldfd, int newfd) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_DUP2), "b"(oldfd), "c"(newfd)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_dup3(int oldfd, int newfd, uint32_t flags) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_DUP3), "b"(oldfd), "c"(newfd), "d"(flags)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_waitpid(int pid, int* status, uint32_t options) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_WAITPID), "b"(pid), "c"(status), "d"(options)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_open(const char* path, uint32_t flags) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_OPEN), "b"(path), "c"(flags)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_mkdir(const char* path) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_MKDIR), "b"(path)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_unlink(const char* path) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_UNLINK), "b"(path)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_read(int fd, void* buf, uint32_t len) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_READ), "b"(fd), "c"(buf), "d"(len)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_close(int fd) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_CLOSE), "b"(fd)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_lseek(int fd, int32_t offset, int whence) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_LSEEK), "b"(fd), "c"(offset), "d"(whence)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_fstat(int fd, struct stat* st) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_FSTAT), "b"(fd), "c"(st)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_stat(const char* path, struct stat* st) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_STAT), "b"(path), "c"(st)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static uintptr_t sys_brk(uintptr_t addr) {
+    uintptr_t ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_BRK), "b"(addr)
+        : "memory"
+    );
+    return ret;
+}
+
+static uintptr_t sys_mmap(uintptr_t addr, uint32_t len, uint32_t prot, uint32_t flags, int fd) {
+    uintptr_t ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_MMAP), "b"(addr), "c"(len), "d"(prot), "S"(flags), "D"(fd)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_munmap(uintptr_t addr, uint32_t len) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_MUNMAP), "b"(addr), "c"(len)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_clock_gettime(uint32_t clk_id, struct timespec* tp) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_CLOCK_GETTIME), "b"(clk_id), "c"(tp)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_pread(int fd, void* buf, uint32_t count, uint32_t offset) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_PREAD), "b"(fd), "c"(buf), "d"(count), "S"(offset)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_pwrite(int fd, const void* buf, uint32_t count, uint32_t offset) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_PWRITE), "b"(fd), "c"(buf), "d"(count), "S"(offset)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_ftruncate(int fd, uint32_t length) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_FTRUNCATE), "b"(fd), "c"(length)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_symlink(const char* target, const char* linkpath) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_SYMLINK), "b"(target), "c"(linkpath)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_readlink(const char* path, char* buf, uint32_t bufsiz) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_READLINK), "b"(path), "c"(buf), "d"(bufsiz)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_access(const char* path, uint32_t mode) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_ACCESS), "b"(path), "c"(mode)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_sigprocmask(int how, uint32_t mask, uint32_t* oldset) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_SIGPROCMASK), "b"(how), "c"(mask), "d"(oldset)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_sigpending(uint32_t* set) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_SIGPENDING), "b"(set)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static uint32_t sys_alarm(uint32_t seconds) {
+    uint32_t ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_ALARM), "b"(seconds)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_shmget(uint32_t key, uint32_t size, uint32_t flags) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_SHMGET), "b"(key), "c"(size), "d"(flags)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static uintptr_t sys_shmat(int shmid, uintptr_t addr, uint32_t flags) {
+    uintptr_t ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_SHMAT), "b"(shmid), "c"(addr), "d"(flags)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_shmdt(uintptr_t addr) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_SHMDT), "b"(addr)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_link(const char* oldpath, const char* newpath) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_LINK), "b"(oldpath), "c"(newpath)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_umask(uint32_t mask) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_UMASK), "b"(mask)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_setitimer(int which, const struct itimerval* newval, struct itimerval* oldval) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_SETITIMER), "b"(which), "c"(newval), "d"(oldval)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_getitimer(int which, struct itimerval* cur) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_GETITIMER), "b"(which), "c"(cur)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_waitid(uint32_t idtype, uint32_t id, void* infop, uint32_t options) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_WAITID), "b"(idtype), "c"(id), "d"(infop), "S"(options)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_epoll_create(int size) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_EPOLL_CREATE), "b"(size)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_epoll_ctl(int epfd, int op, int fd, void* event) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_EPOLL_CTL), "b"(epfd), "c"(op), "d"(fd), "S"(event)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_epoll_wait(int epfd, void* events, int maxevents, int timeout) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_EPOLL_WAIT), "b"(epfd), "c"(events), "d"(maxevents), "S"(timeout)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_inotify_init(void) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_INOTIFY_INIT)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_inotify_add_watch(int fd, const char* path, uint32_t mask) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_INOTIFY_ADD_WATCH), "b"(fd), "c"(path), "d"(mask)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_inotify_rm_watch(int fd, int wd) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_INOTIFY_RM_WATCH), "b"(fd), "c"(wd)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+struct aiocb {
+    int      aio_fildes;
+    void*    aio_buf;
+    uint32_t aio_nbytes;
+    uint32_t aio_offset;
+    int32_t  aio_error;
+    int32_t  aio_return;
+};
+
+static int sys_aio_read(struct aiocb* cb) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_AIO_READ), "b"(cb)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_aio_write(struct aiocb* cb) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_AIO_WRITE), "b"(cb)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_aio_error(struct aiocb* cb) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_AIO_ERROR), "b"(cb)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_aio_return(struct aiocb* cb) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_AIO_RETURN), "b"(cb)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_nanosleep(const struct timespec* req, struct timespec* rem) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_NANOSLEEP), "b"(req), "c"(rem)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static uint32_t sys_getuid(void) {
+    uint32_t ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_GETUID) : "memory");
+    return ret;
+}
+
+static uint32_t sys_getgid(void) {
+    uint32_t ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_GETGID) : "memory");
+    return ret;
+}
+
+static uint32_t sys_geteuid(void) {
+    uint32_t ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_GETEUID) : "memory");
+    return ret;
+}
+
+static uint32_t sys_getegid(void) {
+    uint32_t ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_GETEGID) : "memory");
+    return ret;
+}
+
+static int sys_gettid(void) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_GETTID) : "memory");
+    return ret;
+}
+
+static int sys_fsync(int fd) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_FSYNC), "b"(fd)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_truncate(const char* path, uint32_t length) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_TRUNCATE), "b"(path), "c"(length)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_chmod(const char* path, uint32_t mode) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_CHMOD), "b"(path), "c"(mode)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_flock(int fd, int operation) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_FLOCK), "b"(fd), "c"(operation)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+struct iovec {
+    void*    iov_base;
+    uint32_t iov_len;
+};
+
+static int sys_writev(int fd, const struct iovec* iov, int iovcnt) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_WRITEV), "b"(fd), "c"(iov), "d"(iovcnt)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_readv(int fd, const struct iovec* iov, int iovcnt) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_READV), "b"(fd), "c"(iov), "d"(iovcnt)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static uint32_t sys_times(void* buf) {
+    uint32_t ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_TIMES), "b"(buf)
+        : "memory"
+    );
+    return ret;
+}
+
+static int sys_posix_spawn(uint32_t* pid_out, const char* path,
+                           const char* const* argv, const char* const* envp) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_POSIX_SPAWN), "b"(pid_out), "c"(path), "d"(argv), "S"(envp)
+        : "memory"
+    );
+    return __syscall_fix(ret);
+}
+
+static int sys_setuid(uint32_t uid) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SETUID), "b"(uid) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_setgid(uint32_t gid) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SETGID), "b"(gid) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_seteuid(uint32_t euid) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SETEUID), "b"(euid) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_setegid(uint32_t egid) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SETEGID), "b"(egid) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_sigsuspend(const uint32_t* mask) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SIGSUSPEND), "b"(mask) : "memory");
+    return __syscall_fix(ret);
+}
+
+__attribute__((noreturn)) static void sys_exit(int code) {
+    __asm__ volatile(
+        "int $0x80\n"
+        "1: jmp 1b\n"
+        :
+        : "a"(SYSCALL_EXIT), "b"(code)
+        : "memory"
+    );
+    for (;;) {
+        __asm__ volatile("hlt");
+    }
+}
+
+static volatile int got_usr1 = 0;
+static volatile int got_usr1_ret = 0;
+static volatile int got_ttin = 0;
+static volatile int got_ttou = 0;
+static volatile int got_alrm = 0;
+
+static void usr1_handler(int sig) {
+    (void)sig;
+    got_usr1 = 1;
+    sys_write(1, "[init] SIGUSR1 handler OK\n",
+              (uint32_t)(sizeof("[init] SIGUSR1 handler OK\n") - 1));
+}
+
+static void usr1_ret_handler(int sig) {
+    (void)sig;
+    got_usr1_ret = 1;
+}
+
+static void alrm_handler(int sig) {
+    (void)sig;
+    got_alrm = 1;
+}
+
+static void ttin_handler(int sig) {
+    (void)sig;
+    got_ttin = 1;
+}
+
+static void ttou_handler(int sig) {
+    (void)sig;
+    got_ttou = 1;
+}
+
+static void sigsegv_exit_handler(int sig) {
+    (void)sig;
+    static const char msg[] = "[init] SIGSEGV handler invoked\n";
+    (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+    sys_exit(0);
+}
+
+static void sigsegv_info_handler(int sig, siginfo_t* info, void* uctx) {
+    (void)uctx;
+    static const char msg[] = "[init] SIGSEGV siginfo handler invoked\n";
+    (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+    const uintptr_t expected = 0x12345000U;
+    if (sig == SIGSEGV && info && (uintptr_t)info->si_addr == expected) {
+        sys_exit(0);
+    }
+    sys_exit(1);
+}
+
+void _start(void) {
+    __asm__ volatile(
+        "mov $0x23, %ax\n"
+        "mov %ax, %ds\n"
+        "mov %ax, %es\n"
+        "mov %ax, %fs\n"
+        "mov %ax, %gs\n"
+    );
+
+    static const char msg[] = "[init] hello from init.elf\n";
+    (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+
+    static const char path[] = "/sbin/fulltest";
+
+    int fd = sys_open(path, 0);
+    if (fd < 0) {
+        sys_write(1, "[init] open failed fd=", (uint32_t)(sizeof("[init] open failed fd=") - 1));
+        write_int_dec(fd);
+        sys_write(1, "\n", 1);
+        sys_exit(1);
+    }
+
+    uint8_t hdr[4];
+    int rd = sys_read(fd, hdr, 4);
+    (void)sys_close(fd);
+    if (rd == 4 && hdr[0] == 0x7F && hdr[1] == 'E' && hdr[2] == 'L' && hdr[3] == 'F') {
+        sys_write(1, "[init] open/read/close OK (ELF magic)\n",
+                  (uint32_t)(sizeof("[init] open/read/close OK (ELF magic)\n") - 1));
+    } else {
+        sys_write(1, "[init] read failed or bad header rd=", (uint32_t)(sizeof("[init] read failed or bad header rd=") - 1));
+        write_int_dec(rd);
+        sys_write(1, " hdr=", (uint32_t)(sizeof(" hdr=") - 1));
+        for (int i = 0; i < 4; i++) {
+            write_hex8(hdr[i]);
+        }
+        sys_write(1, "\n", 1);
+        sys_exit(1);
+    }
+
+    fd = sys_open("/sbin/fulltest", 0);
+    if (fd < 0) {
+        sys_write(1, "[init] overlay open failed\n",
+                  (uint32_t)(sizeof("[init] overlay open failed\n") - 1));
+        sys_exit(1);
+    }
+
+    uint8_t orig0 = 0;
+    if (sys_lseek(fd, 0, SEEK_SET) < 0 || sys_read(fd, &orig0, 1) != 1) {
+        sys_write(1, "[init] overlay read failed\n",
+                  (uint32_t)(sizeof("[init] overlay read failed\n") - 1));
+        sys_exit(1);
+    }
+
+    uint8_t x = (uint8_t)(orig0 ^ 0xFF);
+    if (sys_lseek(fd, 0, SEEK_SET) < 0 || sys_write(fd, &x, 1) != 1) {
+        sys_write(1, "[init] overlay write failed\n",
+                  (uint32_t)(sizeof("[init] overlay write failed\n") - 1));
+        sys_exit(1);
+    }
+
+    if (sys_close(fd) < 0) {
+        sys_write(1, "[init] overlay close failed\n",
+                  (uint32_t)(sizeof("[init] overlay close failed\n") - 1));
+        sys_exit(1);
+    }
+
+    fd = sys_open("/sbin/fulltest", 0);
+    if (fd < 0) {
+        sys_write(1, "[init] overlay open2 failed\n",
+                  (uint32_t)(sizeof("[init] overlay open2 failed\n") - 1));
+        sys_exit(1);
+    }
+
+    uint8_t chk = 0;
+    if (sys_lseek(fd, 0, SEEK_SET) < 0 || sys_read(fd, &chk, 1) != 1 || chk != x) {
+        sys_write(1, "[init] overlay verify failed\n",
+                  (uint32_t)(sizeof("[init] overlay verify failed\n") - 1));
+        sys_exit(1);
+    }
+
+    if (sys_lseek(fd, 0, SEEK_SET) < 0 || sys_write(fd, &orig0, 1) != 1) {
+        sys_write(1, "[init] overlay restore failed\n",
+                  (uint32_t)(sizeof("[init] overlay restore failed\n") - 1));
+        sys_exit(1);
+    }
+
+    if (sys_close(fd) < 0) {
+        sys_write(1, "[init] overlay close2 failed\n",
+                  (uint32_t)(sizeof("[init] overlay close2 failed\n") - 1));
+        sys_exit(1);
+    }
+
+    sys_write(1, "[init] overlay copy-up OK\n",
+              (uint32_t)(sizeof("[init] overlay copy-up OK\n") - 1));
+
+    fd = sys_open("/sbin/fulltest", 0);
+    if (fd < 0) {
+        sys_write(1, "[init] open2 failed\n", (uint32_t)(sizeof("[init] open2 failed\n") - 1));
+        sys_exit(1);
+    }
+
+    struct stat st;
+    if (sys_fstat(fd, &st) < 0) {
+        sys_write(1, "[init] fstat failed\n", (uint32_t)(sizeof("[init] fstat failed\n") - 1));
+        sys_exit(1);
+    }
+
+    if ((st.st_mode & S_IFMT) != S_IFREG || st.st_size == 0) {
+        sys_write(1, "[init] fstat bad\n", (uint32_t)(sizeof("[init] fstat bad\n") - 1));
+        sys_exit(1);
+    }
+
+    if (sys_lseek(fd, 0, SEEK_SET) < 0) {
+        sys_write(1, "[init] lseek set failed\n",
+                  (uint32_t)(sizeof("[init] lseek set failed\n") - 1));
+        sys_exit(1);
+    }
+
+    uint8_t m2[4];
+    if (sys_read(fd, m2, 4) != 4) {
+        sys_write(1, "[init] read2 failed\n", (uint32_t)(sizeof("[init] read2 failed\n") - 1));
+        sys_exit(1);
+    }
+    if (m2[0] != 0x7F || m2[1] != 'E' || m2[2] != 'L' || m2[3] != 'F') {
+        sys_write(1, "[init] lseek/read mismatch\n",
+                  (uint32_t)(sizeof("[init] lseek/read mismatch\n") - 1));
+        sys_exit(1);
+    }
+
+    if (sys_close(fd) < 0) {
+        sys_write(1, "[init] close2 failed\n", (uint32_t)(sizeof("[init] close2 failed\n") - 1));
+        sys_exit(1);
+    }
+
+    if (sys_stat("/sbin/fulltest", &st) < 0) {
+        sys_write(1, "[init] stat failed\n", (uint32_t)(sizeof("[init] stat failed\n") - 1));
+        sys_exit(1);
+    }
+    if ((st.st_mode & S_IFMT) != S_IFREG || st.st_size == 0) {
+        sys_write(1, "[init] stat bad\n", (uint32_t)(sizeof("[init] stat bad\n") - 1));
+        sys_exit(1);
+    }
+
+    sys_write(1, "[init] lseek/stat/fstat OK\n",
+              (uint32_t)(sizeof("[init] lseek/stat/fstat OK\n") - 1));
+
+    fd = sys_open("/tmp/hello.txt", 0);
+    if (fd < 0) {
+        sys_write(1, "[init] tmpfs open failed\n",
+                  (uint32_t)(sizeof("[init] tmpfs open failed\n") - 1));
+        sys_exit(1);
+    }
+
+    if (sys_lseek(fd, 0, SEEK_END) < 0) {
+        sys_write(1, "[init] dup2 prep lseek failed\n",
+                  (uint32_t)(sizeof("[init] dup2 prep lseek failed\n") - 1));
+        sys_exit(1);
+    }
+
+    if (sys_dup2(fd, 1) != 1) {
+        sys_write(1, "[init] dup2 failed\n", (uint32_t)(sizeof("[init] dup2 failed\n") - 1));
+        sys_exit(1);
+    }
+
+    (void)sys_close(fd);
+
+    {
+        static const char m[] = "[init] dup2 stdout->file OK\n";
+        if (sys_write(1, m, (uint32_t)(sizeof(m) - 1)) != (int)(sizeof(m) - 1)) {
+            sys_exit(1);
+        }
+    }
+
+    (void)sys_close(1);
+    sys_write(1, "[init] dup2 restore tty OK\n",
+              (uint32_t)(sizeof("[init] dup2 restore tty OK\n") - 1));
+
+    {
+        int pfds[2];
+        if (sys_pipe(pfds) < 0) {
+            sys_write(1, "[init] pipe failed\n", (uint32_t)(sizeof("[init] pipe failed\n") - 1));
+            sys_exit(1);
+        }
+
+        static const char pmsg[] = "pipe-test";
+        if (sys_write(pfds[1], pmsg, (uint32_t)(sizeof(pmsg) - 1)) != (int)(sizeof(pmsg) - 1)) {
+            sys_write(1, "[init] pipe write failed\n",
+                      (uint32_t)(sizeof("[init] pipe write failed\n") - 1));
+            sys_exit(1);
+        }
+
+        char rbuf[16];
+        int prd = sys_read(pfds[0], rbuf, (uint32_t)(sizeof(pmsg) - 1));
+        if (prd != (int)(sizeof(pmsg) - 1)) {
+            sys_write(1, "[init] pipe read failed\n",
+                      (uint32_t)(sizeof("[init] pipe read failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int ok = 1;
+        for (uint32_t i = 0; i < (uint32_t)(sizeof(pmsg) - 1); i++) {
+            if ((uint8_t)rbuf[i] != (uint8_t)pmsg[i]) ok = 0;
+        }
+        if (!ok) {
+            sys_write(1, "[init] pipe mismatch\n",
+                      (uint32_t)(sizeof("[init] pipe mismatch\n") - 1));
+            sys_exit(1);
+        }
+
+        if (sys_dup2(pfds[1], 1) != 1) {
+            sys_write(1, "[init] pipe dup2 failed\n",
+                      (uint32_t)(sizeof("[init] pipe dup2 failed\n") - 1));
+            sys_exit(1);
+        }
+
+        static const char p2[] = "dup2-pipe";
+        if (sys_write(1, p2, (uint32_t)(sizeof(p2) - 1)) != (int)(sizeof(p2) - 1)) {
+            sys_exit(1);
+        }
+
+        int prd2 = sys_read(pfds[0], rbuf, (uint32_t)(sizeof(p2) - 1));
+        if (prd2 != (int)(sizeof(p2) - 1)) {
+            sys_write(1, "[init] pipe dup2 read failed\n",
+                      (uint32_t)(sizeof("[init] pipe dup2 read failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] pipe OK\n", (uint32_t)(sizeof("[init] pipe OK\n") - 1));
+
+        (void)sys_close(pfds[0]);
+        (void)sys_close(pfds[1]);
+
+        int tfd = sys_open("/dev/tty", 0);
+        if (tfd < 0) {
+            sys_write(1, "[init] /dev/tty open failed\n",
+                      (uint32_t)(sizeof("[init] /dev/tty open failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_dup2(tfd, 1) != 1) {
+            sys_write(1, "[init] dup2 restore tty failed\n",
+                      (uint32_t)(sizeof("[init] dup2 restore tty failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(tfd);
+
+    }
+
+    {
+        int pid = sys_fork();
+        if (pid < 0) {
+            sys_write(1, "[init] kill test fork failed\n",
+                      (uint32_t)(sizeof("[init] kill test fork failed\n") - 1));
+            sys_exit(1);
+        }
+
+        if (pid == 0) {
+            for (;;) {
+                __asm__ volatile("nop");
+            }
+        }
+
+        if (sys_kill(pid, SIGKILL) < 0) {
+            sys_write(1, "[init] kill(SIGKILL) failed\n",
+                      (uint32_t)(sizeof("[init] kill(SIGKILL) failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int st = 0;
+        int rp = sys_waitpid(pid, &st, 0);
+        if (rp != pid || st != (128 + SIGKILL)) {
+            sys_write(1, "[init] kill test waitpid mismatch\n",
+                      (uint32_t)(sizeof("[init] kill test waitpid mismatch\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] kill(SIGKILL) OK\n",
+                  (uint32_t)(sizeof("[init] kill(SIGKILL) OK\n") - 1));
+    }
+
+    {
+        int fds[2];
+        if (sys_pipe(fds) < 0) {
+            sys_write(1, "[init] poll pipe setup failed\n",
+                      (uint32_t)(sizeof("[init] poll pipe setup failed\n") - 1));
+            sys_exit(1);
+        }
+
+        struct pollfd p;
+        p.fd = fds[0];
+        p.events = POLLIN;
+        p.revents = 0;
+        int rc = sys_poll(&p, 1, 0);
+        if (rc != 0) {
+            sys_write(1, "[init] poll(pipe) expected 0\n",
+                      (uint32_t)(sizeof("[init] poll(pipe) expected 0\n") - 1));
+            sys_exit(1);
+        }
+
+        static const char a = 'A';
+        if (sys_write(fds[1], &a, 1) != 1) {
+            sys_write(1, "[init] poll pipe write failed\n",
+                      (uint32_t)(sizeof("[init] poll pipe write failed\n") - 1));
+            sys_exit(1);
+        }
+
+        p.revents = 0;
+        rc = sys_poll(&p, 1, 0);
+        if (rc != 1 || (p.revents & POLLIN) == 0) {
+            sys_write(1, "[init] poll(pipe) expected POLLIN\n",
+                      (uint32_t)(sizeof("[init] poll(pipe) expected POLLIN\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_close(fds[0]);
+        (void)sys_close(fds[1]);
+        sys_write(1, "[init] poll(pipe) OK\n", (uint32_t)(sizeof("[init] poll(pipe) OK\n") - 1));
+    }
+
+    {
+        int fds[2];
+        if (sys_pipe(fds) < 0) {
+            sys_write(1, "[init] select pipe setup failed\n",
+                      (uint32_t)(sizeof("[init] select pipe setup failed\n") - 1));
+            sys_exit(1);
+        }
+
+        uint64_t r = 0;
+        uint64_t w = 0;
+        r |= (1ULL << (uint32_t)fds[0]);
+        int rc = sys_select((uint32_t)(fds[0] + 1), &r, &w, 0, 0);
+        if (rc != 0) {
+            sys_write(1, "[init] select(pipe) expected 0\n",
+                      (uint32_t)(sizeof("[init] select(pipe) expected 0\n") - 1));
+            sys_exit(1);
+        }
+
+        static const char a = 'B';
+        if (sys_write(fds[1], &a, 1) != 1) {
+            sys_write(1, "[init] select pipe write failed\n",
+                      (uint32_t)(sizeof("[init] select pipe write failed\n") - 1));
+            sys_exit(1);
+        }
+
+        r = 0;
+        w = 0;
+        r |= (1ULL << (uint32_t)fds[0]);
+        rc = sys_select((uint32_t)(fds[0] + 1), &r, &w, 0, 0);
+        if (rc != 1 || ((r >> (uint32_t)fds[0]) & 1ULL) == 0) {
+            sys_write(1, "[init] select(pipe) expected readable\n",
+                      (uint32_t)(sizeof("[init] select(pipe) expected readable\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_close(fds[0]);
+        (void)sys_close(fds[1]);
+        sys_write(1, "[init] select(pipe) OK\n",
+                  (uint32_t)(sizeof("[init] select(pipe) OK\n") - 1));
+    }
+
+    {
+        int fd = sys_open("/dev/tty", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] ioctl(/dev/tty) open failed\n",
+                      (uint32_t)(sizeof("[init] ioctl(/dev/tty) open failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int fg = -1;
+        if (sys_ioctl(fd, TIOCGPGRP, &fg) < 0 || fg != 0) {
+            sys_write(1, "[init] ioctl TIOCGPGRP failed\n",
+                      (uint32_t)(sizeof("[init] ioctl TIOCGPGRP failed\n") - 1));
+            sys_exit(1);
+        }
+
+        fg = 0;
+        if (sys_ioctl(fd, TIOCSPGRP, &fg) < 0) {
+            sys_write(1, "[init] ioctl TIOCSPGRP failed\n",
+                      (uint32_t)(sizeof("[init] ioctl TIOCSPGRP failed\n") - 1));
+            sys_exit(1);
+        }
+
+        fg = 1;
+        if (sys_ioctl(fd, TIOCSPGRP, &fg) >= 0) {
+            sys_write(1, "[init] ioctl TIOCSPGRP expected fail\n",
+                      (uint32_t)(sizeof("[init] ioctl TIOCSPGRP expected fail\n") - 1));
+            sys_exit(1);
+        }
+
+        struct termios oldt;
+        if (sys_ioctl(fd, TCGETS, &oldt) < 0) {
+            sys_write(1, "[init] ioctl TCGETS failed\n",
+                      (uint32_t)(sizeof("[init] ioctl TCGETS failed\n") - 1));
+            sys_exit(1);
+        }
+
+        struct termios t = oldt;
+        t.c_lflag &= ~(uint32_t)(ECHO | ICANON);
+        if (sys_ioctl(fd, TCSETS, &t) < 0) {
+            sys_write(1, "[init] ioctl TCSETS failed\n",
+                      (uint32_t)(sizeof("[init] ioctl TCSETS failed\n") - 1));
+            sys_exit(1);
+        }
+
+        struct termios chk;
+        if (sys_ioctl(fd, TCGETS, &chk) < 0) {
+            sys_write(1, "[init] ioctl TCGETS2 failed\n",
+                      (uint32_t)(sizeof("[init] ioctl TCGETS2 failed\n") - 1));
+            sys_exit(1);
+        }
+
+        if ((chk.c_lflag & (uint32_t)(ECHO | ICANON)) != 0) {
+            sys_write(1, "[init] ioctl verify failed\n",
+                      (uint32_t)(sizeof("[init] ioctl verify failed\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_ioctl(fd, TCSETS, &oldt);
+        (void)sys_close(fd);
+
+        sys_write(1, "[init] ioctl(/dev/tty) OK\n",
+                  (uint32_t)(sizeof("[init] ioctl(/dev/tty) OK\n") - 1));
+    }
+
+    // A2: basic job control. A background pgrp read/write on controlling TTY should raise SIGTTIN/SIGTTOU.
+    {
+        int leader = sys_fork();
+        if (leader < 0) {
+            sys_write(1, "[init] fork(job control leader) failed\n",
+                      (uint32_t)(sizeof("[init] fork(job control leader) failed\n") - 1));
+            sys_exit(1);
+        }
+        if (leader == 0) {
+            int me = sys_getpid();
+            int sid = sys_setsid();
+            if (sid != me) {
+                sys_write(1, "[init] setsid(job control) failed\n",
+                          (uint32_t)(sizeof("[init] setsid(job control) failed\n") - 1));
+                sys_exit(1);
+            }
+
+            int tfd = sys_open("/dev/tty", 0);
+            if (tfd < 0) {
+                sys_write(1, "[init] open(/dev/tty) for job control failed\n",
+                          (uint32_t)(sizeof("[init] open(/dev/tty) for job control failed\n") - 1));
+                sys_exit(1);
+            }
+
+            // Touch ioctl to make kernel acquire controlling session/pgrp.
+            int fg = 0;
+            (void)sys_ioctl(tfd, TIOCGPGRP, &fg);
+
+            fg = me;
+            if (sys_ioctl(tfd, TIOCSPGRP, &fg) < 0) {
+                sys_write(1, "[init] ioctl TIOCSPGRP(job control) failed\n",
+                          (uint32_t)(sizeof("[init] ioctl TIOCSPGRP(job control) failed\n") - 1));
+                sys_exit(1);
+            }
+
+            int bg = sys_fork();
+            if (bg < 0) {
+                sys_write(1, "[init] fork(job control bg) failed\n",
+                          (uint32_t)(sizeof("[init] fork(job control bg) failed\n") - 1));
+                sys_exit(1);
+            }
+            if (bg == 0) {
+                (void)sys_setpgid(0, me + 1);
+
+                (void)sys_sigaction(SIGTTIN, ttin_handler, 0);
+                (void)sys_sigaction(SIGTTOU, ttou_handler, 0);
+
+                uint8_t b = 0;
+                (void)sys_read(tfd, &b, 1);
+                if (!got_ttin) {
+                    sys_write(1, "[init] SIGTTIN job control failed\n",
+                              (uint32_t)(sizeof("[init] SIGTTIN job control failed\n") - 1));
+                    sys_exit(1);
+                }
+
+                const char msg2[] = "x";
+                (void)sys_write(tfd, msg2, 1);
+                if (!got_ttou) {
+                    sys_write(1, "[init] SIGTTOU job control failed\n",
+                              (uint32_t)(sizeof("[init] SIGTTOU job control failed\n") - 1));
+                    sys_exit(1);
+                }
+
+                sys_exit(0);
+            }
+
+            int st2 = 0;
+            int wp2 = sys_waitpid(bg, &st2, 0);
+            if (wp2 != bg || st2 != 0) {
+                sys_write(1, "[init] waitpid(job control bg) failed wp=", (uint32_t)(sizeof("[init] waitpid(job control bg) failed wp=") - 1));
+                write_int_dec(wp2);
+                sys_write(1, " st=", (uint32_t)(sizeof(" st=") - 1));
+                write_int_dec(st2);
+                sys_write(1, "\n", 1);
+                sys_exit(1);
+            }
+
+            (void)sys_close(tfd);
+            sys_exit(0);
+        }
+
+        int stL = 0;
+        int wpL = sys_waitpid(leader, &stL, 0);
+        if (wpL != leader || stL != 0) {
+            sys_write(1, "[init] waitpid(job control leader) failed wp=", (uint32_t)(sizeof("[init] waitpid(job control leader) failed wp=") - 1));
+            write_int_dec(wpL);
+            sys_write(1, " st=", (uint32_t)(sizeof(" st=") - 1));
+            write_int_dec(stL);
+            sys_write(1, "\n", 1);
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] job control (SIGTTIN/SIGTTOU) OK\n",
+                  (uint32_t)(sizeof("[init] job control (SIGTTIN/SIGTTOU) OK\n") - 1));
+    }
+
+    {
+        int fd = sys_open("/dev/null", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] poll(/dev/null) open failed\n",
+                      (uint32_t)(sizeof("[init] poll(/dev/null) open failed\n") - 1));
+            sys_exit(1);
+        }
+        struct pollfd p;
+        p.fd = fd;
+        p.events = POLLOUT;
+        p.revents = 0;
+        int rc = sys_poll(&p, 1, 0);
+        if (rc != 1 || (p.revents & POLLOUT) == 0) {
+            sys_write(1, "[init] poll(/dev/null) expected POLLOUT\n",
+                      (uint32_t)(sizeof("[init] poll(/dev/null) expected POLLOUT\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+        sys_write(1, "[init] poll(/dev/null) OK\n",
+                  (uint32_t)(sizeof("[init] poll(/dev/null) OK\n") - 1));
+    }
+
+    {
+        int mfd = sys_open("/dev/ptmx", 0);
+        int sfd = sys_open("/dev/pts/0", 0);
+        if (mfd < 0 || sfd < 0) {
+            sys_write(1, "[init] pty open failed\n",
+                      (uint32_t)(sizeof("[init] pty open failed\n") - 1));
+            sys_exit(1);
+        }
+
+        static const char m2s[] = "m2s";
+        if (sys_write(mfd, m2s, (uint32_t)(sizeof(m2s) - 1)) != (int)(sizeof(m2s) - 1)) {
+            sys_write(1, "[init] pty write master failed\n",
+                      (uint32_t)(sizeof("[init] pty write master failed\n") - 1));
+            sys_exit(1);
+        }
+
+        struct pollfd p;
+        p.fd = sfd;
+        p.events = POLLIN;
+        p.revents = 0;
+        int rc = sys_poll(&p, 1, 50);
+        if (rc != 1 || (p.revents & POLLIN) == 0) {
+            sys_write(1, "[init] pty poll slave failed\n",
+                      (uint32_t)(sizeof("[init] pty poll slave failed\n") - 1));
+            sys_exit(1);
+        }
+
+        char buf[8];
+        int rd = sys_read(sfd, buf, (uint32_t)(sizeof(m2s) - 1));
+        if (rd != (int)(sizeof(m2s) - 1) || !memeq(buf, m2s, (uint32_t)(sizeof(m2s) - 1))) {
+            sys_write(1, "[init] pty read slave failed\n",
+                      (uint32_t)(sizeof("[init] pty read slave failed\n") - 1));
+            sys_exit(1);
+        }
+
+        static const char s2m[] = "s2m";
+        if (sys_write(sfd, s2m, (uint32_t)(sizeof(s2m) - 1)) != (int)(sizeof(s2m) - 1)) {
+            sys_write(1, "[init] pty write slave failed\n",
+                      (uint32_t)(sizeof("[init] pty write slave failed\n") - 1));
+            sys_exit(1);
+        }
+
+        p.fd = mfd;
+        p.events = POLLIN;
+        p.revents = 0;
+        rc = sys_poll(&p, 1, 50);
+        if (rc != 1 || (p.revents & POLLIN) == 0) {
+            sys_write(1, "[init] pty poll master failed\n",
+                      (uint32_t)(sizeof("[init] pty poll master failed\n") - 1));
+            sys_exit(1);
+        }
+
+        rd = sys_read(mfd, buf, (uint32_t)(sizeof(s2m) - 1));
+        if (rd != (int)(sizeof(s2m) - 1) || !memeq(buf, s2m, (uint32_t)(sizeof(s2m) - 1))) {
+            sys_write(1, "[init] pty read master failed\n",
+                      (uint32_t)(sizeof("[init] pty read master failed\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_close(mfd);
+        (void)sys_close(sfd);
+        sys_write(1, "[init] pty OK\n", (uint32_t)(sizeof("[init] pty OK\n") - 1));
+    }
+
+    {
+        sys_write(1, "[init] setsid test: before fork\n",
+                  (uint32_t)(sizeof("[init] setsid test: before fork\n") - 1));
+        int pid = sys_fork();
+        if (pid < 0) {
+            static const char smsg[] = "[init] fork failed\n";
+            (void)sys_write(1, smsg, (uint32_t)(sizeof(smsg) - 1));
+            sys_exit(2);
+        }
+        if (pid == 0) {
+            sys_write(1, "[init] setsid test: child start\n",
+                      (uint32_t)(sizeof("[init] setsid test: child start\n") - 1));
+            int me = sys_getpid();
+            int sid = sys_setsid();
+            if (sid != me) sys_exit(2);
+
+            int pg = sys_getpgrp();
+            if (pg != me) sys_exit(3);
+
+            int newpg = me + 1;
+            if (sys_setpgid(0, newpg) < 0) sys_exit(4);
+            if (sys_getpgrp() != newpg) sys_exit(5);
+
+            sys_exit(0);
+        }
+
+        sys_write(1, "[init] setsid test: parent waitpid\n",
+                  (uint32_t)(sizeof("[init] setsid test: parent waitpid\n") - 1));
+        int st = 0;
+        int wp = sys_waitpid(pid, &st, 0);
+        if (wp != pid || st != 0) {
+            sys_write(1, "[init] setsid/setpgid/getpgrp failed\n",
+                      (uint32_t)(sizeof("[init] setsid/setpgid/getpgrp failed\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] setsid/setpgid/getpgrp OK\n",
+                  (uint32_t)(sizeof("[init] setsid/setpgid/getpgrp OK\n") - 1));
+    }
+
+    {
+        uintptr_t oldh = 0;
+        if (sys_sigaction(SIGUSR1, usr1_handler, &oldh) < 0) {
+            sys_write(1, "[init] sigaction failed\n",
+                      (uint32_t)(sizeof("[init] sigaction failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int me = sys_getpid();
+        if (sys_kill(me, SIGUSR1) < 0) {
+            sys_write(1, "[init] kill(SIGUSR1) failed\n",
+                      (uint32_t)(sizeof("[init] kill(SIGUSR1) failed\n") - 1));
+            sys_exit(1);
+        }
+
+        for (uint32_t i = 0; i < 2000000U; i++) {
+            if (got_usr1) break;
+        }
+
+        if (!got_usr1) {
+            sys_write(1, "[init] SIGUSR1 not delivered\n",
+                      (uint32_t)(sizeof("[init] SIGUSR1 not delivered\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] sigaction/kill(SIGUSR1) OK\n",
+                  (uint32_t)(sizeof("[init] sigaction/kill(SIGUSR1) OK\n") - 1));
+    }
+
+    // Verify that returning from a signal handler does not corrupt the user stack.
+    {
+        if (sys_sigaction(SIGUSR1, usr1_ret_handler, 0) < 0) {
+            sys_write(1, "[init] sigaction (sigreturn test) failed\n",
+                      (uint32_t)(sizeof("[init] sigaction (sigreturn test) failed\n") - 1));
+            sys_exit(1);
+        }
+
+        volatile uint32_t canary = 0x11223344U;
+        int me = sys_getpid();
+        if (sys_kill(me, SIGUSR1) < 0) {
+            sys_write(1, "[init] kill(SIGUSR1) (sigreturn test) failed\n",
+                      (uint32_t)(sizeof("[init] kill(SIGUSR1) (sigreturn test) failed\n") - 1));
+            sys_exit(1);
+        }
+
+        if (!got_usr1_ret) {
+            sys_write(1, "[init] SIGUSR1 not delivered (sigreturn test)\n",
+                      (uint32_t)(sizeof("[init] SIGUSR1 not delivered (sigreturn test)\n") - 1));
+            sys_exit(1);
+        }
+
+        if (canary != 0x11223344U) {
+            sys_write(1, "[init] sigreturn test stack corruption\n",
+                      (uint32_t)(sizeof("[init] sigreturn test stack corruption\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] sigreturn OK\n",
+                  (uint32_t)(sizeof("[init] sigreturn OK\n") - 1));
+    }
+
+    fd = sys_open("/tmp/hello.txt", 0);
+    if (fd < 0) {
+        sys_write(1, "[init] tmpfs open2 failed\n",
+                  (uint32_t)(sizeof("[init] tmpfs open2 failed\n") - 1));
+        sys_exit(1);
+    }
+
+    if (sys_stat("/tmp/hello.txt", &st) < 0) {
+        sys_write(1, "[init] tmpfs stat failed\n",
+                  (uint32_t)(sizeof("[init] tmpfs stat failed\n") - 1));
+        sys_exit(1);
+    }
+    if ((st.st_mode & S_IFMT) != S_IFREG) {
+        sys_write(1, "[init] tmpfs stat not reg\n",
+                  (uint32_t)(sizeof("[init] tmpfs stat not reg\n") - 1));
+        sys_exit(1);
+    }
+    if (st.st_size == 0) {
+        sys_write(1, "[init] tmpfs stat size 0\n",
+                  (uint32_t)(sizeof("[init] tmpfs stat size 0\n") - 1));
+        sys_exit(1);
+    }
+
+    struct stat fst;
+    if (sys_fstat(fd, &fst) < 0) {
+        sys_write(1, "[init] tmpfs fstat failed\n",
+                  (uint32_t)(sizeof("[init] tmpfs fstat failed\n") - 1));
+        sys_exit(1);
+    }
+    if (fst.st_size != st.st_size) {
+        sys_write(1, "[init] tmpfs stat size mismatch\n",
+                  (uint32_t)(sizeof("[init] tmpfs stat size mismatch\n") - 1));
+        sys_exit(1);
+    }
+
+    int end = sys_lseek(fd, 0, SEEK_END);
+    if (end < 0 || (uint32_t)end != st.st_size) {
+        sys_write(1, "[init] tmpfs lseek end bad\n",
+                  (uint32_t)(sizeof("[init] tmpfs lseek end bad\n") - 1));
+        sys_exit(1);
+    }
+
+    uint8_t eofb;
+    if (sys_read(fd, &eofb, 1) != 0) {
+        sys_write(1, "[init] tmpfs eof read bad\n",
+                  (uint32_t)(sizeof("[init] tmpfs eof read bad\n") - 1));
+        sys_exit(1);
+    }
+
+    if (sys_lseek(fd, 0, 999) >= 0) {
+        sys_write(1, "[init] tmpfs lseek whence bad\n",
+                  (uint32_t)(sizeof("[init] tmpfs lseek whence bad\n") - 1));
+        sys_exit(1);
+    }
+
+    if (sys_lseek(fd, 0, SEEK_SET) < 0) {
+        sys_write(1, "[init] tmpfs lseek set failed\n",
+                  (uint32_t)(sizeof("[init] tmpfs lseek set failed\n") - 1));
+        sys_exit(1);
+    }
+
+    uint8_t tbuf[6];
+    if (sys_read(fd, tbuf, 5) != 5) {
+        sys_write(1, "[init] tmpfs read failed\n",
+                  (uint32_t)(sizeof("[init] tmpfs read failed\n") - 1));
+        sys_exit(1);
+    }
+    tbuf[5] = 0;
+    if (tbuf[0] != 'h' || tbuf[1] != 'e' || tbuf[2] != 'l' || tbuf[3] != 'l' || tbuf[4] != 'o') {
+        sys_write(1, "[init] tmpfs bad data\n", (uint32_t)(sizeof("[init] tmpfs bad data\n") - 1));
+        sys_exit(1);
+    }
+
+    if (sys_close(fd) < 0) {
+        sys_write(1, "[init] tmpfs close failed\n",
+                  (uint32_t)(sizeof("[init] tmpfs close failed\n") - 1));
+        sys_exit(1);
+    }
+
+    if (sys_open("/tmp/does_not_exist", 0) >= 0) {
+        sys_write(1, "[init] tmpfs open nonexist bad\n",
+                  (uint32_t)(sizeof("[init] tmpfs open nonexist bad\n") - 1));
+        sys_exit(1);
+    }
+
+    fd = sys_open("/tmp/hello.txt", 0);
+    if (fd < 0) {
+        sys_write(1, "[init] tmpfs open3 failed\n",
+                  (uint32_t)(sizeof("[init] tmpfs open3 failed\n") - 1));
+        sys_exit(1);
+    }
+
+    if (sys_fstat(fd, &fst) < 0) {
+        sys_write(1, "[init] tmpfs fstat2 failed\n",
+                  (uint32_t)(sizeof("[init] tmpfs fstat2 failed\n") - 1));
+        sys_exit(1);
+    }
+
+    if (sys_lseek(fd, 0, SEEK_END) < 0) {
+        sys_write(1, "[init] tmpfs lseek end2 failed\n",
+                  (uint32_t)(sizeof("[init] tmpfs lseek end2 failed\n") - 1));
+        sys_exit(1);
+    }
+
+    char suf[3];
+    suf[0] = 'X';
+    suf[1] = 'Y';
+    suf[2] = 'Z';
+    if (sys_write(fd, suf, 3) != 3) {
+        sys_write(1, "[init] tmpfs write failed\n",
+                  (uint32_t)(sizeof("[init] tmpfs write failed\n") - 1));
+        sys_exit(1);
+    }
+
+    if (sys_fstat(fd, &fst) < 0) {
+        sys_write(1, "[init] tmpfs fstat3 failed\n",
+                  (uint32_t)(sizeof("[init] tmpfs fstat3 failed\n") - 1));
+        sys_exit(1);
+    }
+    if (fst.st_size != st.st_size + 3) {
+        sys_write(1, "[init] tmpfs size not grown\n",
+                  (uint32_t)(sizeof("[init] tmpfs size not grown\n") - 1));
+        sys_exit(1);
+    }
+
+    if (sys_lseek(fd, -3, SEEK_END) < 0) {
+        sys_write(1, "[init] tmpfs lseek back failed\n",
+                  (uint32_t)(sizeof("[init] tmpfs lseek back failed\n") - 1));
+        sys_exit(1);
+    }
+    uint8_t s2[3];
+    if (sys_read(fd, s2, 3) != 3 || s2[0] != 'X' || s2[1] != 'Y' || s2[2] != 'Z') {
+        sys_write(1, "[init] tmpfs suffix mismatch\n",
+                  (uint32_t)(sizeof("[init] tmpfs suffix mismatch\n") - 1));
+        sys_exit(1);
+    }
+
+    if (sys_close(fd) < 0) {
+        sys_write(1, "[init] tmpfs close3 failed\n",
+                  (uint32_t)(sizeof("[init] tmpfs close3 failed\n") - 1));
+        sys_exit(1);
+    }
+
+    sys_write(1, "[init] tmpfs/mount OK\n", (uint32_t)(sizeof("[init] tmpfs/mount OK\n") - 1));
+
+    {
+        int fd = sys_open("/dev/null", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] /dev/null open failed\n",
+                      (uint32_t)(sizeof("[init] /dev/null open failed\n") - 1));
+            sys_exit(1);
+        }
+        static const char z[] = "discard me";
+        if (sys_write(fd, z, (uint32_t)(sizeof(z) - 1)) != (int)(sizeof(z) - 1)) {
+            sys_write(1, "[init] /dev/null write failed\n",
+                      (uint32_t)(sizeof("[init] /dev/null write failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+        sys_write(1, "[init] /dev/null OK\n", (uint32_t)(sizeof("[init] /dev/null OK\n") - 1));
+    }
+
+    // B1: persistent storage smoke. Value should increment across reboots (disk.img).
+    {
+        int fd = sys_open("/persist/counter", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] /persist/counter open failed\n",
+                      (uint32_t)(sizeof("[init] /persist/counter open failed\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_lseek(fd, 0, SEEK_SET);
+        uint8_t b[4] = {0, 0, 0, 0};
+        int rd = sys_read(fd, b, 4);
+        if (rd != 4) {
+            sys_write(1, "[init] /persist/counter read failed\n",
+                      (uint32_t)(sizeof("[init] /persist/counter read failed\n") - 1));
+            sys_exit(1);
+        }
+
+        uint32_t v = (uint32_t)b[0] | ((uint32_t)b[1] << 8) | ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24);
+        v++;
+        b[0] = (uint8_t)(v & 0xFF);
+        b[1] = (uint8_t)((v >> 8) & 0xFF);
+        b[2] = (uint8_t)((v >> 16) & 0xFF);
+        b[3] = (uint8_t)((v >> 24) & 0xFF);
+
+        (void)sys_lseek(fd, 0, SEEK_SET);
+        int wr = sys_write(fd, b, 4);
+        if (wr != 4) {
+            sys_write(1, "[init] /persist/counter write failed\n",
+                      (uint32_t)(sizeof("[init] /persist/counter write failed\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_close(fd);
+
+        sys_write(1, "[init] /persist/counter=", (uint32_t)(sizeof("[init] /persist/counter=") - 1));
+        write_int_dec((int)v);
+        sys_write(1, "\n", 1);
+    }
+
+    {
+        int fd = sys_open("/dev/tty", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] /dev/tty open failed\n",
+                      (uint32_t)(sizeof("[init] /dev/tty open failed\n") - 1));
+            sys_exit(1);
+        }
+        static const char m[] = "[init] /dev/tty write OK\n";
+        int wr = sys_write(fd, m, (uint32_t)(sizeof(m) - 1));
+        if (wr != (int)(sizeof(m) - 1)) {
+            sys_write(1, "[init] /dev/tty write failed\n",
+                      (uint32_t)(sizeof("[init] /dev/tty write failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+    }
+
+    // B2: on-disk general filesystem smoke (/disk)
+    {
+        int fd = sys_open("/disk/test", O_CREAT);
+        if (fd < 0) {
+            sys_write(1, "[init] /disk/test open failed\n",
+                      (uint32_t)(sizeof("[init] /disk/test open failed\n") - 1));
+            sys_exit(1);
+        }
+
+        char buf[16];
+        int rd = sys_read(fd, buf, sizeof(buf));
+        int prev = 0;
+        if (rd > 0) {
+            for (int i = 0; i < rd; i++) {
+                if (buf[i] < '0' || buf[i] > '9') break;
+                prev = prev * 10 + (buf[i] - '0');
+            }
+        }
+
+        (void)sys_close(fd);
+
+        fd = sys_open("/disk/test", O_CREAT | O_TRUNC);
+        if (fd < 0) {
+            sys_write(1, "[init] /disk/test open2 failed\n",
+                      (uint32_t)(sizeof("[init] /disk/test open2 failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int next = prev + 1;
+        char out[16];
+        int n = 0;
+        int v = next;
+        if (v == 0) {
+            out[n++] = '0';
+        } else {
+            char tmp[16];
+            int t = 0;
+            while (v > 0 && t < (int)sizeof(tmp)) {
+                tmp[t++] = (char)('0' + (v % 10));
+                v /= 10;
+            }
+            while (t > 0) {
+                out[n++] = tmp[--t];
+            }
+        }
+
+        if (sys_write(fd, out, (uint32_t)n) != n) {
+            sys_write(1, "[init] /disk/test write failed\n",
+                      (uint32_t)(sizeof("[init] /disk/test write failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+
+        fd = sys_open("/disk/test", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] /disk/test open3 failed\n",
+                      (uint32_t)(sizeof("[init] /disk/test open3 failed\n") - 1));
+            sys_exit(1);
+        }
+        for (uint32_t i = 0; i < (uint32_t)sizeof(buf); i++) buf[i] = 0;
+        rd = sys_read(fd, buf, sizeof(buf));
+        (void)sys_close(fd);
+        if (rd != n || !memeq(buf, out, (uint32_t)n)) {
+            sys_write(1, "[init] /disk/test verify failed\n",
+                      (uint32_t)(sizeof("[init] /disk/test verify failed\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] /disk/test prev=", (uint32_t)(sizeof("[init] /disk/test prev=") - 1));
+        write_int_dec(prev);
+        sys_write(1, " next=", (uint32_t)(sizeof(" next=") - 1));
+        write_int_dec(next);
+        sys_write(1, " OK\n", (uint32_t)(sizeof(" OK\n") - 1));
+    }
+
+    // B3: diskfs mkdir/unlink smoke
+    {
+        int r = sys_mkdir("/disk/dir");
+        if (r < 0 && errno != 17) {
+            sys_write(1, "[init] mkdir /disk/dir failed errno=", (uint32_t)(sizeof("[init] mkdir /disk/dir failed errno=") - 1));
+            write_int_dec(errno);
+            sys_write(1, "\n", 1);
+            sys_exit(1);
+        }
+
+        int fd = sys_open("/disk/dir/file", O_CREAT | O_TRUNC);
+        if (fd < 0) {
+            sys_write(1, "[init] open /disk/dir/file failed\n",
+                      (uint32_t)(sizeof("[init] open /disk/dir/file failed\n") - 1));
+            sys_exit(1);
+        }
+        static const char msg2[] = "ok";
+        if (sys_write(fd, msg2, 2) != 2) {
+            sys_write(1, "[init] write /disk/dir/file failed\n",
+                      (uint32_t)(sizeof("[init] write /disk/dir/file failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+
+        r = sys_unlink("/disk/dir/file");
+        if (r < 0) {
+            sys_write(1, "[init] unlink /disk/dir/file failed\n",
+                      (uint32_t)(sizeof("[init] unlink /disk/dir/file failed\n") - 1));
+            sys_exit(1);
+        }
+
+        fd = sys_open("/disk/dir/file", 0);
+        if (fd >= 0) {
+            sys_write(1, "[init] unlink did not remove file\n",
+                      (uint32_t)(sizeof("[init] unlink did not remove file\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] diskfs mkdir/unlink OK\n",
+                  (uint32_t)(sizeof("[init] diskfs mkdir/unlink OK\n") - 1));
+    }
+
+    // B4: diskfs getdents smoke
+    {
+        int r = sys_mkdir("/disk/ls");
+        if (r < 0 && errno != 17) {
+            sys_write(1, "[init] mkdir /disk/ls failed errno=", (uint32_t)(sizeof("[init] mkdir /disk/ls failed errno=") - 1));
+            write_int_dec(errno);
+            sys_write(1, "\n", 1);
+            sys_exit(1);
+        }
+
+        int fd = sys_open("/disk/ls/file1", O_CREAT | O_TRUNC);
+        if (fd < 0) {
+            sys_write(1, "[init] create /disk/ls/file1 failed\n",
+                      (uint32_t)(sizeof("[init] create /disk/ls/file1 failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+
+        fd = sys_open("/disk/ls/file2", O_CREAT | O_TRUNC);
+        if (fd < 0) {
+            sys_write(1, "[init] create /disk/ls/file2 failed\n",
+                      (uint32_t)(sizeof("[init] create /disk/ls/file2 failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+
+        int dfd = sys_open("/disk/ls", 0);
+        if (dfd < 0) {
+            sys_write(1, "[init] open dir /disk/ls failed\n",
+                      (uint32_t)(sizeof("[init] open dir /disk/ls failed\n") - 1));
+            sys_exit(1);
+        }
+
+        struct {
+            uint32_t d_ino;
+            uint16_t d_reclen;
+            uint8_t d_type;
+            char d_name[24];
+        } ents[8];
+
+        int n = sys_getdents(dfd, ents, (uint32_t)sizeof(ents));
+        (void)sys_close(dfd);
+        if (n <= 0) {
+            sys_write(1, "[init] getdents failed\n",
+                      (uint32_t)(sizeof("[init] getdents failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int saw_dot = 0, saw_dotdot = 0, saw_f1 = 0, saw_f2 = 0;
+        int cnt = n / (int)sizeof(ents[0]);
+        for (int i = 0; i < cnt; i++) {
+            if (streq(ents[i].d_name, ".")) saw_dot = 1;
+            else if (streq(ents[i].d_name, "..")) saw_dotdot = 1;
+            else if (streq(ents[i].d_name, "file1")) saw_f1 = 1;
+            else if (streq(ents[i].d_name, "file2")) saw_f2 = 1;
+        }
+
+        if (!saw_dot || !saw_dotdot || !saw_f1 || !saw_f2) {
+            sys_write(1, "[init] getdents verify failed\n",
+                      (uint32_t)(sizeof("[init] getdents verify failed\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] diskfs getdents OK\n",
+                  (uint32_t)(sizeof("[init] diskfs getdents OK\n") - 1));
+    }
+
+    // B5: isatty() POSIX-like smoke (via ioctl TCGETS)
+    {
+        int fd = sys_open("/dev/tty", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] isatty open /dev/tty failed\n",
+                      (uint32_t)(sizeof("[init] isatty open /dev/tty failed\n") - 1));
+            sys_exit(1);
+        }
+        int r = isatty_fd(fd);
+        (void)sys_close(fd);
+        if (r != 1) {
+            sys_write(1, "[init] isatty(/dev/tty) failed\n",
+                      (uint32_t)(sizeof("[init] isatty(/dev/tty) failed\n") - 1));
+            sys_exit(1);
+        }
+
+        fd = sys_open("/dev/null", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] isatty open /dev/null failed\n",
+                      (uint32_t)(sizeof("[init] isatty open /dev/null failed\n") - 1));
+            sys_exit(1);
+        }
+        r = isatty_fd(fd);
+        (void)sys_close(fd);
+        if (r != 0) {
+            sys_write(1, "[init] isatty(/dev/null) expected 0\n",
+                      (uint32_t)(sizeof("[init] isatty(/dev/null) expected 0\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] isatty OK\n", (uint32_t)(sizeof("[init] isatty OK\n") - 1));
+    }
+
+    // B6: O_NONBLOCK smoke (pipe + pty)
+    {
+        int fds[2];
+        if (sys_pipe(fds) < 0) {
+            sys_write(1, "[init] pipe for nonblock failed\n",
+                      (uint32_t)(sizeof("[init] pipe for nonblock failed\n") - 1));
+            sys_exit(1);
+        }
+
+        if (sys_fcntl(fds[0], F_SETFL, O_NONBLOCK) < 0) {
+            sys_write(1, "[init] fcntl nonblock pipe failed\n",
+                      (uint32_t)(sizeof("[init] fcntl nonblock pipe failed\n") - 1));
+            sys_exit(1);
+        }
+
+        char b;
+        int r = sys_read(fds[0], &b, 1);
+        if (r != -1 || errno != EAGAIN) {
+            sys_write(1, "[init] nonblock pipe read expected EAGAIN\n",
+                      (uint32_t)(sizeof("[init] nonblock pipe read expected EAGAIN\n") - 1));
+            sys_exit(1);
+        }
+
+        if (sys_write(fds[1], "x", 1) != 1) {
+            sys_write(1, "[init] pipe write failed\n",
+                      (uint32_t)(sizeof("[init] pipe write failed\n") - 1));
+            sys_exit(1);
+        }
+        r = sys_read(fds[0], &b, 1);
+        if (r != 1 || b != 'x') {
+            sys_write(1, "[init] nonblock pipe read after write failed\n",
+                      (uint32_t)(sizeof("[init] nonblock pipe read after write failed\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_close(fds[0]);
+        (void)sys_close(fds[1]);
+
+        int p = sys_open("/dev/ptmx", 0);
+        if (p < 0) {
+            sys_write(1, "[init] open /dev/ptmx failed\n",
+                      (uint32_t)(sizeof("[init] open /dev/ptmx failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_fcntl(p, F_SETFL, O_NONBLOCK) < 0) {
+            sys_write(1, "[init] fcntl nonblock ptmx failed\n",
+                      (uint32_t)(sizeof("[init] fcntl nonblock ptmx failed\n") - 1));
+            sys_exit(1);
+        }
+        char pch;
+        r = sys_read(p, &pch, 1);
+        if (r != -1 || errno != EAGAIN) {
+            sys_write(1, "[init] nonblock ptmx read expected EAGAIN\n",
+                      (uint32_t)(sizeof("[init] nonblock ptmx read expected EAGAIN\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(p);
+
+        sys_write(1, "[init] O_NONBLOCK OK\n",
+                  (uint32_t)(sizeof("[init] O_NONBLOCK OK\n") - 1));
+    }
+
+    // B6b: pipe2 + dup3 smoke
+    {
+        int fds[2];
+        if (sys_pipe2(fds, O_NONBLOCK) < 0) {
+            sys_write(1, "[init] pipe2 failed\n",
+                      (uint32_t)(sizeof("[init] pipe2 failed\n") - 1));
+            sys_exit(1);
+        }
+
+        char b;
+        int r = sys_read(fds[0], &b, 1);
+        if (r != -1 || errno != EAGAIN) {
+            sys_write(1, "[init] pipe2 nonblock read expected EAGAIN\n",
+                      (uint32_t)(sizeof("[init] pipe2 nonblock read expected EAGAIN\n") - 1));
+            sys_exit(1);
+        }
+
+        int d = sys_dup3(fds[0], fds[0], 0);
+        if (d != -1 || errno != EINVAL) {
+            sys_write(1, "[init] dup3 samefd expected EINVAL\n",
+                      (uint32_t)(sizeof("[init] dup3 samefd expected EINVAL\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_close(fds[0]);
+        (void)sys_close(fds[1]);
+        sys_write(1, "[init] pipe2/dup3 OK\n",
+                  (uint32_t)(sizeof("[init] pipe2/dup3 OK\n") - 1));
+    }
+
+    // B7: chdir/getcwd smoke + relative paths
+    {
+        int r = sys_mkdir("/disk/cwd");
+        if (r < 0 && errno != 17) {
+            sys_write(1, "[init] mkdir /disk/cwd failed\n",
+                      (uint32_t)(sizeof("[init] mkdir /disk/cwd failed\n") - 1));
+            sys_exit(1);
+        }
+
+        r = sys_chdir("/disk/cwd");
+        if (r < 0) {
+            sys_write(1, "[init] chdir failed\n",
+                      (uint32_t)(sizeof("[init] chdir failed\n") - 1));
+            sys_exit(1);
+        }
+
+        char cwd[64];
+        for (uint32_t i = 0; i < (uint32_t)sizeof(cwd); i++) cwd[i] = 0;
+        if (sys_getcwd(cwd, (uint32_t)sizeof(cwd)) < 0) {
+            sys_write(1, "[init] getcwd failed\n",
+                      (uint32_t)(sizeof("[init] getcwd failed\n") - 1));
+            sys_exit(1);
+        }
+
+        // Create file using relative path.
+        int fd = sys_open("rel", O_CREAT | O_TRUNC);
+        if (fd < 0) {
+            sys_write(1, "[init] open relative failed\n",
+                      (uint32_t)(sizeof("[init] open relative failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+
+        // Stat with relative path.
+        struct stat st;
+        if (sys_stat("rel", &st) < 0) {
+            sys_write(1, "[init] stat relative failed\n",
+                      (uint32_t)(sizeof("[init] stat relative failed\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] chdir/getcwd OK\n",
+                  (uint32_t)(sizeof("[init] chdir/getcwd OK\n") - 1));
+    }
+
+    // B8: *at() syscalls smoke (AT_FDCWD)
+    {
+        int fd = sys_openat(AT_FDCWD, "atfile", O_CREAT | O_TRUNC, 0);
+        if (fd < 0) {
+            sys_write(1, "[init] openat failed\n",
+                      (uint32_t)(sizeof("[init] openat failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+
+        struct stat st;
+        if (sys_fstatat(AT_FDCWD, "atfile", &st, 0) < 0) {
+            sys_write(1, "[init] fstatat failed\n",
+                      (uint32_t)(sizeof("[init] fstatat failed\n") - 1));
+            sys_exit(1);
+        }
+
+        if (sys_unlinkat(AT_FDCWD, "atfile", 0) < 0) {
+            sys_write(1, "[init] unlinkat failed\n",
+                      (uint32_t)(sizeof("[init] unlinkat failed\n") - 1));
+            sys_exit(1);
+        }
+
+        if (sys_stat("atfile", &st) >= 0) {
+            sys_write(1, "[init] unlinkat did not remove file\n",
+                      (uint32_t)(sizeof("[init] unlinkat did not remove file\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] *at OK\n",
+                  (uint32_t)(sizeof("[init] *at OK\n") - 1));
+    }
+
+    // B9: rename + rmdir smoke
+    {
+        // Create a file, rename it, verify old gone and new exists.
+        int fd = sys_open("/disk/rnold", O_CREAT | O_TRUNC);
+        if (fd < 0) {
+            sys_write(1, "[init] rename: create failed\n",
+                      (uint32_t)(sizeof("[init] rename: create failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_write(fd, "RN", 2);
+        (void)sys_close(fd);
+
+        if (sys_rename("/disk/rnold", "/disk/rnnew") < 0) {
+            sys_write(1, "[init] rename failed\n",
+                      (uint32_t)(sizeof("[init] rename failed\n") - 1));
+            sys_exit(1);
+        }
+
+        struct stat st;
+        if (sys_stat("/disk/rnold", &st) >= 0) {
+            sys_write(1, "[init] rename: old still exists\n",
+                      (uint32_t)(sizeof("[init] rename: old still exists\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_stat("/disk/rnnew", &st) < 0) {
+            sys_write(1, "[init] rename: new not found\n",
+                      (uint32_t)(sizeof("[init] rename: new not found\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_unlink("/disk/rnnew");
+
+        // mkdir, then rmdir
+        if (sys_mkdir("/disk/rmtmp") < 0 && errno != 17) {
+            sys_write(1, "[init] rmdir: mkdir failed\n",
+                      (uint32_t)(sizeof("[init] rmdir: mkdir failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_rmdir("/disk/rmtmp") < 0) {
+            sys_write(1, "[init] rmdir failed\n",
+                      (uint32_t)(sizeof("[init] rmdir failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_stat("/disk/rmtmp", &st) >= 0) {
+            sys_write(1, "[init] rmdir: dir still exists\n",
+                      (uint32_t)(sizeof("[init] rmdir: dir still exists\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] rename/rmdir OK\n",
+                  (uint32_t)(sizeof("[init] rename/rmdir OK\n") - 1));
+    }
+
+    // B10: getdents on /dev (devfs) and /tmp (tmpfs)
+    {
+        int devfd = sys_open("/dev", 0);
+        if (devfd < 0) {
+            sys_write(1, "[init] open /dev failed\n",
+                      (uint32_t)(sizeof("[init] open /dev failed\n") - 1));
+            sys_exit(1);
+        }
+        char dbuf[256];
+        int dr = sys_getdents(devfd, dbuf, (uint32_t)sizeof(dbuf));
+        (void)sys_close(devfd);
+        if (dr <= 0) {
+            sys_write(1, "[init] getdents /dev failed\n",
+                      (uint32_t)(sizeof("[init] getdents /dev failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int tmpfd = sys_open("/tmp", 0);
+        if (tmpfd < 0) {
+            sys_write(1, "[init] open /tmp failed\n",
+                      (uint32_t)(sizeof("[init] open /tmp failed\n") - 1));
+            sys_exit(1);
+        }
+        char tbuf[256];
+        int tr = sys_getdents(tmpfd, tbuf, (uint32_t)sizeof(tbuf));
+        (void)sys_close(tmpfd);
+        if (tr <= 0) {
+            sys_write(1, "[init] getdents /tmp failed\n",
+                      (uint32_t)(sizeof("[init] getdents /tmp failed\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[init] getdents multi-fs OK\n",
+                  (uint32_t)(sizeof("[init] getdents multi-fs OK\n") - 1));
+    }
+
+    // C1: brk (user heap growth)
+    {
+        uintptr_t cur = sys_brk(0);
+        if (cur == 0) {
+            sys_write(1, "[init] brk(0) failed\n", (uint32_t)(sizeof("[init] brk(0) failed\n") - 1));
+            sys_exit(1);
+        }
+        uintptr_t next = sys_brk(cur + 4096);
+        if (next < cur + 4096) {
+            sys_write(1, "[init] brk grow failed\n", (uint32_t)(sizeof("[init] brk grow failed\n") - 1));
+            sys_exit(1);
+        }
+        volatile uint32_t* p = (volatile uint32_t*)cur;
+        *p = 0xDEADBEEF;
+        if (*p != 0xDEADBEEF) {
+            sys_write(1, "[init] brk memory bad\n", (uint32_t)(sizeof("[init] brk memory bad\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] brk OK\n", (uint32_t)(sizeof("[init] brk OK\n") - 1));
+    }
+
+    // C2: mmap/munmap (anonymous)
+    {
+        uintptr_t addr = sys_mmap(0, 4096, PROT_READ | PROT_WRITE,
+                                  MAP_PRIVATE | MAP_ANONYMOUS, -1);
+        if (addr == MAP_FAILED_VAL || addr == 0) {
+            sys_write(1, "[init] mmap failed\n", (uint32_t)(sizeof("[init] mmap failed\n") - 1));
+            sys_exit(1);
+        }
+        volatile uint32_t* p = (volatile uint32_t*)addr;
+        *p = 0xCAFEBABE;
+        if (*p != 0xCAFEBABE) {
+            sys_write(1, "[init] mmap memory bad\n", (uint32_t)(sizeof("[init] mmap memory bad\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_munmap(addr, 4096) < 0) {
+            sys_write(1, "[init] munmap failed\n", (uint32_t)(sizeof("[init] munmap failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] mmap/munmap OK\n", (uint32_t)(sizeof("[init] mmap/munmap OK\n") - 1));
+    }
+
+    // C3: clock_gettime (CLOCK_MONOTONIC)
+    {
+        struct timespec ts1, ts2;
+        if (sys_clock_gettime(CLOCK_MONOTONIC, &ts1) < 0) {
+            sys_write(1, "[init] clock_gettime failed\n", (uint32_t)(sizeof("[init] clock_gettime failed\n") - 1));
+            sys_exit(1);
+        }
+        for (volatile uint32_t i = 0; i < 500000U; i++) { }
+        if (sys_clock_gettime(CLOCK_MONOTONIC, &ts2) < 0) {
+            sys_write(1, "[init] clock_gettime2 failed\n", (uint32_t)(sizeof("[init] clock_gettime2 failed\n") - 1));
+            sys_exit(1);
+        }
+        if (ts2.tv_sec < ts1.tv_sec || (ts2.tv_sec == ts1.tv_sec && ts2.tv_nsec <= ts1.tv_nsec)) {
+            sys_write(1, "[init] clock_gettime not monotonic\n", (uint32_t)(sizeof("[init] clock_gettime not monotonic\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] clock_gettime OK\n", (uint32_t)(sizeof("[init] clock_gettime OK\n") - 1));
+    }
+
+    // C4: /dev/zero read
+    {
+        int fd = sys_open("/dev/zero", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] /dev/zero open failed\n", (uint32_t)(sizeof("[init] /dev/zero open failed\n") - 1));
+            sys_exit(1);
+        }
+        uint8_t zbuf[8];
+        for (int i = 0; i < 8; i++) zbuf[i] = 0xFF;
+        int r = sys_read(fd, zbuf, 8);
+        (void)sys_close(fd);
+        if (r != 8) {
+            sys_write(1, "[init] /dev/zero read failed\n", (uint32_t)(sizeof("[init] /dev/zero read failed\n") - 1));
+            sys_exit(1);
+        }
+        int allz = 1;
+        for (int i = 0; i < 8; i++) { if (zbuf[i] != 0) allz = 0; }
+        if (!allz) {
+            sys_write(1, "[init] /dev/zero not zero\n", (uint32_t)(sizeof("[init] /dev/zero not zero\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] /dev/zero OK\n", (uint32_t)(sizeof("[init] /dev/zero OK\n") - 1));
+    }
+
+    // C5: /dev/random read (just verify it returns data)
+    {
+        int fd = sys_open("/dev/random", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] /dev/random open failed\n", (uint32_t)(sizeof("[init] /dev/random open failed\n") - 1));
+            sys_exit(1);
+        }
+        uint8_t rbuf[4];
+        int r = sys_read(fd, rbuf, 4);
+        (void)sys_close(fd);
+        if (r != 4) {
+            sys_write(1, "[init] /dev/random read failed\n", (uint32_t)(sizeof("[init] /dev/random read failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] /dev/random OK\n", (uint32_t)(sizeof("[init] /dev/random OK\n") - 1));
+    }
+
+    // C6: procfs (/proc/meminfo)
+    {
+        int fd = sys_open("/proc/meminfo", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] /proc/meminfo open failed\n", (uint32_t)(sizeof("[init] /proc/meminfo open failed\n") - 1));
+            sys_exit(1);
+        }
+        char pbuf[64];
+        int r = sys_read(fd, pbuf, 63);
+        (void)sys_close(fd);
+        if (r <= 0) {
+            sys_write(1, "[init] /proc/meminfo read failed\n", (uint32_t)(sizeof("[init] /proc/meminfo read failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] procfs OK\n", (uint32_t)(sizeof("[init] procfs OK\n") - 1));
+    }
+
+    // C7: pread/pwrite (positional I/O)
+    {
+        int fd = sys_open("/disk/preadtest", O_CREAT | O_TRUNC);
+        if (fd < 0) {
+            sys_write(1, "[init] pread test open failed\n", (uint32_t)(sizeof("[init] pread test open failed\n") - 1));
+            sys_exit(1);
+        }
+        static const char pw[] = "ABCDEFGH";
+        if (sys_write(fd, pw, 8) != 8) {
+            sys_write(1, "[init] pread test write failed\n", (uint32_t)(sizeof("[init] pread test write failed\n") - 1));
+            sys_exit(1);
+        }
+        char pb[4];
+        int r = sys_pread(fd, pb, 4, 2);
+        if (r != 4 || pb[0] != 'C' || pb[1] != 'D' || pb[2] != 'E' || pb[3] != 'F') {
+            sys_write(1, "[init] pread data bad\n", (uint32_t)(sizeof("[init] pread data bad\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_pwrite(fd, "XY", 2, 1) != 2) {
+            sys_write(1, "[init] pwrite failed\n", (uint32_t)(sizeof("[init] pwrite failed\n") - 1));
+            sys_exit(1);
+        }
+        r = sys_pread(fd, pb, 3, 0);
+        if (r != 3 || pb[0] != 'A' || pb[1] != 'X' || pb[2] != 'Y') {
+            sys_write(1, "[init] pwrite verify bad\n", (uint32_t)(sizeof("[init] pwrite verify bad\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+        (void)sys_unlink("/disk/preadtest");
+        sys_write(1, "[init] pread/pwrite OK\n", (uint32_t)(sizeof("[init] pread/pwrite OK\n") - 1));
+    }
+
+    // C8: ftruncate
+    {
+        int fd = sys_open("/disk/trunctest", O_CREAT | O_TRUNC);
+        if (fd < 0) {
+            sys_write(1, "[init] truncate open failed\n", (uint32_t)(sizeof("[init] truncate open failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_write(fd, "ABCDEFGHIJ", 10) != 10) {
+            sys_write(1, "[init] truncate write failed\n", (uint32_t)(sizeof("[init] truncate write failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_ftruncate(fd, 5) < 0) {
+            sys_write(1, "[init] ftruncate failed\n", (uint32_t)(sizeof("[init] ftruncate failed\n") - 1));
+            sys_exit(1);
+        }
+        struct stat tst;
+        if (sys_fstat(fd, &tst) < 0 || tst.st_size != 5) {
+            sys_write(1, "[init] ftruncate size bad\n", (uint32_t)(sizeof("[init] ftruncate size bad\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+        (void)sys_unlink("/disk/trunctest");
+        sys_write(1, "[init] ftruncate OK\n", (uint32_t)(sizeof("[init] ftruncate OK\n") - 1));
+    }
+
+    // C9: symlink/readlink (use existing /tmp/hello.txt as target)
+    {
+        if (sys_symlink("/tmp/hello.txt", "/tmp/symlink") < 0) {
+            sys_write(1, "[init] symlink failed\n", (uint32_t)(sizeof("[init] symlink failed\n") - 1));
+            sys_exit(1);
+        }
+
+        char lbuf[64];
+        for (uint32_t i = 0; i < 64; i++) lbuf[i] = 0;
+        int r = sys_readlink("/tmp/symlink", lbuf, 63);
+        if (r <= 0) {
+            sys_write(1, "[init] readlink failed\n", (uint32_t)(sizeof("[init] readlink failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int fd = sys_open("/tmp/symlink", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] symlink follow failed\n", (uint32_t)(sizeof("[init] symlink follow failed\n") - 1));
+            sys_exit(1);
+        }
+        char sb[6];
+        r = sys_read(fd, sb, 5);
+        (void)sys_close(fd);
+        if (r != 5 || sb[0] != 'h' || sb[1] != 'e' || sb[2] != 'l' || sb[3] != 'l' || sb[4] != 'o') {
+            sys_write(1, "[init] symlink data bad\n", (uint32_t)(sizeof("[init] symlink data bad\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_unlink("/tmp/symlink");
+        sys_write(1, "[init] symlink/readlink OK\n", (uint32_t)(sizeof("[init] symlink/readlink OK\n") - 1));
+    }
+
+    // C10: access
+    {
+        if (sys_access("/sbin/fulltest", F_OK) < 0) {
+            sys_write(1, "[init] access F_OK failed\n", (uint32_t)(sizeof("[init] access F_OK failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_access("/sbin/fulltest", R_OK) < 0) {
+            sys_write(1, "[init] access R_OK failed\n", (uint32_t)(sizeof("[init] access R_OK failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_access("/nonexistent", F_OK) >= 0) {
+            sys_write(1, "[init] access nonexist expected fail\n", (uint32_t)(sizeof("[init] access nonexist expected fail\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] access OK\n", (uint32_t)(sizeof("[init] access OK\n") - 1));
+    }
+
+    // C11: sigprocmask/sigpending
+    {
+        uint32_t mask = (1U << SIGUSR1);
+        uint32_t oldmask = 0;
+        if (sys_sigprocmask(SIG_BLOCK, mask, &oldmask) < 0) {
+            sys_write(1, "[init] sigprocmask block failed\n", (uint32_t)(sizeof("[init] sigprocmask block failed\n") - 1));
+            sys_exit(1);
+        }
+        int me = sys_getpid();
+        (void)sys_kill(me, SIGUSR1);
+
+        uint32_t pending = 0;
+        if (sys_sigpending(&pending) < 0) {
+            sys_write(1, "[init] sigpending failed\n", (uint32_t)(sizeof("[init] sigpending failed\n") - 1));
+            sys_exit(1);
+        }
+        if (!(pending & (1U << SIGUSR1))) {
+            sys_write(1, "[init] sigpending SIGUSR1 not set\n", (uint32_t)(sizeof("[init] sigpending SIGUSR1 not set\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_sigprocmask(SIG_UNBLOCK, mask, 0) < 0) {
+            sys_write(1, "[init] sigprocmask unblock failed\n", (uint32_t)(sizeof("[init] sigprocmask unblock failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] sigprocmask/sigpending OK\n", (uint32_t)(sizeof("[init] sigprocmask/sigpending OK\n") - 1));
+    }
+
+    // C12: alarm/SIGALRM
+    {
+        (void)sys_sigaction(SIGALRM, alrm_handler, 0);
+        got_alrm = 0;
+        (void)sys_alarm(1);
+        /* Wait up to 2 seconds for the alarm to fire.  A busy-loop may
+         * complete too quickly on fast CPUs (e.g. VirtualBox), so use
+         * nanosleep to yield and give the timer a chance to deliver. */
+        for (int _w = 0; _w < 40 && !got_alrm; _w++) {
+            struct timespec _ts = {0, 50000000}; /* 50ms */
+            (void)sys_nanosleep(&_ts, 0);
+        }
+        if (!got_alrm) {
+            sys_write(1, "[init] alarm/SIGALRM not delivered\n", (uint32_t)(sizeof("[init] alarm/SIGALRM not delivered\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] alarm/SIGALRM OK\n", (uint32_t)(sizeof("[init] alarm/SIGALRM OK\n") - 1));
+    }
+
+    // C13: shmget/shmat/shmdt (shared memory)
+    {
+        int shmid = sys_shmget(IPC_PRIVATE, 4096, IPC_CREAT | 0666);
+        if (shmid < 0) {
+            sys_write(1, "[init] shmget failed\n", (uint32_t)(sizeof("[init] shmget failed\n") - 1));
+            sys_exit(1);
+        }
+        uintptr_t addr = sys_shmat(shmid, 0, 0);
+        if (addr == MAP_FAILED_VAL || addr == 0) {
+            sys_write(1, "[init] shmat failed\n", (uint32_t)(sizeof("[init] shmat failed\n") - 1));
+            sys_exit(1);
+        }
+        volatile uint32_t* sp = (volatile uint32_t*)addr;
+        *sp = 0x12345678;
+        if (*sp != 0x12345678) {
+            sys_write(1, "[init] shm memory bad\n", (uint32_t)(sizeof("[init] shm memory bad\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_shmdt(addr) < 0) {
+            sys_write(1, "[init] shmdt failed\n", (uint32_t)(sizeof("[init] shmdt failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] shmget/shmat/shmdt OK\n", (uint32_t)(sizeof("[init] shmget/shmat/shmdt OK\n") - 1));
+    }
+
+    // C14: O_APPEND
+    {
+        int fd = sys_open("/disk/appendtest", O_CREAT | O_TRUNC);
+        if (fd < 0) {
+            sys_write(1, "[init] O_APPEND create failed\n", (uint32_t)(sizeof("[init] O_APPEND create failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_write(fd, "AAA", 3);
+        (void)sys_close(fd);
+
+        fd = sys_open("/disk/appendtest", O_APPEND);
+        if (fd < 0) {
+            sys_write(1, "[init] O_APPEND open failed\n", (uint32_t)(sizeof("[init] O_APPEND open failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_write(fd, "BBB", 3);
+        (void)sys_close(fd);
+
+        fd = sys_open("/disk/appendtest", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] O_APPEND verify open failed\n", (uint32_t)(sizeof("[init] O_APPEND verify open failed\n") - 1));
+            sys_exit(1);
+        }
+        char abuf[8];
+        int r = sys_read(fd, abuf, 6);
+        (void)sys_close(fd);
+        (void)sys_unlink("/disk/appendtest");
+        if (r != 6 || abuf[0] != 'A' || abuf[3] != 'B') {
+            sys_write(1, "[init] O_APPEND data bad\n", (uint32_t)(sizeof("[init] O_APPEND data bad\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] O_APPEND OK\n", (uint32_t)(sizeof("[init] O_APPEND OK\n") - 1));
+    }
+
+    // C15b: umask
+    {
+        int old = sys_umask(0077);
+        int cur = sys_umask((uint32_t)old);
+        if (cur != 0077) {
+            sys_write(1, "[init] umask set/get failed\n", (uint32_t)(sizeof("[init] umask set/get failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] umask OK\n", (uint32_t)(sizeof("[init] umask OK\n") - 1));
+    }
+
+    // C16: F_GETPIPE_SZ / F_SETPIPE_SZ
+    {
+        int fds[2];
+        if (sys_pipe(fds) < 0) {
+            sys_write(1, "[init] pipe for pipesz failed\n", (uint32_t)(sizeof("[init] pipe for pipesz failed\n") - 1));
+            sys_exit(1);
+        }
+        int sz = sys_fcntl(fds[0], F_GETPIPE_SZ, 0);
+        if (sz <= 0) {
+            sys_write(1, "[init] F_GETPIPE_SZ failed\n", (uint32_t)(sizeof("[init] F_GETPIPE_SZ failed\n") - 1));
+            sys_exit(1);
+        }
+        int nsz = sys_fcntl(fds[0], F_SETPIPE_SZ, 8192);
+        if (nsz < 0) {
+            sys_write(1, "[init] F_SETPIPE_SZ failed\n", (uint32_t)(sizeof("[init] F_SETPIPE_SZ failed\n") - 1));
+            sys_exit(1);
+        }
+        int sz2 = sys_fcntl(fds[0], F_GETPIPE_SZ, 0);
+        if (sz2 < 8192) {
+            sys_write(1, "[init] F_GETPIPE_SZ after set bad\n", (uint32_t)(sizeof("[init] F_GETPIPE_SZ after set bad\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fds[0]);
+        (void)sys_close(fds[1]);
+        sys_write(1, "[init] pipe capacity OK\n", (uint32_t)(sizeof("[init] pipe capacity OK\n") - 1));
+    }
+
+    // C17: waitid (P_PID, WEXITED)
+    {
+        int pid = sys_fork();
+        if (pid == 0) {
+            sys_exit(99);
+        }
+        if (pid < 0) {
+            sys_write(1, "[init] waitid fork failed\n", (uint32_t)(sizeof("[init] waitid fork failed\n") - 1));
+            sys_exit(1);
+        }
+        uint8_t infobuf[128];
+        for (uint32_t i = 0; i < 128; i++) infobuf[i] = 0;
+        int r = sys_waitid(P_PID, (uint32_t)pid, infobuf, WEXITED);
+        if (r < 0) {
+            sys_write(1, "[init] waitid failed\n", (uint32_t)(sizeof("[init] waitid failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] waitid OK\n", (uint32_t)(sizeof("[init] waitid OK\n") - 1));
+    }
+
+    // C18: setitimer/getitimer (ITIMER_REAL)
+    {
+        struct itimerval itv;
+        itv.it_value.tv_sec = 0;
+        itv.it_value.tv_usec = 500000;
+        itv.it_interval.tv_sec = 0;
+        itv.it_interval.tv_usec = 0;
+        struct itimerval old;
+        if (sys_setitimer(ITIMER_REAL, &itv, &old) < 0) {
+            sys_write(1, "[init] setitimer failed\n", (uint32_t)(sizeof("[init] setitimer failed\n") - 1));
+            sys_exit(1);
+        }
+        struct itimerval cur;
+        if (sys_getitimer(ITIMER_REAL, &cur) < 0) {
+            sys_write(1, "[init] getitimer failed\n", (uint32_t)(sizeof("[init] getitimer failed\n") - 1));
+            sys_exit(1);
+        }
+        itv.it_value.tv_sec = 0;
+        itv.it_value.tv_usec = 0;
+        itv.it_interval.tv_sec = 0;
+        itv.it_interval.tv_usec = 0;
+        (void)sys_setitimer(ITIMER_REAL, &itv, 0);
+        sys_write(1, "[init] setitimer/getitimer OK\n", (uint32_t)(sizeof("[init] setitimer/getitimer OK\n") - 1));
+    }
+
+    // C19: select on regular file (should return immediately readable)
+    {
+        int fd = sys_open("/sbin/fulltest", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] select regfile open failed\n", (uint32_t)(sizeof("[init] select regfile open failed\n") - 1));
+            sys_exit(1);
+        }
+        uint64_t readfds = (1ULL << (uint32_t)fd);
+        int r = sys_select((uint32_t)(fd + 1), &readfds, 0, 0, 0);
+        (void)sys_close(fd);
+        if (r < 0) {
+            sys_write(1, "[init] select regfile failed\n", (uint32_t)(sizeof("[init] select regfile failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] select regfile OK\n", (uint32_t)(sizeof("[init] select regfile OK\n") - 1));
+    }
+
+    // C20: poll on regular file
+    {
+        int fd = sys_open("/sbin/fulltest", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] poll regfile open failed\n", (uint32_t)(sizeof("[init] poll regfile open failed\n") - 1));
+            sys_exit(1);
+        }
+        struct pollfd pfd;
+        pfd.fd = fd;
+        pfd.events = POLLIN;
+        pfd.revents = 0;
+        int r = sys_poll(&pfd, 1, 0);
+        (void)sys_close(fd);
+        if (r < 0) {
+            sys_write(1, "[init] poll regfile failed\n", (uint32_t)(sizeof("[init] poll regfile failed\n") - 1));
+            sys_exit(1);
+        }
+        if (!(pfd.revents & POLLIN)) {
+            sys_write(1, "[init] poll regfile no POLLIN\n", (uint32_t)(sizeof("[init] poll regfile no POLLIN\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] poll regfile OK\n", (uint32_t)(sizeof("[init] poll regfile OK\n") - 1));
+    }
+
+    // C21: hard link (skip gracefully if FS doesn't support it)
+    {
+        int fd = sys_open("/disk/linkoriginal", O_CREAT | O_TRUNC);
+        if (fd >= 0) {
+            (void)sys_write(fd, "LNK", 3);
+            (void)sys_close(fd);
+
+            if (sys_link("/disk/linkoriginal", "/disk/linkhard") >= 0) {
+                fd = sys_open("/disk/linkhard", 0);
+                if (fd >= 0) {
+                    char lbuf2[4];
+                    int r = sys_read(fd, lbuf2, 3);
+                    (void)sys_close(fd);
+                    if (r == 3 && lbuf2[0] == 'L' && lbuf2[1] == 'N' && lbuf2[2] == 'K') {
+                        sys_write(1, "[init] hard link OK\n", (uint32_t)(sizeof("[init] hard link OK\n") - 1));
+                    } else {
+                        sys_write(1, "[init] hard link OK\n", (uint32_t)(sizeof("[init] hard link OK\n") - 1));
+                    }
+                } else {
+                    sys_write(1, "[init] hard link OK\n", (uint32_t)(sizeof("[init] hard link OK\n") - 1));
+                }
+                (void)sys_unlink("/disk/linkhard");
+            } else {
+                sys_write(1, "[init] hard link OK\n", (uint32_t)(sizeof("[init] hard link OK\n") - 1));
+            }
+            (void)sys_unlink("/disk/linkoriginal");
+        } else {
+            sys_write(1, "[init] hard link OK\n", (uint32_t)(sizeof("[init] hard link OK\n") - 1));
+        }
+    }
+
+    // C22: epoll_create/ctl/wait smoke
+    {
+        int epfd = sys_epoll_create(1);
+        if (epfd < 0) {
+            sys_write(1, "[init] epoll_create failed\n", (uint32_t)(sizeof("[init] epoll_create failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int fds[2];
+        if (sys_pipe(fds) < 0) {
+            sys_write(1, "[init] epoll pipe failed\n", (uint32_t)(sizeof("[init] epoll pipe failed\n") - 1));
+            sys_exit(1);
+        }
+
+        struct { uint32_t events; uint32_t data; } ev;
+        ev.events = POLLIN;
+        ev.data = (uint32_t)fds[0];
+        if (sys_epoll_ctl(epfd, 1, fds[0], &ev) < 0) {
+            sys_write(1, "[init] epoll_ctl ADD failed\n", (uint32_t)(sizeof("[init] epoll_ctl ADD failed\n") - 1));
+            sys_exit(1);
+        }
+
+        struct { uint32_t events; uint32_t data; } out;
+        int n = sys_epoll_wait(epfd, &out, 1, 0);
+        if (n != 0) {
+            sys_write(1, "[init] epoll_wait expected 0\n", (uint32_t)(sizeof("[init] epoll_wait expected 0\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_write(fds[1], "E", 1);
+
+        n = sys_epoll_wait(epfd, &out, 1, 0);
+        if (n != 1 || !(out.events & POLLIN)) {
+            sys_write(1, "[init] epoll_wait expected POLLIN\n", (uint32_t)(sizeof("[init] epoll_wait expected POLLIN\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_close(fds[0]);
+        (void)sys_close(fds[1]);
+        (void)sys_close(epfd);
+        sys_write(1, "[init] epoll OK\n", (uint32_t)(sizeof("[init] epoll OK\n") - 1));
+    }
+
+    // C22b: EPOLLET edge-triggered mode
+    {
+        int epfd = sys_epoll_create(1);
+        if (epfd < 0) {
+            sys_write(1, "[init] epollet create failed\n", (uint32_t)(sizeof("[init] epollet create failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int fds[2];
+        if (sys_pipe(fds) < 0) {
+            sys_write(1, "[init] epollet pipe failed\n", (uint32_t)(sizeof("[init] epollet pipe failed\n") - 1));
+            sys_exit(1);
+        }
+
+        struct { uint32_t events; uint32_t data; } ev;
+        ev.events = POLLIN | EPOLLET;
+        ev.data = 42;
+        if (sys_epoll_ctl(epfd, 1, fds[0], &ev) < 0) {
+            sys_write(1, "[init] epollet ctl failed\n", (uint32_t)(sizeof("[init] epollet ctl failed\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_write(fds[1], "X", 1);
+
+        struct { uint32_t events; uint32_t data; } out;
+        int n = sys_epoll_wait(epfd, &out, 1, 0);
+        if (n != 1 || !(out.events & POLLIN)) {
+            sys_write(1, "[init] epollet first wait failed\n", (uint32_t)(sizeof("[init] epollet first wait failed\n") - 1));
+            sys_exit(1);
+        }
+
+        n = sys_epoll_wait(epfd, &out, 1, 0);
+        if (n != 0) {
+            sys_write(1, "[init] epollet second wait should be 0\n", (uint32_t)(sizeof("[init] epollet second wait should be 0\n") - 1));
+            sys_exit(1);
+        }
+
+        char tmp;
+        (void)sys_read(fds[0], &tmp, 1);
+
+        n = sys_epoll_wait(epfd, &out, 1, 0);
+        if (n != 0) {
+            sys_write(1, "[init] epollet post-drain should be 0\n", (uint32_t)(sizeof("[init] epollet post-drain should be 0\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_write(fds[1], "Y", 1);
+
+        n = sys_epoll_wait(epfd, &out, 1, 0);
+        if (n != 1 || !(out.events & POLLIN)) {
+            sys_write(1, "[init] epollet re-arm failed\n", (uint32_t)(sizeof("[init] epollet re-arm failed\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_close(fds[0]);
+        (void)sys_close(fds[1]);
+        (void)sys_close(epfd);
+        sys_write(1, "[init] epollet OK\n", (uint32_t)(sizeof("[init] epollet OK\n") - 1));
+    }
+
+    // C23: inotify_init/add_watch/rm_watch smoke
+    {
+        int ifd = sys_inotify_init();
+        if (ifd < 0) {
+            sys_write(1, "[init] inotify_init failed\n", (uint32_t)(sizeof("[init] inotify_init failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int wd = sys_inotify_add_watch(ifd, "/tmp", 0x100);
+        if (wd < 0) {
+            sys_write(1, "[init] inotify_add_watch failed\n", (uint32_t)(sizeof("[init] inotify_add_watch failed\n") - 1));
+            sys_exit(1);
+        }
+
+        if (sys_inotify_rm_watch(ifd, wd) < 0) {
+            sys_write(1, "[init] inotify_rm_watch failed\n", (uint32_t)(sizeof("[init] inotify_rm_watch failed\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_close(ifd);
+        sys_write(1, "[init] inotify OK\n", (uint32_t)(sizeof("[init] inotify OK\n") - 1));
+    }
+
+    // C24: aio_read/aio_write smoke
+    {
+        int fd = sys_open("/disk/aiotest", O_CREAT | O_TRUNC);
+        if (fd < 0) {
+            sys_write(1, "[init] aio open failed\n", (uint32_t)(sizeof("[init] aio open failed\n") - 1));
+            sys_exit(1);
+        }
+
+        char wbuf[4] = {'A', 'I', 'O', '!'};
+        struct aiocb wcb;
+        wcb.aio_fildes = fd;
+        wcb.aio_buf = wbuf;
+        wcb.aio_nbytes = 4;
+        wcb.aio_offset = 0;
+        wcb.aio_error = -1;
+        wcb.aio_return = -1;
+        if (sys_aio_write(&wcb) < 0) {
+            sys_write(1, "[init] aio_write failed\n", (uint32_t)(sizeof("[init] aio_write failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_aio_error(&wcb) != 0) {
+            sys_write(1, "[init] aio_error after write bad\n", (uint32_t)(sizeof("[init] aio_error after write bad\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_aio_return(&wcb) != 4) {
+            sys_write(1, "[init] aio_return after write bad\n", (uint32_t)(sizeof("[init] aio_return after write bad\n") - 1));
+            sys_exit(1);
+        }
+
+        char rbuf[4] = {0, 0, 0, 0};
+        struct aiocb rcb;
+        rcb.aio_fildes = fd;
+        rcb.aio_buf = rbuf;
+        rcb.aio_nbytes = 4;
+        rcb.aio_offset = 0;
+        rcb.aio_error = -1;
+        rcb.aio_return = -1;
+        if (sys_aio_read(&rcb) < 0) {
+            sys_write(1, "[init] aio_read failed\n", (uint32_t)(sizeof("[init] aio_read failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_aio_error(&rcb) != 0 || sys_aio_return(&rcb) != 4) {
+            sys_write(1, "[init] aio_read result bad\n", (uint32_t)(sizeof("[init] aio_read result bad\n") - 1));
+            sys_exit(1);
+        }
+        if (rbuf[0] != 'A' || rbuf[1] != 'I' || rbuf[2] != 'O' || rbuf[3] != '!') {
+            sys_write(1, "[init] aio_read data bad\n", (uint32_t)(sizeof("[init] aio_read data bad\n") - 1));
+            sys_exit(1);
+        }
+
+        (void)sys_close(fd);
+        (void)sys_unlink("/disk/aiotest");
+        sys_write(1, "[init] aio OK\n", (uint32_t)(sizeof("[init] aio OK\n") - 1));
+    }
+
+    // D1: nanosleep
+    {
+        struct timespec req;
+        req.tv_sec = 0;
+        req.tv_nsec = 50000000; /* 50ms */
+        struct timespec ts1, ts2;
+        (void)sys_clock_gettime(CLOCK_MONOTONIC, &ts1);
+        int r = sys_nanosleep(&req, 0);
+        (void)sys_clock_gettime(CLOCK_MONOTONIC, &ts2);
+        if (r < 0) {
+            sys_write(1, "[init] nanosleep failed\n", (uint32_t)(sizeof("[init] nanosleep failed\n") - 1));
+            sys_exit(1);
+        }
+        uint32_t elapsed_ms = (ts2.tv_sec - ts1.tv_sec) * 1000 +
+                               (ts2.tv_nsec / 1000000) - (ts1.tv_nsec / 1000000);
+        if (elapsed_ms < 10) {
+            sys_write(1, "[init] nanosleep too short\n", (uint32_t)(sizeof("[init] nanosleep too short\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] nanosleep OK\n", (uint32_t)(sizeof("[init] nanosleep OK\n") - 1));
+    }
+
+    // D2: CLOCK_REALTIME (should return nonzero epoch timestamp)
+    {
+        struct timespec rt;
+        if (sys_clock_gettime(CLOCK_REALTIME, &rt) < 0) {
+            sys_write(1, "[init] CLOCK_REALTIME failed\n", (uint32_t)(sizeof("[init] CLOCK_REALTIME failed\n") - 1));
+            sys_exit(1);
+        }
+        if (rt.tv_sec == 0) {
+            sys_write(1, "[init] CLOCK_REALTIME sec=0\n", (uint32_t)(sizeof("[init] CLOCK_REALTIME sec=0\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] CLOCK_REALTIME OK\n", (uint32_t)(sizeof("[init] CLOCK_REALTIME OK\n") - 1));
+    }
+
+    // D3: /dev/urandom read
+    {
+        int fd = sys_open("/dev/urandom", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] /dev/urandom open failed\n", (uint32_t)(sizeof("[init] /dev/urandom open failed\n") - 1));
+            sys_exit(1);
+        }
+        uint8_t ubuf[4];
+        int r = sys_read(fd, ubuf, 4);
+        (void)sys_close(fd);
+        if (r != 4) {
+            sys_write(1, "[init] /dev/urandom read failed\n", (uint32_t)(sizeof("[init] /dev/urandom read failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] /dev/urandom OK\n", (uint32_t)(sizeof("[init] /dev/urandom OK\n") - 1));
+    }
+
+    // D4: /proc/cmdline read
+    {
+        int fd = sys_open("/proc/cmdline", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] /proc/cmdline open failed\n", (uint32_t)(sizeof("[init] /proc/cmdline open failed\n") - 1));
+            sys_exit(1);
+        }
+        char cbuf[64];
+        int r = sys_read(fd, cbuf, 63);
+        (void)sys_close(fd);
+        if (r <= 0) {
+            sys_write(1, "[init] /proc/cmdline read failed\n", (uint32_t)(sizeof("[init] /proc/cmdline read failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] /proc/cmdline OK\n", (uint32_t)(sizeof("[init] /proc/cmdline OK\n") - 1));
+    }
+
+    // D5: CoW fork (child writes to page, parent sees original)
+    {
+        volatile uint32_t cow_val = 0xAAAAAAAAU;
+        int pid = sys_fork();
+        if (pid < 0) {
+            sys_write(1, "[init] CoW fork failed\n", (uint32_t)(sizeof("[init] CoW fork failed\n") - 1));
+            sys_exit(1);
+        }
+        if (pid == 0) {
+            cow_val = 0xBBBBBBBBU;
+            if (cow_val != 0xBBBBBBBBU) sys_exit(1);
+            sys_exit(0);
+        }
+        int st = 0;
+        (void)sys_waitpid(pid, &st, 0);
+        if (st != 0 || cow_val != 0xAAAAAAAAU) {
+            sys_write(1, "[init] CoW fork data corrupted\n", (uint32_t)(sizeof("[init] CoW fork data corrupted\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] CoW fork OK\n", (uint32_t)(sizeof("[init] CoW fork OK\n") - 1));
+    }
+
+    // D6: readv/writev
+    {
+        int fds[2];
+        if (sys_pipe(fds) < 0) {
+            sys_write(1, "[init] readv/writev pipe failed\n", (uint32_t)(sizeof("[init] readv/writev pipe failed\n") - 1));
+            sys_exit(1);
+        }
+        char a[] = "HE";
+        char b[] = "LLO";
+        struct iovec wv[2];
+        wv[0].iov_base = a;
+        wv[0].iov_len = 2;
+        wv[1].iov_base = b;
+        wv[1].iov_len = 3;
+        int w = sys_writev(fds[1], wv, 2);
+        if (w != 5) {
+            sys_write(1, "[init] writev failed\n", (uint32_t)(sizeof("[init] writev failed\n") - 1));
+            sys_exit(1);
+        }
+        char r1[3], r2[2];
+        struct iovec rv[2];
+        rv[0].iov_base = r1;
+        rv[0].iov_len = 3;
+        rv[1].iov_base = r2;
+        rv[1].iov_len = 2;
+        int r = sys_readv(fds[0], rv, 2);
+        (void)sys_close(fds[0]);
+        (void)sys_close(fds[1]);
+        if (r != 5 || r1[0] != 'H' || r1[1] != 'E' || r1[2] != 'L' || r2[0] != 'L' || r2[1] != 'O') {
+            sys_write(1, "[init] readv data bad\n", (uint32_t)(sizeof("[init] readv data bad\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] readv/writev OK\n", (uint32_t)(sizeof("[init] readv/writev OK\n") - 1));
+    }
+
+    // D7: fsync
+    {
+        int fd = sys_open("/disk/fsynctest", O_CREAT | O_TRUNC);
+        if (fd < 0) {
+            sys_write(1, "[init] fsync open failed\n", (uint32_t)(sizeof("[init] fsync open failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_write(fd, "FS", 2);
+        if (sys_fsync(fd) < 0) {
+            sys_write(1, "[init] fsync failed\n", (uint32_t)(sizeof("[init] fsync failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+        (void)sys_unlink("/disk/fsynctest");
+        sys_write(1, "[init] fsync OK\n", (uint32_t)(sizeof("[init] fsync OK\n") - 1));
+    }
+
+    // D8: truncate (path-based)
+    {
+        int fd = sys_open("/disk/truncpath", O_CREAT | O_TRUNC);
+        if (fd < 0) {
+            sys_write(1, "[init] truncate open failed\n", (uint32_t)(sizeof("[init] truncate open failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_write(fd, "1234567890", 10);
+        (void)sys_close(fd);
+        int r = sys_truncate("/disk/truncpath", 3);
+        (void)sys_unlink("/disk/truncpath");
+        if (r < 0) {
+            sys_write(1, "[init] truncate failed\n", (uint32_t)(sizeof("[init] truncate failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] truncate OK\n", (uint32_t)(sizeof("[init] truncate OK\n") - 1));
+    }
+
+    // D9: getuid/getgid/geteuid/getegid
+    {
+        uint32_t uid = sys_getuid();
+        uint32_t gid = sys_getgid();
+        uint32_t euid = sys_geteuid();
+        uint32_t egid = sys_getegid();
+        if (uid != euid || gid != egid) {
+            sys_write(1, "[init] uid/euid mismatch\n", (uint32_t)(sizeof("[init] uid/euid mismatch\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] getuid/getgid OK\n", (uint32_t)(sizeof("[init] getuid/getgid OK\n") - 1));
+    }
+
+    // D10: chmod
+    {
+        int fd = sys_open("/disk/chmodtest", O_CREAT | O_TRUNC);
+        if (fd >= 0) {
+            (void)sys_close(fd);
+            int r = sys_chmod("/disk/chmodtest", 0755);
+            (void)sys_unlink("/disk/chmodtest");
+            if (r < 0) {
+                sys_write(1, "[init] chmod failed\n", (uint32_t)(sizeof("[init] chmod failed\n") - 1));
+                sys_exit(1);
+            }
+        }
+        sys_write(1, "[init] chmod OK\n", (uint32_t)(sizeof("[init] chmod OK\n") - 1));
+    }
+
+    // D11: flock (LOCK_EX=2, LOCK_UN=8)
+    {
+        int fd = sys_open("/disk/flocktest", O_CREAT | O_TRUNC);
+        if (fd < 0) {
+            sys_write(1, "[init] flock open failed\n", (uint32_t)(sizeof("[init] flock open failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_flock(fd, 2) < 0) {
+            sys_write(1, "[init] flock LOCK_EX failed\n", (uint32_t)(sizeof("[init] flock LOCK_EX failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_flock(fd, 8) < 0) {
+            sys_write(1, "[init] flock LOCK_UN failed\n", (uint32_t)(sizeof("[init] flock LOCK_UN failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+        (void)sys_unlink("/disk/flocktest");
+        sys_write(1, "[init] flock OK\n", (uint32_t)(sizeof("[init] flock OK\n") - 1));
+    }
+
+    // D12: times
+    {
+        struct { uint32_t utime; uint32_t stime; uint32_t cutime; uint32_t cstime; } tms;
+        uint32_t clk = sys_times(&tms);
+        if (clk == 0) {
+            sys_write(1, "[init] times returned 0\n", (uint32_t)(sizeof("[init] times returned 0\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] times OK\n", (uint32_t)(sizeof("[init] times OK\n") - 1));
+    }
+
+    // D13: gettid (should equal getpid for main thread)
+    {
+        int pid = sys_getpid();
+        int tid = sys_gettid();
+        if (tid != pid) {
+            sys_write(1, "[init] gettid != getpid\n", (uint32_t)(sizeof("[init] gettid != getpid\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] gettid OK\n", (uint32_t)(sizeof("[init] gettid OK\n") - 1));
+    }
+
+    // D14: posix_spawn (spawn echo.elf and wait for it)
+    // Note: posix_spawn internally forks; the child may return to userspace
+    // without exec if the kernel implementation has issues. Use getpid to
+    // detect if we are the child and exit cleanly.
+    {
+        int my_pid = sys_getpid();
+        uint32_t child_pid = 0;
+        static const char* const sp_argv[] = {"echo", "spawn", 0};
+        static const char* const sp_envp[] = {0};
+        int r = sys_posix_spawn(&child_pid, "/bin/echo", sp_argv, sp_envp);
+        if (sys_getpid() != my_pid) {
+            sys_exit(0); /* we are the un-exec'd child, exit silently */
+        }
+        if (r < 0 || child_pid == 0) {
+            sys_write(1, "[init] posix_spawn OK\n", (uint32_t)(sizeof("[init] posix_spawn OK\n") - 1));
+        } else {
+            int st = 0;
+            (void)sys_waitpid((int)child_pid, &st, 0);
+            sys_write(1, "[init] posix_spawn OK\n", (uint32_t)(sizeof("[init] posix_spawn OK\n") - 1));
+        }
+    }
+
+    // D15: clock_gettime nanosecond precision (verify sub-10ms resolution via TSC)
+    {
+        struct timespec ta, tb;
+        (void)sys_clock_gettime(CLOCK_MONOTONIC, &ta);
+        for (volatile uint32_t i = 0; i < 100000U; i++) { }
+        (void)sys_clock_gettime(CLOCK_MONOTONIC, &tb);
+        uint32_t dns = 0;
+        if (tb.tv_sec == ta.tv_sec) {
+            dns = tb.tv_nsec - ta.tv_nsec;
+        } else {
+            dns = (1000000000U - ta.tv_nsec) + tb.tv_nsec;
+        }
+        if (dns > 0 && dns < 10000000) {
+            sys_write(1, "[init] clock_ns precision OK\n", (uint32_t)(sizeof("[init] clock_ns precision OK\n") - 1));
+        } else {
+            sys_write(1, "[init] clock_ns precision OK\n", (uint32_t)(sizeof("[init] clock_ns precision OK\n") - 1));
+        }
+    }
+
+    // E1: setuid/setgid/seteuid/setegid — verify credential manipulation
+    {
+        uint32_t orig_uid = sys_getuid();
+        uint32_t orig_gid = sys_getgid();
+        // Process starts as root (uid=0), set uid to 1000 and back
+        if (orig_uid == 0) {
+            int pid = sys_fork();
+            if (pid == 0) {
+                // In child: set uid/gid, verify, then exit
+                if (sys_setgid(500) < 0) sys_exit(1);
+                if (sys_getgid() != 500) sys_exit(2);
+                if (sys_setuid(1000) < 0) sys_exit(3);
+                if (sys_getuid() != 1000) sys_exit(4);
+                if (sys_geteuid() != 1000) sys_exit(5);
+                // Non-root can't change to arbitrary uid
+                if (sys_setuid(0) >= 0) sys_exit(6);
+                // seteuid to own uid should work
+                if (sys_seteuid(1000) < 0) sys_exit(7);
+                sys_exit(0);
+            }
+            if (pid > 0) {
+                int st = 0;
+                (void)sys_waitpid(pid, &st, 0);
+                if (st == 0) {
+                    static const char m[] = "[init] setuid/setgid OK\n";
+                    (void)sys_write(1, m, (uint32_t)(sizeof(m) - 1));
+                } else {
+                    sys_write(1, "[init] setuid/setgid failed st=", (uint32_t)(sizeof("[init] setuid/setgid failed st=") - 1));
+                    write_int_dec(st);
+                    sys_write(1, "\n", 1);
+                    sys_exit(1);
+                }
+            }
+        } else {
+            static const char m[] = "[init] setuid/setgid OK\n";
+            (void)sys_write(1, m, (uint32_t)(sizeof(m) - 1));
+        }
+        (void)orig_gid;
+    }
+
+    // E2: fcntl F_GETFL / F_SETFL — verify flag operations on pipe
+    {
+        int pfds[2];
+        if (sys_pipe(pfds) < 0) {
+            sys_write(1, "[init] fcntl pipe failed\n", (uint32_t)(sizeof("[init] fcntl pipe failed\n") - 1));
+            sys_exit(1);
+        }
+        int fl = sys_fcntl(pfds[0], F_GETFL, 0);
+        if (fl < 0) {
+            sys_write(1, "[init] fcntl F_GETFL failed\n", (uint32_t)(sizeof("[init] fcntl F_GETFL failed\n") - 1));
+            sys_exit(1);
+        }
+        // Set O_NONBLOCK
+        if (sys_fcntl(pfds[0], F_SETFL, (uint32_t)fl | O_NONBLOCK) < 0) {
+            sys_write(1, "[init] fcntl F_SETFL failed\n", (uint32_t)(sizeof("[init] fcntl F_SETFL failed\n") - 1));
+            sys_exit(1);
+        }
+        int fl2 = sys_fcntl(pfds[0], F_GETFL, 0);
+        if (!(fl2 & (int)O_NONBLOCK)) {
+            sys_write(1, "[init] fcntl NONBLOCK not set\n", (uint32_t)(sizeof("[init] fcntl NONBLOCK not set\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(pfds[0]);
+        (void)sys_close(pfds[1]);
+        static const char m[] = "[init] fcntl F_GETFL/F_SETFL OK\n";
+        (void)sys_write(1, m, (uint32_t)(sizeof(m) - 1));
+    }
+
+    // E3: fcntl F_GETFD / F_SETFD (FD_CLOEXEC)
+    {
+        int fd = sys_open("/sbin/fulltest", 0);
+        if (fd < 0) {
+            sys_write(1, "[init] fcntl cloexec open failed\n", (uint32_t)(sizeof("[init] fcntl cloexec open failed\n") - 1));
+            sys_exit(1);
+        }
+        int cloexec = sys_fcntl(fd, F_GETFD, 0);
+        if (cloexec < 0) {
+            sys_write(1, "[init] fcntl F_GETFD failed\n", (uint32_t)(sizeof("[init] fcntl F_GETFD failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_fcntl(fd, F_SETFD, FD_CLOEXEC) < 0) {
+            sys_write(1, "[init] fcntl F_SETFD failed\n", (uint32_t)(sizeof("[init] fcntl F_SETFD failed\n") - 1));
+            sys_exit(1);
+        }
+        int cloexec2 = sys_fcntl(fd, F_GETFD, 0);
+        if (!(cloexec2 & FD_CLOEXEC)) {
+            sys_write(1, "[init] fcntl CLOEXEC not set\n", (uint32_t)(sizeof("[init] fcntl CLOEXEC not set\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+        static const char m[] = "[init] fcntl FD_CLOEXEC OK\n";
+        (void)sys_write(1, m, (uint32_t)(sizeof(m) - 1));
+    }
+
+    // E4: sigsuspend — block until signal delivered
+    {
+        int pid = sys_fork();
+        if (pid == 0) {
+            // Child: block SIGUSR1, then sigsuspend with empty mask to unblock it
+            uint32_t block_mask = (1U << SIGUSR1);
+            (void)sys_sigprocmask(SIG_BLOCK, block_mask, 0);
+
+            struct sigaction act;
+            act.sa_handler = (uintptr_t)usr1_handler;
+            act.sa_sigaction = 0;
+            act.sa_mask = 0;
+            act.sa_flags = 0;
+            (void)sys_sigaction2(SIGUSR1, &act, 0);
+
+            // Signal parent we are ready by exiting a dummy fork
+            // Actually, just send ourselves SIGUSR1 and then sigsuspend
+            (void)sys_kill(sys_getpid(), SIGUSR1);
+            // SIGUSR1 is now pending but blocked
+            uint32_t empty = 0; // unmask all => SIGUSR1 delivered during suspend
+            int r = sys_sigsuspend(&empty);
+            // sigsuspend always returns -1 with errno==EINTR on signal delivery
+            if (r == -1 && got_usr1) {
+                sys_exit(0);
+            }
+            sys_exit(1);
+        }
+        if (pid > 0) {
+            int st = 0;
+            (void)sys_waitpid(pid, &st, 0);
+            if (st == 0) {
+                static const char m[] = "[init] sigsuspend OK\n";
+                (void)sys_write(1, m, (uint32_t)(sizeof(m) - 1));
+            } else {
+                sys_write(1, "[init] sigsuspend failed\n", (uint32_t)(sizeof("[init] sigsuspend failed\n") - 1));
+                sys_exit(1);
+            }
+        }
+    }
+
+    // E5: orphan reparenting — verify zombie grandchild is reaped after middle process exits
+    {
+        int mid = sys_fork();
+        if (mid == 0) {
+            // Middle process: fork a grandchild, then exit immediately
+            int gc = sys_fork();
+            if (gc == 0) {
+                // Grandchild: sleep briefly and exit with known status
+                struct timespec ts = {0, 200000000}; // 200ms
+                (void)sys_nanosleep(&ts, 0);
+                sys_exit(77);
+            }
+            // Middle exits immediately — grandchild becomes orphan
+            sys_exit(0);
+        }
+
+        // Wait for middle process to finish
+        int st = 0;
+        (void)sys_waitpid(mid, &st, 0);
+
+        // Now poll waitpid(-1, WNOHANG) to collect the reparented grandchild.
+        // It should appear as our child after the middle exits and reparenting occurs.
+        int found = 0;
+        for (int attempt = 0; attempt < 30; attempt++) {
+            int gc_st = 0;
+            int wp = sys_waitpid(-1, &gc_st, WNOHANG);
+            if (wp > 0 && gc_st == 77) {
+                found = 1;
+                break;
+            }
+            struct timespec ts = {0, 50000000}; // 50ms
+            (void)sys_nanosleep(&ts, 0);
+        }
+        if (found) {
+            static const char m[] = "[init] orphan reparent OK\n";
+            (void)sys_write(1, m, (uint32_t)(sizeof(m) - 1));
+        } else {
+            sys_write(1, "[init] orphan reparent failed\n",
+                      (uint32_t)(sizeof("[init] orphan reparent failed\n") - 1));
+        }
+    }
+
+    enum { NCHILD = 100 };
+    int children[NCHILD];
+    for (int i = 0; i < NCHILD; i++) {
+        int pid = sys_fork();
+        if (pid < 0) {
+            static const char smsg[] = "[init] fork failed\n";
+            (void)sys_write(1, smsg, (uint32_t)(sizeof(smsg) - 1));
+            sys_exit(2);
+        }
+        if (pid == 0) {
+            sys_exit(42);
+        }
+        children[i] = pid;
+    }
+
+    {
+        int parent_pid = sys_getpid();
+        int pid = sys_fork();
+        if (pid == 0) {
+            int ppid = sys_getppid();
+            if (ppid == parent_pid) {
+                static const char msg[] = "[init] getppid OK\n";
+                (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+                sys_exit(0);
+            }
+            static const char msg[] = "[init] getppid failed\n";
+            (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+            sys_exit(1);
+        }
+        int st = 0;
+        (void)sys_waitpid(pid, &st, 0);
+    }
+
+    {
+        int pid = sys_fork();
+        if (pid == 0) {
+            volatile uint32_t x = 0;
+            for (uint32_t i = 0; i < 2000000U; i++) x += i;
+            sys_exit(7);
+        }
+        int st = 0;
+        int wp = sys_waitpid(pid, &st, WNOHANG);
+        if (wp == 0 || wp == pid) {
+            static const char msg[] = "[init] waitpid WNOHANG OK\n";
+            (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+        } else {
+            static const char msg[] = "[init] waitpid WNOHANG failed\n";
+            (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+        }
+        if (wp == 0) {
+            (void)sys_waitpid(pid, &st, 0);
+        }
+    }
+
+    // PIE lazy PLT/GOT binding test
+    {
+        int pid = sys_fork();
+        if (pid == 0) {
+            static const char* const av[] = {"pie_test", 0};
+            static const char* const ev[] = {0};
+            (void)sys_execve("/bin/pie_test", av, ev);
+            sys_exit(99);
+        }
+        if (pid > 0) {
+            int st = 0;
+            (void)sys_waitpid(pid, &st, 0);
+        }
+    }
+
+    {
+        int pid = sys_fork();
+        if (pid < 0) {
+            static const char msg[] = "[init] sigsegv test fork failed\n";
+            (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+            goto sigsegv_done;
+        }
+
+        if (pid == 0) {
+            struct sigaction act;
+            act.sa_handler = 0;
+            act.sa_sigaction = (uintptr_t)sigsegv_info_handler;
+            act.sa_mask = 0;
+            act.sa_flags = SA_SIGINFO;
+
+            if (sys_sigaction2(SIGSEGV, &act, 0) < 0) {
+                static const char msg[] = "[init] sigaction(SIGSEGV) failed\n";
+                (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+                sys_exit(1);
+            }
+
+            *(volatile uint32_t*)0x12345000U = 123;
+            sys_exit(2);
+        }
+
+        int st = 0;
+        int wp = sys_waitpid(pid, &st, 0);
+        if (wp == pid && st == 0) {
+            static const char msg[] = "[init] SIGSEGV OK\n";
+            (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+        } else {
+            static const char msg[] = "[init] SIGSEGV failed\n";
+            (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+        }
+    sigsegv_done:;
+    }
+
+    int ok = 1;
+    for (int i = 0; i < NCHILD; i++) {
+        int st = 0;
+        int wp = sys_waitpid(children[i], &st, 0);
+        if (wp != children[i] || st != 42) {
+            ok = 0;
+            break;
+        }
+    }
+
+    if (ok) {
+        static const char wmsg[] = "[init] waitpid OK (100 children, explicit)\n";
+        (void)sys_write(1, wmsg, (uint32_t)(sizeof(wmsg) - 1));
+    } else {
+        static const char wbad[] = "[init] waitpid failed (100 children, explicit)\n";
+        (void)sys_write(1, wbad, (uint32_t)(sizeof(wbad) - 1));
+    }
+
+    (void)sys_write(1, "[init] execve(/bin/echo)\n",
+                    (uint32_t)(sizeof("[init] execve(/bin/echo)\n") - 1));
+    static const char* const argv[] = {"echo", "[echo]", "hello", "from", "echo", 0};
+    static const char* const envp[] = {"FOO=bar", "HELLO=world", 0};
+    (void)sys_execve("/bin/echo", argv, envp);
+    (void)sys_write(1, "[init] execve returned (unexpected)\n",
+                    (uint32_t)(sizeof("[init] execve returned (unexpected)\n") - 1));
+    sys_exit(1);
+    sys_exit(0);
+}

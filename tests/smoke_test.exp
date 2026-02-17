@@ -125,7 +125,7 @@ set tests {
     {"lazy PLT"             "\\[init\\] lazy PLT OK"}
     {"PLT cached"           "\\[init\\] PLT cached OK"}
     {"PING network"         "\\[PING\\] .*received.*network OK"}
-    {"echo.elf execve"      "\\[echo\\] hello from echo.elf"}
+    {"echo execve"          "\\[echo\\] hello from echo"}
     {"setuid/setgid"        "\\[init\\] setuid/setgid OK"}
     {"fcntl F_GETFL/SETFL"  "\\[init\\] fcntl F_GETFL/F_SETFL OK"}
     {"fcntl FD_CLOEXEC"     "\\[init\\] fcntl FD_CLOEXEC OK"}

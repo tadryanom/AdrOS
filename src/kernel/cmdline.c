@@ -76,7 +76,7 @@ void cmdline_parse(const char* raw) {
     kflag_count = 0;
     init_argc = 0;
     init_envc = 0;
-    init_path_val = "/bin/init.elf";
+    init_path_val = "/sbin/init";
 
     if (!raw) {
         raw_copy[0] = '\0';

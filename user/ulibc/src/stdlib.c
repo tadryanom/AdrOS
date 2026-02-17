@@ -2,6 +2,9 @@
 #include "unistd.h"
 #include "string.h"
 
+/* Global environment pointer — set by crt0 from execve stack layout */
+char** __environ = 0;
+
 /*
  * Minimal bump allocator using brk() syscall.
  * No free() support yet — memory is only reclaimed on process exit.
@@ -155,7 +158,13 @@ long strtol(const char* nptr, char** endptr, int base) {
 }
 
 char* getenv(const char* name) {
-    (void)name;
+    extern char** __environ;
+    if (!name || !__environ) return (char*)0;
+    size_t len = strlen(name);
+    for (char** e = __environ; *e; e++) {
+        if (strncmp(*e, name, len) == 0 && (*e)[len] == '=')
+            return *e + len + 1;
+    }
     return (char*)0;
 }
 

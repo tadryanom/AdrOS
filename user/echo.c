@@ -1,112 +1,62 @@
-#include <stdint.h>
+/* AdrOS echo utility — POSIX-compatible */
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 
-#include "user_errno.h"
+int main(int argc, char** argv) {
+    int nflag = 0;      /* -n: no trailing newline */
+    int eflag = 0;      /* -e: interpret escape sequences */
+    int i = 1;
 
-enum {
-    SYSCALL_WRITE = 1,
-    SYSCALL_EXIT  = 2,
-};
-
-static int sys_write(int fd, const void* buf, uint32_t len) {
-    int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYSCALL_WRITE), "b"(fd), "c"(buf), "d"(len)
-        : "memory"
-    );
-    return __syscall_fix(ret);
-}
-
-static uint32_t ustrlen(const char* s) {
-    uint32_t n = 0;
-    while (s && s[n]) n++;
-    return n;
-}
-
-static void write_str(const char* s) {
-    (void)sys_write(1, s, ustrlen(s));
-}
-
-static void u32_to_dec(uint32_t v, char out[16]) {
-    char tmp[16];
-    uint32_t n = 0;
-    if (v == 0) {
-        out[0] = '0';
-        out[1] = 0;
-        return;
+    /* Parse flags */
+    while (i < argc && argv[i][0] == '-' && argv[i][1] != '\0') {
+        const char* f = argv[i] + 1;
+        int valid = 1;
+        int n = 0, e = 0;
+        while (*f) {
+            if (*f == 'n') n = 1;
+            else if (*f == 'e') e = 1;
+            else if (*f == 'E') { /* no escapes — default */ }
+            else { valid = 0; break; }
+            f++;
+        }
+        if (!valid) break;
+        if (n) nflag = 1;
+        if (e) eflag = 1;
+        i++;
     }
-    while (v && n < sizeof(tmp) - 1) {
-        tmp[n++] = (char)('0' + (v % 10));
-        v /= 10;
-    }
-    uint32_t i = 0;
-    while (n) out[i++] = tmp[--n];
-    out[i] = 0;
-}
 
-static __attribute__((noreturn)) void sys_exit(int status) {
-    __asm__ volatile(
-        "int $0x80"
-        :
-        : "a"(SYSCALL_EXIT), "b"(status)
-        : "memory"
-    );
-    for (;;) {
-        __asm__ volatile("hlt");
-    }
-}
+    for (; i < argc; i++) {
+        if (i > 1 && (i > 1 || nflag || eflag))
+            write(STDOUT_FILENO, " ", 1);
 
-static void echo_main(uint32_t* sp0) {
-    write_str("[echo] hello from echo.elf\n");
-
-    uint32_t argc = sp0 ? sp0[0] : 0;
-    const char* const* argv = (const char* const*)(sp0 + 1);
-
-    const char* const* envp = argv;
-    for (uint32_t i = 0; argv && argv[i]; i++) {
-        envp = &argv[i + 1];
+        const char* s = argv[i];
+        if (eflag) {
+            while (*s) {
+                if (*s == '\\' && s[1]) {
+                    s++;
+                    char c = *s;
+                    switch (c) {
+                    case 'n': write(STDOUT_FILENO, "\n", 1); break;
+                    case 't': write(STDOUT_FILENO, "\t", 1); break;
+                    case '\\': write(STDOUT_FILENO, "\\", 1); break;
+                    case 'r': write(STDOUT_FILENO, "\r", 1); break;
+                    case 'a': write(STDOUT_FILENO, "\a", 1); break;
+                    default: write(STDOUT_FILENO, "\\", 1);
+                             write(STDOUT_FILENO, &c, 1); break;
+                    }
+                } else {
+                    write(STDOUT_FILENO, s, 1);
+                }
+                s++;
+            }
+        } else {
+            write(STDOUT_FILENO, s, strlen(s));
+        }
     }
-    if (envp) envp++;
 
-    char num[16];
-    u32_to_dec(argc, num);
-    write_str("[echo] argc=");
-    write_str(num);
-    write_str("\n");
+    if (!nflag)
+        write(STDOUT_FILENO, "\n", 1);
 
-    if (argv && argv[0]) {
-        write_str("[echo] argv0=");
-        write_str(argv[0]);
-        write_str("\n");
-    }
-    if (argv && argv[1]) {
-        write_str("[echo] argv1=");
-        write_str(argv[1]);
-        write_str("\n");
-    }
-    if (argv && argv[2]) {
-        write_str("[echo] argv2=");
-        write_str(argv[2]);
-        write_str("\n");
-    }
-    if (envp && envp[0]) {
-        write_str("[echo] env0=");
-        write_str(envp[0]);
-        write_str("\n");
-    }
-    sys_exit(0);
-}
-
-__attribute__((naked)) void _start(void) {
-    __asm__ volatile(
-        "mov %esp, %eax\n"
-        "push %eax\n"
-        "call echo_main\n"
-        "add $4, %esp\n"
-        "mov $0, %ebx\n"
-        "mov $2, %eax\n"
-        "int $0x80\n"
-        "hlt\n"
-    );
+    return 0;
 }

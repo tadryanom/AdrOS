@@ -1,153 +1,319 @@
-/* AdrOS minimal POSIX sh */
-#include <stdint.h>
-#include "user_errno.h"
+/* AdrOS POSIX-like shell (/bin/sh)
+ *
+ * Features:
+ *   - Variable assignment (VAR=value) and expansion ($VAR)
+ *   - Environment variables (export VAR=value)
+ *   - Line editing (left/right arrow keys)
+ *   - Command history (up/down arrow keys)
+ *   - Pipes (cmd1 | cmd2 | cmd3)
+ *   - Redirections (< > >>)
+ *   - Builtins: cd, exit, echo, export, unset, set, pwd, type
+ *   - PATH-based command resolution
+ *   - Quote handling (single and double quotes)
+ */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
 
-enum {
-    SYSCALL_WRITE   = 1,
-    SYSCALL_EXIT    = 2,
-    SYSCALL_GETPID  = 3,
-    SYSCALL_OPEN    = 4,
-    SYSCALL_READ    = 5,
-    SYSCALL_CLOSE   = 6,
-    SYSCALL_WAITPID = 7,
-    SYSCALL_DUP2    = 13,
-    SYSCALL_PIPE    = 14,
-    SYSCALL_EXECVE  = 15,
-    SYSCALL_FORK    = 16,
-};
+#define LINE_MAX   512
+#define MAX_ARGS   64
+#define MAX_VARS   64
+#define HIST_SIZE  32
 
-enum { O_RDONLY = 0, O_WRONLY = 1, O_CREAT = 0x40, O_TRUNC = 0x200 };
+/* ---- Shell variables ---- */
 
-/* ---- syscall wrappers ---- */
+static struct {
+    char name[64];
+    char value[256];
+    int  exported;
+} vars[MAX_VARS];
+static int nvar = 0;
 
-static int sys_write(int fd, const void* buf, uint32_t len) {
-    int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret)
-        : "a"(SYSCALL_WRITE), "b"(fd), "c"(buf), "d"(len) : "memory");
-    return __syscall_fix(ret);
+static int last_status = 0;
+
+static const char* var_get(const char* name) {
+    for (int i = 0; i < nvar; i++)
+        if (strcmp(vars[i].name, name) == 0) return vars[i].value;
+    return getenv(name);
 }
 
-static int sys_read(int fd, void* buf, uint32_t len) {
-    int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret)
-        : "a"(SYSCALL_READ), "b"(fd), "c"(buf), "d"(len) : "memory");
-    return __syscall_fix(ret);
+static void var_set(const char* name, const char* value, int exported) {
+    for (int i = 0; i < nvar; i++) {
+        if (strcmp(vars[i].name, name) == 0) {
+            strncpy(vars[i].value, value, 255);
+            vars[i].value[255] = '\0';
+            if (exported) vars[i].exported = 1;
+            return;
+        }
+    }
+    if (nvar < MAX_VARS) {
+        strncpy(vars[nvar].name, name, 63);
+        vars[nvar].name[63] = '\0';
+        strncpy(vars[nvar].value, value, 255);
+        vars[nvar].value[255] = '\0';
+        vars[nvar].exported = exported;
+        nvar++;
+    }
 }
 
-static int sys_open(const char* path, int flags) {
-    int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret)
-        : "a"(SYSCALL_OPEN), "b"(path), "c"(flags) : "memory");
-    return __syscall_fix(ret);
+static void var_unset(const char* name) {
+    for (int i = 0; i < nvar; i++) {
+        if (strcmp(vars[i].name, name) == 0) {
+            vars[i] = vars[--nvar];
+            return;
+        }
+    }
 }
 
-static int sys_close(int fd) {
-    int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret)
-        : "a"(SYSCALL_CLOSE), "b"(fd) : "memory");
-    return __syscall_fix(ret);
+/* Build envp array from exported variables */
+static char env_buf[MAX_VARS][320];
+static char* envp_arr[MAX_VARS + 1];
+
+static char** build_envp(void) {
+    int n = 0;
+    for (int i = 0; i < nvar && n < MAX_VARS; i++) {
+        if (!vars[i].exported) continue;
+        snprintf(env_buf[n], sizeof(env_buf[n]), "%s=%s",
+                 vars[i].name, vars[i].value);
+        envp_arr[n] = env_buf[n];
+        n++;
+    }
+    envp_arr[n] = NULL;
+    return envp_arr;
 }
 
-static int sys_fork(void) {
-    int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret)
-        : "a"(SYSCALL_FORK) : "memory");
-    return __syscall_fix(ret);
+/* ---- Command history ---- */
+
+static char history[HIST_SIZE][LINE_MAX];
+static int hist_count = 0;
+static int hist_pos = 0;
+
+static void hist_add(const char* line) {
+    if (line[0] == '\0') return;
+    if (hist_count > 0 && strcmp(history[(hist_count - 1) % HIST_SIZE], line) == 0)
+        return;
+    strncpy(history[hist_count % HIST_SIZE], line, LINE_MAX - 1);
+    history[hist_count % HIST_SIZE][LINE_MAX - 1] = '\0';
+    hist_count++;
 }
 
-static int sys_execve(const char* p, char* const* av,
-                      char* const* ev) {
-    int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret)
-        : "a"(SYSCALL_EXECVE), "b"(p), "c"(av), "d"(ev) : "memory");
-    return __syscall_fix(ret);
-}
-
-static int sys_waitpid(int pid, int* status, int opts) {
-    int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret)
-        : "a"(SYSCALL_WAITPID), "b"(pid), "c"(status), "d"(opts) : "memory");
-    return __syscall_fix(ret);
-}
-
-static int sys_dup2(int oldfd, int newfd) {
-    int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret)
-        : "a"(SYSCALL_DUP2), "b"(oldfd), "c"(newfd) : "memory");
-    return __syscall_fix(ret);
-}
-
-static int sys_pipe(int fds[2]) {
-    int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret)
-        : "a"(SYSCALL_PIPE), "b"(fds) : "memory");
-    return __syscall_fix(ret);
-}
-
-static __attribute__((noreturn)) void sys_exit(int code) {
-    __asm__ volatile("int $0x80" : : "a"(SYSCALL_EXIT), "b"(code) : "memory");
-    for (;;) __asm__ volatile("hlt");
-}
-
-/* ---- string helpers ---- */
-
-static uint32_t slen(const char* s) {
-    uint32_t n = 0;
-    while (s && s[n]) n++;
-    return n;
-}
-
-static void wr(int fd, const char* s) {
-    (void)sys_write(fd, s, slen(s));
-}
-
-static int scmp(const char* a, const char* b) {
-    while (*a && *b && *a == *b) { a++; b++; }
-    return (unsigned char)*a - (unsigned char)*b;
-}
-
-static void scpy(char* d, const char* s) {
-    while (*s) *d++ = *s++;
-    *d = 0;
-}
-
-/* ---- line reading ---- */
-
-#define LINE_MAX 256
-#define MAX_ARGS 32
+/* ---- Line editing ---- */
 
 static char line[LINE_MAX];
 
-static int read_line(void) {
-    uint32_t pos = 0;
-    while (pos < LINE_MAX - 1) {
-        char c;
-        int r = sys_read(0, &c, 1);
-        if (r <= 0) {
-            if (pos == 0) return -1;
-            break;
-        }
-        if (c == '\n' || c == '\r') break;
-        if ((c == '\b' || c == 127) && pos > 0) { pos--; continue; }
-        if (c >= ' ' && c <= '~') line[pos++] = c;
-    }
-    line[pos] = 0;
-    return (int)pos;
+static void term_write(const char* s, int n) {
+    write(STDOUT_FILENO, s, (size_t)n);
 }
 
-/* ---- argument parsing ---- */
+static int read_line_edit(void) {
+    int pos = 0;
+    int len = 0;
+    hist_pos = hist_count;
+
+    memset(line, 0, LINE_MAX);
+
+    while (len < LINE_MAX - 1) {
+        char c;
+        int r = read(STDIN_FILENO, &c, 1);
+        if (r <= 0) {
+            if (len == 0) return -1;
+            break;
+        }
+
+        if (c == '\n' || c == '\r') {
+            term_write("\n", 1);
+            break;
+        }
+
+        /* Backspace / DEL */
+        if (c == '\b' || c == 127) {
+            if (pos > 0) {
+                memmove(line + pos - 1, line + pos, (size_t)(len - pos));
+                pos--; len--;
+                line[len] = '\0';
+                /* Redraw: move cursor back, print rest, clear tail */
+                term_write("\b", 1);
+                term_write(line + pos, len - pos);
+                term_write(" \b", 2);
+                for (int i = 0; i < len - pos; i++) term_write("\b", 1);
+            }
+            continue;
+        }
+
+        /* Ctrl+D = EOF */
+        if (c == 4) {
+            if (len == 0) return -1;
+            continue;
+        }
+
+        /* Ctrl+C = cancel line */
+        if (c == 3) {
+            term_write("^C\n", 3);
+            line[0] = '\0';
+            return 0;
+        }
+
+        /* Ctrl+A = beginning of line */
+        if (c == 1) {
+            while (pos > 0) { term_write("\b", 1); pos--; }
+            continue;
+        }
+
+        /* Ctrl+E = end of line */
+        if (c == 5) {
+            term_write(line + pos, len - pos);
+            pos = len;
+            continue;
+        }
+
+        /* Ctrl+U = clear line */
+        if (c == 21) {
+            while (pos > 0) { term_write("\b", 1); pos--; }
+            for (int i = 0; i < len; i++) term_write(" ", 1);
+            for (int i = 0; i < len; i++) term_write("\b", 1);
+            len = 0; pos = 0;
+            line[0] = '\0';
+            continue;
+        }
+
+        /* Escape sequences (arrow keys) */
+        if (c == 27) {
+            char seq[2];
+            if (read(STDIN_FILENO, &seq[0], 1) <= 0) continue;
+            if (seq[0] != '[') continue;
+            if (read(STDIN_FILENO, &seq[1], 1) <= 0) continue;
+
+            switch (seq[1]) {
+            case 'A':  /* Up arrow — previous history */
+                if (hist_pos > 0 && hist_pos > hist_count - HIST_SIZE) {
+                    hist_pos--;
+                    /* Clear current line */
+                    while (pos > 0) { term_write("\b", 1); pos--; }
+                    for (int i = 0; i < len; i++) term_write(" ", 1);
+                    for (int i = 0; i < len; i++) term_write("\b", 1);
+                    /* Load history entry */
+                    strcpy(line, history[hist_pos % HIST_SIZE]);
+                    len = (int)strlen(line);
+                    pos = len;
+                    term_write(line, len);
+                }
+                break;
+            case 'B':  /* Down arrow — next history */
+                if (hist_pos < hist_count) {
+                    hist_pos++;
+                    while (pos > 0) { term_write("\b", 1); pos--; }
+                    for (int i = 0; i < len; i++) term_write(" ", 1);
+                    for (int i = 0; i < len; i++) term_write("\b", 1);
+                    if (hist_pos < hist_count) {
+                        strcpy(line, history[hist_pos % HIST_SIZE]);
+                    } else {
+                        line[0] = '\0';
+                    }
+                    len = (int)strlen(line);
+                    pos = len;
+                    term_write(line, len);
+                }
+                break;
+            case 'C':  /* Right arrow */
+                if (pos < len) { term_write(line + pos, 1); pos++; }
+                break;
+            case 'D':  /* Left arrow */
+                if (pos > 0) { term_write("\b", 1); pos--; }
+                break;
+            }
+            continue;
+        }
+
+        /* Normal printable character */
+        if (c >= ' ' && c <= '~') {
+            memmove(line + pos + 1, line + pos, (size_t)(len - pos));
+            line[pos] = c;
+            len++; line[len] = '\0';
+            term_write(line + pos, len - pos);
+            pos++;
+            for (int i = 0; i < len - pos; i++) term_write("\b", 1);
+        }
+    }
+
+    line[len] = '\0';
+    return len;
+}
+
+/* ---- Variable expansion ---- */
+
+static void expand_vars(const char* src, char* dst, int maxlen) {
+    int di = 0;
+    while (*src && di < maxlen - 1) {
+        if (*src == '$') {
+            src++;
+            if (*src == '?') {
+                di += snprintf(dst + di, (size_t)(maxlen - di), "%d", last_status);
+                src++;
+            } else if (*src == '{') {
+                src++;
+                char name[64];
+                int ni = 0;
+                while (*src && *src != '}' && ni < 63) name[ni++] = *src++;
+                name[ni] = '\0';
+                if (*src == '}') src++;
+                const char* val = var_get(name);
+                if (val) {
+                    int vl = (int)strlen(val);
+                    if (di + vl < maxlen) { memcpy(dst + di, val, (size_t)vl); di += vl; }
+                }
+            } else {
+                char name[64];
+                int ni = 0;
+                while ((*src >= 'A' && *src <= 'Z') || (*src >= 'a' && *src <= 'z') ||
+                       (*src >= '0' && *src <= '9') || *src == '_') {
+                    if (ni < 63) name[ni++] = *src;
+                    src++;
+                }
+                name[ni] = '\0';
+                const char* val = var_get(name);
+                if (val) {
+                    int vl = (int)strlen(val);
+                    if (di + vl < maxlen) { memcpy(dst + di, val, (size_t)vl); di += vl; }
+                }
+            }
+        } else {
+            dst[di++] = *src++;
+        }
+    }
+    dst[di] = '\0';
+}
+
+/* ---- Argument parsing with quote handling ---- */
 
 static int parse_args(char* cmd, char** argv, int max) {
     int argc = 0;
     char* p = cmd;
     while (*p && argc < max - 1) {
         while (*p == ' ' || *p == '\t') p++;
-        if (*p == 0) break;
-        argv[argc++] = p;
-        while (*p && *p != ' ' && *p != '\t') p++;
-        if (*p) *p++ = 0;
+        if (*p == '\0') break;
+
+        char* out = p;
+        argv[argc++] = out;
+
+        while (*p && *p != ' ' && *p != '\t') {
+            if (*p == '\'' ) {
+                p++;
+                while (*p && *p != '\'') *out++ = *p++;
+                if (*p == '\'') p++;
+            } else if (*p == '"') {
+                p++;
+                while (*p && *p != '"') *out++ = *p++;
+                if (*p == '"') p++;
+            } else {
+                *out++ = *p++;
+            }
+        }
+        if (*p) p++;
+        *out = '\0';
     }
-    argv[argc] = 0;
+    argv[argc] = NULL;
     return argc;
 }
 
@@ -157,100 +323,196 @@ static char pathbuf[256];
 
 static const char* resolve(const char* cmd) {
     if (cmd[0] == '/' || cmd[0] == '.') return cmd;
-    static const char* dirs[] = { "/bin/", "/disk/bin/", 0 };
-    for (int i = 0; dirs[i]; i++) {
-        scpy(pathbuf, dirs[i]);
-        scpy(pathbuf + slen(pathbuf), cmd);
-        int fd = sys_open(pathbuf, O_RDONLY);
-        if (fd >= 0) { sys_close(fd); return pathbuf; }
+
+    const char* path_env = var_get("PATH");
+    if (!path_env) path_env = "/bin:/sbin:/usr/bin";
+
+    char pathcopy[512];
+    strncpy(pathcopy, path_env, sizeof(pathcopy) - 1);
+    pathcopy[sizeof(pathcopy) - 1] = '\0';
+
+    char* save = pathcopy;
+    char* dir;
+    while ((dir = save) != NULL) {
+        char* sep = strchr(save, ':');
+        if (sep) { *sep = '\0'; save = sep + 1; }
+        else save = NULL;
+
+        snprintf(pathbuf, sizeof(pathbuf), "%s/%s", dir, cmd);
+        if (access(pathbuf, 0) == 0) return pathbuf;
     }
     return cmd;
 }
 
-/* ---- run a single simple command ---- */
+/* ---- Run a single simple command ---- */
 
 static void run_simple(char* cmd) {
+    /* Expand variables */
+    char expanded[LINE_MAX];
+    expand_vars(cmd, expanded, LINE_MAX);
+
     char* argv[MAX_ARGS];
-    int argc = parse_args(cmd, argv, MAX_ARGS);
+    int argc = parse_args(expanded, argv, MAX_ARGS);
     if (argc == 0) return;
 
-    /* extract redirections */
-    char* redir_out = 0;
-    char* redir_in  = 0;
+    /* Check for variable assignment (no command, just VAR=value) */
+    if (argc == 1 && strchr(argv[0], '=') != NULL) {
+        char* eq = strchr(argv[0], '=');
+        *eq = '\0';
+        var_set(argv[0], eq + 1, 0);
+        last_status = 0;
+        return;
+    }
+
+    /* Extract redirections */
+    char* redir_out = NULL;
+    char* redir_in  = NULL;
+    int   append = 0;
     int nargc = 0;
     for (int i = 0; i < argc; i++) {
-        if (scmp(argv[i], ">") == 0 && i + 1 < argc) {
-            redir_out = argv[++i];
-        } else if (scmp(argv[i], "<") == 0 && i + 1 < argc) {
+        if (strcmp(argv[i], ">>") == 0 && i + 1 < argc) {
+            redir_out = argv[++i]; append = 1;
+        } else if (strcmp(argv[i], ">") == 0 && i + 1 < argc) {
+            redir_out = argv[++i]; append = 0;
+        } else if (strcmp(argv[i], "<") == 0 && i + 1 < argc) {
             redir_in = argv[++i];
         } else {
             argv[nargc++] = argv[i];
         }
     }
-    argv[nargc] = 0;
+    argv[nargc] = NULL;
     argc = nargc;
     if (argc == 0) return;
 
-    /* builtin: exit */
-    if (scmp(argv[0], "exit") == 0) {
-        int code = 0;
-        if (argc > 1) {
-            const char* s = argv[1];
-            while (*s >= '0' && *s <= '9') {
-                code = code * 10 + (*s - '0');
-                s++;
-            }
-        }
-        sys_exit(code);
+    /* ---- Builtins ---- */
+
+    if (strcmp(argv[0], "exit") == 0) {
+        int code = argc > 1 ? atoi(argv[1]) : last_status;
+        exit(code);
     }
 
-    /* builtin: echo */
-    if (scmp(argv[0], "echo") == 0) {
-        for (int i = 1; i < argc; i++) {
-            if (i > 1) wr(1, " ");
-            wr(1, argv[i]);
+    if (strcmp(argv[0], "cd") == 0) {
+        const char* dir = argc > 1 ? argv[1] : var_get("HOME");
+        if (!dir) dir = "/";
+        if (chdir(dir) < 0)
+            fprintf(stderr, "cd: %s: No such file or directory\n", dir);
+        else {
+            char cwd[256];
+            if (getcwd(cwd, sizeof(cwd)) >= 0)
+                var_set("PWD", cwd, 1);
         }
-        wr(1, "\n");
         return;
     }
 
-    /* external command */
+    if (strcmp(argv[0], "pwd") == 0) {
+        char cwd[256];
+        if (getcwd(cwd, sizeof(cwd)) >= 0)
+            printf("%s\n", cwd);
+        else
+            fprintf(stderr, "pwd: error\n");
+        return;
+    }
+
+    if (strcmp(argv[0], "export") == 0) {
+        for (int i = 1; i < argc; i++) {
+            char* eq = strchr(argv[i], '=');
+            if (eq) {
+                *eq = '\0';
+                var_set(argv[i], eq + 1, 1);
+            } else {
+                /* Export existing variable */
+                for (int j = 0; j < nvar; j++)
+                    if (strcmp(vars[j].name, argv[i]) == 0)
+                        vars[j].exported = 1;
+            }
+        }
+        return;
+    }
+
+    if (strcmp(argv[0], "unset") == 0) {
+        for (int i = 1; i < argc; i++) var_unset(argv[i]);
+        return;
+    }
+
+    if (strcmp(argv[0], "set") == 0) {
+        for (int i = 0; i < nvar; i++)
+            printf("%s=%s\n", vars[i].name, vars[i].value);
+        return;
+    }
+
+    if (strcmp(argv[0], "echo") == 0) {
+        int nflag = 0;
+        int start = 1;
+        if (argc > 1 && strcmp(argv[1], "-n") == 0) { nflag = 1; start = 2; }
+        for (int i = start; i < argc; i++) {
+            if (i > start) write(STDOUT_FILENO, " ", 1);
+            write(STDOUT_FILENO, argv[i], strlen(argv[i]));
+        }
+        if (!nflag) write(STDOUT_FILENO, "\n", 1);
+        return;
+    }
+
+    if (strcmp(argv[0], "type") == 0) {
+        for (int i = 1; i < argc; i++) {
+            if (strcmp(argv[i], "cd") == 0 || strcmp(argv[i], "exit") == 0 ||
+                strcmp(argv[i], "echo") == 0 || strcmp(argv[i], "export") == 0 ||
+                strcmp(argv[i], "unset") == 0 || strcmp(argv[i], "set") == 0 ||
+                strcmp(argv[i], "pwd") == 0 || strcmp(argv[i], "type") == 0) {
+                printf("%s is a shell builtin\n", argv[i]);
+            } else {
+                const char* path = resolve(argv[i]);
+                if (strcmp(path, argv[i]) != 0)
+                    printf("%s is %s\n", argv[i], path);
+                else
+                    printf("%s: not found\n", argv[i]);
+            }
+        }
+        return;
+    }
+
+    /* ---- External command ---- */
     const char* path = resolve(argv[0]);
-    int pid = sys_fork();
-    if (pid < 0) { wr(2, "sh: fork failed\n"); return; }
+    char** envp = build_envp();
+
+    int pid = fork();
+    if (pid < 0) { fprintf(stderr, "sh: fork failed\n"); return; }
 
     if (pid == 0) {
         /* child */
         if (redir_in) {
-            int fd = sys_open(redir_in, O_RDONLY);
-            if (fd >= 0) { sys_dup2(fd, 0); sys_close(fd); }
+            int fd = open(redir_in, O_RDONLY);
+            if (fd >= 0) { dup2(fd, 0); close(fd); }
         }
         if (redir_out) {
-            int fd = sys_open(redir_out, O_WRONLY | O_CREAT | O_TRUNC);
-            if (fd >= 0) { sys_dup2(fd, 1); sys_close(fd); }
+            int flags = O_WRONLY | O_CREAT;
+            flags |= append ? O_APPEND : O_TRUNC;
+            int fd = open(redir_out, flags);
+            if (fd >= 0) { dup2(fd, 1); close(fd); }
         }
-        sys_execve(path, argv, 0);
-        wr(2, "sh: ");
-        wr(2, argv[0]);
-        wr(2, ": not found\n");
-        sys_exit(127);
+        execve(path, (const char* const*)argv, (const char* const*)envp);
+        fprintf(stderr, "sh: %s: not found\n", argv[0]);
+        _exit(127);
     }
 
     /* parent waits */
     int st;
-    sys_waitpid(pid, &st, 0);
+    waitpid(pid, &st, 0);
+    last_status = st;
 }
 
-/* ---- pipeline support ---- */
+/* ---- Pipeline support ---- */
 
 static void run_pipeline(char* cmdline) {
-    /* split on '|' */
-    char* cmds[4];
+    /* Split on '|' (outside quotes) */
+    char* cmds[8];
     int ncmds = 0;
     cmds[0] = cmdline;
+    int in_sq = 0, in_dq = 0;
     for (char* p = cmdline; *p; p++) {
-        if (*p == '|' && ncmds < 3) {
-            *p = 0;
+        if (*p == '\'' && !in_dq) in_sq = !in_sq;
+        else if (*p == '"' && !in_sq) in_dq = !in_dq;
+        else if (*p == '|' && !in_sq && !in_dq && ncmds < 7) {
+            *p = '\0';
             cmds[++ncmds] = p + 1;
         }
     }
@@ -261,69 +523,137 @@ static void run_pipeline(char* cmdline) {
         return;
     }
 
-    /* multi-stage pipeline */
+    /* Multi-stage pipeline */
     int prev_rd = -1;
+    int pids[8];
+
     for (int i = 0; i < ncmds; i++) {
         int pfd[2] = {-1, -1};
         if (i < ncmds - 1) {
-            if (sys_pipe(pfd) < 0) {
-                wr(2, "sh: pipe failed\n");
+            if (pipe(pfd) < 0) {
+                fprintf(stderr, "sh: pipe failed\n");
                 return;
             }
         }
 
-        int pid = sys_fork();
-        if (pid < 0) { wr(2, "sh: fork failed\n"); return; }
+        pids[i] = fork();
+        if (pids[i] < 0) { fprintf(stderr, "sh: fork failed\n"); return; }
 
-        if (pid == 0) {
-            if (prev_rd >= 0) { sys_dup2(prev_rd, 0); sys_close(prev_rd); }
-            if (pfd[1] >= 0)  { sys_dup2(pfd[1], 1); sys_close(pfd[1]); }
-            if (pfd[0] >= 0)  sys_close(pfd[0]);
+        if (pids[i] == 0) {
+            if (prev_rd >= 0) { dup2(prev_rd, 0); close(prev_rd); }
+            if (pfd[1] >= 0)  { dup2(pfd[1], 1); close(pfd[1]); }
+            if (pfd[0] >= 0)  close(pfd[0]);
 
+            /* Expand and parse this pipeline stage */
+            char expanded[LINE_MAX];
+            expand_vars(cmds[i], expanded, LINE_MAX);
             char* argv[MAX_ARGS];
-            int argc = parse_args(cmds[i], argv, MAX_ARGS);
-            if (argc == 0) sys_exit(0);
+            int argc = parse_args(expanded, argv, MAX_ARGS);
+            if (argc == 0) _exit(0);
             const char* path = resolve(argv[0]);
-            sys_execve(path, argv, 0);
-            wr(2, "sh: ");
-            wr(2, argv[0]);
-            wr(2, ": not found\n");
-            sys_exit(127);
+            char** envp = build_envp();
+            execve(path, (const char* const*)argv, (const char* const*)envp);
+            fprintf(stderr, "sh: %s: not found\n", argv[0]);
+            _exit(127);
         }
 
         /* parent */
-        if (prev_rd >= 0) sys_close(prev_rd);
-        if (pfd[1] >= 0)  sys_close(pfd[1]);
+        if (prev_rd >= 0) close(prev_rd);
+        if (pfd[1] >= 0)  close(pfd[1]);
         prev_rd = pfd[0];
     }
 
-    if (prev_rd >= 0) sys_close(prev_rd);
+    if (prev_rd >= 0) close(prev_rd);
 
-    /* wait for all children */
+    /* Wait for all children */
     for (int i = 0; i < ncmds; i++) {
         int st;
-        sys_waitpid(-1, &st, 0);
+        waitpid(pids[i], &st, 0);
+        if (i == ncmds - 1) last_status = st;
     }
 }
 
-/* ---- main loop ---- */
+/* ---- Process a command line (handle ; and &&) ---- */
 
-static void sh_main(void) {
-    wr(1, "$ ");
+static void process_line(char* input) {
+    /* Split on ';' */
+    char* p = input;
+    while (*p) {
+        /* skip leading whitespace */
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p == '\0') break;
+
+        char* start = p;
+        int in_sq = 0, in_dq = 0;
+        while (*p) {
+            if (*p == '\'' && !in_dq) in_sq = !in_sq;
+            else if (*p == '"' && !in_sq) in_dq = !in_dq;
+            else if (*p == ';' && !in_sq && !in_dq) break;
+            p++;
+        }
+        char saved = *p;
+        if (*p) *p++ = '\0';
+
+        if (start[0] != '\0')
+            run_pipeline(start);
+
+        if (saved == '\0') break;
+    }
+}
+
+/* ---- Prompt ---- */
+
+static void print_prompt(void) {
+    const char* user = var_get("USER");
+    const char* host = var_get("HOSTNAME");
+    char cwd[256];
+
+    if (!user) user = "root";
+    if (!host) host = "adros";
+
+    if (getcwd(cwd, sizeof(cwd)) < 0) strcpy(cwd, "?");
+
+    printf("%s@%s:%s$ ", user, host, cwd);
+    fflush(stdout);
+}
+
+/* ---- Main ---- */
+
+int main(int argc, char** argv, char** envp) {
+    (void)argc;
+    (void)argv;
+
+    /* Import environment variables */
+    if (envp) {
+        for (int i = 0; envp[i]; i++) {
+            char* eq = strchr(envp[i], '=');
+            if (eq) {
+                char name[64];
+                int nlen = (int)(eq - envp[i]);
+                if (nlen > 63) nlen = 63;
+                memcpy(name, envp[i], (size_t)nlen);
+                name[nlen] = '\0';
+                var_set(name, eq + 1, 1);
+            }
+        }
+    }
+
+    /* Set defaults */
+    if (!var_get("PATH"))
+        var_set("PATH", "/bin:/sbin:/usr/bin", 1);
+    if (!var_get("HOME"))
+        var_set("HOME", "/", 1);
+
+    print_prompt();
     while (1) {
-        int len = read_line();
+        int len = read_line_edit();
         if (len < 0) break;
-        if (len > 0) run_pipeline(line);
-        wr(1, "$ ");
+        if (len > 0) {
+            hist_add(line);
+            process_line(line);
+        }
+        print_prompt();
     }
-}
 
-__attribute__((naked)) void _start(void) {
-    __asm__ volatile(
-        "call sh_main\n"
-        "mov $0, %ebx\n"
-        "mov $2, %eax\n"
-        "int $0x80\n"
-        "hlt\n"
-    );
+    return last_status;
 }

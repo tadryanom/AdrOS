@@ -73,14 +73,32 @@ ifeq ($(ARCH),x86)
     ASM_SOURCES := $(wildcard $(SRC_DIR)/arch/x86/*.S)
     C_SOURCES += $(wildcard $(SRC_DIR)/arch/x86/*.c)
 
-    USER_ELF := user/init.elf
+    FULLTEST_ELF := user/fulltest.elf
     ECHO_ELF := user/echo.elf
     SH_ELF := user/sh.elf
     CAT_ELF := user/cat.elf
     LS_ELF := user/ls.elf
     MKDIR_ELF := user/mkdir.elf
     RM_ELF := user/rm.elf
+    CP_ELF := user/cp.elf
+    MV_ELF := user/mv.elf
+    TOUCH_ELF := user/touch.elf
+    LN_ELF := user/ln.elf
+    HEAD_ELF := user/head.elf
+    TAIL_ELF := user/tail.elf
+    WC_ELF := user/wc.elf
+    SORT_ELF := user/sort.elf
+    UNIQ_ELF := user/uniq.elf
+    CUT_ELF := user/cut.elf
+    CHMOD_ELF := user/chmod.elf
+    CHOWN_ELF := user/chown.elf
+    CHGRP_ELF := user/chgrp.elf
+    DATE_ELF := user/date.elf
+    HOSTNAME_ELF := user/hostname.elf
+    UPTIME_ELF := user/uptime.elf
+    INIT_ELF := user/init.elf
     LDSO_ELF := user/ld.so
+    ULIBC_SO := user/ulibc/libc.so
     PIE_SO := user/libpietest.so
     PIE_ELF := user/pie_test.elf
     DOOM_ELF := user/doom/doom.elf
@@ -168,26 +186,108 @@ ULIBC_LIB := $(ULIBC_DIR)/libulibc.a
 $(ULIBC_LIB):
 	@$(MAKE) -C $(ULIBC_DIR) --no-print-directory
 
-$(USER_ELF): user/init.c user/linker.ld
-	@i686-elf-gcc -m32 -I include -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(USER_ELF) user/init.c user/errno.c
+$(ULIBC_SO):
+	@$(MAKE) -C $(ULIBC_DIR) libc.so --no-print-directory
 
-$(ECHO_ELF): user/echo.c user/linker.ld
-	@i686-elf-gcc -m32 -I include -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(ECHO_ELF) user/echo.c user/errno.c
+$(FULLTEST_ELF): user/fulltest.c user/linker.ld
+	@i686-elf-gcc -m32 -I include -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(FULLTEST_ELF) user/fulltest.c user/errno.c
 
-$(SH_ELF): user/sh.c user/linker.ld
-	@i686-elf-gcc -m32 -I include -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(SH_ELF) user/sh.c user/errno.c
+# --- Dynamic linking helper: compile .c to PIC .o, link as PIE with crt0 + libc.so ---
+ULIBC_CRT0 := $(ULIBC_DIR)/src/crt0.o
+DYN_CC := i686-elf-gcc -m32 -ffreestanding -nostdlib -O2 -Wall -Wextra -fPIC -fno-plt -I$(ULIBC_DIR)/include
+DYN_LD := i686-elf-ld -m elf_i386 --dynamic-linker=/lib/ld.so -T user/dyn_linker.ld -L$(ULIBC_DIR) -rpath /lib
 
-$(CAT_ELF): user/cat.c user/linker.ld
-	@i686-elf-gcc -m32 -I include -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(CAT_ELF) user/cat.c user/errno.c
+$(ECHO_ELF): user/echo.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/echo.c -o user/echo.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/echo.o -lc
 
-$(LS_ELF): user/ls.c user/linker.ld
-	@i686-elf-gcc -m32 -I include -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(LS_ELF) user/ls.c user/errno.c
+$(SH_ELF): user/sh.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/sh.c -o user/sh.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/sh.o -lc
 
-$(MKDIR_ELF): user/mkdir.c user/linker.ld
-	@i686-elf-gcc -m32 -I include -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(MKDIR_ELF) user/mkdir.c user/errno.c
+$(CAT_ELF): user/cat.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/cat.c -o user/cat.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/cat.o -lc
 
-$(RM_ELF): user/rm.c user/linker.ld
-	@i686-elf-gcc -m32 -I include -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(RM_ELF) user/rm.c user/errno.c
+$(LS_ELF): user/ls.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/ls.c -o user/ls.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/ls.o -lc
+
+$(MKDIR_ELF): user/mkdir.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/mkdir.c -o user/mkdir.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/mkdir.o -lc
+
+$(RM_ELF): user/rm.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/rm.c -o user/rm.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/rm.o -lc
+
+$(CP_ELF): user/cp.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/cp.c -o user/cp.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/cp.o -lc
+
+$(MV_ELF): user/mv.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/mv.c -o user/mv.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/mv.o -lc
+
+$(TOUCH_ELF): user/touch.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/touch.c -o user/touch.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/touch.o -lc
+
+$(LN_ELF): user/ln.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/ln.c -o user/ln.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/ln.o -lc
+
+$(HEAD_ELF): user/head.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/head.c -o user/head.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/head.o -lc
+
+$(TAIL_ELF): user/tail.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/tail.c -o user/tail.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/tail.o -lc
+
+$(WC_ELF): user/wc.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/wc.c -o user/wc.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/wc.o -lc
+
+$(SORT_ELF): user/sort.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/sort.c -o user/sort.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/sort.o -lc
+
+$(UNIQ_ELF): user/uniq.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/uniq.c -o user/uniq.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/uniq.o -lc
+
+$(CUT_ELF): user/cut.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/cut.c -o user/cut.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/cut.o -lc
+
+$(CHMOD_ELF): user/chmod.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/chmod.c -o user/chmod.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/chmod.o -lc
+
+$(CHOWN_ELF): user/chown.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/chown.c -o user/chown.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/chown.o -lc
+
+$(CHGRP_ELF): user/chgrp.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/chgrp.c -o user/chgrp.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/chgrp.o -lc
+
+$(DATE_ELF): user/date.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/date.c -o user/date.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/date.o -lc
+
+$(HOSTNAME_ELF): user/hostname.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/hostname.c -o user/hostname.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/hostname.o -lc
+
+$(UPTIME_ELF): user/uptime.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/uptime.c -o user/uptime.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/uptime.o -lc
+
+$(INIT_ELF): user/init.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/init.c -o user/init.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/init.o -lc
 
 $(LDSO_ELF): user/ldso.c user/ldso_linker.ld
 	@i686-elf-gcc -m32 -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/ldso_linker.ld -o $(LDSO_ELF) user/ldso.c
@@ -200,13 +300,32 @@ $(PIE_ELF): user/pie_main.c user/pie_linker.ld $(PIE_SO)
 	@i686-elf-gcc -m32 -fPIC -c user/pie_main.c -o user/pie_main.o
 	@i686-elf-ld -m elf_i386 -pie --dynamic-linker=/lib/ld.so -T user/pie_linker.ld -o $(PIE_ELF) user/pie_main.o $(PIE_SO) -rpath /lib
 
+# All dynamically-linked user commands
+USER_CMDS := $(ECHO_ELF) $(SH_ELF) $(CAT_ELF) $(LS_ELF) $(MKDIR_ELF) $(RM_ELF) \
+             $(CP_ELF) $(MV_ELF) $(TOUCH_ELF) $(LN_ELF) \
+             $(HEAD_ELF) $(TAIL_ELF) $(WC_ELF) $(SORT_ELF) $(UNIQ_ELF) $(CUT_ELF) \
+             $(CHMOD_ELF) $(CHOWN_ELF) $(CHGRP_ELF) \
+             $(DATE_ELF) $(HOSTNAME_ELF) $(UPTIME_ELF) \
+             $(INIT_ELF)
+
 FSTAB := rootfs/etc/fstab
-INITRD_FILES := $(USER_ELF):bin/init.elf $(ECHO_ELF):bin/echo.elf $(SH_ELF):bin/sh $(CAT_ELF):bin/cat $(LS_ELF):bin/ls $(MKDIR_ELF):bin/mkdir $(RM_ELF):bin/rm $(LDSO_ELF):lib/ld.so $(PIE_SO):lib/libpietest.so $(PIE_ELF):bin/pie_test.elf $(FSTAB):etc/fstab
-INITRD_DEPS := $(MKINITRD) $(USER_ELF) $(ECHO_ELF) $(SH_ELF) $(CAT_ELF) $(LS_ELF) $(MKDIR_ELF) $(RM_ELF) $(LDSO_ELF) $(PIE_SO) $(PIE_ELF) $(FSTAB)
+INITRD_FILES := $(FULLTEST_ELF):sbin/fulltest \
+    $(INIT_ELF):sbin/init \
+    $(ECHO_ELF):bin/echo $(SH_ELF):bin/sh $(CAT_ELF):bin/cat $(LS_ELF):bin/ls \
+    $(MKDIR_ELF):bin/mkdir $(RM_ELF):bin/rm $(CP_ELF):bin/cp $(MV_ELF):bin/mv \
+    $(TOUCH_ELF):bin/touch $(LN_ELF):bin/ln \
+    $(HEAD_ELF):bin/head $(TAIL_ELF):bin/tail $(WC_ELF):bin/wc \
+    $(SORT_ELF):bin/sort $(UNIQ_ELF):bin/uniq $(CUT_ELF):bin/cut \
+    $(CHMOD_ELF):bin/chmod $(CHOWN_ELF):bin/chown $(CHGRP_ELF):bin/chgrp \
+    $(DATE_ELF):bin/date $(HOSTNAME_ELF):bin/hostname $(UPTIME_ELF):bin/uptime \
+    $(LDSO_ELF):lib/ld.so $(ULIBC_SO):lib/libc.so \
+    $(PIE_SO):lib/libpietest.so $(PIE_ELF):bin/pie_test \
+    $(FSTAB):etc/fstab
+INITRD_DEPS := $(MKINITRD) $(FULLTEST_ELF) $(USER_CMDS) $(LDSO_ELF) $(ULIBC_SO) $(PIE_SO) $(PIE_ELF) $(FSTAB)
 
 # Include doom.elf if it has been built
 ifneq ($(wildcard $(DOOM_ELF)),)
-INITRD_FILES += $(DOOM_ELF):bin/doom.elf
+INITRD_FILES += $(DOOM_ELF):bin/doom
 INITRD_DEPS += $(DOOM_ELF)
 endif
 
@@ -327,10 +446,10 @@ scan-build:
 	@command -v scan-build >/dev/null
 	@scan-build --status-bugs $(MAKE) ARCH=$(ARCH) $(if $(CROSS),CROSS=$(CROSS),) all
 
-mkinitrd-asan: $(USER_ELF)
+mkinitrd-asan: $(FULLTEST_ELF)
 	@mkdir -p build/host
 	@gcc -g -O1 -fno-omit-frame-pointer -fsanitize=address,undefined tools/mkinitrd.c -o build/host/mkinitrd-asan
-	@./build/host/mkinitrd-asan build/host/$(INITRD_IMG).asan $(USER_ELF):bin/init.elf
+	@./build/host/mkinitrd-asan build/host/$(INITRD_IMG).asan $(FULLTEST_ELF):sbin/fulltest
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(dir $@)

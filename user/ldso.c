@@ -44,6 +44,9 @@ typedef int            int32_t;
 #define DT_RELSZ   18
 #define DT_JMPREL  23
 
+#define R_386_32       1
+#define R_386_COPY     5
+#define R_386_GLOB_DAT 6
 #define R_386_JMP_SLOT 7
 
 #define ELF32_R_SYM(i)  ((i) >> 8)
@@ -83,6 +86,8 @@ struct link_map {
     uint32_t pltrelsz;         /* DT_PLTRELSZ */
     uint32_t symtab;           /* DT_SYMTAB VA */
     uint32_t strtab;           /* DT_STRTAB VA */
+    uint32_t rel;              /* DT_REL VA (eager relocations) */
+    uint32_t relsz;            /* DT_RELSZ */
     /* Shared lib symbol lookup info */
     uint32_t shlib_symtab;     /* .so DT_SYMTAB VA (0 if no .so) */
     uint32_t shlib_strtab;     /* .so DT_STRTAB VA */
@@ -294,8 +299,13 @@ static void _start_c(uint32_t* initial_sp) {
                     case DT_PLTRELSZ: g_map.pltrelsz  = d->d_val; break;
                     case DT_SYMTAB:   g_map.symtab    = d->d_val; break;
                     case DT_STRTAB:   g_map.strtab    = d->d_val; break;
+                    case DT_REL:      g_map.rel       = d->d_val; break;
+                    case DT_RELSZ:    g_map.relsz     = d->d_val; break;
                     }
                 }
+
+                /* Scan for shared library info BEFORE resolving relocations */
+                find_shlib_info();
 
                 /* Set up GOT for lazy binding:
                  * GOT[0] = _DYNAMIC (already set by linker)
@@ -306,18 +316,53 @@ static void _start_c(uint32_t* initial_sp) {
                     got[1] = (uint32_t)&g_map;
                     got[2] = (uint32_t)&_dl_runtime_resolve;
                 }
+
+                /* Process eager relocations (R_386_GLOB_DAT, R_386_COPY) */
+                if (g_map.rel && g_map.relsz) {
+                    uint32_t nrel = g_map.relsz / sizeof(struct elf32_rel);
+                    const struct elf32_rel* rtab =
+                        (const struct elf32_rel*)(g_map.rel + g_map.l_addr);
+                    for (uint32_t j = 0; j < nrel; j++) {
+                        uint32_t type = ELF32_R_TYPE(rtab[j].r_info);
+                        uint32_t sidx = ELF32_R_SYM(rtab[j].r_info);
+                        uint32_t* target = (uint32_t*)(rtab[j].r_offset + g_map.l_addr);
+                        if (type == R_386_GLOB_DAT || type == R_386_JMP_SLOT) {
+                            const struct elf32_sym* s =
+                                &((const struct elf32_sym*)g_map.symtab)[sidx];
+                            uint32_t addr = 0;
+                            if (s->st_value != 0)
+                                addr = s->st_value + g_map.l_addr;
+                            else {
+                                const char* nm = (const char*)g_map.strtab + s->st_name;
+                                addr = shlib_lookup(nm, &g_map);
+                            }
+                            if (addr) *target = addr;
+                        } else if (type == R_386_COPY && sidx) {
+                            const struct elf32_sym* s =
+                                &((const struct elf32_sym*)g_map.symtab)[sidx];
+                            const char* nm = (const char*)g_map.strtab + s->st_name;
+                            uint32_t src = shlib_lookup(nm, &g_map);
+                            if (src && s->st_size > 0) {
+                                const uint8_t* sp = (const uint8_t*)src;
+                                uint8_t* dp = (uint8_t*)target;
+                                for (uint32_t k = 0; k < s->st_size; k++)
+                                    dp[k] = sp[k];
+                            }
+                        }
+                    }
+                }
                 break;
             }
         }
     }
 
-    /* Scan for shared library info at SHLIB_BASE */
-    find_shlib_info();
-
-    /* Jump to the real program entry point */
+    /* Restore the original stack pointer so the real program's _start
+     * sees the correct layout: [argc] [argv...] [NULL] [envp...] [NULL] [auxv...]
+     * Then jump to the program entry point. */
     __asm__ volatile(
-        "jmp *%0\n"
-        :: "r"(at_entry)
+        "mov %0, %%esp\n"
+        "jmp *%1\n"
+        :: "r"(initial_sp), "r"(at_entry)
         : "memory"
     );
     __builtin_unreachable();

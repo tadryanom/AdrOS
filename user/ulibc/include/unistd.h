@@ -26,7 +26,7 @@ int     getpid(void);
 int     getppid(void);
 int     chdir(const char* path);
 int     getcwd(char* buf, size_t size);
-int     mkdir(const char* path);
+int     mkdir(const char* path, ...);  /* mode_t optional in AdrOS */
 int     unlink(const char* path);
 int     rmdir(const char* path);
 int     setsid(void);
@@ -57,6 +57,21 @@ int     flock(int fd, int operation);
 int     isatty(int fd);
 void*   brk(void* addr);
 
+int     waitpid(int pid, int* status, int options);
+int     getdents(int fd, void* buf, size_t count);
+int     stat(const char* path, void* buf);  /* use sys/stat.h for typed version */
+int     fstat(int fd, void* buf);              /* use sys/stat.h for typed version */
+int     chmod(const char* path, int mode);
+int     chown(const char* path, int owner, int group);
+int     link(const char* oldpath, const char* newpath);
+int     symlink(const char* target, const char* linkpath);
+int     readlink(const char* path, char* buf, size_t bufsiz);
+int     kill(int pid, int sig);
+int     rename(const char* oldpath, const char* newpath);
+
 void    _exit(int status) __attribute__((noreturn));
+
+/* Environment pointer (set by crt0) */
+extern char** __environ;
 
 #endif

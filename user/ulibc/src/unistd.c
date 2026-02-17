@@ -58,7 +58,7 @@ int getcwd(char* buf, size_t size) {
     return __syscall_ret(_syscall2(SYS_GETCWD, (int)buf, (int)size));
 }
 
-int mkdir(const char* path) {
+int mkdir(const char* path, ...) {
     return __syscall_ret(_syscall1(SYS_MKDIR, (int)path));
 }
 
@@ -172,6 +172,47 @@ int isatty(int fd) {
     struct { uint32_t a,b,c,d; uint8_t e[8]; } t;
     int rc = _syscall3(SYS_IOCTL, fd, 0x5401 /* TCGETS */, (int)&t);
     return (rc == 0) ? 1 : 0;
+}
+
+int waitpid(int pid, int* status, int options) {
+    return __syscall_ret(_syscall3(SYS_WAITPID, pid, (int)status, options));
+}
+
+int getdents(int fd, void* buf, size_t count) {
+    return __syscall_ret(_syscall3(SYS_GETDENTS, fd, (int)buf, (int)count));
+}
+
+int stat(const char* path, void* buf) {
+    return __syscall_ret(_syscall2(SYS_STAT, (int)path, (int)buf));
+}
+
+int fstat(int fd, void* buf) {
+    return __syscall_ret(_syscall2(SYS_FSTAT, fd, (int)buf));
+}
+
+int chmod(const char* path, int mode) {
+    return __syscall_ret(_syscall2(SYS_CHMOD, (int)path, mode));
+}
+
+int chown(const char* path, int owner, int group) {
+    return __syscall_ret(_syscall3(SYS_CHOWN, (int)path, owner, group));
+}
+
+int link(const char* oldpath, const char* newpath) {
+    /* Use SYS_UNLINKAT slot 38 — AdrOS doesn't have a dedicated link syscall yet,
+     * use a direct int $0x80 with the link syscall number if available */
+    (void)oldpath; (void)newpath;
+    return -1;  /* TODO: implement when kernel has SYS_LINK */
+}
+
+int symlink(const char* target, const char* linkpath) {
+    (void)target; (void)linkpath;
+    return -1;  /* TODO: implement when kernel has SYS_SYMLINK */
+}
+
+int readlink(const char* path, char* buf, size_t bufsiz) {
+    (void)path; (void)buf; (void)bufsiz;
+    return -1;  /* TODO: implement when kernel has SYS_READLINK */
 }
 
 void _exit(int status) {
