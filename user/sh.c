@@ -555,12 +555,41 @@ static void run_simple(char* cmd) {
     char* redir_out = NULL;
     char* redir_in  = NULL;
     int   append = 0;
+    int   heredoc_fd = -1;
     int nargc = 0;
     for (int i = 0; i < argc; i++) {
         if (strcmp(argv[i], ">>") == 0 && i + 1 < argc) {
             redir_out = argv[++i]; append = 1;
         } else if (strcmp(argv[i], ">") == 0 && i + 1 < argc) {
             redir_out = argv[++i]; append = 0;
+        } else if (strcmp(argv[i], "<<") == 0 && i + 1 < argc) {
+            char* delim = argv[++i];
+            int dlen = (int)strlen(delim);
+            if (dlen > 0 && (delim[0] == '"' || delim[0] == '\'')) {
+                delim++; dlen -= 2; if (dlen < 0) dlen = 0;
+                delim[dlen] = '\0';
+            }
+            int pfd[2];
+            if (pipe(pfd) == 0) {
+                tty_restore();
+                char hline[LINE_MAX];
+                while (1) {
+                    write(STDOUT_FILENO, "> ", 2);
+                    int hi = 0;
+                    char hc;
+                    while (read(STDIN_FILENO, &hc, 1) == 1) {
+                        if (hc == '\n') break;
+                        if (hi < LINE_MAX - 1) hline[hi++] = hc;
+                    }
+                    hline[hi] = '\0';
+                    if (strcmp(hline, delim) == 0) break;
+                    write(pfd[1], hline, hi);
+                    write(pfd[1], "\n", 1);
+                }
+                close(pfd[1]);
+                heredoc_fd = pfd[0];
+                tty_raw_mode();
+            }
         } else if (strcmp(argv[i], "<") == 0 && i + 1 < argc) {
             redir_in = argv[++i];
         } else {
@@ -573,7 +602,9 @@ static void run_simple(char* cmd) {
 
     /* ---- Apply redirections for builtins too ---- */
     int saved_stdin = -1, saved_stdout = -1;
-    if (redir_in) {
+    if (heredoc_fd >= 0) {
+        saved_stdin = dup(0); dup2(heredoc_fd, 0); close(heredoc_fd); heredoc_fd = -1;
+    } else if (redir_in) {
         int fd = open(redir_in, O_RDONLY);
         if (fd >= 0) { saved_stdin = dup(0); dup2(fd, 0); close(fd); }
     }

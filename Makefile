@@ -118,6 +118,13 @@ ifeq ($(ARCH),x86)
     DD_ELF := user/dd.elf
     PWD_ELF := user/pwd.elf
     STAT_ELF := user/stat.elf
+    SED_ELF := user/sed.elf
+    AWK_ELF := user/awk.elf
+    WHO_ELF := user/who.elf
+    TOP_ELF := user/top.elf
+    DU_ELF := user/du.elf
+    FIND_ELF := user/find.elf
+    WHICH_ELF := user/which.elf
     INIT_ELF := user/init.elf
     LDSO_ELF := user/ld.so
     ULIBC_SO := user/ulibc/libc.so
@@ -399,6 +406,34 @@ $(STAT_ELF): user/stat.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
 	@$(DYN_CC) -c user/stat.c -o user/stat.o
 	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/stat.o -lc
 
+$(SED_ELF): user/sed.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/sed.c -o user/sed.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/sed.o -lc
+
+$(AWK_ELF): user/awk.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/awk.c -o user/awk.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/awk.o -lc
+
+$(WHO_ELF): user/who.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/who.c -o user/who.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/who.o -lc
+
+$(TOP_ELF): user/top.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/top.c -o user/top.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/top.o -lc
+
+$(DU_ELF): user/du.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/du.c -o user/du.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/du.o -lc
+
+$(FIND_ELF): user/find.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/find.c -o user/find.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/find.o -lc
+
+$(WHICH_ELF): user/which.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/which.c -o user/which.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/which.o -lc
+
 $(LDSO_ELF): user/ldso.c user/ldso_linker.ld
 	@i686-elf-gcc -m32 -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/ldso_linker.ld -o $(LDSO_ELF) user/ldso.c
 
@@ -421,6 +456,8 @@ USER_CMDS := $(ECHO_ELF) $(SH_ELF) $(CAT_ELF) $(LS_ELF) $(MKDIR_ELF) $(RM_ELF) \
              $(BASENAME_ELF) $(DIRNAME_ELF) $(RMDIR_ELF) \
              $(GREP_ELF) $(ID_ELF) $(UNAME_ELF) $(DMESG_ELF) \
              $(PRINTENV_ELF) $(TR_ELF) $(DD_ELF) $(PWD_ELF) $(STAT_ELF) \
+             $(SED_ELF) $(AWK_ELF) $(WHO_ELF) $(TOP_ELF) $(DU_ELF) \
+             $(FIND_ELF) $(WHICH_ELF) \
              $(INIT_ELF)
 
 FSTAB := rootfs/etc/fstab
@@ -440,6 +477,8 @@ INITRD_FILES := $(FULLTEST_ELF):sbin/fulltest \
     $(RMDIR_ELF):bin/rmdir \
     $(GREP_ELF):bin/grep $(ID_ELF):bin/id $(UNAME_ELF):bin/uname \
     $(DMESG_ELF):bin/dmesg $(PRINTENV_ELF):bin/printenv $(TR_ELF):bin/tr \
+    $(SED_ELF):bin/sed $(AWK_ELF):bin/awk $(WHO_ELF):bin/who \
+    $(TOP_ELF):bin/top $(DU_ELF):bin/du $(FIND_ELF):bin/find $(WHICH_ELF):bin/which \
     $(DD_ELF):bin/dd $(PWD_ELF):bin/pwd $(STAT_ELF):bin/stat \
     $(LDSO_ELF):lib/ld.so $(ULIBC_SO):lib/libc.so \
     $(PIE_SO):lib/libpietest.so $(PIE_ELF):bin/pie_test \
