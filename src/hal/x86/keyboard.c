@@ -10,6 +10,7 @@ static hal_keyboard_scan_cb_t g_scan_cb = 0;
 
 /* Modifier state */
 static volatile int shift_held = 0;
+static volatile int ctrl_held = 0;
 
 /* Extended scancode state (0xE0 prefix) */
 static volatile int e0_prefix = 0;
@@ -103,6 +104,8 @@ static void emit_escape_seq(const char* seq) {
 #define SC_RSHIFT_PRESS  0x36
 #define SC_LSHIFT_REL    0xAA
 #define SC_RSHIFT_REL    0xB6
+#define SC_LCTRL_PRESS   0x1D
+#define SC_LCTRL_REL     0x9D
 
 /* Extended (0xE0-prefixed) scancodes */
 #define SC_E0_UP    0x48
@@ -169,13 +172,21 @@ static void kbd_irq(struct registers* regs) {
         return;
     }
 
-    /* Track shift state */
+    /* Track modifier state */
     if (scancode == SC_LSHIFT_PRESS || scancode == SC_RSHIFT_PRESS) {
         shift_held = 1;
         return;
     }
     if (scancode == SC_LSHIFT_REL || scancode == SC_RSHIFT_REL) {
         shift_held = 0;
+        return;
+    }
+    if (scancode == SC_LCTRL_PRESS) {
+        ctrl_held = 1;
+        return;
+    }
+    if (scancode == SC_LCTRL_REL) {
+        ctrl_held = 0;
         return;
     }
 
@@ -185,7 +196,13 @@ static void kbd_irq(struct registers* regs) {
     if (scancode < 128) {
         char c = shift_held ? scancode_map_shift[scancode] : scancode_map[scancode];
         if (c != 0 && g_cb) {
-            g_cb(c);
+            if (ctrl_held && c >= 'a' && c <= 'z') {
+                g_cb(c - 'a' + 1);  /* Ctrl+A=0x01 .. Ctrl+Z=0x1A */
+            } else if (ctrl_held && c >= 'A' && c <= 'Z') {
+                g_cb(c - 'A' + 1);
+            } else {
+                g_cb(c);
+            }
         }
     }
 }

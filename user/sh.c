@@ -313,6 +313,11 @@ static int read_line_edit(void) {
             return 0;
         }
 
+        /* Ctrl+Z = ignored at prompt (no foreground job to suspend) */
+        if (c == 26) {
+            continue;
+        }
+
         /* Ctrl+A = beginning of line */
         if (c == 1) {
             while (pos > 0) { term_write("\b", 1); pos--; }
