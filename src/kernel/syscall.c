@@ -2912,7 +2912,7 @@ static uintptr_t syscall_brk_impl(uintptr_t addr) {
     }
 
     const uintptr_t KERN_BASE = hal_mm_kernel_virt_base();
-    const uintptr_t USER_STACK_BASE = 0x00800000U;
+    const uintptr_t USER_STACK_BASE = 0x40000000U;
 
     if (addr < current_process->heap_start) return current_process->heap_break;
     if (addr >= USER_STACK_BASE) return current_process->heap_break;
@@ -4650,6 +4650,44 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
             (void)vfs_mount(kput, old_root);
         }
         sc_ret(regs) = 0;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_MOUNT) {
+        if (!current_process || current_process->euid != 0) {
+            sc_ret(regs) = (uint32_t)-EPERM;
+            return;
+        }
+        const char* user_dev  = (const char*)sc_arg0(regs);
+        const char* user_mp   = (const char*)sc_arg1(regs);
+        const char* user_type = (const char*)sc_arg2(regs);
+        char kdev[64], kmp[128], ktype[32];
+        if (copy_from_user(kdev, user_dev, sizeof(kdev)) < 0 ||
+            path_resolve_user(user_mp, kmp, sizeof(kmp)) < 0 ||
+            copy_from_user(ktype, user_type, sizeof(ktype)) < 0) {
+            sc_ret(regs) = (uint32_t)-EFAULT;
+            return;
+        }
+        kdev[sizeof(kdev)-1] = '\0';
+        ktype[sizeof(ktype)-1] = '\0';
+
+        if (strcmp(ktype, "tmpfs") == 0) {
+            fs_node_t* tmp = tmpfs_create_root();
+            if (!tmp) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
+            sc_ret(regs) = (uint32_t)vfs_mount(kmp, tmp);
+            return;
+        }
+
+        /* Disk-based: parse /dev/hdX -> drive number */
+        const char* devname = kdev;
+        if (strncmp(devname, "/dev/", 5) == 0) devname += 5;
+        extern int ata_name_to_drive(const char* name);
+        int drive = ata_name_to_drive(devname);
+        if (drive < 0) { sc_ret(regs) = (uint32_t)-ENODEV; return; }
+
+        extern int init_mount_fs(const char* fstype, int drive, uint32_t lba, const char* mountpoint);
+        int rc = init_mount_fs(ktype, drive, 0, kmp);
+        sc_ret(regs) = (uint32_t)(rc < 0 ? -EIO : 0);
         return;
     }
 

@@ -95,6 +95,7 @@ static void diskfs_strlcpy(char* dst, const char* src, size_t dst_sz) {
 static void diskfs_close_impl(fs_node_t* node) {
     if (!node) return;
     struct diskfs_node* dn = (struct diskfs_node*)node;
+    if (dn == &g_root) return;
     kfree(dn);
 }
 

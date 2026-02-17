@@ -154,6 +154,8 @@ enum {
     SYSCALL_AIO_ERROR   = 123,
     SYSCALL_AIO_RETURN  = 124,
     SYSCALL_AIO_SUSPEND = 125,
+
+    SYSCALL_MOUNT = 126,
 };
 
 #endif

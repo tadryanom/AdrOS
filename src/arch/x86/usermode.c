@@ -141,7 +141,7 @@ void x86_usermode_test_start(void) {
     kprintf("[USER] Starting ring3 test...\n");
 
     const uintptr_t user_code_vaddr = 0x00400000U;
-    const uintptr_t user_stack_vaddr = 0x00800000U;
+    const uintptr_t user_stack_vaddr = 0x40000000U;
 
     void* code_phys = pmm_alloc_page();
     void* stack_phys = pmm_alloc_page();
