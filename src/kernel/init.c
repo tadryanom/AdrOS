@@ -22,11 +22,12 @@
 #include "vbe.h"
 #include "keyboard.h"
 #include "console.h"
+#include "errno.h"
+#include "utils.h"
 
 #include "ata_pio.h"
 #include "hal/mm.h"
 #include "heap.h"
-#include "utils.h"
 #include "kernel/cmdline.h"
 
 #include <stddef.h>
@@ -201,6 +202,17 @@ int init_start(const struct boot_info* bi) {
                 (void)vfs_mount("/", ovl);
             }
         }
+    }
+    {
+        int rc;
+        rc = vfs_mkdir("/dev");
+        if (rc < 0 && rc != -EEXIST) kprintf("[INIT] mkdir /dev failed: %d\n", rc);
+        rc = vfs_mkdir("/proc");
+        if (rc < 0 && rc != -EEXIST) kprintf("[INIT] mkdir /proc failed: %d\n", rc);
+        rc = vfs_mkdir("/disk");
+        if (rc < 0 && rc != -EEXIST) kprintf("[INIT] mkdir /disk failed: %d\n", rc);
+        rc = vfs_mkdir("/persist");
+        if (rc < 0 && rc != -EEXIST) kprintf("[INIT] mkdir /persist failed: %d\n", rc);
     }
 
     fs_node_t* tmp = tmpfs_create_root();
