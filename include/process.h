@@ -112,6 +112,7 @@ struct process {
     uintptr_t heap_break;
 
     char cwd[128];
+    char cmdline[128];
     uint32_t umask;
 
     int waiting;
