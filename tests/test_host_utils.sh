@@ -378,6 +378,79 @@ else
     skip "ln (compile failed)"
 fi
 
+# ---------- sed ----------
+echo "--- sed ---"
+if compile sed_test user/sed.c; then
+    out=$(echo "hello world" | "$BUILDDIR/sed_test" 's/world/earth/')
+    [ "$out" = "hello earth" ] && pass "sed s///" || fail "sed s///" "got: $out"
+
+    out=$(echo "aaa bbb aaa" | "$BUILDDIR/sed_test" 's/aaa/XXX/g')
+    [ "$out" = "XXX bbb XXX" ] && pass "sed s///g" || fail "sed s///g" "got: $out"
+
+    out=$(echo "foo bar" | "$BUILDDIR/sed_test" 's/foo/baz/')
+    [ "$out" = "baz bar" ] && pass "sed s first only" || fail "sed s first only" "got: $out"
+
+    printf "line1\nline2\n" > "$BUILDDIR/sed_in.txt"
+    out=$("$BUILDDIR/sed_test" 's/line/LINE/g' "$BUILDDIR/sed_in.txt")
+    expected=$(printf "LINE1\nLINE2")
+    [ "$out" = "$expected" ] && pass "sed file" || fail "sed file" "got: $out"
+else
+    skip "sed (compile failed: $(cat "$BUILDDIR/sed_test.err" | head -1))"
+fi
+
+# ---------- awk ----------
+echo "--- awk ---"
+if compile awk_test user/awk.c; then
+    out=$(echo "hello world foo" | "$BUILDDIR/awk_test" '{print $2}')
+    [ "$out" = "world" ] && pass "awk print \$2" || fail "awk print \$2" "got: $out"
+
+    out=$(printf "a:b:c\n" | "$BUILDDIR/awk_test" -F : '{print $1}')
+    [ "$out" = "a" ] && pass "awk -F :" || fail "awk -F :" "got: $out"
+
+    out=$(printf "hello world\nfoo bar\nhello again\n" | "$BUILDDIR/awk_test" '/hello/{print $0}')
+    lines=$(echo "$out" | wc -l)
+    [ "$lines" -eq 2 ] && pass "awk pattern" || fail "awk pattern" "got $lines lines"
+else
+    skip "awk (compile failed: $(cat "$BUILDDIR/awk_test.err" | head -1))"
+fi
+
+# ---------- who ----------
+echo "--- who ---"
+if compile who_test user/who.c; then
+    out=$("$BUILDDIR/who_test")
+    echo "$out" | grep -q "root" && pass "who output" || fail "who output" "got: $out"
+else
+    skip "who (compile failed)"
+fi
+
+# ---------- find ----------
+echo "--- find ---"
+if compile find_test user/find.c; then
+    mkdir -p "$BUILDDIR/findtest/sub"
+    touch "$BUILDDIR/findtest/a.txt"
+    touch "$BUILDDIR/findtest/b.c"
+    touch "$BUILDDIR/findtest/sub/c.txt"
+
+    out=$("$BUILDDIR/find_test" "$BUILDDIR/findtest" -name "*.txt")
+    echo "$out" | grep -q "a.txt" && pass "find -name a.txt" || fail "find -name a.txt" "got: $out"
+    echo "$out" | grep -q "c.txt" && pass "find -name c.txt" || fail "find -name c.txt" "got: $out"
+
+    out=$("$BUILDDIR/find_test" "$BUILDDIR/findtest" -type d)
+    echo "$out" | grep -q "sub" && pass "find -type d" || fail "find -type d" "got: $out"
+else
+    skip "find (compile failed: $(cat "$BUILDDIR/find_test.err" | head -1))"
+fi
+
+# ---------- which ----------
+echo "--- which ---"
+if compile which_test user/which.c; then
+    # which looks in /bin and /sbin hardcoded, so just check it runs
+    "$BUILDDIR/which_test" nonexistent_cmd > /dev/null 2>&1
+    [ $? -ne 0 ] && pass "which not found" || fail "which not found" "should return nonzero"
+else
+    skip "which (compile failed)"
+fi
+
 # ================================================================
 echo ""
 echo "========================================="
