@@ -10,8 +10,7 @@
  *
  * Layout (sorted by VA):
  *
- *   0xC0000000 .. ~0xC0203000  Kernel .text/.data/.bss (variable)
- *   0xC0201000                 IOAPIC MMIO (1 page)
+ *   0xC0000000 .. ~0xC0266000  Kernel .text/.data/.bss (variable)
  *   0xC0280000                 vDSO shared page (1 page)
  *   0xC0300000 .. 0xC030FFFF   ACPI temp window (16 pages)
  *   0xC0320000                 ATA DMA PRDT (1 page)
@@ -22,6 +21,7 @@
  *   0xC0352000 .. 0xC0361FFF   E1000 TX buffers (16 pages)
  *   0xC0362000 .. 0xC0371FFF   E1000 RX buffers (16 pages)
  *   0xC0400000                 LAPIC MMIO (1 page)
+ *   0xC0401000                 IOAPIC MMIO (1 page)
  *   0xC8000000 ..              Kernel stacks (guard + 8KB per thread)
  *   0xD0000000 ..              Kernel heap (10 MB)
  *   0xDC000000 ..              Initrd / generic phys mapping (up to 64 MB)
@@ -29,7 +29,7 @@
  */
 
 /* IOAPIC (arch/x86/ioapic.c) */
-#define KVA_IOAPIC          0xC0201000U
+#define KVA_IOAPIC          0xC0401000U
 
 /* vDSO shared page (kernel/vdso.c) */
 #define KVA_VDSO            0xC0280000U
