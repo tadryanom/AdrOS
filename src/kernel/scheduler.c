@@ -276,9 +276,10 @@ static void process_reap_locked(struct process* p) {
     if (!p) return;
     if (p->pid == 0) return;
 
-    /* Safety net: ensure process is not in any runqueue/sleep queue before freeing */
+    /* Safety net: ensure process is not in any runqueue/sleep/alarm queue before freeing */
     rq_remove_if_queued(p);
     sleep_queue_remove(p);
+    alarm_queue_remove(p);
 
     if (p == ready_queue_head && p == ready_queue_tail) {
         return;
@@ -337,6 +338,7 @@ int process_kill(uint32_t pid, int sig) {
     if (sig <= 0 || sig >= PROCESS_MAX_SIG) return -EINVAL;
 
     if (current_process && current_process->pid == pid && sig == SIG_KILL) {
+        process_close_all_files_locked(current_process);
         process_exit_notify(128 + sig);
         hal_cpu_enable_interrupts();
         schedule();

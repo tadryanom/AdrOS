@@ -3341,7 +3341,11 @@ void syscall_handler(struct registers* regs) {
             /* We are in the child — exec immediately */
             int rc = syscall_execve_impl(regs, path, argv, envp);
             if (rc < 0) {
-                /* execve failed — exit child */
+                /* execve failed — close FDs and exit child */
+                for (int _fd = 0; _fd < PROCESS_MAX_FILES; _fd++) {
+                    if (current_process && current_process->files[_fd])
+                        (void)fd_close(_fd);
+                }
                 process_exit_notify(127);
                 hal_cpu_enable_interrupts();
                 schedule();
