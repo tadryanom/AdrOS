@@ -22,20 +22,30 @@ static void show_mounts(void) {
 }
 
 int main(int argc, char** argv) {
-    if (argc < 3) {
+    if (argc < 2) {
         show_mounts();
         return 0;
     }
 
-    const char* device = argv[1];
-    const char* mountpoint = argv[2];
     const char* fstype = "diskfs";
+    const char* device = NULL;
+    const char* mountpoint = NULL;
 
-    /* Parse -t fstype option */
-    for (int i = 1; i < argc - 2; i++) {
+    /* Parse options first, then collect positional args */
+    int i;
+    for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
             fstype = argv[++i];
+        } else if (!device) {
+            device = argv[i];
+        } else if (!mountpoint) {
+            mountpoint = argv[i];
         }
+    }
+
+    if (!device || !mountpoint) {
+        fprintf(stderr, "usage: mount [-t fstype] device mountpoint\n");
+        return 1;
     }
 
     int rc = __syscall_ret(_syscall3(SYS_MOUNT, (int)device, (int)mountpoint, (int)fstype));
