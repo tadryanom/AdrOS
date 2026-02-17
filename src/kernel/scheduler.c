@@ -19,7 +19,7 @@ struct process* current_process = NULL;
 #endif
 struct process* ready_queue_head = NULL;
 struct process* ready_queue_tail = NULL;
-static uint32_t next_pid = 1;
+static uint32_t next_pid = 2;  /* PID 1 reserved for init */
 static uint32_t init_pid = 0;  /* PID of the first userspace process ("init") */
 
 spinlock_t sched_lock = {0};
@@ -493,6 +493,15 @@ int process_waitpid(int pid, int* status_out, uint32_t options) {
 
 void sched_set_init_pid(uint32_t pid) {
     init_pid = pid;
+}
+
+void sched_assign_pid1(struct process* p) {
+    if (!p) return;
+    uintptr_t flags = spin_lock_irqsave(&sched_lock);
+    p->pid = 1;
+    p->tgid = 1;
+    init_pid = 1;
+    spin_unlock_irqrestore(&sched_lock, flags);
 }
 
 void process_exit_notify(int status) {

@@ -60,12 +60,44 @@ static void ls_dir(const char* path) {
 
     for (int i = 0; i < count; i++) {
         if (lflag) {
+            char fullpath[512];
+            size_t plen = strlen(path);
+            if (plen > 0 && path[plen - 1] == '/')
+                snprintf(fullpath, sizeof(fullpath), "%s%s", path, entries[i].name);
+            else
+                snprintf(fullpath, sizeof(fullpath), "%s/%s", path, entries[i].name);
+
+            struct stat st;
+            int have_stat = (stat(fullpath, &st) == 0);
+
             char type = '-';
             if (entries[i].type == DT_DIR) type = 'd';
             else if (entries[i].type == DT_CHR) type = 'c';
             else if (entries[i].type == DT_LNK) type = 'l';
             else if (entries[i].type == DT_BLK) type = 'b';
-            printf("%c  %s\n", type, entries[i].name);
+
+            char perms[10];
+            if (have_stat) {
+                unsigned m = (unsigned)st.st_mode;
+                perms[0] = (m & S_IRUSR) ? 'r' : '-';
+                perms[1] = (m & S_IWUSR) ? 'w' : '-';
+                perms[2] = (m & S_IXUSR) ? 'x' : '-';
+                perms[3] = (m & S_IRGRP) ? 'r' : '-';
+                perms[4] = (m & S_IWGRP) ? 'w' : '-';
+                perms[5] = (m & S_IXGRP) ? 'x' : '-';
+                perms[6] = (m & S_IROTH) ? 'r' : '-';
+                perms[7] = (m & S_IWOTH) ? 'w' : '-';
+                perms[8] = (m & S_IXOTH) ? 'x' : '-';
+                perms[9] = '\0';
+            } else {
+                strcpy(perms, "---------");
+            }
+
+            unsigned long sz = have_stat ? (unsigned long)st.st_size : 0;
+            unsigned nlink = have_stat ? (unsigned)st.st_nlink : 1;
+
+            printf("%c%s %2u root root %8lu %s\n",
+                   type, perms, nlink, sz, entries[i].name);
         } else {
             printf("%s\n", entries[i].name);
         }

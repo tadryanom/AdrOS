@@ -62,9 +62,9 @@ static void userspace_init_thread(void) {
     current_process->cmdline[sizeof(current_process->cmdline) - 1] = '\0';
     vmm_as_activate(user_as);
 
-    /* Register this process as "init" for orphan reparenting */
-    extern void sched_set_init_pid(uint32_t);
-    sched_set_init_pid(current_process->pid);
+    /* Assign PID 1 to init, like Linux */
+    extern void sched_assign_pid1(struct process*);
+    sched_assign_pid1(current_process);
 
     /* Open /dev/console as fd 0, 1, 2 — mirrors Linux kernel_init:
      *   sys_open("/dev/console", O_RDWR, 0);

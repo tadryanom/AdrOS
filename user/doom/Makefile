@@ -9,22 +9,21 @@
 # The output is doom.elf which gets packaged into the AdrOS initrd.
 
 CC := i686-elf-gcc
-AR := i686-elf-ar
+LD := i686-elf-ld
 
 ULIBC_DIR := ../ulibc
 ULIBC_INC := $(ULIBC_DIR)/include
-ULIBC_LIB := $(ULIBC_DIR)/libulibc.a
 CRT0      := $(ULIBC_DIR)/src/crt0.o
-LINKER    := ../linker.ld
+DYN_LINKER := ../dyn_linker.ld
 
-CFLAGS := -m32 -O2 -ffreestanding -fno-pie -no-pie -nostdlib \
+CFLAGS := -m32 -O2 -ffreestanding -nostdlib -fPIC -fno-plt \
           -Wall -Wno-unused-parameter -Wno-sign-compare -Wno-pointer-sign \
           -Wno-missing-field-initializers -Wno-implicit-fallthrough \
           -Wno-format \
           -I$(ULIBC_INC) -I. -Idoomgeneric/doomgeneric \
           -DNORMALUNIX -DLINUX
 
-LDFLAGS := -m32 -nostdlib -fno-pie -no-pie -Wl,-T,$(LINKER)
+LDFLAGS := -m elf_i386 --dynamic-linker=/lib/ld.so -T $(DYN_LINKER) -L$(ULIBC_DIR) -rpath /lib
 
 # doomgeneric engine sources (nested inside cloned repo)
 # Exclude platform adapters and files requiring external libraries
@@ -60,8 +59,8 @@ check-doomgeneric:
 		exit 1; \
 	fi
 
-doom.elf: $(ALL_OBJ) $(ULIBC_LIB) $(CRT0)
-	@$(CC) $(LDFLAGS) -o $@ $(CRT0) $(ALL_OBJ) $(ULIBC_LIB) -lgcc
+doom.elf: $(ALL_OBJ) $(CRT0)
+	@$(LD) $(LDFLAGS) -o $@ $(CRT0) $(ALL_OBJ) -lc
 	@echo "  LD      $@"
 
 doomgeneric/doomgeneric/%.o: doomgeneric/doomgeneric/%.c
