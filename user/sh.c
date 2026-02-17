@@ -998,8 +998,8 @@ int main(int argc, char** argv, char** envp) {
     if (!var_get("HOME"))
         var_set("HOME", "/", 1);
 
-    /* Job control: put shell in its own process group and make it fg */
-    setpgid(0, 0);
+    /* Job control: create session + process group, become fg */
+    setsid();
     set_fg_pgrp(getpgrp());
 
     /* Ignore job control signals in the shell itself */

@@ -40,6 +40,9 @@ struct stat {
 #define S_IWOTH 0002
 #define S_IXOTH 0001
 
-/* stat/fstat/mkdir declared in <unistd.h> with void* for struct stat* compatibility */
+int stat(const char* path, struct stat* buf);
+int fstat(int fd, struct stat* buf);
+int mkdir(const char* path, ...);
+int chmod(const char* path, int mode);
 
 #endif

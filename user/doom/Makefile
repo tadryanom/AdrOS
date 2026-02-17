@@ -23,6 +23,7 @@ CFLAGS := -m32 -O2 -ffreestanding -nostdlib -fPIC -fno-plt \
           -I$(ULIBC_INC) -I. -Idoomgeneric/doomgeneric \
           -DNORMALUNIX -DLINUX
 
+LIBGCC  := $(shell $(CC) -print-libgcc-file-name)
 LDFLAGS := -m elf_i386 --dynamic-linker=/lib/ld.so -T $(DYN_LINKER) -L$(ULIBC_DIR) -rpath /lib
 
 # doomgeneric engine sources (nested inside cloned repo)
@@ -60,7 +61,7 @@ check-doomgeneric:
 	fi
 
 doom.elf: $(ALL_OBJ) $(CRT0)
-	@$(LD) $(LDFLAGS) -o $@ $(CRT0) $(ALL_OBJ) -lc
+	@$(LD) $(LDFLAGS) -o $@ $(CRT0) $(ALL_OBJ) -lc $(LIBGCC)
 	@echo "  LD      $@"
 
 doomgeneric/doomgeneric/%.o: doomgeneric/doomgeneric/%.c
