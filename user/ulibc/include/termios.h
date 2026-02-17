@@ -30,10 +30,12 @@
 #define VTIME   9
 
 /* ioctl commands */
-#define TCGETS   0x5401
-#define TCSETS   0x5402
-#define TCSETSW  0x5403
-#define TCSETSF  0x5404
+#define TCGETS     0x5401
+#define TCSETS     0x5402
+#define TCSETSW    0x5403
+#define TCSETSF    0x5404
+#define TIOCGPGRP  0x540F
+#define TIOCSPGRP  0x5410
 
 struct termios {
     uint32_t c_iflag;

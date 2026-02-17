@@ -7,6 +7,8 @@
  *   - Command history (up/down arrow keys)
  *   - Pipes (cmd1 | cmd2 | cmd3)
  *   - Redirections (< > >>)
+ *   - Operators: ; && || &
+ *   - Job control: CTRL+C (SIGINT), CTRL+Z (SIGTSTP), background (&)
  *   - Builtins: cd, exit, echo, export, unset, set, pwd, type
  *   - PATH-based command resolution
  *   - Quote handling (single and double quotes)
@@ -18,6 +20,9 @@
 #include <fcntl.h>
 #include <dirent.h>
 #include <termios.h>
+#include <signal.h>
+#include <sys/ioctl.h>
+#include <sys/wait.h>
 
 static struct termios orig_termios;
 
@@ -531,7 +536,15 @@ static const char* resolve(const char* cmd) {
     return cmd;
 }
 
+/* ---- Helper: set foreground process group on controlling TTY ---- */
+
+static void set_fg_pgrp(int pgrp) {
+    ioctl(STDIN_FILENO, TIOCSPGRP, &pgrp);
+}
+
 /* ---- Run a single simple command ---- */
+
+static int bg_flag = 0;  /* set by caller when trailing & detected */
 
 static void run_simple(char* cmd) {
     /* Expand variables */
@@ -709,7 +722,15 @@ static void run_simple(char* cmd) {
     if (pid < 0) { fprintf(stderr, "sh: fork failed\n"); return; }
 
     if (pid == 0) {
-        /* child */
+        /* child: own process group, restore default signals */
+        setpgid(0, 0);
+        struct sigaction sa;
+        memset(&sa, 0, sizeof(sa));
+        sa.sa_handler = (uintptr_t)SIG_DFL;
+        sigaction(SIGINT, &sa, NULL);
+        sigaction(SIGTSTP, &sa, NULL);
+        sigaction(SIGQUIT, &sa, NULL);
+
         if (redir_in) {
             int fd = open(redir_in, O_RDONLY);
             if (fd >= 0) { dup2(fd, 0); close(fd); }
@@ -725,10 +746,21 @@ static void run_simple(char* cmd) {
         _exit(127);
     }
 
-    /* parent waits */
-    int st;
-    waitpid(pid, &st, 0);
-    last_status = st;
+    /* parent */
+    setpgid(pid, pid);
+
+    if (bg_flag) {
+        /* Background: don't wait, print job info */
+        printf("[bg] %d\n", pid);
+        last_status = 0;
+    } else {
+        /* Foreground: make child the fg process group, wait, then restore */
+        set_fg_pgrp(pid);
+        int st;
+        waitpid(pid, &st, 0);
+        set_fg_pgrp(getpgrp());
+        last_status = st;
+    }
     goto restore_redir;
 
 restore_redir:
@@ -748,6 +780,7 @@ static void run_pipeline(char* cmdline) {
         if (*p == '\'' && !in_dq) in_sq = !in_sq;
         else if (*p == '"' && !in_sq) in_dq = !in_dq;
         else if (*p == '|' && !in_sq && !in_dq && ncmds < 7) {
+            if (*(p + 1) == '|') { p++; continue; }  /* skip || */
             *p = '\0';
             cmds[++ncmds] = p + 1;
         }
@@ -762,6 +795,7 @@ static void run_pipeline(char* cmdline) {
     /* Multi-stage pipeline */
     int prev_rd = -1;
     int pids[8];
+    int pgid = 0;  /* pipeline process group = first child's PID */
 
     for (int i = 0; i < ncmds; i++) {
         int pfd[2] = {-1, -1};
@@ -776,6 +810,16 @@ static void run_pipeline(char* cmdline) {
         if (pids[i] < 0) { fprintf(stderr, "sh: fork failed\n"); return; }
 
         if (pids[i] == 0) {
+            /* child: join pipeline process group, restore signals */
+            int mypgid = pgid ? pgid : getpid();
+            setpgid(0, mypgid);
+            struct sigaction sa;
+            memset(&sa, 0, sizeof(sa));
+            sa.sa_handler = (uintptr_t)SIG_DFL;
+            sigaction(SIGINT, &sa, NULL);
+            sigaction(SIGTSTP, &sa, NULL);
+            sigaction(SIGQUIT, &sa, NULL);
+
             if (prev_rd >= 0) { dup2(prev_rd, 0); close(prev_rd); }
             if (pfd[1] >= 0)  { dup2(pfd[1], 1); close(pfd[1]); }
             if (pfd[0] >= 0)  close(pfd[0]);
@@ -793,7 +837,10 @@ static void run_pipeline(char* cmdline) {
             _exit(127);
         }
 
-        /* parent */
+        /* parent: set pipeline pgid */
+        if (i == 0) pgid = pids[0];
+        setpgid(pids[i], pgid);
+
         if (prev_rd >= 0) close(prev_rd);
         if (pfd[1] >= 0)  close(pfd[1]);
         prev_rd = pfd[0];
@@ -801,39 +848,110 @@ static void run_pipeline(char* cmdline) {
 
     if (prev_rd >= 0) close(prev_rd);
 
-    /* Wait for all children */
-    for (int i = 0; i < ncmds; i++) {
-        int st;
-        waitpid(pids[i], &st, 0);
-        if (i == ncmds - 1) last_status = st;
+    if (!bg_flag) {
+        /* Foreground pipeline: make it fg, wait, restore */
+        set_fg_pgrp(pgid);
+        for (int i = 0; i < ncmds; i++) {
+            int st;
+            waitpid(pids[i], &st, 0);
+            if (i == ncmds - 1) last_status = st;
+        }
+        set_fg_pgrp(getpgrp());
+    } else {
+        printf("[bg] %d\n", pgid);
+        last_status = 0;
     }
 }
 
-/* ---- Process a command line (handle ; and &&) ---- */
+/* ---- Process a command line (handle ;, &&, ||, &) ---- */
+
+enum { OP_NONE = 0, OP_SEMI, OP_AND, OP_OR, OP_BG };
 
 static void process_line(char* input) {
-    /* Split on ';' */
     char* p = input;
+
     while (*p) {
-        /* skip leading whitespace */
         while (*p == ' ' || *p == '\t') p++;
         if (*p == '\0') break;
 
+        /* Find the next operator outside quotes */
         char* start = p;
         int in_sq = 0, in_dq = 0;
+        int op = OP_NONE;
+
         while (*p) {
-            if (*p == '\'' && !in_dq) in_sq = !in_sq;
-            else if (*p == '"' && !in_sq) in_dq = !in_dq;
-            else if (*p == ';' && !in_sq && !in_dq) break;
+            if (*p == '\'' && !in_dq) { in_sq = !in_sq; p++; continue; }
+            if (*p == '"' && !in_sq)  { in_dq = !in_dq; p++; continue; }
+            if (in_sq || in_dq) { p++; continue; }
+
+            if (*p == '&' && *(p + 1) == '&') {
+                *p = '\0'; p += 2; op = OP_AND; break;
+            }
+            if (*p == '|' && *(p + 1) == '|') {
+                *p = '\0'; p += 2; op = OP_OR; break;
+            }
+            if (*p == ';') {
+                *p = '\0'; p++; op = OP_SEMI; break;
+            }
+            if (*p == '&') {
+                *p = '\0'; p++; op = OP_BG; break;
+            }
             p++;
         }
-        char saved = *p;
-        if (*p) *p++ = '\0';
 
-        if (start[0] != '\0')
-            run_pipeline(start);
+        /* Trim leading whitespace from segment */
+        while (*start == ' ' || *start == '\t') start++;
+        if (*start != '\0') {
+            if (op == OP_BG) {
+                bg_flag = 1;
+                run_pipeline(start);
+                bg_flag = 0;
+            } else {
+                bg_flag = 0;
+                run_pipeline(start);
+            }
+        }
 
-        if (saved == '\0') break;
+        /* For &&: skip remaining commands if last failed */
+        if (op == OP_AND && last_status != 0) {
+            /* Skip until we hit || or ; or & or end */
+            while (*p) {
+                while (*p == ' ' || *p == '\t') p++;
+                if (*p == '\0') break;
+                int skip_sq = 0, skip_dq = 0;
+                while (*p) {
+                    if (*p == '\'' && !skip_dq) { skip_sq = !skip_sq; p++; continue; }
+                    if (*p == '"' && !skip_sq)  { skip_dq = !skip_dq; p++; continue; }
+                    if (skip_sq || skip_dq) { p++; continue; }
+                    if (*p == '|' && *(p + 1) == '|') break;
+                    if (*p == ';') break;
+                    if (*p == '&' && *(p + 1) != '&') break;
+                    if (*p == '&' && *(p + 1) == '&') { p += 2; continue; }
+                    p++;
+                }
+                break;
+            }
+        }
+
+        /* For ||: skip remaining commands if last succeeded */
+        if (op == OP_OR && last_status == 0) {
+            while (*p) {
+                while (*p == ' ' || *p == '\t') p++;
+                if (*p == '\0') break;
+                int skip_sq = 0, skip_dq = 0;
+                while (*p) {
+                    if (*p == '\'' && !skip_dq) { skip_sq = !skip_sq; p++; continue; }
+                    if (*p == '"' && !skip_sq)  { skip_dq = !skip_dq; p++; continue; }
+                    if (skip_sq || skip_dq) { p++; continue; }
+                    if (*p == '&' && *(p + 1) == '&') break;
+                    if (*p == ';') break;
+                    if (*p == '&' && *(p + 1) != '&') break;
+                    if (*p == '|' && *(p + 1) == '|') { p += 2; continue; }
+                    p++;
+                }
+                break;
+            }
+        }
     }
 }
 
@@ -879,6 +997,18 @@ int main(int argc, char** argv, char** envp) {
         var_set("PATH", "/bin:/sbin:/usr/bin", 1);
     if (!var_get("HOME"))
         var_set("HOME", "/", 1);
+
+    /* Job control: put shell in its own process group and make it fg */
+    setpgid(0, 0);
+    set_fg_pgrp(getpgrp());
+
+    /* Ignore job control signals in the shell itself */
+    struct sigaction sa_ign;
+    memset(&sa_ign, 0, sizeof(sa_ign));
+    sa_ign.sa_handler = (uintptr_t)SIG_IGN;
+    sigaction(SIGINT, &sa_ign, NULL);
+    sigaction(SIGTSTP, &sa_ign, NULL);
+    sigaction(SIGQUIT, &sa_ign, NULL);
 
     tty_raw_mode();
 
