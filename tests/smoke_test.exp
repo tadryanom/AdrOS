@@ -131,6 +131,14 @@ set tests {
     {"fcntl FD_CLOEXEC"     "\\[init\\] fcntl FD_CLOEXEC OK"}
     {"sigsuspend"           "\\[init\\] sigsuspend OK"}
     {"orphan reparent"      "\\[init\\] orphan reparent OK"}
+    {"proc PID cmdline"    "\\[init\\] /proc/PID/cmdline OK"}
+    {"proc PID status"     "\\[init\\] /proc/PID/status OK"}
+    {"dev console"         "\\[init\\] /dev/console OK"}
+    {"multi-pty"           "\\[init\\] multi-pty OK"}
+    {"dup standalone"      "\\[init\\] dup OK"}
+    {"pipe EOF"            "\\[init\\] pipe EOF OK"}
+    {"readdir /proc"       "\\[init\\] readdir /proc OK"}
+    {"readdir /bin"        "\\[init\\] readdir /bin OK"}
     {"LZ4 Frame decomp"    "\\[INITRD\\] LZ4"}
 }
 

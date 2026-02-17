@@ -545,6 +545,8 @@ test-host:
 	@echo "[TEST-HOST] Compiling tests/test_security.c..."
 	@gcc -m32 -Wall -Wextra -Werror -Iinclude -o build/host/test_security tests/test_security.c
 	@./build/host/test_security
+	@echo "[TEST-HOST] Running userspace utility tests..."
+	@bash tests/test_host_utils.sh
 
 # ---- GDB Scripted Checks (requires QEMU + GDB) ----
 

@@ -13,7 +13,7 @@ int main(int argc, char** argv) {
         if (strcmp(argv[i], "-a") == 0) { aflag = 1; continue; }
         int flags = O_WRONLY | O_CREAT;
         flags |= aflag ? O_APPEND : O_TRUNC;
-        int fd = open(argv[i], flags);
+        int fd = open(argv[i], flags, 0644);
         if (fd < 0) {
             fprintf(stderr, "tee: %s: cannot open\n", argv[i]);
             continue;

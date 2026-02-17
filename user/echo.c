@@ -26,9 +26,11 @@ int main(int argc, char** argv) {
         i++;
     }
 
+    int first = 1;
     for (; i < argc; i++) {
-        if (i > 1 && (i > 1 || nflag || eflag))
+        if (!first)
             write(STDOUT_FILENO, " ", 1);
+        first = 0;
 
         const char* s = argv[i];
         if (eflag) {

@@ -17,9 +17,10 @@ static void tail_fd(int fd, int nlines) {
         if (total >= TAIL_BUFSZ) break;
     }
 
-    /* Count newlines from end */
+    /* Count newlines from end; skip trailing newline */
     int count = 0;
     int pos = total;
+    if (pos > 0 && buf[pos - 1] == '\n') pos--;
     while (pos > 0 && count < nlines) {
         pos--;
         if (buf[pos] == '\n') count++;
