@@ -79,8 +79,14 @@ int main(int argc, char** argv) {
         if (strcmp(argv[i], "-d") == 0 && i + 1 < argc) {
             delim = argv[++i][0];
             start = i + 1;
+        } else if (strncmp(argv[i], "-d", 2) == 0 && argv[i][2] != '\0') {
+            delim = argv[i][2];
+            start = i + 1;
         } else if (strcmp(argv[i], "-f") == 0 && i + 1 < argc) {
             parse_fields(argv[++i]);
+            start = i + 1;
+        } else if (strncmp(argv[i], "-f", 2) == 0 && argv[i][2] != '\0') {
+            parse_fields(argv[i] + 2);
             start = i + 1;
         } else if (argv[i][0] != '-') {
             break;

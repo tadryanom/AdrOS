@@ -96,6 +96,28 @@ ifeq ($(ARCH),x86)
     DATE_ELF := user/date.elf
     HOSTNAME_ELF := user/hostname.elf
     UPTIME_ELF := user/uptime.elf
+    MOUNT_ELF := user/mount.elf
+    UMOUNT_ELF := user/umount.elf
+    ENV_ELF := user/env.elf
+    KILL_ELF := user/kill.elf
+    SLEEP_ELF := user/sleep.elf
+    CLEAR_ELF := user/clear.elf
+    PS_ELF := user/ps.elf
+    DF_ELF := user/df.elf
+    FREE_ELF := user/free.elf
+    TEE_ELF := user/tee.elf
+    BASENAME_ELF := user/basename.elf
+    DIRNAME_ELF := user/dirname.elf
+    RMDIR_ELF := user/rmdir.elf
+    GREP_ELF := user/grep.elf
+    ID_ELF := user/id.elf
+    UNAME_ELF := user/uname.elf
+    DMESG_ELF := user/dmesg.elf
+    PRINTENV_ELF := user/printenv.elf
+    TR_ELF := user/tr.elf
+    DD_ELF := user/dd.elf
+    PWD_ELF := user/pwd.elf
+    STAT_ELF := user/stat.elf
     INIT_ELF := user/init.elf
     LDSO_ELF := user/ld.so
     ULIBC_SO := user/ulibc/libc.so
@@ -289,6 +311,94 @@ $(INIT_ELF): user/init.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
 	@$(DYN_CC) -c user/init.c -o user/init.o
 	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/init.o -lc
 
+$(MOUNT_ELF): user/mount.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/mount.c -o user/mount.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/mount.o -lc
+
+$(UMOUNT_ELF): user/umount.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/umount.c -o user/umount.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/umount.o -lc
+
+$(ENV_ELF): user/env.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/env.c -o user/env.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/env.o -lc
+
+$(KILL_ELF): user/kill.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/kill.c -o user/kill.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/kill.o -lc
+
+$(SLEEP_ELF): user/sleep.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/sleep.c -o user/sleep.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/sleep.o -lc
+
+$(CLEAR_ELF): user/clear.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/clear.c -o user/clear.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/clear.o -lc
+
+$(PS_ELF): user/ps.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/ps.c -o user/ps.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/ps.o -lc
+
+$(DF_ELF): user/df.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/df.c -o user/df.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/df.o -lc
+
+$(FREE_ELF): user/free.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/free.c -o user/free.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/free.o -lc
+
+$(TEE_ELF): user/tee.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/tee.c -o user/tee.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/tee.o -lc
+
+$(BASENAME_ELF): user/basename.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/basename.c -o user/basename.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/basename.o -lc
+
+$(DIRNAME_ELF): user/dirname.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/dirname.c -o user/dirname.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/dirname.o -lc
+
+$(RMDIR_ELF): user/rmdir.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/rmdir.c -o user/rmdir.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/rmdir.o -lc
+
+$(GREP_ELF): user/grep.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/grep.c -o user/grep.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/grep.o -lc
+
+$(ID_ELF): user/id.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/id.c -o user/id.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/id.o -lc
+
+$(UNAME_ELF): user/uname.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/uname.c -o user/uname.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/uname.o -lc
+
+$(DMESG_ELF): user/dmesg.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/dmesg.c -o user/dmesg.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/dmesg.o -lc
+
+$(PRINTENV_ELF): user/printenv.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/printenv.c -o user/printenv.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/printenv.o -lc
+
+$(TR_ELF): user/tr.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/tr.c -o user/tr.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/tr.o -lc
+
+$(DD_ELF): user/dd.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/dd.c -o user/dd.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/dd.o -lc
+
+$(PWD_ELF): user/pwd.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/pwd.c -o user/pwd.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/pwd.o -lc
+
+$(STAT_ELF): user/stat.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$(DYN_CC) -c user/stat.c -o user/stat.o
+	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/stat.o -lc
+
 $(LDSO_ELF): user/ldso.c user/ldso_linker.ld
 	@i686-elf-gcc -m32 -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/ldso_linker.ld -o $(LDSO_ELF) user/ldso.c
 
@@ -306,6 +416,11 @@ USER_CMDS := $(ECHO_ELF) $(SH_ELF) $(CAT_ELF) $(LS_ELF) $(MKDIR_ELF) $(RM_ELF) \
              $(HEAD_ELF) $(TAIL_ELF) $(WC_ELF) $(SORT_ELF) $(UNIQ_ELF) $(CUT_ELF) \
              $(CHMOD_ELF) $(CHOWN_ELF) $(CHGRP_ELF) \
              $(DATE_ELF) $(HOSTNAME_ELF) $(UPTIME_ELF) \
+             $(MOUNT_ELF) $(UMOUNT_ELF) $(ENV_ELF) $(KILL_ELF) $(SLEEP_ELF) \
+             $(CLEAR_ELF) $(PS_ELF) $(DF_ELF) $(FREE_ELF) $(TEE_ELF) \
+             $(BASENAME_ELF) $(DIRNAME_ELF) $(RMDIR_ELF) \
+             $(GREP_ELF) $(ID_ELF) $(UNAME_ELF) $(DMESG_ELF) \
+             $(PRINTENV_ELF) $(TR_ELF) $(DD_ELF) $(PWD_ELF) $(STAT_ELF) \
              $(INIT_ELF)
 
 FSTAB := rootfs/etc/fstab
@@ -318,6 +433,14 @@ INITRD_FILES := $(FULLTEST_ELF):sbin/fulltest \
     $(SORT_ELF):bin/sort $(UNIQ_ELF):bin/uniq $(CUT_ELF):bin/cut \
     $(CHMOD_ELF):bin/chmod $(CHOWN_ELF):bin/chown $(CHGRP_ELF):bin/chgrp \
     $(DATE_ELF):bin/date $(HOSTNAME_ELF):bin/hostname $(UPTIME_ELF):bin/uptime \
+    $(MOUNT_ELF):bin/mount $(UMOUNT_ELF):bin/umount $(ENV_ELF):bin/env \
+    $(KILL_ELF):bin/kill $(SLEEP_ELF):bin/sleep $(CLEAR_ELF):bin/clear \
+    $(PS_ELF):bin/ps $(DF_ELF):bin/df $(FREE_ELF):bin/free \
+    $(TEE_ELF):bin/tee $(BASENAME_ELF):bin/basename $(DIRNAME_ELF):bin/dirname \
+    $(RMDIR_ELF):bin/rmdir \
+    $(GREP_ELF):bin/grep $(ID_ELF):bin/id $(UNAME_ELF):bin/uname \
+    $(DMESG_ELF):bin/dmesg $(PRINTENV_ELF):bin/printenv $(TR_ELF):bin/tr \
+    $(DD_ELF):bin/dd $(PWD_ELF):bin/pwd $(STAT_ELF):bin/stat \
     $(LDSO_ELF):lib/ld.so $(ULIBC_SO):lib/libc.so \
     $(PIE_SO):lib/libpietest.so $(PIE_ELF):bin/pie_test \
     $(FSTAB):etc/fstab

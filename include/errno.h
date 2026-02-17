@@ -38,6 +38,7 @@
 #define ENOLCK 37
 #define EBUSY 16
 #define EMSGSIZE 90
+#define EROFS 30
 #define EWOULDBLOCK EAGAIN
 
 #endif

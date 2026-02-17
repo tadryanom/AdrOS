@@ -1,6 +1,7 @@
 #include "procfs.h"
 
 #include "process.h"
+#include "spinlock.h"
 #include "utils.h"
 #include "heap.h"
 #include "pmm.h"
@@ -23,16 +24,10 @@ static fs_node_t g_pid_maps[PID_NODE_POOL];
 static uint32_t g_pid_pool_idx = 0;
 
 extern struct process* ready_queue_head;
+extern spinlock_t sched_lock;
 
-static struct process* proc_find_pid(uint32_t pid) {
-    if (!ready_queue_head) return NULL;
-    struct process* it = ready_queue_head;
-    const struct process* start = it;
-    do {
-        if (it->pid == pid) return it;
-        it = it->next;
-    } while (it && it != start);
-    return NULL;
+static struct process* proc_find_pid_safe(uint32_t pid) {
+    return process_find_by_pid(pid);
 }
 
 static int proc_snprintf(char* buf, uint32_t sz, const char* key, uint32_t val) {
@@ -137,15 +132,19 @@ static uint32_t proc_meminfo_read(fs_node_t* node, uint32_t offset, uint32_t siz
     char tmp[256];
     uint32_t len = 0;
 
-    /* Count processes */
+    /* Count processes (under sched_lock to avoid race) */
     uint32_t nprocs = 0;
-    if (ready_queue_head) {
-        struct process* it = ready_queue_head;
-        const struct process* start = it;
-        do {
-            nprocs++;
-            it = it->next;
-        } while (it && it != start);
+    {
+        uintptr_t fl = spin_lock_irqsave(&sched_lock);
+        if (ready_queue_head) {
+            struct process* it = ready_queue_head;
+            const struct process* start = it;
+            do {
+                nprocs++;
+                it = it->next;
+            } while (it && it != start);
+        }
+        spin_unlock_irqrestore(&sched_lock, fl);
     }
 
     len += (uint32_t)proc_snprintf(tmp + len, sizeof(tmp) - len, "Processes:\t", nprocs);
@@ -162,7 +161,7 @@ static uint32_t proc_meminfo_read(fs_node_t* node, uint32_t offset, uint32_t siz
 
 static uint32_t proc_pid_status_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
     uint32_t pid = node->inode;
-    struct process* p = proc_find_pid(pid);
+    struct process* p = proc_find_pid_safe(pid);
     if (!p) return 0;
 
     char tmp[512];
@@ -198,11 +197,29 @@ static uint32_t proc_pid_status_read(fs_node_t* node, uint32_t offset, uint32_t 
     return size;
 }
 
+/* --- per-PID cmdline read (inode == target pid) --- */
+
+static uint32_t proc_pid_cmdline_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
+    uint32_t pid = node->inode;
+    struct process* p = proc_find_pid_safe(pid);
+    if (!p) return 0;
+
+    uint32_t len = (uint32_t)strlen(p->cmdline);
+    char tmp[256];
+    memcpy(tmp, p->cmdline, len);
+    if (len + 1 < sizeof(tmp)) { tmp[len] = '\n'; len++; }
+    if (offset >= len) return 0;
+    uint32_t avail = len - offset;
+    if (size > avail) size = avail;
+    memcpy(buffer, tmp + offset, size);
+    return size;
+}
+
 /* --- per-PID maps read (inode == target pid) --- */
 
 static uint32_t proc_pid_maps_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
     uint32_t pid = node->inode;
-    struct process* p = proc_find_pid(pid);
+    struct process* p = proc_find_pid_safe(pid);
     if (!p) return 0;
 
     char tmp[1024];
@@ -238,6 +255,7 @@ static const struct file_operations procfs_pid_dir_fops;
 static const struct inode_operations procfs_pid_dir_iops;
 static const struct file_operations procfs_pid_status_fops;
 static const struct file_operations procfs_pid_maps_fops;
+static const struct file_operations procfs_pid_cmdline_fops;
 
 static fs_node_t* proc_pid_finddir(fs_node_t* node, const char* name) {
     uint32_t pid = node->inode;
@@ -261,6 +279,15 @@ static fs_node_t* proc_pid_finddir(fs_node_t* node, const char* name) {
         g_pid_maps[slot].f_ops = &procfs_pid_maps_fops;
         return &g_pid_maps[slot];
     }
+    if (strcmp(name, "cmdline") == 0) {
+        g_pid_pool_idx = (slot + 1) % PID_NODE_POOL;
+        memset(&g_pid_status[slot], 0, sizeof(fs_node_t));
+        strcpy(g_pid_status[slot].name, "cmdline");
+        g_pid_status[slot].flags = FS_FILE;
+        g_pid_status[slot].inode = pid;
+        g_pid_status[slot].f_ops = &procfs_pid_cmdline_fops;
+        return &g_pid_status[slot];
+    }
     return NULL;
 }
 
@@ -269,9 +296,9 @@ static int proc_pid_readdir(fs_node_t* node, uint32_t* inout_index, void* buf, u
     if (!inout_index || !buf) return -1;
     if (buf_len < sizeof(struct vfs_dirent)) return -1;
 
-    static const char* entries[] = { "status", "maps" };
+    static const char* entries[] = { "status", "maps", "cmdline" };
     uint32_t idx = *inout_index;
-    if (idx >= 2) return 0;
+    if (idx >= 3) return 0;
 
     struct vfs_dirent* d = (struct vfs_dirent*)buf;
     d->d_ino = 300 + idx;
@@ -288,7 +315,7 @@ static int proc_pid_readdir(fs_node_t* node, uint32_t* inout_index, void* buf, u
 }
 
 static fs_node_t* proc_get_pid_dir(uint32_t pid) {
-    if (!proc_find_pid(pid)) return NULL;
+    if (!proc_find_pid_safe(pid)) return NULL;
     uint32_t slot = g_pid_pool_idx;
     g_pid_pool_idx = (slot + 1) % PID_NODE_POOL;
     memset(&g_pid_dir[slot], 0, sizeof(fs_node_t));
@@ -376,31 +403,37 @@ static int proc_root_readdir(fs_node_t* node, uint32_t* inout_index, void* buf, 
         return (int)sizeof(struct vfs_dirent);
     }
 
-    /* After fixed entries, list numeric PIDs */
+    /* After fixed entries, list numeric PIDs (under sched_lock) */
     uint32_t pi = idx - 4;
     uint32_t count = 0;
-    if (ready_queue_head) {
-        struct process* it = ready_queue_head;
-        const struct process* start = it;
-        do {
-            if (count == pi) {
-                char num[16];
-                itoa(it->pid, num, 10);
-                d->d_ino = 400 + it->pid;
-                d->d_type = FS_DIRECTORY;
-                d->d_reclen = sizeof(struct vfs_dirent);
-                uint32_t j = 0;
-                while (num[j] && j + 1 < sizeof(d->d_name) && j < sizeof(num) - 1) { d->d_name[j] = num[j]; j++; }
-                d->d_name[j] = 0;
-                *inout_index = idx + 1;
-                return (int)sizeof(struct vfs_dirent);
-            }
-            count++;
-            it = it->next;
-        } while (it && it != start);
+    int found = 0;
+    {
+        uintptr_t fl = spin_lock_irqsave(&sched_lock);
+        if (ready_queue_head) {
+            struct process* it = ready_queue_head;
+            const struct process* start = it;
+            do {
+                if (count == pi) {
+                    char num[16];
+                    itoa(it->pid, num, 10);
+                    d->d_ino = 400 + it->pid;
+                    d->d_type = FS_DIRECTORY;
+                    d->d_reclen = sizeof(struct vfs_dirent);
+                    uint32_t j = 0;
+                    while (num[j] && j + 1 < sizeof(d->d_name) && j < sizeof(num) - 1) { d->d_name[j] = num[j]; j++; }
+                    d->d_name[j] = 0;
+                    *inout_index = idx + 1;
+                    found = 1;
+                    break;
+                }
+                count++;
+                it = it->next;
+            } while (it && it != start);
+        }
+        spin_unlock_irqrestore(&sched_lock, fl);
     }
 
-    return 0;
+    return found ? (int)sizeof(struct vfs_dirent) : 0;
 }
 
 /* --- file_operations tables --- */
@@ -448,6 +481,10 @@ static const struct file_operations procfs_pid_status_fops = {
 
 static const struct file_operations procfs_pid_maps_fops = {
     .read = proc_pid_maps_read,
+};
+
+static const struct file_operations procfs_pid_cmdline_fops = {
+    .read = proc_pid_cmdline_read,
 };
 
 fs_node_t* procfs_create_root(void) {

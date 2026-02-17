@@ -1950,6 +1950,8 @@ static int syscall_execve_impl(struct registers* regs, const char* user_path, co
     current_process->addr_space = new_as;
     current_process->heap_start = heap_brk;
     current_process->heap_break = heap_brk;
+    strncpy(current_process->cmdline, path, sizeof(current_process->cmdline) - 1);
+    current_process->cmdline[sizeof(current_process->cmdline) - 1] = '\0';
     vmm_as_activate(new_as);
 
     // Build a minimal initial user stack: argc, argv pointers, envp pointers, strings.

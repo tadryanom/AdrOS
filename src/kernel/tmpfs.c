@@ -20,6 +20,10 @@ static struct fs_node* tmpfs_finddir_impl(struct fs_node* node, const char* name
 static int tmpfs_readdir_impl(struct fs_node* node, uint32_t* inout_index, void* buf, uint32_t buf_len);
 static uint32_t tmpfs_read_impl(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer);
 static uint32_t tmpfs_write_impl(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer);
+static int tmpfs_mkdir_impl(struct fs_node* dir, const char* name);
+static int tmpfs_unlink_impl(struct fs_node* dir, const char* name);
+static int tmpfs_rmdir_impl(struct fs_node* dir, const char* name);
+static int tmpfs_create_impl(struct fs_node* dir, const char* name, uint32_t flags, struct fs_node** out);
 
 static const struct file_operations tmpfs_file_ops = {
     .read    = tmpfs_read_impl,
@@ -31,6 +35,10 @@ static const struct file_operations tmpfs_dir_ops = {0};
 static const struct inode_operations tmpfs_dir_iops = {
     .lookup  = tmpfs_finddir_impl,
     .readdir = tmpfs_readdir_impl,
+    .mkdir   = tmpfs_mkdir_impl,
+    .unlink  = tmpfs_unlink_impl,
+    .rmdir   = tmpfs_rmdir_impl,
+    .create  = tmpfs_create_impl,
 };
 
 static struct tmpfs_node* tmpfs_node_alloc(const char* name, uint32_t flags) {
@@ -200,6 +208,73 @@ static int tmpfs_readdir_impl(struct fs_node* node, uint32_t* inout_index, void*
 
     *inout_index = idx;
     return (int)(written * (uint32_t)sizeof(struct vfs_dirent));
+}
+
+static int tmpfs_mkdir_impl(struct fs_node* dir, const char* name) {
+    if (!dir || !name || dir->flags != FS_DIRECTORY) return -EINVAL;
+    struct tmpfs_node* d = (struct tmpfs_node*)dir;
+    if (tmpfs_child_find(d, name)) return -EEXIST;
+    struct tmpfs_node* nd = tmpfs_node_alloc(name, FS_DIRECTORY);
+    if (!nd) return -ENOMEM;
+    nd->vfs.f_ops = &tmpfs_dir_ops;
+    nd->vfs.i_ops = &tmpfs_dir_iops;
+    tmpfs_child_add(d, nd);
+    return 0;
+}
+
+static int tmpfs_unlink_impl(struct fs_node* dir, const char* name) {
+    if (!dir || !name || dir->flags != FS_DIRECTORY) return -EINVAL;
+    struct tmpfs_node* d = (struct tmpfs_node*)dir;
+    struct tmpfs_node* prev = NULL;
+    struct tmpfs_node* c = d->first_child;
+    while (c) {
+        if (strcmp(c->vfs.name, name) == 0) break;
+        prev = c;
+        c = c->next_sibling;
+    }
+    if (!c) return -ENOENT;
+    if (c->vfs.flags == FS_DIRECTORY) return -EISDIR;
+    if (prev) prev->next_sibling = c->next_sibling;
+    else d->first_child = c->next_sibling;
+    if (c->data) kfree(c->data);
+    kfree(c);
+    return 0;
+}
+
+static int tmpfs_rmdir_impl(struct fs_node* dir, const char* name) {
+    if (!dir || !name || dir->flags != FS_DIRECTORY) return -EINVAL;
+    struct tmpfs_node* d = (struct tmpfs_node*)dir;
+    struct tmpfs_node* prev = NULL;
+    struct tmpfs_node* c = d->first_child;
+    while (c) {
+        if (strcmp(c->vfs.name, name) == 0) break;
+        prev = c;
+        c = c->next_sibling;
+    }
+    if (!c) return -ENOENT;
+    if (c->vfs.flags != FS_DIRECTORY) return -ENOTDIR;
+    if (c->first_child) return -ENOTEMPTY;
+    if (prev) prev->next_sibling = c->next_sibling;
+    else d->first_child = c->next_sibling;
+    kfree(c);
+    return 0;
+}
+
+static int tmpfs_create_impl(struct fs_node* dir, const char* name, uint32_t flags, struct fs_node** out) {
+    if (!dir || !name || !out || dir->flags != FS_DIRECTORY) return -EINVAL;
+    struct tmpfs_node* d = (struct tmpfs_node*)dir;
+    struct tmpfs_node* existing = tmpfs_child_find(d, name);
+    if (existing) {
+        *out = &existing->vfs;
+        return 0;
+    }
+    if (!(flags & 0x40U)) return -ENOENT; /* O_CREAT */
+    struct tmpfs_node* f = tmpfs_node_alloc(name, FS_FILE);
+    if (!f) return -ENOMEM;
+    f->vfs.f_ops = &tmpfs_file_ops;
+    tmpfs_child_add(d, f);
+    *out = &f->vfs;
+    return 0;
 }
 
 fs_node_t* tmpfs_create_root(void) {

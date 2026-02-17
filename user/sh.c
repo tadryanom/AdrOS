@@ -16,6 +16,23 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <dirent.h>
+#include <termios.h>
+
+static struct termios orig_termios;
+
+static void tty_raw_mode(void) {
+    tcgetattr(STDIN_FILENO, &orig_termios);
+    struct termios raw = orig_termios;
+    raw.c_lflag &= ~(ICANON | ECHO | ISIG);
+    raw.c_cc[VMIN] = 1;
+    raw.c_cc[VTIME] = 0;
+    tcsetattr(STDIN_FILENO, TCSANOW, &raw);
+}
+
+static void tty_restore(void) {
+    tcsetattr(STDIN_FILENO, TCSANOW, &orig_termios);
+}
 
 #define LINE_MAX   512
 #define MAX_ARGS   64
@@ -107,6 +124,136 @@ static void term_write(const char* s, int n) {
     write(STDOUT_FILENO, s, (size_t)n);
 }
 
+/* ---- Tab completion ---- */
+
+static int tab_complete(char* buf, int* p_pos, int* p_len) {
+    int pos = *p_pos;
+    int len = *p_len;
+
+    /* Find the start of the current word */
+    int wstart = pos;
+    while (wstart > 0 && buf[wstart - 1] != ' ' && buf[wstart - 1] != '\t')
+        wstart--;
+
+    char prefix[128];
+    int plen = pos - wstart;
+    if (plen <= 0 || plen >= (int)sizeof(prefix)) return 0;
+    memcpy(prefix, buf + wstart, (size_t)plen);
+    prefix[plen] = '\0';
+
+    /* Determine if this is a command (first word) or filename */
+    int is_cmd = 1;
+    for (int i = 0; i < wstart; i++) {
+        if (buf[i] != ' ' && buf[i] != '\t') { is_cmd = 0; break; }
+    }
+
+    char match[128];
+    match[0] = '\0';
+    int nmatches = 0;
+
+    /* Split prefix into directory part and name part for file completion */
+    char dirpath[128] = ".";
+    const char* namepfx = prefix;
+    char* lastsep = NULL;
+    for (char* p = prefix; *p; p++) {
+        if (*p == '/') lastsep = p;
+    }
+    if (lastsep) {
+        int dlen = (int)(lastsep - prefix);
+        if (dlen == 0) { dirpath[0] = '/'; dirpath[1] = '\0'; }
+        else { memcpy(dirpath, prefix, (size_t)dlen); dirpath[dlen] = '\0'; }
+        namepfx = lastsep + 1;
+    }
+    int nplen = (int)strlen(namepfx);
+
+    if (!is_cmd || lastsep) {
+        /* File/directory completion */
+        int fd = open(dirpath, 0);
+        if (fd >= 0) {
+            char dbuf[512];
+            int rc;
+            while ((rc = getdents(fd, dbuf, sizeof(dbuf))) > 0) {
+                int off = 0;
+                while (off < rc) {
+                    struct dirent* d = (struct dirent*)(dbuf + off);
+                    if (d->d_reclen == 0) break;
+                    if (d->d_name[0] != '.' || nplen > 0) {
+                        int nlen = (int)strlen(d->d_name);
+                        if (nlen >= nplen && memcmp(d->d_name, namepfx, (size_t)nplen) == 0) {
+                            if (nmatches == 0) strcpy(match, d->d_name);
+                            nmatches++;
+                        }
+                    }
+                    off += d->d_reclen;
+                }
+            }
+            close(fd);
+        }
+    }
+
+    if (is_cmd && !lastsep) {
+        /* Command completion: search PATH directories + builtins */
+        static const char* builtins[] = {
+            "cd", "exit", "echo", "export", "unset", "set", "pwd", "type", NULL
+        };
+        for (int i = 0; builtins[i]; i++) {
+            int blen = (int)strlen(builtins[i]);
+            if (blen >= plen && memcmp(builtins[i], prefix, (size_t)plen) == 0) {
+                if (nmatches == 0) strcpy(match, builtins[i]);
+                nmatches++;
+            }
+        }
+        const char* path_env = var_get("PATH");
+        if (!path_env) path_env = "/bin:/sbin:/usr/bin";
+        char pathcopy[512];
+        strncpy(pathcopy, path_env, sizeof(pathcopy) - 1);
+        pathcopy[sizeof(pathcopy) - 1] = '\0';
+        char* save = pathcopy;
+        char* dir;
+        while ((dir = save) != NULL) {
+            char* sep = strchr(save, ':');
+            if (sep) { *sep = '\0'; save = sep + 1; } else save = NULL;
+            int fd = open(dir, 0);
+            if (fd < 0) continue;
+            char dbuf[512];
+            int rc;
+            while ((rc = getdents(fd, dbuf, sizeof(dbuf))) > 0) {
+                int off = 0;
+                while (off < rc) {
+                    struct dirent* d = (struct dirent*)(dbuf + off);
+                    if (d->d_reclen == 0) break;
+                    int nlen = (int)strlen(d->d_name);
+                    if (nlen >= plen && memcmp(d->d_name, prefix, (size_t)plen) == 0) {
+                        if (nmatches == 0) strcpy(match, d->d_name);
+                        nmatches++;
+                    }
+                    off += d->d_reclen;
+                }
+            }
+            close(fd);
+        }
+    }
+
+    if (nmatches != 1) return 0;
+
+    /* Insert the completion suffix */
+    int mlen = (int)strlen(match);
+    int suffix_len = is_cmd && !lastsep ? mlen - plen : mlen - nplen;
+    const char* suffix = is_cmd && !lastsep ? match + plen : match + nplen;
+    if (suffix_len <= 0 || len + suffix_len >= LINE_MAX - 1) return 0;
+
+    memmove(buf + pos + suffix_len, buf + pos, (size_t)(len - pos));
+    memcpy(buf + pos, suffix, (size_t)suffix_len);
+    len += suffix_len;
+    buf[len] = '\0';
+    term_write(buf + pos, len - pos);
+    pos += suffix_len;
+    for (int i = 0; i < len - pos; i++) term_write("\b", 1);
+    *p_pos = pos;
+    *p_len = len;
+    return 1;
+}
+
 static int read_line_edit(void) {
     int pos = 0;
     int len = 0;
@@ -139,6 +286,12 @@ static int read_line_edit(void) {
                 term_write(" \b", 2);
                 for (int i = 0; i < len - pos; i++) term_write("\b", 1);
             }
+            continue;
+        }
+
+        /* Tab = autocomplete */
+        if (c == '\t') {
+            tab_complete(line, &pos, &len);
             continue;
         }
 
@@ -185,6 +338,33 @@ static int read_line_edit(void) {
             if (seq[0] != '[') continue;
             if (read(STDIN_FILENO, &seq[1], 1) <= 0) continue;
 
+            if (seq[1] >= '0' && seq[1] <= '9') {
+                /* Extended sequence like \x1b[3~ (DELETE), \x1b[1~ (Home), \x1b[4~ (End) */
+                char trail;
+                if (read(STDIN_FILENO, &trail, 1) <= 0) continue;
+                if (trail == '~') {
+                    if (seq[1] == '3') {
+                        /* DELETE key — delete char at cursor */
+                        if (pos < len) {
+                            memmove(line + pos, line + pos + 1, (size_t)(len - pos - 1));
+                            len--;
+                            line[len] = '\0';
+                            term_write(line + pos, len - pos);
+                            term_write(" \b", 2);
+                            for (int i = 0; i < len - pos; i++) term_write("\b", 1);
+                        }
+                    } else if (seq[1] == '1') {
+                        /* Home */
+                        while (pos > 0) { term_write("\b", 1); pos--; }
+                    } else if (seq[1] == '4') {
+                        /* End */
+                        term_write(line + pos, len - pos);
+                        pos = len;
+                    }
+                }
+                continue;
+            }
+
             switch (seq[1]) {
             case 'A':  /* Up arrow — previous history */
                 if (hist_pos > 0 && hist_pos > hist_count - HIST_SIZE) {
@@ -221,6 +401,13 @@ static int read_line_edit(void) {
                 break;
             case 'D':  /* Left arrow */
                 if (pos > 0) { term_write("\b", 1); pos--; }
+                break;
+            case 'H':  /* Home */
+                while (pos > 0) { term_write("\b", 1); pos--; }
+                break;
+            case 'F':  /* End */
+                term_write(line + pos, len - pos);
+                pos = len;
                 break;
             }
             continue;
@@ -384,6 +571,19 @@ static void run_simple(char* cmd) {
     argc = nargc;
     if (argc == 0) return;
 
+    /* ---- Apply redirections for builtins too ---- */
+    int saved_stdin = -1, saved_stdout = -1;
+    if (redir_in) {
+        int fd = open(redir_in, O_RDONLY);
+        if (fd >= 0) { saved_stdin = dup(0); dup2(fd, 0); close(fd); }
+    }
+    if (redir_out) {
+        int flags = O_WRONLY | O_CREAT;
+        flags |= append ? O_APPEND : O_TRUNC;
+        int fd = open(redir_out, flags);
+        if (fd >= 0) { saved_stdout = dup(1); dup2(fd, 1); close(fd); }
+    }
+
     /* ---- Builtins ---- */
 
     if (strcmp(argv[0], "exit") == 0) {
@@ -401,7 +601,7 @@ static void run_simple(char* cmd) {
             if (getcwd(cwd, sizeof(cwd)) >= 0)
                 var_set("PWD", cwd, 1);
         }
-        return;
+        goto restore_redir;
     }
 
     if (strcmp(argv[0], "pwd") == 0) {
@@ -410,7 +610,7 @@ static void run_simple(char* cmd) {
             printf("%s\n", cwd);
         else
             fprintf(stderr, "pwd: error\n");
-        return;
+        goto restore_redir;
     }
 
     if (strcmp(argv[0], "export") == 0) {
@@ -426,18 +626,18 @@ static void run_simple(char* cmd) {
                         vars[j].exported = 1;
             }
         }
-        return;
+        goto restore_redir;
     }
 
     if (strcmp(argv[0], "unset") == 0) {
         for (int i = 1; i < argc; i++) var_unset(argv[i]);
-        return;
+        goto restore_redir;
     }
 
     if (strcmp(argv[0], "set") == 0) {
         for (int i = 0; i < nvar; i++)
             printf("%s=%s\n", vars[i].name, vars[i].value);
-        return;
+        goto restore_redir;
     }
 
     if (strcmp(argv[0], "echo") == 0) {
@@ -449,7 +649,7 @@ static void run_simple(char* cmd) {
             write(STDOUT_FILENO, argv[i], strlen(argv[i]));
         }
         if (!nflag) write(STDOUT_FILENO, "\n", 1);
-        return;
+        goto restore_redir;
     }
 
     if (strcmp(argv[0], "type") == 0) {
@@ -467,10 +667,10 @@ static void run_simple(char* cmd) {
                     printf("%s: not found\n", argv[i]);
             }
         }
-        return;
+        goto restore_redir;
     }
 
-    /* ---- External command ---- */
+    /* ---- External command — restore parent redirections before fork ---- */
     const char* path = resolve(argv[0]);
     char** envp = build_envp();
 
@@ -498,6 +698,11 @@ static void run_simple(char* cmd) {
     int st;
     waitpid(pid, &st, 0);
     last_status = st;
+    goto restore_redir;
+
+restore_redir:
+    if (saved_stdout >= 0) { dup2(saved_stdout, 1); close(saved_stdout); }
+    if (saved_stdin >= 0)  { dup2(saved_stdin, 0);  close(saved_stdin);  }
 }
 
 /* ---- Pipeline support ---- */
@@ -644,16 +849,21 @@ int main(int argc, char** argv, char** envp) {
     if (!var_get("HOME"))
         var_set("HOME", "/", 1);
 
+    tty_raw_mode();
+
     print_prompt();
     while (1) {
         int len = read_line_edit();
         if (len < 0) break;
         if (len > 0) {
             hist_add(line);
+            tty_restore();
             process_line(line);
+            tty_raw_mode();
         }
         print_prompt();
     }
 
+    tty_restore();
     return last_status;
 }

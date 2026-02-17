@@ -314,7 +314,7 @@ static int elf32_load_needed_libs(const uint8_t* file, uint32_t file_len,
         uintptr_t seg_end = 0;
         int rc = elf32_load_shared_lib_at(path, as, lib_base, &seg_end);
         if (rc == 0) {
-            kprintf("[ELF] loaded shared lib: %s at 0x%x\n", path, (unsigned)lib_base);
+            /* shared lib loaded silently */
             lib_base = (seg_end + 0xFFFU) & ~(uintptr_t)0xFFFU;
             loaded++;
         } else {
@@ -456,7 +456,7 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
             if (irc == 0) {
                 real_entry = interp_entry;
                 has_interp = 1;
-                kprintf("[ELF] loaded interp: %s\n", interp_path);
+                /* interp loaded silently */
             }
             break;
         }

@@ -200,8 +200,58 @@ static const struct file_operations initrd_file_ops = {
 
 static const struct file_operations initrd_dir_ops = {0};
 
+static int initrd_readdir(struct fs_node* node, uint32_t* inout_index, void* buf, uint32_t buf_len) {
+    if (!node || !inout_index || !buf) return -1;
+    if (node->flags != FS_DIRECTORY) return -1;
+    if (buf_len < sizeof(struct vfs_dirent)) return -1;
+
+    int parent = (int)node->inode;
+    if (parent < 0 || parent >= entry_count) return -1;
+
+    uint32_t idx = *inout_index;
+    uint32_t cap = buf_len / (uint32_t)sizeof(struct vfs_dirent);
+    struct vfs_dirent* ents = (struct vfs_dirent*)buf;
+    uint32_t written = 0;
+
+    while (written < cap) {
+        struct vfs_dirent e;
+        memset(&e, 0, sizeof(e));
+
+        if (idx == 0) {
+            e.d_ino = node->inode;
+            e.d_type = FS_DIRECTORY;
+            strcpy(e.d_name, ".");
+        } else if (idx == 1) {
+            int pi = entries[parent].parent;
+            e.d_ino = (pi >= 0) ? (uint32_t)pi : node->inode;
+            e.d_type = FS_DIRECTORY;
+            strcpy(e.d_name, "..");
+        } else {
+            /* Walk the child linked list to find the (idx-2)th child */
+            uint32_t skip = idx - 2;
+            int c = entries[parent].first_child;
+            while (c != -1 && skip > 0) {
+                c = entries[c].next_sibling;
+                skip--;
+            }
+            if (c == -1) break;
+            e.d_ino = (uint32_t)c;
+            e.d_type = (uint8_t)entries[c].flags;
+            strcpy(e.d_name, entries[c].name);
+        }
+
+        e.d_reclen = (uint16_t)sizeof(e);
+        ents[written++] = e;
+        idx++;
+    }
+
+    *inout_index = idx;
+    return (int)(written * (uint32_t)sizeof(struct vfs_dirent));
+}
+
 static const struct inode_operations initrd_dir_iops = {
-    .lookup = initrd_finddir,
+    .lookup  = initrd_finddir,
+    .readdir = initrd_readdir,
 };
 
 static void initrd_finalize_nodes(void) {

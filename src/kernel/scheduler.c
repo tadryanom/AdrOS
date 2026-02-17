@@ -22,7 +22,7 @@ struct process* ready_queue_tail = NULL;
 static uint32_t next_pid = 1;
 static uint32_t init_pid = 0;  /* PID of the first userspace process ("init") */
 
-static spinlock_t sched_lock = {0};
+spinlock_t sched_lock = {0};
 static uintptr_t kernel_as = 0;
 
 /*

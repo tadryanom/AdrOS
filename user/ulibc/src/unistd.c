@@ -1,6 +1,7 @@
 #include "unistd.h"
 #include "syscall.h"
 #include "errno.h"
+#include "termios.h"
 
 int read(int fd, void* buf, size_t count) {
     return __syscall_ret(_syscall3(SYS_READ, fd, (int)buf, (int)count));
@@ -213,6 +214,17 @@ int symlink(const char* target, const char* linkpath) {
 int readlink(const char* path, char* buf, size_t bufsiz) {
     (void)path; (void)buf; (void)bufsiz;
     return -1;  /* TODO: implement when kernel has SYS_READLINK */
+}
+
+int tcgetattr(int fd, struct termios* t) {
+    return __syscall_ret(_syscall3(SYS_IOCTL, fd, 0x5401 /* TCGETS */, (int)t));
+}
+
+int tcsetattr(int fd, int actions, const struct termios* t) {
+    int cmd = 0x5402; /* TCSETS */
+    if (actions == 1) cmd = 0x5403; /* TCSETSW */
+    else if (actions == 2) cmd = 0x5404; /* TCSETSF */
+    return __syscall_ret(_syscall3(SYS_IOCTL, fd, cmd, (int)t));
 }
 
 void _exit(int status) {

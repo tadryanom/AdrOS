@@ -12,6 +12,7 @@
 
 #include "process.h"
 #include "heap.h"
+#include "utils.h"
 
 #include "hal/cpu.h"
 #include "hal/uart.h"
@@ -57,6 +58,8 @@ static void userspace_init_thread(void) {
     current_process->addr_space = user_as;
     current_process->heap_start = heap_brk;
     current_process->heap_break = heap_brk;
+    strncpy(current_process->cmdline, init_path, sizeof(current_process->cmdline) - 1);
+    current_process->cmdline[sizeof(current_process->cmdline) - 1] = '\0';
     vmm_as_activate(user_as);
 
     /* Register this process as "init" for orphan reparenting */
@@ -82,6 +85,53 @@ static void userspace_init_thread(void) {
             }
         } else {
             kprintf("[INIT] WARNING: /dev/console not found\n");
+        }
+    }
+
+    /* If the binary uses a dynamic linker (PT_INTERP), ld.so needs a
+     * proper stack layout: [argc][argv...][NULL][envp...][NULL][auxv...]
+     * The execve path does this in syscall.c; for the init thread we
+     * must build it here since there is no prior execve. */
+    {
+        elf32_auxv_t auxv_buf[8];
+        int auxv_n = elf32_pop_pending_auxv(auxv_buf, 8);
+        if (auxv_n > 0) {
+            /* Build the stack top-down in the user address space.
+             * Layout (grows downward):
+             *   auxv[]         (auxv_n * 8 bytes)
+             *   NULL           (4 bytes — envp terminator)
+             *   NULL           (4 bytes — argv terminator)
+             *   argv[0] ptr    (4 bytes — points to init_path string)
+             *   argc = 1       (4 bytes)
+             *   [init_path string bytes at bottom] */
+            size_t path_len = 0;
+            for (const char* s = init_path; *s; s++) path_len++;
+            path_len++; /* include NUL */
+
+            /* Copy init_path string onto user stack */
+            user_sp -= (path_len + 3U) & ~3U; /* align to 4 */
+            uintptr_t path_va = user_sp;
+            memcpy((void*)path_va, init_path, path_len);
+
+            /* auxv array */
+            user_sp -= (uintptr_t)(auxv_n * (int)sizeof(elf32_auxv_t));
+            memcpy((void*)user_sp, auxv_buf, (size_t)auxv_n * sizeof(elf32_auxv_t));
+
+            /* envp NULL terminator */
+            user_sp -= 4;
+            *(uint32_t*)user_sp = 0;
+
+            /* argv NULL terminator */
+            user_sp -= 4;
+            *(uint32_t*)user_sp = 0;
+
+            /* argv[0] = pointer to init_path string */
+            user_sp -= 4;
+            *(uint32_t*)user_sp = (uint32_t)path_va;
+
+            /* argc = 1 */
+            user_sp -= 4;
+            *(uint32_t*)user_sp = 1;
         }
     }
 
