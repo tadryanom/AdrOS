@@ -6,6 +6,10 @@
 void hal_uart_init(void) {
 }
 
+int hal_uart_is_present(void) {
+    return 1;
+}
+
 void hal_uart_drain_rx(void) {
 }
 

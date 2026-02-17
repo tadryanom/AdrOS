@@ -13,6 +13,10 @@ void hal_uart_init(void) {
     /* Minimal init: assume firmware/QEMU defaults are usable */
 }
 
+int hal_uart_is_present(void) {
+    return 1;
+}
+
 void hal_uart_drain_rx(void) {
     while (mmio_read8(UART_BASE + 5) & 0x01)
         (void)mmio_read8(UART_BASE);

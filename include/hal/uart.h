@@ -2,6 +2,7 @@
 #define HAL_UART_H
 
 void hal_uart_init(void);
+int  hal_uart_is_present(void);
 void hal_uart_drain_rx(void);
 void hal_uart_poll_rx(void);
 void hal_uart_putc(char c);

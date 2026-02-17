@@ -37,7 +37,11 @@ static void klog_append(const char* s, size_t len) {
 void console_init(void) {
     spinlock_init(&g_console_lock);
     g_console_uart_enabled = 1;
-    g_console_vga_enabled = 0;
+    /* If no UART hardware is present, auto-enable VGA so boot messages
+     * are visible instead of being silently dropped. */
+    if (!hal_uart_is_present()) {
+        g_console_vga_enabled = 1;
+    }
 }
 
 void console_enable_uart(int enabled) {

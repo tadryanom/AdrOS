@@ -6,6 +6,7 @@
 
 #define UART_BASE 0x3F8
 
+static int uart_present = 0;
 static void (*uart_rx_cb)(char) = 0;
 
 static void uart_irq_handler(struct registers* regs) {
@@ -17,6 +18,21 @@ static void uart_irq_handler(struct registers* regs) {
 }
 
 void hal_uart_init(void) {
+    /* Detect UART hardware via scratch register (offset 7).
+     * Write a test value, read it back.  If no 16550 is present the
+     * floating ISA bus returns 0xFF for all reads, so the test fails. */
+    outb(UART_BASE + 7, 0xA5);
+    if (inb(UART_BASE + 7) != 0xA5) {
+        uart_present = 0;
+        return;  /* No UART — skip all configuration */
+    }
+    outb(UART_BASE + 7, 0x5A);
+    if (inb(UART_BASE + 7) != 0x5A) {
+        uart_present = 0;
+        return;
+    }
+    uart_present = 1;
+
     outb(UART_BASE + 1, 0x00);    /* Disable all interrupts */
     outb(UART_BASE + 3, 0x80);    /* Enable DLAB */
     outb(UART_BASE + 0, 0x03);    /* Baud 38400 */
@@ -32,7 +48,12 @@ void hal_uart_init(void) {
     outb(UART_BASE + 1, 0x01);
 }
 
+int hal_uart_is_present(void) {
+    return uart_present;
+}
+
 void hal_uart_drain_rx(void) {
+    if (!uart_present) return;
     /* Full UART interrupt reinitialisation for IOAPIC hand-off.
      *
      * hal_uart_init() runs under the legacy PIC and enables IER bit 0
@@ -69,6 +90,7 @@ void hal_uart_drain_rx(void) {
 }
 
 void hal_uart_poll_rx(void) {
+    if (!uart_present) return;
     /* Timer-driven fallback: drain any pending characters from the
      * UART FIFO via polling.  Called from the timer tick handler so
      * serial input works even if the IOAPIC edge-triggered IRQ for
@@ -84,12 +106,14 @@ void hal_uart_set_rx_callback(void (*cb)(char)) {
 }
 
 void hal_uart_putc(char c) {
+    if (!uart_present) return;
     int timeout = 100000;
     while ((inb(UART_BASE + 5) & 0x20) == 0 && --timeout > 0) { }
     outb(UART_BASE, (uint8_t)c);
 }
 
 int hal_uart_try_getc(void) {
+    if (!uart_present) return -1;
     if (inb(UART_BASE + 5) & 0x01) {
         return (int)inb(UART_BASE);
     }

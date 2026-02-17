@@ -9,6 +9,10 @@ void hal_uart_init(void) {
     mmio_write8(UART_BASE + 1, 0x01);
 }
 
+int hal_uart_is_present(void) {
+    return 1;
+}
+
 void hal_uart_drain_rx(void) {
     while (mmio_read8(UART_BASE + 5) & 0x01)
         (void)mmio_read8(UART_BASE);

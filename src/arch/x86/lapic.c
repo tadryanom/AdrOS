@@ -196,7 +196,7 @@ void lapic_timer_start(uint32_t frequency_hz) {
     lapic_write(LAPIC_TIMER_DCR, LAPIC_TIMER_DIV_16);
     lapic_write(LAPIC_TIMER_ICR, ticks_per_interrupt);
 
-    kprintf("[LAPIC] Timer started at %uHz (ticks=0x%x)\n",
+    kprintf("[LAPIC] Timer started at %uHz (ticks=%u)\n",
             (unsigned)frequency_hz, ticks_per_interrupt);
 }
 

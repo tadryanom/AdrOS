@@ -3033,7 +3033,13 @@ void _start(void) {
         (void)sys_sigaction(SIGALRM, alrm_handler, 0);
         got_alrm = 0;
         (void)sys_alarm(1);
-        for (volatile uint32_t i = 0; i < 20000000U && !got_alrm; i++) { }
+        /* Wait up to 2 seconds for the alarm to fire.  A busy-loop may
+         * complete too quickly on fast CPUs (e.g. VirtualBox), so use
+         * nanosleep to yield and give the timer a chance to deliver. */
+        for (int _w = 0; _w < 40 && !got_alrm; _w++) {
+            struct timespec _ts = {0, 50000000}; /* 50ms */
+            (void)sys_nanosleep(&_ts, 0);
+        }
         if (!got_alrm) {
             sys_write(1, "[init] alarm/SIGALRM not delivered\n", (uint32_t)(sizeof("[init] alarm/SIGALRM not delivered\n") - 1));
             sys_exit(1);

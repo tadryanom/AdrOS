@@ -437,6 +437,18 @@ void isr_handler(struct registers* regs) {
     } else {
         // If Exception (0-31), Panic
         if (regs->int_no < 32) {
+            // User-mode exceptions (ring 3): deliver SIGSEGV instead of panicking.
+            // Handles #GP (13), #PF (14), and other faults from user code.
+            if ((regs->cs & 3U) == 3U && regs->int_no != 14) {
+                const int SIG_SEGV = 11;
+                if (current_process) {
+                    current_process->last_fault_addr = regs->eip;
+                    current_process->sig_pending_mask |= (1U << (uint32_t)SIG_SEGV);
+                }
+                deliver_signals_to_usermode(regs);
+                return;
+            }
+
             if (regs->int_no == 14) {
                 // If page fault came from ring3, convert it into a SIGSEGV delivery.
                 // Default action for SIGSEGV will terminate the process, but a user

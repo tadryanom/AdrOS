@@ -68,6 +68,11 @@ __attribute__((noreturn)) void x86_enter_usermode(uintptr_t user_eip, uintptr_t 
 
     __asm__ volatile(
         "cli\n"
+        "mov $0x23, %%ax\n"     /* user data segment (GDT entry 4, RPL=3) */
+        "mov %%ax, %%ds\n"
+        "mov %%ax, %%es\n"
+        "mov %%ax, %%fs\n"
+        "mov %%ax, %%gs\n"
         "pushl $0x23\n"         /* ss */
         "pushl %[esp]\n"        /* esp */
         "pushl $0x202\n"        /* eflags: IF=1 */
@@ -76,7 +81,7 @@ __attribute__((noreturn)) void x86_enter_usermode(uintptr_t user_eip, uintptr_t 
         "iret\n"
         :
         : [eip] "r"(user_eip), [esp] "r"(user_esp)
-        : "memory"
+        : "memory", "eax"
     );
 
     __builtin_unreachable();
