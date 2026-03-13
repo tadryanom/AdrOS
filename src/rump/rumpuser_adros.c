@@ -31,8 +31,7 @@
 #include "process.h"
 #include "sync.h"
 #include "hal/cpu.h"
-
-#include <string.h>
+#include "utils.h"
 
 /* ------------------------------------------------------------------ */
 /* Rump hypercall version                                              */

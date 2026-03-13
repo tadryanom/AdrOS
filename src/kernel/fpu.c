@@ -9,7 +9,7 @@
 
 #include "arch_fpu.h"
 #include "console.h"
-#include <string.h>
+#include "utils.h"
 
 __attribute__((weak))
 void arch_fpu_init(void) {
