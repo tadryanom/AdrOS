@@ -69,8 +69,6 @@ void*   brk(void* addr);
 
 int     waitpid(int pid, int* status, int options);
 int     getdents(int fd, void* buf, size_t count);
-int     stat(const char* path, void* buf);  /* use sys/stat.h for typed version */
-int     fstat(int fd, void* buf);              /* use sys/stat.h for typed version */
 int     chmod(const char* path, int mode);
 int     chown(const char* path, int owner, int group);
 int     link(const char* oldpath, const char* newpath);

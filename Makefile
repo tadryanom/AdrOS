@@ -83,6 +83,11 @@ ifeq ($(ARCH),x86)
     ASM_SOURCES := $(wildcard $(SRC_DIR)/arch/x86/*.S)
     C_SOURCES += $(wildcard $(SRC_DIR)/arch/x86/*.c)
 
+    # Userspace cross-compiler (always i686-elf, even when kernel CC differs)
+    USER_CC  ?= i686-elf-gcc
+    USER_LD  ?= i686-elf-ld
+    USER_AR  ?= i686-elf-ar
+
     FULLTEST_ELF := user/fulltest.elf
     ECHO_ELF := user/echo.elf
     SH_ELF := user/sh.elf
@@ -223,18 +228,18 @@ ULIBC_DIR := user/ulibc
 ULIBC_LIB := $(ULIBC_DIR)/libulibc.a
 
 $(ULIBC_LIB):
-	@$(MAKE) -C $(ULIBC_DIR) --no-print-directory
+	@$(MAKE) -C $(ULIBC_DIR) CC="$(USER_CC)" AS="$(USER_CC:gcc=as)" AR="$(USER_AR)" LD="$(USER_LD)" --no-print-directory
 
 $(ULIBC_SO):
-	@$(MAKE) -C $(ULIBC_DIR) libc.so --no-print-directory
+	@$(MAKE) -C $(ULIBC_DIR) CC="$(USER_CC)" AS="$(USER_CC:gcc=as)" AR="$(USER_AR)" LD="$(USER_LD)" libc.so --no-print-directory
 
 $(FULLTEST_ELF): user/fulltest.c user/linker.ld
-	@i686-elf-gcc -m32 -I include -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(FULLTEST_ELF) user/fulltest.c user/errno.c
+	@$(USER_CC) -m32 -I include -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(FULLTEST_ELF) user/fulltest.c user/errno.c
 
 # --- Dynamic linking helper: compile .c to PIC .o, link as PIE with crt0 + libc.so ---
 ULIBC_CRT0 := $(ULIBC_DIR)/src/crt0.o
-DYN_CC := i686-elf-gcc -m32 -ffreestanding -nostdlib -O2 -Wall -Wextra -fPIC -fno-plt -I$(ULIBC_DIR)/include
-DYN_LD := i686-elf-ld -m elf_i386 --dynamic-linker=/lib/ld.so -T user/dyn_linker.ld -L$(ULIBC_DIR) -rpath /lib
+DYN_CC := $(USER_CC) -m32 -ffreestanding -nostdlib -O2 -Wall -Wextra -fPIC -fno-plt -I$(ULIBC_DIR)/include
+DYN_LD := $(USER_LD) -m elf_i386 --dynamic-linker=/lib/ld.so -T user/dyn_linker.ld -L$(ULIBC_DIR) -rpath /lib
 
 $(ECHO_ELF): user/echo.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
 	@$(DYN_CC) -c user/echo.c -o user/echo.o
@@ -445,15 +450,15 @@ $(WHICH_ELF): user/which.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
 	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/which.o -lc
 
 $(LDSO_ELF): user/ldso.c user/ldso_linker.ld
-	@i686-elf-gcc -m32 -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/ldso_linker.ld -o $(LDSO_ELF) user/ldso.c
+	@$(USER_CC) -m32 -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/ldso_linker.ld -o $(LDSO_ELF) user/ldso.c
 
 $(PIE_SO): user/pie_func.c
-	@i686-elf-gcc -m32 -fPIC -fno-plt -c user/pie_func.c -o user/pie_func.o
-	@i686-elf-ld -m elf_i386 -shared -soname libpietest.so -o $(PIE_SO) user/pie_func.o
+	@$(USER_CC) -m32 -fPIC -fno-plt -c user/pie_func.c -o user/pie_func.o
+	@$(USER_LD) -m elf_i386 -shared -soname libpietest.so -o $(PIE_SO) user/pie_func.o
 
 $(PIE_ELF): user/pie_main.c user/pie_linker.ld $(PIE_SO)
-	@i686-elf-gcc -m32 -fPIC -c user/pie_main.c -o user/pie_main.o
-	@i686-elf-ld -m elf_i386 -pie --dynamic-linker=/lib/ld.so -T user/pie_linker.ld -o $(PIE_ELF) user/pie_main.o $(PIE_SO) -rpath /lib
+	@$(USER_CC) -m32 -fPIC -c user/pie_main.c -o user/pie_main.o
+	@$(USER_LD) -m elf_i386 -pie --dynamic-linker=/lib/ld.so -T user/pie_linker.ld -o $(PIE_ELF) user/pie_main.o $(PIE_SO) -rpath /lib
 
 # All dynamically-linked user commands
 USER_CMDS := $(ECHO_ELF) $(SH_ELF) $(CAT_ELF) $(LS_ELF) $(MKDIR_ELF) $(RM_ELF) \
@@ -644,4 +649,4 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.S
 clean:
 	rm -rf build $(KERNEL_NAME)
 
-.PHONY: all clean iso run cppcheck sparse analyzer check test test-1cpu test-host test-gdb test-all scan-build mkinitrd-asan
+.PHONY: all clean iso run run-arm run-riscv run-mips cppcheck sparse analyzer check test test-1cpu test-battery test-host test-gdb test-all scan-build mkinitrd-asan

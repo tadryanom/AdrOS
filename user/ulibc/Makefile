@@ -9,10 +9,10 @@
 #
 
 # ulibc — Minimal C library for AdrOS userspace
-CC := i686-elf-gcc
-AS := i686-elf-as
-AR := i686-elf-ar
-LD := i686-elf-ld
+CC  ?= i686-elf-gcc
+AS  ?= i686-elf-as
+AR  ?= i686-elf-ar
+LD  ?= i686-elf-ld
 
 CFLAGS := -m32 -ffreestanding -fno-pie -no-pie -nostdlib -O2 -Wall -Wextra -Iinclude
 CFLAGS_PIC := -m32 -ffreestanding -nostdlib -O2 -Wall -Wextra -Iinclude -fPIC -fno-plt

@@ -13,7 +13,7 @@
 #include "hal/cpu_features.h"
 
 #include <stdint.h>
-#include <string.h>
+#include "utils.h"
 
 /* CR0 bits */
 #define CR0_EM  (1U << 2)   /* Emulate coprocessor (must be CLEAR for real FPU) */

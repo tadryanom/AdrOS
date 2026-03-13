@@ -18,8 +18,8 @@
 #
 # The output is doom.elf which gets packaged into the AdrOS initrd.
 
-CC := i686-elf-gcc
-LD := i686-elf-ld
+CC  ?= i686-elf-gcc
+LD  ?= i686-elf-ld
 
 ULIBC_DIR := ../ulibc
 ULIBC_INC := $(ULIBC_DIR)/include
