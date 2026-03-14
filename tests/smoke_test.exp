@@ -143,6 +143,7 @@ set tests {
     {"mprotect"            "\\[init\\] mprotect OK"}
     {"getrlimit/setrlimit" "\\[init\\] getrlimit/setrlimit OK"}
     {"uname"               "\\[init\\] uname OK"}
+    {"SMP parallel fork"   "\\[init\\] SMP parallel fork OK"}
     {"LZ4 Frame decomp"    "\\[INITRD\\] LZ4"}
 }
 
