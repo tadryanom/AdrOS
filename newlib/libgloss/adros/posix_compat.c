@@ -558,3 +558,81 @@ uint32_t htonl(uint32_t h) { return __builtin_bswap32(h); }
 uint16_t htons(uint16_t h) { return __builtin_bswap16(h); }
 uint32_t ntohl(uint32_t n) { return __builtin_bswap32(n); }
 uint16_t ntohs(uint16_t n) { return __builtin_bswap16(n); }
+
+/* ---- execv ---- */
+int execv(const char *path, char *const argv[])
+{
+    return execve(path, argv, environ);
+}
+
+/* ---- dlopen/dlsym/dlclose/dlerror stubs ---- */
+#include <dlfcn.h>
+
+void *dlopen(const char *filename, int flags)
+{
+    (void)filename; (void)flags;
+    return NULL;
+}
+
+void *dlsym(void *handle, const char *symbol)
+{
+    (void)handle; (void)symbol;
+    return NULL;
+}
+
+int dlclose(void *handle)
+{
+    (void)handle;
+    return 0;
+}
+
+char *dlerror(void)
+{
+    return "dlopen not supported on AdrOS";
+}
+
+/* ---- pathconf ---- */
+long pathconf(const char *path, int name)
+{
+    (void)path;
+    switch (name) {
+    case 1:  return 255;     /* _PC_NAME_MAX */
+    case 2:  return 4096;    /* _PC_PATH_MAX */
+    case 3:  return 4096;    /* _PC_PIPE_BUF */
+    case 5:  return 1;       /* _PC_LINK_MAX */
+    default: errno = EINVAL; return -1;
+    }
+}
+
+long fpathconf(int fd, int name)
+{
+    (void)fd;
+    return pathconf("/", name);
+}
+
+/* ioctl — minimal stub for terminal queries */
+#include <stdarg.h>
+int ioctl(int fd, unsigned long request, ...)
+{
+    (void)fd;
+    (void)request;
+    errno = ENOSYS;
+    return -1;
+}
+
+/* ---- ftw / nftw stubs ---- */
+#include <ftw.h>
+
+int ftw(const char *dirpath, int (*fn)(const char *, const struct stat *, int), int nopenfd)
+{
+    (void)dirpath; (void)fn; (void)nopenfd;
+    errno = ENOSYS;
+    return -1;
+}
+
+int nftw(const char *dirpath, int (*fn)(const char *, const struct stat *, int, struct FTW *), int nopenfd, int flags)
+{
+    (void)dirpath; (void)fn; (void)nopenfd; (void)flags;
+    errno = ENOSYS;
+    return -1;
+}

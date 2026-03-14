@@ -164,6 +164,14 @@ i[3-7]86-*-adros*)\ttarg_emul=elf_i386\
         step "Patched ld/configure.tgt"
     fi
 
+    # gas/config/tc-i386.c — fix type mismatch (uint32_t vs unsigned int)
+    # The header declares uint32_t but the source used unsigned int.
+    if grep -q 'x86_scfi_callee_saved_p (unsigned int' "$d/gas/config/tc-i386.c" 2>/dev/null; then
+        sed -i 's/x86_scfi_callee_saved_p (unsigned int dw2reg_num)/x86_scfi_callee_saved_p (uint32_t dw2reg_num)/' \
+            "$d/gas/config/tc-i386.c"
+        step "Patched gas/config/tc-i386.c (uint32_t fix)"
+    fi
+
     touch "$marker"
 }
 
@@ -243,6 +251,35 @@ i[34567]86-*-adros*)\
 \textra_parts="$extra_parts crti.o crtn.o crtbegin.o crtend.o"\
 \t;;' "$d/libgcc/config.host"
         step "Patched libgcc/config.host"
+    fi
+
+    # GCC prerequisites (GMP, MPFR, MPC, ISL) — patch config.sub for adros
+    # These are only present if contrib/download_prerequisites was run.
+    for sub in \
+        "$d/gmp/configfsf.sub" \
+        "$d/mpfr-*/config.sub" \
+        "$d/mpc-*/build-aux/config.sub" \
+        "$d/isl-*/config.sub"; do
+        # Expand glob
+        for f in $sub; do
+            [[ -f "$f" ]] || continue
+            if ! grep -q 'adros' "$f"; then
+                # GMP uses configfsf.sub with a different format
+                if [[ "$f" == *"configfsf.sub" ]]; then
+                    sed -i 's/| nsk\* | powerunix\* | genode\* | zvmoe\* | qnx\* | emx\* \\$/\| nsk* | powerunix* | genode* | zvmoe* | qnx* | emx* \\\n\t     | adros*)/' "$f"
+                else
+                    sed -i 's/| -midnightbsd\*)/| -midnightbsd* | -adros*)/' "$f"
+                    sed -i 's/| nsk\* | powerunix\*)/| nsk* | powerunix* | adros*)/' "$f"
+                fi
+                step "Patched $(echo "$f" | sed "s|$d/||") for adros"
+            fi
+        done
+    done
+
+    # Remove libcody from host_libs (requires C++ host compiler, breaks Canadian cross)
+    if grep -q 'libcody' "$d/configure" 2>/dev/null; then
+        sed -i 's/ libcody / /' "$d/configure"
+        step "Removed libcody from GCC host_libs"
     fi
 
     # crti.S and crtn.S for AdrOS

@@ -11,6 +11,11 @@
 #ifndef _SYS_MMAN_H
 #define _SYS_MMAN_H
 #include <sys/types.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define PROT_NONE  0
 #define PROT_READ  1
 #define PROT_WRITE 2
@@ -34,4 +39,9 @@ int madvise(void* addr, size_t length, int advice);
 int mlock(const void* addr, size_t len);
 int munlock(const void* addr, size_t len);
 void* mremap(void* old_addr, size_t old_size, size_t new_size, int flags, ...);
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif
