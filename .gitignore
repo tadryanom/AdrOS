@@ -11,6 +11,7 @@ build/
 
 # ISO staging: keep config, ignore generated kernel binaries
 iso/boot/*.bin
+iso/bin/
 
 # Static analysis artifacts
 compile_commands.json
