@@ -175,9 +175,9 @@ static int run_process(const char* cmd) {
         argv[argc] = NULL;
 
         if (argc > 0) {
-            execve(argv[0], (const char* const*)argv, NULL);
+            execve(argv[0], argv, NULL);
             /* If execve fails, try with /bin/sh -c */
-            const char* sh_argv[] = { "/bin/sh", "-c", cmd, NULL };
+            char* sh_argv[] = { "/bin/sh", "-c", (char*)cmd, NULL };
             execve("/bin/sh", sh_argv, NULL);
         }
         _exit(127);
@@ -247,7 +247,7 @@ static void default_init(void) {
         }
 
         if (pid == 0) {
-            const char* argv[] = { "/bin/sh", NULL };
+            char* argv[] = { "/bin/sh", NULL };
             execve("/bin/sh", argv, NULL);
             _exit(127);
         }

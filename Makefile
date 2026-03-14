@@ -199,13 +199,13 @@ iso: $(KERNEL_NAME) $(INITRD_IMG)
 $(MKINITRD): tools/mkinitrd.c include/xxhash32.h
 	@gcc -Iinclude tools/mkinitrd.c -o $(MKINITRD)
 
-# --- ulibc build (output into build/user/ulibc/) ---
+# --- ulibc build (output into build/$ARCH/user/ulibc/) ---
+ULIBC_BUILDDIR := $(CURDIR)/$(USER_BUILD)/ulibc
+
 $(ULIBC_LIB) $(ULIBC_SO): FORCE
-	@mkdir -p $(USER_BUILD)/ulibc
 	@$(MAKE) -C $(ULIBC_DIR) CC="$(USER_CC)" AS="$(USER_CC:gcc=as)" AR="$(USER_AR)" LD="$(USER_LD)" \
-		libulibc.a libc.so --no-print-directory
-	@cp -u $(ULIBC_DIR)/libulibc.a $(ULIBC_LIB)
-	@cp -u $(ULIBC_DIR)/libc.so $(ULIBC_SO)
+		BUILDDIR="$(ULIBC_BUILDDIR)" \
+		$(ULIBC_BUILDDIR)/libulibc.a $(ULIBC_BUILDDIR)/libc.so --no-print-directory
 FORCE:
 
 # --- Special builds (fulltest, ldso, pie_test) ---
@@ -222,14 +222,14 @@ $(PIE_SO) $(PIE_ELF): user/cmds/pie_test/pie_main.c user/cmds/pie_test/pie_func.
 # Use absolute paths so they work from sub-Makefile directories
 ABS_ULIBC := $(CURDIR)/$(ULIBC_DIR)
 ABS_DYN_CC := $(USER_CC) -m32 -ffreestanding -nostdlib -O2 -Wall -Wextra -fPIC -fno-plt -I$(ABS_ULIBC)/include
-ABS_DYN_LD := $(USER_LD) -m elf_i386 --dynamic-linker=/lib/ld.so -T $(CURDIR)/user/dyn_linker.ld -L$(ABS_ULIBC) -rpath /lib --unresolved-symbols=ignore-in-shared-libs
+ABS_DYN_LD := $(USER_LD) -m elf_i386 --dynamic-linker=/lib/ld.so -T $(CURDIR)/user/dyn_linker.ld -L$(ULIBC_BUILDDIR) -rpath /lib --unresolved-symbols=ignore-in-shared-libs -z noexecstack
 
 # Generate build rules for each dynamically-linked command
 define USER_CMD_RULE
 $(USER_BUILD)/cmds/$(1)/$(1).elf: user/cmds/$(1)/$(1).c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
 	@$$(MAKE) --no-print-directory -C user/cmds/$(1) TOPDIR=$$(CURDIR) \
 		BUILDDIR=$$(CURDIR)/$(USER_BUILD)/cmds/$(1) \
-		DYN_CC="$$(ABS_DYN_CC)" DYN_LD="$$(ABS_DYN_LD)" CRT0="$(ABS_ULIBC)/src/crt0.o"
+		DYN_CC="$$(ABS_DYN_CC)" DYN_LD="$$(ABS_DYN_LD)" CRT0="$(ULIBC_BUILDDIR)/crt0.o"
 endef
 $(foreach cmd,$(USER_CMD_NAMES),$(eval $(call USER_CMD_RULE,$(cmd))))
 
@@ -246,6 +246,10 @@ INITRD_FILES := $(FULLTEST_ELF):sbin/fulltest \
     $(FSTAB):etc/fstab
 
 INITRD_DEPS := $(MKINITRD) $(FULLTEST_ELF) $(USER_CMD_ELFS) $(LDSO_ELF) $(ULIBC_SO) $(PIE_SO) $(PIE_ELF) $(FSTAB)
+
+# doom (build via 'make doom', included in initrd if present)
+doom: $(ULIBC_LIB) $(ULIBC_SO)
+	@$(MAKE) --no-print-directory -C user/doom TOPDIR=$(CURDIR) ULIBC_BUILDDIR="$(ULIBC_BUILDDIR)"
 
 # Include doom.elf if it has been built
 ifneq ($(wildcard $(DOOM_ELF)),)
@@ -398,4 +402,4 @@ clean:
 	@$(MAKE) -C user/ulibc clean --no-print-directory 2>/dev/null || true
 	@if [ -f user/doom/Makefile ]; then $(MAKE) -C user/doom clean --no-print-directory 2>/dev/null || true; fi
 
-.PHONY: all clean iso run run-arm run-riscv run-mips cppcheck sparse analyzer check test test-1cpu test-battery test-host test-gdb test-all scan-build mkinitrd-asan
+.PHONY: all clean iso run run-arm run-riscv run-mips doom cppcheck sparse analyzer check test test-1cpu test-battery test-host test-gdb test-all scan-build mkinitrd-asan

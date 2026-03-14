@@ -31,7 +31,7 @@ int     dup(int oldfd);
 int     dup2(int oldfd, int newfd);
 int     pipe(int fds[2]);
 int     fork(void);
-int     execve(const char* path, const char* const* argv, const char* const* envp);
+int     execve(const char* path, char* const argv[], char* const envp[]);
 int     getpid(void);
 int     getppid(void);
 int     chdir(const char* path);

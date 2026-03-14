@@ -37,27 +37,6 @@ struct thread_start_info {
     int   exited;
 };
 
-/* Thread trampoline: called by the clone child.
- * The child's ESP points to the top of the allocated stack.
- * We read start_info from the bottom of the stack, call the user function,
- * then call pthread_exit. */
-static void __attribute__((noreturn)) thread_entry_trampoline(void) {
-    /* The start_info pointer is at ESP (pushed before clone).
-     * After clone returns 0, EAX=0, and we land here with the
-     * stack set up so that start_info is accessible.
-     *
-     * Actually, with our clone design, we enter usermode with the
-     * register state. We stash the info pointer in a register-accessible
-     * location. Let's read it from ESI (we pass it as part of the stack). */
-
-    /* In our implementation, the child starts with the parent's register
-     * state but ESP overridden. We place start_info at a known location
-     * relative to the stack base. The trampoline wrapper below handles this. */
-    for (;;) {
-        __asm__ volatile("nop");
-    }
-}
-
 /* Wrapper that runs on the new thread's stack */
 static void __attribute__((noreturn, used))
 _pthread_trampoline(struct thread_start_info* info) {

@@ -14,41 +14,52 @@ AS  ?= i686-elf-as
 AR  ?= i686-elf-ar
 LD  ?= i686-elf-ld
 
-CFLAGS := -m32 -ffreestanding -fno-pie -no-pie -nostdlib -O2 -Wall -Wextra -Wno-incompatible-pointer-types -Iinclude
-CFLAGS_PIC := -m32 -ffreestanding -nostdlib -O2 -Wall -Wextra -Wno-incompatible-pointer-types -Iinclude -fPIC -fno-plt
+# Out-of-tree build directory (override from root Makefile)
+BUILDDIR ?= .
+
+# Source-relative include path (works from any BUILDDIR)
+SRCDIR := $(dir $(lastword $(MAKEFILE_LIST)))src
+INCDIR := $(dir $(lastword $(MAKEFILE_LIST)))include
+
+CFLAGS := -m32 -ffreestanding -fno-pie -no-pie -nostdlib -O2 -Wall -Wextra -Werror -I$(INCDIR)
+CFLAGS_PIC := -m32 -ffreestanding -nostdlib -O2 -Wall -Wextra -Werror -I$(INCDIR) -fPIC -fno-plt
 ASFLAGS := --32
 
-SRC_C := $(wildcard src/*.c)
-SRC_S := $(wildcard src/*.S)
-OBJ := $(SRC_C:.c=.o) $(SRC_S:.S=.o)
+SRC_C := $(wildcard $(SRCDIR)/*.c)
+SRC_S := $(wildcard $(SRCDIR)/*.S)
+OBJ := $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(SRC_C)) $(patsubst $(SRCDIR)/%.S,$(BUILDDIR)/%.o,$(SRC_S))
 
 # PIC objects for shared library (exclude crt0 — it's linked separately)
-PIC_C := $(filter-out src/crt0.S,$(SRC_C))
-PIC_OBJ := $(PIC_C:.c=.pic.o)
+PIC_C := $(filter-out $(SRCDIR)/crt0.S,$(SRC_C))
+PIC_OBJ := $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.pic.o,$(PIC_C))
 
-all: libulibc.a
+all: $(BUILDDIR)/libulibc.a
 
-libulibc.a: $(OBJ)
+$(BUILDDIR)/libulibc.a: $(OBJ)
 	@$(AR) rcs $@ $^
 	@echo "  AR      $@"
 
-libc.so: $(PIC_OBJ)
+$(BUILDDIR)/libc.so: $(PIC_OBJ)
 	@$(LD) -m elf_i386 -shared -soname libc.so -o $@ $^
 	@echo "  LD      $@ (shared)"
 
-src/%.o: src/%.c
+$(BUILDDIR)/%.o: $(SRCDIR)/%.c
+	@mkdir -p $(BUILDDIR)
 	@$(CC) $(CFLAGS) -c $< -o $@
 	@echo "  CC      $<"
 
-src/%.pic.o: src/%.c
+$(BUILDDIR)/%.pic.o: $(SRCDIR)/%.c
+	@mkdir -p $(BUILDDIR)
 	@$(CC) $(CFLAGS_PIC) -c $< -o $@
 	@echo "  CC [PIC] $<"
 
-src/%.o: src/%.S
+$(BUILDDIR)/%.o: $(SRCDIR)/%.S
+	@mkdir -p $(BUILDDIR)
 	@$(AS) $(ASFLAGS) $< -o $@
 	@echo "  AS      $<"
 
 clean:
+	rm -f $(OBJ) $(PIC_OBJ) $(BUILDDIR)/libulibc.a $(BUILDDIR)/libc.so
 	rm -f src/*.o src/*.pic.o libulibc.a libc.so
 
 .PHONY: all clean

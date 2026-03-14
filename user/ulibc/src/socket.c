@@ -42,11 +42,13 @@ int recv(int sockfd, void* buf, size_t len, int flags) {
 
 int sendto(int sockfd, const void* buf, size_t len, int flags,
            const struct sockaddr* dest_addr, socklen_t addrlen) {
+    (void)addrlen;
     return __syscall_ret(_syscall5(SYS_SENDTO, sockfd, (int)buf, (int)len, flags, (int)dest_addr));
 }
 
 int recvfrom(int sockfd, void* buf, size_t len, int flags,
              struct sockaddr* src_addr, socklen_t* addrlen) {
+    (void)addrlen;
     return __syscall_ret(_syscall5(SYS_RECVFROM, sockfd, (int)buf, (int)len, flags, (int)src_addr));
 }
 

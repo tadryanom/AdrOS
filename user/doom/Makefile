@@ -21,9 +21,11 @@
 CC  := i686-elf-gcc
 LD  := i686-elf-ld
 
-ULIBC_DIR := ../ulibc
-ULIBC_INC := $(ULIBC_DIR)/include
-CRT0      := $(ULIBC_DIR)/src/crt0.o
+TOPDIR     ?= $(abspath ../..)
+ULIBC_DIR  := ../ulibc
+ULIBC_INC  := $(ULIBC_DIR)/include
+ULIBC_BUILDDIR ?= $(TOPDIR)/build/x86/user/ulibc
+CRT0       := $(ULIBC_BUILDDIR)/crt0.o
 DYN_LINKER := ../dyn_linker.ld
 
 CFLAGS := -m32 -O2 -ffreestanding -nostdlib -fPIC -fno-plt \
@@ -34,7 +36,7 @@ CFLAGS := -m32 -O2 -ffreestanding -nostdlib -fPIC -fno-plt \
           -DNORMALUNIX -DLINUX
 
 LIBGCC  := $(shell $(CC) -print-libgcc-file-name)
-LDFLAGS := -m elf_i386 --dynamic-linker=/lib/ld.so -T $(DYN_LINKER) -L$(ULIBC_DIR) -rpath /lib --unresolved-symbols=ignore-in-shared-libs
+LDFLAGS := -m elf_i386 --dynamic-linker=/lib/ld.so -T $(DYN_LINKER) -L$(ULIBC_BUILDDIR) -rpath /lib --unresolved-symbols=ignore-in-shared-libs -z noexecstack
 
 # doomgeneric engine sources (nested inside cloned repo)
 # Exclude platform adapters and files requiring external libraries

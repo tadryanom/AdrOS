@@ -25,7 +25,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     /* env COMMAND ARGS... — run command with current environment */
-    execve(argv[1], (const char* const*)&argv[1], (const char* const*)__environ);
+    execve(argv[1], &argv[1], __environ);
     fprintf(stderr, "env: %s: not found\n", argv[1]);
     return 127;
 }

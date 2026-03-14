@@ -20,9 +20,10 @@ TOPDIR   ?= $(abspath ../../..)
 BUILDDIR ?= $(TOPDIR)/build/x86/user/cmds/$(NAME)
 
 ULIBC_DIR := $(TOPDIR)/user/ulibc
+ULIBC_BUILDDIR ?= $(TOPDIR)/build/x86/user/ulibc
 DYN_CC   ?= i686-elf-gcc -m32 -ffreestanding -nostdlib -O2 -Wall -Wextra -fPIC -fno-plt -I$(ULIBC_DIR)/include
-DYN_LD   ?= i686-elf-ld -m elf_i386 --dynamic-linker=/lib/ld.so -T $(TOPDIR)/user/dyn_linker.ld -L$(ULIBC_DIR) -rpath /lib
-CRT0     ?= $(ULIBC_DIR)/src/crt0.o
+DYN_LD   ?= i686-elf-ld -m elf_i386 --dynamic-linker=/lib/ld.so -T $(TOPDIR)/user/dyn_linker.ld -L$(ULIBC_BUILDDIR) -rpath /lib
+CRT0     ?= $(ULIBC_BUILDDIR)/crt0.o
 
 OBJS := $(addprefix $(BUILDDIR)/,$(SRCS:.c=.o))
 ELF  := $(BUILDDIR)/$(NAME).elf
@@ -31,7 +32,7 @@ all: $(ELF)
 
 $(ELF): $(OBJS)
 	@echo "  LD      $@"
-	@$(DYN_LD) -o $@ $(CRT0) $(OBJS) -lc
+	@$(DYN_LD) -z noexecstack -o $@ $(CRT0) $(OBJS) -lc
 
 $(BUILDDIR)/%.o: %.c
 	@mkdir -p $(BUILDDIR)

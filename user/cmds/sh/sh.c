@@ -756,7 +756,7 @@ static void run_simple(char* cmd) {
             int fd = open(redir_out, flags);
             if (fd >= 0) { dup2(fd, 1); close(fd); }
         }
-        execve(path, (const char* const*)argv, (const char* const*)envp);
+        execve(path, argv, envp);
         fprintf(stderr, "sh: %s: not found\n", argv[0]);
         _exit(127);
     }
@@ -847,7 +847,7 @@ static void run_pipeline(char* cmdline) {
             if (argc == 0) _exit(0);
             const char* path = resolve(argv[0]);
             char** envp = build_envp();
-            execve(path, (const char* const*)argv, (const char* const*)envp);
+            execve(path, argv, envp);
             fprintf(stderr, "sh: %s: not found\n", argv[0]);
             _exit(127);
         }

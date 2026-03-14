@@ -454,9 +454,14 @@ fi
 # ---------- which ----------
 echo "--- which ---"
 if compile which_test user/cmds/which/which.c; then
-    # which looks in /bin and /sbin hardcoded, so just check it runs
+    # Positive: find a command that exists in /bin
+    out=$("$BUILDDIR/which_test" sh 2>/dev/null) || true
+    echo "$out" | grep -q "/bin/sh" && pass "which finds sh" || fail "which finds sh" "got: $out"
+
+    # Negative: nonexistent command should return nonzero
+    rc=0
     "$BUILDDIR/which_test" nonexistent_cmd > /dev/null 2>&1 || rc=$?
-    [ "${rc:-1}" -ne 0 ] && pass "which not found" || fail "which not found" "should return nonzero"
+    [ "$rc" -ne 0 ] && pass "which rejects missing cmd" || fail "which rejects missing cmd" "should return nonzero"
 else
     skip "which (compile failed)"
 fi

@@ -50,7 +50,7 @@ int fork(void) {
     return __syscall_ret(_syscall0(SYS_FORK));
 }
 
-int execve(const char* path, const char* const* argv, const char* const* envp) {
+int execve(const char* path, char* const argv[], char* const envp[]) {
     return __syscall_ret(_syscall3(SYS_EXECVE, (int)path, (int)argv, (int)envp));
 }
 
@@ -246,7 +246,6 @@ void _exit(int status) {
 
 int execle(const char* path, const char* arg, ...) {
     /* Walk varargs to find argv[] and the trailing envp */
-    extern int execve(const char*, const char* const*, const char* const*);
     const char* args[32];
     int n = 0;
     __builtin_va_list ap;
@@ -260,7 +259,7 @@ int execle(const char* path, const char* arg, ...) {
     args[n] = (void*)0;
     char* const* envp = __builtin_va_arg(ap, char* const*);
     __builtin_va_end(ap);
-    return execve(path, (const char* const*)args, (const char* const*)envp);
+    return execve(path, (char* const*)args, envp);
 }
 
 static char _login_buf[32] = "root";
