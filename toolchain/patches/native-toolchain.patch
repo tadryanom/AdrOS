@@ -1,0 +1,65 @@
+Native Toolchain Patches for AdrOS
+====================================
+These patches are needed when building a native GCC/Binutils toolchain
+for AdrOS (Canadian cross: build=x86_64-linux, host=i686-adros, target=i686-adros).
+
+They are applied automatically by build.sh patch functions.
+
+1. GMP configfsf.sub — add adros* to recognized OS list
+-------------------------------------------------------
+--- a/gmp/configfsf.sub
++++ b/gmp/configfsf.sub
+@@ -1722,7 +1722,8 @@
+ 	     | nsk* | powerunix* | genode* | zvmoe* | qnx* | emx* \
+-	     )
++	     | adros*)
+ 		;;
+
+2. MPFR config.sub — add -adros* to recognized OS list
+-------------------------------------------------------
+--- a/mpfr-4.1.0/config.sub
++++ b/mpfr-4.1.0/config.sub
+@@ -1392,7 +1392,7 @@
+-	      | -midnightbsd*)
++	      | -midnightbsd* | -adros*)
+
+3. MPC config.sub — add adros* to recognized OS list
+-----------------------------------------------------
+--- a/mpc-1.2.1/build-aux/config.sub
++++ b/mpc-1.2.1/build-aux/config.sub
+@@ -1368,7 +1368,7 @@
+-	     | nsk* | powerunix*)
++	     | nsk* | powerunix* | adros*)
+
+4. ISL config.sub — add -adros* to recognized OS list
+------------------------------------------------------
+--- a/isl-0.24/config.sub
++++ b/isl-0.24/config.sub
+@@ -1392,7 +1392,7 @@
+-	      | -midnightbsd*)
++	      | -midnightbsd* | -adros*)
+
+5. GCC configure — remove libcody from host_libs
+-------------------------------------------------
+libcody requires a C++ compiler for the host, which fails during
+Canadian cross compilation. Removing it from host_libs avoids this.
+
+--- a/configure
++++ b/configure
+@@ host_libs line
+-host_libs="... libcody ..."
++host_libs="... ..."   (libcody removed)
+
+6. Binutils gas/config/tc-i386.c — fix type mismatch
+-----------------------------------------------------
+The declaration in tc-i386.h uses uint32_t but the definition
+used unsigned int, causing a type mismatch error with strict
+cross-compilers.
+
+--- a/gas/config/tc-i386.c
++++ b/gas/config/tc-i386.c
+@@ -5340,7 +5340,7 @@
+ bool
+-x86_scfi_callee_saved_p (unsigned int dw2reg_num)
++x86_scfi_callee_saved_p (uint32_t dw2reg_num)
+ {

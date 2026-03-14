@@ -12,6 +12,10 @@
 
 #include <sys/types.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define MAXNAMLEN 255
 
 struct dirent {
@@ -30,5 +34,9 @@ DIR *opendir(const char *);
 struct dirent *readdir(DIR *);
 int closedir(DIR *);
 void rewinddir(DIR *);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _SYS_DIRENT_H */
