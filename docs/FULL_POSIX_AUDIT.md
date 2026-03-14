@@ -45,122 +45,112 @@ lwIP is tracked as a git submodule (`.gitmodules` exists). DOOM is optional and 
 | `mremap` | Linux ext | ❌ Not implemented (low priority) |
 | `execveat` | Linux ext | ❌ Not implemented (low priority) |
 | `umount2` | Required | ❌ Not implemented |
-| `ioctl FIONREAD` | Required | ❌ Not implemented |
+| `ioctl FIONREAD` | Required | ✅ **IMPLEMENTED** (ioctl 0x541B) |
 
-**7 of 12 previously missing syscalls are now implemented.** The kernel now has **137 syscalls** total.
+**8 of 12 previously missing syscalls are now implemented.** The kernel now has **137 syscalls** total.
 
-### 2B. Missing ulibc Headers (completely absent)
+### 2B. ulibc Headers — Status Update
 
-These POSIX headers do NOT exist at all in `user/ulibc/include/`:
+**Previously missing headers now IMPLEMENTED (14/27):**
+
+| Header | Status |
+|---|---|
+| `<setjmp.h>` | ✅ **IMPLEMENTED** |
+| `<locale.h>` | ✅ **IMPLEMENTED** |
+| `<pwd.h>` | ✅ **IMPLEMENTED** |
+| `<grp.h>` | ✅ **IMPLEMENTED** |
+| `<regex.h>` | ✅ **IMPLEMENTED** (`regcomp`, `regexec`, `regfree`) |
+| `<fnmatch.h>` | ✅ **IMPLEMENTED** |
+| `<getopt.h>` | ✅ **IMPLEMENTED** (`getopt`, `getopt_long`) |
+| `<libgen.h>` | ✅ **IMPLEMENTED** (`dirname`, `basename`) |
+| `<sys/select.h>` | ✅ **IMPLEMENTED** (`select`, `FD_SET`/`FD_CLR`/`FD_ISSET`/`FD_ZERO`) |
+| `<sys/resource.h>` | ✅ **IMPLEMENTED** (`getrlimit`, `setrlimit`, `getrusage`) |
+| `<sys/utsname.h>` | ✅ **IMPLEMENTED** (`uname`) |
+| `<poll.h>` | ✅ **IMPLEMENTED** (`poll`, `struct pollfd`) |
+| `<sys/wait.h>` | ✅ **IMPLEMENTED** |
+| `<inttypes.h>` | ✅ **IMPLEMENTED** |
+
+**Still missing headers (13/27) — kernel syscalls exist, need ulibc wrappers:**
 
 | Header | Functions | Needed By | Priority |
 |---|---|---|---|
-| `<setjmp.h>` | `setjmp`, `longjmp`, `sigsetjmp`, `siglongjmp` | **Bash, GCC, Busybox, any error recovery** | **Critical** |
-| `<locale.h>` | `setlocale`, `localeconv` | GCC, Bash, Busybox, many programs | **Critical** |
-| `<pwd.h>` | `getpwnam`, `getpwuid`, `getpwent` | Bash, Busybox, login, id, ls -l | **Critical** |
-| `<grp.h>` | `getgrnam`, `getgrgid`, `getgrent` | Bash, Busybox, id, ls -l | **Critical** |
-| `<regex.h>` | `regcomp`, `regexec`, `regfree` | Bash, grep, sed, awk, Busybox | **Critical** |
-| `<glob.h>` | `glob`, `globfree` | Bash (wildcard expansion) | **Critical** |
-| `<fnmatch.h>` | `fnmatch` | Bash (pattern matching), find | High |
-| `<getopt.h>` | `getopt`, `getopt_long` | Almost every Unix utility | **Critical** |
-| `<libgen.h>` | `dirname`, `basename` (POSIX versions) | Many programs | High |
-| `<netdb.h>` | `gethostbyname`, `getaddrinfo`, `freeaddrinfo` | Network programs | High |
-| `<netinet/in.h>` | `struct sockaddr_in`, `htons`, `ntohs` | Network programs | High |
-| `<arpa/inet.h>` | `inet_aton`, `inet_ntoa`, `inet_pton` | Network programs | High |
-| `<sys/socket.h>` | `socket`, `bind`, `listen`, `accept`, `connect`, `send`, `recv` | Network programs | High |
-| `<sys/select.h>` | `select`, `FD_SET`, `FD_CLR`, `FD_ISSET`, `FD_ZERO` | Bash, many programs | High |
-| `<sys/resource.h>` | `getrlimit`, `setrlimit`, `getrusage` | Bash, GCC | High |
-| `<sys/utsname.h>` | `uname` | Bash, Busybox, autoconf | High |
-| `<poll.h>` | `poll`, `struct pollfd` | Many programs | High |
-| `<dlfcn.h>` | `dlopen`, `dlsym`, `dlclose`, `dlerror` | GCC plugins, shared libs | Medium |
-| `<spawn.h>` | `posix_spawn` | Busybox, some programs | Medium |
-| `<wordexp.h>` | `wordexp`, `wordfree` | Bash | Medium |
-| `<sys/shm.h>` | `shmget`, `shmat`, `shmdt`, `shmctl` | IPC programs | Medium |
-| `<semaphore.h>` | `sem_open`, `sem_wait`, `sem_post` | Threaded programs | Medium |
-| `<mqueue.h>` | `mq_open`, `mq_send`, `mq_receive` | IPC programs | Low |
-| `<aio.h>` | `aio_read`, `aio_write` | Async I/O programs | Low |
-| `<sys/epoll.h>` | `epoll_create`, `epoll_ctl`, `epoll_wait` | Event-driven servers | Medium |
-| `<sys/inotify.h>` | `inotify_init`, `inotify_add_watch` | File watchers | Low |
-| `<syslog.h>` | `syslog`, `openlog`, `closelog` | Daemons, Busybox | Low |
+| `<sys/socket.h>` | `socket`, `bind`, `listen`, `accept`, `connect`, `send`, `recv` | Network programs | **High** |
+| `<netinet/in.h>` | `struct sockaddr_in`, `htons`, `ntohs` | Network programs | **High** |
+| `<arpa/inet.h>` | `inet_aton`, `inet_ntoa`, `inet_pton` | Network programs | **High** |
+| `<netdb.h>` | `getaddrinfo`, `freeaddrinfo`, `gai_strerror` | Network programs | **High** |
 | `<sys/un.h>` | `struct sockaddr_un` | Unix domain sockets | Medium |
+| `<sys/epoll.h>` | `epoll_create`, `epoll_ctl`, `epoll_wait` | Event-driven servers | Medium |
+| `<sys/inotify.h>` | `inotify_init`, `inotify_add_watch`, `inotify_rm_watch` | File watchers | Medium |
+| `<dlfcn.h>` | `dlopen`, `dlsym`, `dlclose`, `dlerror` | Shared libs | Medium |
+| `<spawn.h>` | `posix_spawn`, `posix_spawn_file_actions_*` | Busybox | Medium |
+| `<semaphore.h>` | `sem_open`, `sem_wait`, `sem_post`, `sem_unlink` | Threaded programs | Medium |
+| `<mqueue.h>` | `mq_open`, `mq_send`, `mq_receive`, `mq_unlink` | IPC programs | Low |
+| `<aio.h>` | `aio_read`, `aio_write`, `aio_error`, `aio_return` | Async I/O | Low |
+| `<sys/shm.h>` | `shmget`, `shmat`, `shmdt`, `shmctl` | IPC programs | Low |
 
-### 2C. Missing Functions in EXISTING ulibc Headers
+**Still missing headers — need userspace implementation (no kernel syscall):**
 
-#### `<stdio.h>` — Missing:
-- `perror()` — error printing (used everywhere)
-- `popen()` / `pclose()` — pipe to/from command
-- `fdopen()` — FILE* from fd
-- `fileno()` — fd from FILE*
-- `getline()` / `getdelim()` — dynamic line reading
+| Header | Functions | Priority |
+|---|---|---|
+| `<glob.h>` | `glob`, `globfree` | **High** (Bash wildcard expansion) |
+| `<wordexp.h>` | `wordexp`, `wordfree` | Medium (Bash) |
+| `<syslog.h>` | `syslog`, `openlog`, `closelog` | Low (stub OK) |
+
+### 2C. Functions in Existing ulibc Headers — Status Update
+
+#### `<stdio.h>` — Previously missing, now IMPLEMENTED:
+- ✅ `perror()`, `popen()`/`pclose()`, `fdopen()`, `fileno()`, `getline()`/`getdelim()`, `ungetc()`, `clearerr()`, `sscanf()`
+
+**Still missing in `<stdio.h>`:**
+- `scanf()` / `fscanf()` — formatted input from stdin/file
 - `tmpfile()` / `tmpnam()` — temporary files
-- `ungetc()` — push back character
-- `clearerr()` — clear error/EOF indicators
-- `scanf()` / `fscanf()` — formatted input (only `sscanf` exists)
 
-#### `<stdlib.h>` — Missing:
-- `strtoul()` — unsigned long from string (**critical for Bash/Busybox**)
+#### `<stdlib.h>` — Previously missing, now IMPLEMENTED:
+- ✅ `strtoul()`, `strtoll()`/`strtoull()`, `atexit()`, `setenv()`/`putenv()`/`unsetenv()`, `rand()`/`srand()`, `abort()`
+
+**Still missing in `<stdlib.h>`:**
 - `strtod()` / `strtof()` — float from string
-- `strtoll()` / `strtoull()` — 64-bit integers
-- `atexit()` — exit handler registration
 - `mkstemp()` / `mkdtemp()` — secure temp files
-- `setenv()` / `putenv()` / `unsetenv()` — environment modification
 - `bsearch()` — binary search
 - `div()` / `ldiv()` — division with remainder
-- `rand()` / `srand()` — random number generation
-- `abort()` — abnormal termination
 
-#### `<string.h>` — Missing:
-- `strerror()` — error code to string (**critical**)
+#### `<string.h>` — Previously missing, now IMPLEMENTED:
+- ✅ `strerror()`, `strtok_r()`, `strpbrk()`, `strspn()`/`strcspn()`, `strnlen()`
+
+**Still missing in `<string.h>`:**
 - `strsignal()` — signal number to string
-- `strtok_r()` — reentrant tokenizer
-- `strpbrk()` — scan for character set
-- `strspn()` / `strcspn()` — span character sets
-- `strnlen()` — bounded strlen
 
-#### `<unistd.h>` — Missing:
-- `sleep()` / `usleep()` — wrappers over nanosleep (**critical**)
-- `execvp()` / `execlp()` / `execl()` / `execle()` — exec family (**critical for Bash**)
-- `getopt()` — option parsing (**critical**)
-- `sbrk()` — heap growth (Newlib needs this)
-- `pipe2()` — pipe with flags
-- `gethostname()` / `sethostname()`
-- `getlogin()` / `getlogin_r()`
-- `ttyname()` / `ttyname_r()`
-- `sysconf()` / `pathconf()` / `fpathconf()` — system configuration (**critical for autoconf**)
-- `confstr()`
+#### `<unistd.h>` — Previously missing, now IMPLEMENTED:
+- ✅ `sleep()`/`usleep()`, `execvp()`/`execlp()`/`execl()`, `pipe2()`, `gethostname()`, `ttyname()`, `sysconf()`/`pathconf()`/`fpathconf()`
+
+**Still missing in `<unistd.h>`:**
+- `execle()` — exec with explicit envp
+- `sbrk()` — direct heap growth
+- `getlogin()` / `getlogin_r()` — login name
+- `confstr()` — configuration strings
 - `tcgetpgrp()` / `tcsetpgrp()` — terminal foreground process group
 
-#### `<signal.h>` — Missing:
-- `sigset_t` type (currently using raw `uint32_t`)
-- `sigemptyset()` / `sigfillset()` / `sigaddset()` / `sigdelset()` / `sigismember()`
-- `signal()` — simple signal handler (SIG_DFL, SIG_IGN, function)
+#### `<signal.h>` — Previously missing, now IMPLEMENTED:
+- ✅ `sigset_t` type, `sigemptyset()`/`sigfillset()`/`sigaddset()`/`sigdelset()`/`sigismember()`, `signal()`
 
-#### `<pthread.h>` — Missing:
+#### `<pthread.h>` — Still missing (thread sync primitives):
 - `pthread_mutex_init/lock/unlock/destroy`
 - `pthread_cond_init/wait/signal/broadcast/destroy`
 - `pthread_rwlock_*`
 - `pthread_key_create/setspecific/getspecific` (TLS)
-- `pthread_once`
-- `pthread_cancel`
-- `pthread_detach`
+- `pthread_once`, `pthread_cancel`, `pthread_detach`
 
-#### `<termios.h>` — Missing:
+#### `<termios.h>` — Still missing:
 - `cfgetispeed()` / `cfgetospeed()` / `cfsetispeed()` / `cfsetospeed()` — baud rate
 - `cfmakeraw()` — convenience function
 - `tcdrain()` / `tcflush()` / `tcflow()` / `tcsendbreak()`
 
-#### `<errno.h>` — Missing error codes:
-- `ERANGE` (34) — result too large (**critical for strtol**)
+#### `<errno.h>` — Previously missing, now IMPLEMENTED (9/11):
+- ✅ `ERANGE`, `ECONNREFUSED`, `ETIMEDOUT`, `EADDRINUSE`, `EOVERFLOW`, `ELOOP`, `ENAMETOOLONG`, `ESPIPE`, `EROFS`
+
+**Still missing:**
 - `ENOTSOCK` (88) — not a socket
-- `ECONNREFUSED` (111) — connection refused
-- `ETIMEDOUT` (110) — connection timed out
-- `EADDRINUSE` (98) — address in use
 - `ENETUNREACH` (101) — network unreachable
-- `EOVERFLOW` (75) — value overflow
-- `ELOOP` (40) — symlink loop
-- `ENAMETOOLONG` (36) — filename too long
-- `ESPIPE` (29) — invalid seek
-- `EROFS` (30) — read-only filesystem
 
 ### 2D. Other POSIX/Unix Gaps
 
@@ -173,10 +163,11 @@ These POSIX headers do NOT exist at all in `user/ulibc/include/`:
 | **Proper `mode_t` permissions** | ✅ **IMPLEMENTED** | VFS `open()` enforces rwx bits vs process euid/egid |
 | **`free()` in malloc** | ✅ **FIXED** | ulibc uses proper `malloc`/`free`/`calloc`/`realloc` |
 | **`wait4()`** | Not implemented | Some programs use this instead of waitpid |
+| **`ioctl FIONREAD`** | ✅ **IMPLEMENTED** | Kernel handles `0x541B` in ioctl |
 | **`time_t` as 32-bit** | `int32_t` — Y2038 issue | May cause issues with some programs |
 | **`off_t` as 32-bit** | `uint32_t` — 4GB file limit | Limits large file support |
 | **`ssize_t` return types** | `read()`/`write()` return `int` | POSIX requires `ssize_t` |
-| **Environment `setenv/putenv`** | Not implemented | Cannot modify environment at runtime |
+| **Environment `setenv/putenv`** | ✅ **IMPLEMENTED** | ulibc provides `setenv()`/`unsetenv()`/`putenv()` |
 
 ---
 
