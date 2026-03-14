@@ -1654,16 +1654,30 @@ static int pipe_poll(fs_node_t* n, int events) {
     return revents;
 }
 
+static int pipe_ioctl(fs_node_t* n, uint32_t cmd, void* user_arg) {
+    struct pipe_node* pn = (struct pipe_node*)n;
+    if (!pn || !pn->ps) return -EBADF;
+    if (cmd == 0x541B /* FIONREAD */) {
+        if (!user_arg || user_range_ok(user_arg, sizeof(int)) == 0) return -EFAULT;
+        int avail = (int)pn->ps->count;
+        if (copy_to_user(user_arg, &avail, sizeof(avail)) < 0) return -EFAULT;
+        return 0;
+    }
+    return -ENOTTY;
+}
+
 static const struct file_operations pipe_read_fops = {
     .read  = pipe_read,
     .close = pipe_close,
     .poll  = pipe_poll,
+    .ioctl = pipe_ioctl,
 };
 
 static const struct file_operations pipe_write_fops = {
     .write = pipe_write,
     .close = pipe_close,
     .poll  = pipe_poll,
+    .ioctl = pipe_ioctl,
 };
 
 static int pipe_node_create(struct pipe_state* ps, int is_read_end, fs_node_t** out_node) {
@@ -4873,6 +4887,33 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
             (void)copy_to_user((void*)sc_arg1(regs), &sa, sizeof(sa));
         }
         sc_ret(regs) = (uint32_t)r;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_GETRUSAGE) {
+        int who = (int)sc_arg0(regs);
+        void* user_buf = (void*)sc_arg1(regs);
+        if (!user_buf || user_range_ok(user_buf, 64) == 0) {
+            sc_ret(regs) = (uint32_t)-EFAULT; return;
+        }
+        /* struct rusage: we fill ru_utime and ru_stime (2 x struct timeval = 16 bytes)
+         * then zero the rest (total 64 bytes to be safe) */
+        struct {
+            uint32_t ru_utime_sec;  uint32_t ru_utime_usec;
+            uint32_t ru_stime_sec;  uint32_t ru_stime_usec;
+            uint32_t padding[12]; /* remaining fields zero */
+        } ru;
+        memset(&ru, 0, sizeof(ru));
+        (void)who; /* RUSAGE_SELF=0, RUSAGE_CHILDREN=-1 — we only report self */
+        uint32_t hz = 100; /* tick rate */
+        ru.ru_utime_sec  = current_process->utime / hz;
+        ru.ru_utime_usec = (current_process->utime % hz) * (1000000 / hz);
+        ru.ru_stime_sec  = current_process->stime / hz;
+        ru.ru_stime_usec = (current_process->stime % hz) * (1000000 / hz);
+        if (copy_to_user(user_buf, &ru, sizeof(ru)) < 0) {
+            sc_ret(regs) = (uint32_t)-EFAULT; return;
+        }
+        sc_ret(regs) = 0;
         return;
     }
 

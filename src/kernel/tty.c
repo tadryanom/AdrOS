@@ -245,6 +245,7 @@ enum {
     TTY_TIOCSPGRP = 0x5410,
     TTY_TIOCGWINSZ = 0x5413,
     TTY_TIOCSWINSZ = 0x5414,
+    TTY_FIONREAD = 0x541B,
 };
 
 int tty_ioctl(uint32_t cmd, void* user_arg) {
@@ -318,6 +319,15 @@ int tty_ioctl(uint32_t cmd, void* user_arg) {
     if (cmd == TTY_TIOCSWINSZ) {
         if (user_range_ok(user_arg, sizeof(struct winsize)) == 0) return -EFAULT;
         if (copy_from_user(&tty_winsize, user_arg, sizeof(tty_winsize)) < 0) return -EFAULT;
+        return 0;
+    }
+
+    if (cmd == TTY_FIONREAD) {
+        if (user_range_ok(user_arg, sizeof(int)) == 0) return -EFAULT;
+        uintptr_t flags = spin_lock_irqsave(&tty_lock);
+        int avail = (int)((canon_head - canon_tail) & (TTY_CANON_BUF - 1));
+        spin_unlock_irqrestore(&tty_lock, flags);
+        if (copy_to_user(user_arg, &avail, sizeof(avail)) < 0) return -EFAULT;
         return 0;
     }
 

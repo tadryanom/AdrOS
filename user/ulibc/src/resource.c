@@ -19,3 +19,7 @@ int getrlimit(int resource, struct rlimit *rlim) {
 int setrlimit(int resource, const struct rlimit *rlim) {
     return __syscall_ret(_syscall2(SYS_SETRLIMIT, resource, (int)rlim));
 }
+
+int getrusage(int who, struct rusage *usage) {
+    return __syscall_ret(_syscall2(SYS_GETRUSAGE, who, (int)usage));
+}
