@@ -92,17 +92,32 @@ Syscall return convention note:
 
 ### Userland programs
 The following ELF binaries are bundled in the initrd:
-- `/bin/init.elf` — comprehensive smoke test suite (44 checks)
-- `/bin/echo` — argv/envp test
+- `/sbin/fulltest` — comprehensive smoke test suite (102 checks)
+- `/sbin/init` — SysV-like init process (inittab, runlevels, respawn)
 - `/bin/sh` — POSIX sh-compatible shell with `$PATH` search, pipes, redirects, builtins
-- `/bin/cat`, `/bin/ls`, `/bin/mkdir`, `/bin/rm` — core utilities
+- `/bin/echo`, `/bin/cat`, `/bin/ls`, `/bin/mkdir`, `/bin/rm` — core utilities
+- `/bin/cp`, `/bin/mv`, `/bin/touch`, `/bin/ln` — file operations
+- `/bin/head`, `/bin/tail`, `/bin/wc`, `/bin/sort`, `/bin/uniq`, `/bin/cut` — text processing
+- `/bin/grep`, `/bin/sed`, `/bin/awk`, `/bin/tr` — pattern matching and text transformation
+- `/bin/find`, `/bin/which` — file search and command lookup
+- `/bin/chmod`, `/bin/chown`, `/bin/chgrp` — permission management
+- `/bin/mount`, `/bin/umount` — filesystem mount/unmount
+- `/bin/ps`, `/bin/top`, `/bin/kill` — process management
+- `/bin/df`, `/bin/du`, `/bin/free` — disk and memory usage
+- `/bin/date`, `/bin/hostname`, `/bin/uptime`, `/bin/uname` — system information
+- `/bin/env`, `/bin/printenv`, `/bin/id` — environment and identity
+- `/bin/tee`, `/bin/dd`, `/bin/pwd`, `/bin/stat` — I/O and file info
+- `/bin/basename`, `/bin/dirname`, `/bin/sleep`, `/bin/clear`, `/bin/rmdir`, `/bin/dmesg`, `/bin/who` — misc utilities
+- `/bin/pie_test` — PIE/shared library test binary
 - `/bin/doom.elf` — DOOM (doomgeneric port) — included in initrd if built (see below)
-- `/lib/ld.so` — dynamic linker with auxv parsing, PLT/GOT eager relocation
+- `/lib/ld.so` — dynamic linker with auxv parsing, PLT/GOT lazy relocation
+- `/lib/libc.so` — shared C library (ulibc)
+- `/lib/libpietest.so` — test shared library
 
 The ulibc provides: `printf`, `malloc`/`free`/`calloc`/`realloc`, `string.h`, `unistd.h`, `errno.h`, `pthread.h`, `signal.h` (with `raise`, `sigaltstack`, `sigpending`, `sigsuspend`), `stdio.h` (buffered I/O with `fopen`/`fread`/`fwrite`/`fclose`), `stdlib.h` (`atof`, `strtol`, `getenv` stub, `system` stub), `ctype.h`, `sys/mman.h` (`mmap`/`munmap`), `sys/ioctl.h` (`ioctl`), `time.h` (`nanosleep`/`clock_gettime`), `sys/times.h`, `sys/uio.h`, `sys/types.h`, `sys/stat.h`, `math.h` (`fabs`), `assert.h`, `fcntl.h`, `strings.h`, `inttypes.h`, `linux/futex.h`, and `realpath()`.
 
 ### Smoke tests
-The init program (`/bin/init.elf`) runs a comprehensive suite of smoke tests on boot, covering:
+The fulltest binary (`/sbin/fulltest`) runs a comprehensive suite of 102 smoke tests on boot, covering:
 - File I/O (`open`, `read`, `write`, `close`, `lseek`, `stat`, `fstat`)
 - Overlay copy-up, `dup2`, `pipe`, `select`, `poll`
 - TTY/ioctl, job control (`SIGTTIN`/`SIGTTOU`)
@@ -122,7 +137,10 @@ The init program (`/bin/init.elf`) runs a comprehensive suite of smoke tests on 
 - `/dev/tty` write test
 - Memory: `brk`, `mmap`/`munmap`, `clock_gettime`, shared memory (`shmget`/`shmat`/`shmdt`)
 - Advanced: `pread`/`pwrite`, `ftruncate`, `symlink`/`readlink`, `access`, `sigprocmask`/`sigpending`, `alarm`/`SIGALRM`, `O_APPEND`, `umask`, pipe capacity (`F_GETPIPE_SZ`/`F_SETPIPE_SZ`), `waitid`, `setitimer`/`getitimer`, `select`/`poll` on regular files, hard links
-- New: `epoll` (create/ctl/wait on pipe), `inotify` (init/add_watch/rm_watch), `aio_*` (read/write/error/return)
+- Advanced I/O: `epoll` (create/ctl/wait on pipe), `epollet` (edge-triggered), `inotify` (init/add_watch/rm_watch), `aio_*` (read/write/error/return)
+- System: `gettimeofday`, `mprotect`, `getrlimit`/`setrlimit`, `uname`
+- Dynamic linking: lazy PLT resolution, PLT caching
+- LZ4 initrd decompression
 
 All tests print `[init] ... OK` on success. Any failure calls `sys_exit(1)`.
 
@@ -136,8 +154,8 @@ make test-all
 Individual test targets:
 ```bash
 make check        # cppcheck + sparse + gcc -fanalyzer
-make test-host    # 47 host-side unit tests (test_utils + test_security)
-make test         # QEMU smoke test (4 CPUs, 30s timeout, 44 checks incl. ICMP ping, epoll, inotify, aio)
+make test-host    # 115 host-side tests (test_utils + test_security + test_host_utils.sh)
+make test         # QEMU smoke test (4 CPUs, 120s timeout, 102 checks incl. ICMP ping, epoll, epollet, inotify, aio, LZ4, lazy PLT)
 make test-1cpu    # Single-CPU smoke test (50s timeout)
 make test-battery # Full test battery: multi-disk ATA, VFS mount, ping, diskfs (16 checks)
 make test-gdb     # GDB scripted integrity checks (heap, PMM, VGA)

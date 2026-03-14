@@ -5,9 +5,9 @@
 All testing layers are **implemented and operational**:
 
 - **Static analysis** (`make check`): cppcheck + sparse + gcc -fanalyzer
-- **QEMU smoke tests** (`make test`): expect-based, 80 checks (file I/O, signals, memory, IPC, devices, procfs, networking, epoll, inotify, aio, nanosleep, CLOCK_REALTIME, /dev/urandom, /proc/cmdline, CoW fork, readv/writev, fsync, truncate, getuid/getgid, chmod, flock, times, gettid, posix_spawn, TSC ns precision, SIGSEGV, execve), 4-CPU SMP, 120s timeout
+- **QEMU smoke tests** (`make test`): expect-based, 102 checks (file I/O, signals, memory, IPC, devices, procfs, networking, epoll, epollet, inotify, aio, nanosleep, CLOCK_REALTIME, /dev/urandom, /proc/cmdline, CoW fork, readv/writev, fsync, truncate, getuid/getgid, chmod, flock, times, gettid, posix_spawn, TSC ns precision, SIGSEGV, gettimeofday, mprotect, getrlimit/setrlimit, uname, LZ4 initrd decomp, lazy PLT, execve), 4-CPU SMP, 120s timeout
 - **Test battery** (`make test-battery`): 16 checks across 5 QEMU scenarios — multi-disk ATA, VFS mount, ping, diskfs
-- **Host unit tests** (`make test-host`): 19 tests — `test_utils.c` + `test_security.c`
+- **Host unit tests** (`make test-host`): 115 tests — `test_utils.c` (28) + `test_security.c` (19) + `test_host_utils.sh` (68 cross-compiled utility tests)
 - **GDB scripted checks** (`make test-gdb`): heap/PMM/VGA integrity validation
 - **Full suite** (`make test-all`): runs check + test-host + test
 - **Multi-arch build verification**: `make ARCH=arm`, `make ARCH=riscv`, and `make ARCH=mips` compile and boot on QEMU
@@ -111,7 +111,7 @@ To run manually: boot AdrOS with `-vga std`, then execute `/bin/doom.elf` from t
 
 ```makefile
 make check        # cppcheck + sparse + gcc -fanalyzer
-make test         # QEMU + expect automated smoke test (80 checks incl. ICMP ping, epoll, inotify, aio, CoW fork, flock, posix_spawn)
+make test         # QEMU + expect automated smoke test (102 checks incl. ICMP ping, epoll, epollet, inotify, aio, CoW fork, flock, posix_spawn, gettimeofday, mprotect, uname, LZ4, lazy PLT)
 make test-battery # Full test battery: multi-disk ATA, VFS mount, ping, diskfs (16 checks)
 make test-host    # Host-side unit tests for pure functions
 make test-gdb     # QEMU + GDB scripted checks (optional)
