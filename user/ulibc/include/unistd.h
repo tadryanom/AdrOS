@@ -111,6 +111,15 @@ long fpathconf(int fd, int name);
 int     gethostname(char* name, size_t len);
 char*   ttyname(int fd);
 int     pipe2(int fds[2], int flags);
+int     execle(const char* path, const char* arg, ...);
+char*   getlogin(void);
+int     getlogin_r(char* buf, size_t bufsize);
+int     tcgetpgrp(int fd);
+int     tcsetpgrp(int fd, int pgrp);
+
+#define _CS_PATH 0
+long    confstr(int name, char* buf, size_t len);
+void*   sbrk(int increment);
 
 /* Environment pointer (set by crt0) */
 extern char** __environ;

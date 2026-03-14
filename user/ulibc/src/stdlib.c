@@ -301,3 +301,82 @@ int system(const char* cmd) {
     (void)cmd;
     return -1;
 }
+
+void* bsearch(const void* key, const void* base, size_t nmemb, size_t size,
+              int (*compar)(const void*, const void*)) {
+    const char* b = (const char*)base;
+    size_t lo = 0, hi = nmemb;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        int cmp = compar(key, b + mid * size);
+        if (cmp == 0) return (void*)(b + mid * size);
+        if (cmp < 0) hi = mid;
+        else lo = mid + 1;
+    }
+    return (void*)0;
+}
+
+div_t div(int numer, int denom) {
+    div_t r;
+    r.quot = numer / denom;
+    r.rem  = numer % denom;
+    return r;
+}
+
+ldiv_t ldiv(long numer, long denom) {
+    ldiv_t r;
+    r.quot = numer / denom;
+    r.rem  = numer % denom;
+    return r;
+}
+
+int mkstemp(char* tmpl) {
+    size_t len = strlen(tmpl);
+    if (len < 6) return -1;
+    char* suffix = tmpl + len - 6;
+    /* Check template ends with XXXXXX */
+    for (int i = 0; i < 6; i++)
+        if (suffix[i] != 'X') return -1;
+    /* Generate unique name using pid + counter */
+    extern int getpid(void);
+    static int counter = 0;
+    int id = getpid() * 1000 + (counter++ % 1000);
+    for (int i = 5; i >= 0; i--) {
+        suffix[i] = (char)('0' + id % 10);
+        id /= 10;
+    }
+    int fd = open(tmpl, 1 | 0x40 | 0x80 /* O_WRONLY|O_CREAT|O_EXCL */);
+    return fd;
+}
+
+double strtod(const char* nptr, char** endptr) {
+    const char* s = nptr;
+    int neg = 0;
+    while (*s == ' ' || *s == '\t') s++;
+    if (*s == '-') { neg = 1; s++; }
+    else if (*s == '+') { s++; }
+    double val = 0.0;
+    while (*s >= '0' && *s <= '9') { val = val * 10.0 + (*s - '0'); s++; }
+    if (*s == '.') {
+        s++;
+        double frac = 0.1;
+        while (*s >= '0' && *s <= '9') { val += (*s - '0') * frac; frac *= 0.1; s++; }
+    }
+    if (*s == 'e' || *s == 'E') {
+        s++;
+        int eneg = 0;
+        if (*s == '-') { eneg = 1; s++; }
+        else if (*s == '+') { s++; }
+        int exp = 0;
+        while (*s >= '0' && *s <= '9') { exp = exp * 10 + (*s - '0'); s++; }
+        double mult = 1.0;
+        for (int i = 0; i < exp; i++) mult *= 10.0;
+        if (eneg) val /= mult; else val *= mult;
+    }
+    if (endptr) *endptr = (char*)s;
+    return neg ? -val : val;
+}
+
+float strtof(const char* nptr, char** endptr) {
+    return (float)strtod(nptr, endptr);
+}

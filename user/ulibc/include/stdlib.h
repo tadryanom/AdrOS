@@ -39,6 +39,17 @@ void    srand(unsigned int seed);
 
 void    qsort(void* base, size_t nmemb, size_t size,
               int (*compar)(const void*, const void*));
+void*   bsearch(const void* key, const void* base, size_t nmemb, size_t size,
+                int (*compar)(const void*, const void*));
+
+typedef struct { int quot; int rem; } div_t;
+typedef struct { long quot; long rem; } ldiv_t;
+div_t   div(int numer, int denom);
+ldiv_t  ldiv(long numer, long denom);
+
+int     mkstemp(char* tmpl);
+double  strtod(const char* nptr, char** endptr);
+float   strtof(const char* nptr, char** endptr);
 
 int     system(const char* cmd);
 void    exit(int status) __attribute__((noreturn));

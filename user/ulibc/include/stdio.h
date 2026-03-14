@@ -68,6 +68,8 @@ int     sprintf(char* buf, const char* fmt, ...) __attribute__((format(printf, 2
 int     snprintf(char* buf, size_t size, const char* fmt, ...) __attribute__((format(printf, 3, 4)));
 int     vsnprintf(char* buf, size_t size, const char* fmt, va_list ap);
 int     sscanf(const char* str, const char* fmt, ...);
+int     scanf(const char* fmt, ...);
+int     fscanf(FILE* fp, const char* fmt, ...);
 int     remove(const char* path);
 int     rename(const char* oldpath, const char* newpath);
 

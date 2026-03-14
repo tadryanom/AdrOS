@@ -96,6 +96,7 @@ int vfs_truncate(const char* path, uint32_t length);
 int vfs_link(const char* old_path, const char* new_path);
 
 int vfs_mount(const char* mountpoint, fs_node_t* root);
+int vfs_umount(const char* mountpoint);
 
 // Global root of the filesystem
 extern fs_node_t* fs_root;

@@ -200,3 +200,42 @@ char* strpbrk(const char* s, const char* accept) {
     }
     return (void*)0;
 }
+
+static char _sigbuf[24];
+char* strsignal(int sig) {
+    static const char* const names[] = {
+        [0]  = "Signal 0",
+        [1]  = "Hangup",
+        [2]  = "Interrupt",
+        [3]  = "Quit",
+        [4]  = "Illegal instruction",
+        [5]  = "Trace/breakpoint trap",
+        [6]  = "Aborted",
+        [7]  = "Bus error",
+        [8]  = "Floating point exception",
+        [9]  = "Killed",
+        [10] = "User defined signal 1",
+        [11] = "Segmentation fault",
+        [12] = "User defined signal 2",
+        [13] = "Broken pipe",
+        [14] = "Alarm clock",
+        [15] = "Terminated",
+        [17] = "Child exited",
+        [18] = "Continued",
+        [19] = "Stopped (signal)",
+        [20] = "Stopped",
+    };
+    if (sig >= 0 && sig <= 20 && names[sig])
+        return (char*)names[sig];
+    /* fallback: "Signal N" */
+    char* p = _sigbuf;
+    const char* prefix = "Signal ";
+    while (*prefix) *p++ = *prefix++;
+    if (sig < 0) { *p++ = '-'; sig = -sig; }
+    char digits[8];
+    int n = 0;
+    do { digits[n++] = (char)('0' + sig % 10); sig /= 10; } while (sig);
+    while (n > 0) *p++ = digits[--n];
+    *p = '\0';
+    return _sigbuf;
+}

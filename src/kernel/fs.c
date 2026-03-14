@@ -79,6 +79,23 @@ int vfs_mount(const char* mountpoint, fs_node_t* root) {
     return 0;
 }
 
+int vfs_umount(const char* mountpoint) {
+    char mp[128];
+    normalize_mountpoint(mountpoint, mp, sizeof(mp));
+
+    if (strcmp(mp, "/") == 0) return -EBUSY;
+
+    for (int i = 0; i < g_mount_count; i++) {
+        if (strcmp(g_mounts[i].mountpoint, mp) == 0) {
+            for (int j = i; j < g_mount_count - 1; j++)
+                g_mounts[j] = g_mounts[j + 1];
+            g_mount_count--;
+            return 0;
+        }
+    }
+    return -EINVAL;
+}
+
 uint32_t vfs_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
     if (node->f_ops && node->f_ops->read)
         return node->f_ops->read(node, offset, size, buffer);

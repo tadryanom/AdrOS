@@ -178,6 +178,8 @@ enum {
     SYSCALL_GETSOCKNAME  = 135,
     SYSCALL_UNAME        = 136,
     SYSCALL_GETRUSAGE    = 137,
+    SYSCALL_UMOUNT2      = 138,
+    SYSCALL_WAIT4        = 139,
 };
 
 #endif

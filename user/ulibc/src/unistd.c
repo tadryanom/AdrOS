@@ -211,20 +211,15 @@ int chown(const char* path, int owner, int group) {
 }
 
 int link(const char* oldpath, const char* newpath) {
-    /* Use SYS_UNLINKAT slot 38 — AdrOS doesn't have a dedicated link syscall yet,
-     * use a direct int $0x80 with the link syscall number if available */
-    (void)oldpath; (void)newpath;
-    return -1;  /* TODO: implement when kernel has SYS_LINK */
+    return __syscall_ret(_syscall2(SYS_LINK, (int)oldpath, (int)newpath));
 }
 
 int symlink(const char* target, const char* linkpath) {
-    (void)target; (void)linkpath;
-    return -1;  /* TODO: implement when kernel has SYS_SYMLINK */
+    return __syscall_ret(_syscall2(SYS_SYMLINK, (int)target, (int)linkpath));
 }
 
 int readlink(const char* path, char* buf, size_t bufsiz) {
-    (void)path; (void)buf; (void)bufsiz;
-    return -1;  /* TODO: implement when kernel has SYS_READLINK */
+    return __syscall_ret(_syscall3(SYS_READLINK, (int)path, (int)buf, (int)bufsiz));
 }
 
 int tcgetattr(int fd, struct termios* t) {
@@ -243,4 +238,61 @@ void _exit(int status) {
     /* If exit syscall somehow returns, loop forever.
      * Cannot use hlt — it's privileged and causes #GP in ring 3. */
     for (;;) __asm__ volatile("nop");
+}
+
+int execle(const char* path, const char* arg, ...) {
+    /* Walk varargs to find argv[] and the trailing envp */
+    extern int execve(const char*, const char* const*, const char* const*);
+    const char* args[32];
+    int n = 0;
+    __builtin_va_list ap;
+    __builtin_va_start(ap, arg);
+    args[n++] = arg;
+    while (n < 31) {
+        const char* a = __builtin_va_arg(ap, const char*);
+        args[n++] = a;
+        if (!a) break;
+    }
+    args[n] = (void*)0;
+    char* const* envp = __builtin_va_arg(ap, char* const*);
+    __builtin_va_end(ap);
+    return execve(path, (const char* const*)args, (const char* const*)envp);
+}
+
+static char _login_buf[32] = "root";
+char* getlogin(void) {
+    return _login_buf;
+}
+
+int getlogin_r(char* buf, size_t bufsize) {
+    extern size_t strlen(const char*);
+    extern void*  memcpy(void*, const void*, size_t);
+    const char* name = getlogin();
+    size_t len = strlen(name);
+    if (len + 1 > bufsize) return 34; /* ERANGE */
+    memcpy(buf, name, len + 1);
+    return 0;
+}
+
+long confstr(int name, char* buf, size_t len) {
+    (void)name;
+    const char* val = "/bin:/usr/bin";
+    extern size_t strlen(const char*);
+    size_t vlen = strlen(val) + 1;
+    if (buf && len > 0) {
+        size_t copy = vlen < len ? vlen : len;
+        extern void* memcpy(void*, const void*, size_t);
+        memcpy(buf, val, copy);
+        if (copy < vlen && len > 0) buf[len - 1] = '\0';
+    }
+    return (long)vlen;
+}
+
+void* sbrk(int increment) {
+    void* cur = brk((void*)0);
+    if (increment == 0) return cur;
+    void* new_end = (void*)((char*)cur + increment);
+    void* result = brk(new_end);
+    if ((unsigned int)result < (unsigned int)new_end) return (void*)-1;
+    return cur;
 }

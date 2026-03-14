@@ -586,3 +586,103 @@ char* tmpnam(char* s) {
     if (s) { strcpy(s, buf); return s; }
     return buf;
 }
+
+int fscanf(FILE* fp, const char* fmt, ...) {
+    /* Read a line, then delegate to sscanf */
+    char line[512];
+    if (!fgets(line, (int)sizeof(line), fp)) return EOF;
+    va_list ap;
+    va_start(ap, fmt);
+    /* We can't pass va_list to sscanf directly, so use a manual approach
+     * that matches sscanf's minimal implementation for %d and %s */
+    int count = 0;
+    const char* s = line;
+    const char* f = fmt;
+    while (*f && *s) {
+        if (*f == '%') {
+            f++;
+            if (*f == 'd' || *f == 'i') {
+                f++;
+                int* out = va_arg(ap, int*);
+                int neg = 0;
+                while (*s == ' ') s++;
+                if (*s == '-') { neg = 1; s++; }
+                else if (*s == '+') { s++; }
+                if (*s < '0' || *s > '9') break;
+                int val = 0;
+                while (*s >= '0' && *s <= '9') { val = val * 10 + (*s - '0'); s++; }
+                *out = neg ? -val : val;
+                count++;
+            } else if (*f == 's') {
+                f++;
+                char* out = va_arg(ap, char*);
+                while (*s == ' ') s++;
+                int i = 0;
+                while (*s && *s != ' ' && *s != '\n' && *s != '\t') out[i++] = *s++;
+                out[i] = '\0';
+                count++;
+            } else if (*f == 'c') {
+                f++;
+                char* out = va_arg(ap, char*);
+                *out = *s++;
+                count++;
+            } else {
+                break;
+            }
+        } else if (*f == ' ') {
+            f++;
+            while (*s == ' ') s++;
+        } else {
+            if (*f != *s) break;
+            f++; s++;
+        }
+    }
+    va_end(ap);
+    return count;
+}
+
+int scanf(const char* fmt, ...) {
+    char line[512];
+    if (!fgets(line, (int)sizeof(line), stdin)) return EOF;
+    va_list ap;
+    va_start(ap, fmt);
+    int count = 0;
+    const char* s = line;
+    const char* f = fmt;
+    while (*f && *s) {
+        if (*f == '%') {
+            f++;
+            if (*f == 'd' || *f == 'i') {
+                f++;
+                int* out = va_arg(ap, int*);
+                int neg = 0;
+                while (*s == ' ') s++;
+                if (*s == '-') { neg = 1; s++; }
+                else if (*s == '+') { s++; }
+                if (*s < '0' || *s > '9') break;
+                int val = 0;
+                while (*s >= '0' && *s <= '9') { val = val * 10 + (*s - '0'); s++; }
+                *out = neg ? -val : val;
+                count++;
+            } else if (*f == 's') {
+                f++;
+                char* out = va_arg(ap, char*);
+                while (*s == ' ') s++;
+                int i = 0;
+                while (*s && *s != ' ' && *s != '\n' && *s != '\t') out[i++] = *s++;
+                out[i] = '\0';
+                count++;
+            } else {
+                break;
+            }
+        } else if (*f == ' ') {
+            f++;
+            while (*s == ' ') s++;
+        } else {
+            if (*f != *s) break;
+            f++; s++;
+        }
+    }
+    va_end(ap);
+    return count;
+}

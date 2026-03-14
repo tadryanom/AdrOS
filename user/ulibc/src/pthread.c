@@ -175,3 +175,325 @@ int pthread_attr_setstacksize(pthread_attr_t* attr, size_t stacksize) {
     attr->stack_size = stacksize;
     return 0;
 }
+
+int pthread_detach(pthread_t thread) {
+    (void)thread;
+    return 0;
+}
+
+int pthread_cancel(pthread_t thread) {
+    (void)thread;
+    return 0;
+}
+
+int pthread_setcancelstate(int state, int* oldstate) {
+    if (oldstate) *oldstate = 0;
+    (void)state;
+    return 0;
+}
+
+int pthread_setcanceltype(int type, int* oldtype) {
+    if (oldtype) *oldtype = 0;
+    (void)type;
+    return 0;
+}
+
+void pthread_testcancel(void) {}
+
+/* ---- Futex helpers ---- */
+#define FUTEX_WAIT 0
+#define FUTEX_WAKE 1
+
+static int futex_wait(volatile int* addr, int val) {
+    return _syscall3(SYS_FUTEX, (int)addr, FUTEX_WAIT, val);
+}
+
+static int futex_wake(volatile int* addr, int count) {
+    return _syscall3(SYS_FUTEX, (int)addr, FUTEX_WAKE, count);
+}
+
+static int atomic_cas(volatile int* ptr, int old, int new_val) {
+    int prev;
+    __asm__ volatile("lock cmpxchgl %2, %1"
+                     : "=a"(prev), "+m"(*ptr)
+                     : "r"(new_val), "0"(old)
+                     : "memory");
+    return prev;
+}
+
+static int atomic_xchg(volatile int* ptr, int val) {
+    __asm__ volatile("xchgl %0, %1"
+                     : "=r"(val), "+m"(*ptr)
+                     : "0"(val)
+                     : "memory");
+    return val;
+}
+
+static void atomic_add(volatile int* ptr, int val) {
+    __asm__ volatile("lock addl %1, %0" : "+m"(*ptr) : "r"(val) : "memory");
+}
+
+/* ---- Mutex ---- */
+int pthread_mutex_init(pthread_mutex_t* mutex, const pthread_mutexattr_t* attr) {
+    if (!mutex) return 22;
+    mutex->__lock = 0;
+    mutex->__owner = 0;
+    mutex->__type = attr ? attr->__type : PTHREAD_MUTEX_NORMAL;
+    mutex->__count = 0;
+    return 0;
+}
+
+int pthread_mutex_destroy(pthread_mutex_t* mutex) {
+    (void)mutex;
+    return 0;
+}
+
+int pthread_mutex_lock(pthread_mutex_t* mutex) {
+    if (!mutex) return 22;
+    int tid = _syscall0(SYS_GETTID);
+
+    if (mutex->__type == PTHREAD_MUTEX_RECURSIVE && mutex->__owner == tid) {
+        mutex->__count++;
+        return 0;
+    }
+
+    while (atomic_xchg(&mutex->__lock, 1) != 0) {
+        futex_wait(&mutex->__lock, 1);
+    }
+    mutex->__owner = tid;
+    mutex->__count = 1;
+    return 0;
+}
+
+int pthread_mutex_trylock(pthread_mutex_t* mutex) {
+    if (!mutex) return 22;
+    int tid = _syscall0(SYS_GETTID);
+
+    if (mutex->__type == PTHREAD_MUTEX_RECURSIVE && mutex->__owner == tid) {
+        mutex->__count++;
+        return 0;
+    }
+
+    if (atomic_cas(&mutex->__lock, 0, 1) == 0) {
+        mutex->__owner = tid;
+        mutex->__count = 1;
+        return 0;
+    }
+    return 16; /* EBUSY */
+}
+
+int pthread_mutex_unlock(pthread_mutex_t* mutex) {
+    if (!mutex) return 22;
+
+    if (mutex->__type == PTHREAD_MUTEX_RECURSIVE) {
+        if (--mutex->__count > 0) return 0;
+    }
+
+    mutex->__owner = 0;
+    mutex->__count = 0;
+    atomic_xchg(&mutex->__lock, 0);
+    futex_wake(&mutex->__lock, 1);
+    return 0;
+}
+
+int pthread_mutexattr_init(pthread_mutexattr_t* attr) {
+    if (!attr) return 22;
+    attr->__type = PTHREAD_MUTEX_NORMAL;
+    return 0;
+}
+
+int pthread_mutexattr_destroy(pthread_mutexattr_t* attr) {
+    (void)attr;
+    return 0;
+}
+
+int pthread_mutexattr_settype(pthread_mutexattr_t* attr, int type) {
+    if (!attr) return 22;
+    attr->__type = type;
+    return 0;
+}
+
+int pthread_mutexattr_gettype(const pthread_mutexattr_t* attr, int* type) {
+    if (!attr || !type) return 22;
+    *type = attr->__type;
+    return 0;
+}
+
+/* ---- Condition Variable ---- */
+int pthread_cond_init(pthread_cond_t* cond, const pthread_condattr_t* attr) {
+    (void)attr;
+    if (!cond) return 22;
+    cond->__seq = 0;
+    return 0;
+}
+
+int pthread_cond_destroy(pthread_cond_t* cond) {
+    (void)cond;
+    return 0;
+}
+
+int pthread_cond_wait(pthread_cond_t* cond, pthread_mutex_t* mutex) {
+    int seq = cond->__seq;
+    pthread_mutex_unlock(mutex);
+    futex_wait(&cond->__seq, seq);
+    pthread_mutex_lock(mutex);
+    return 0;
+}
+
+int pthread_cond_signal(pthread_cond_t* cond) {
+    atomic_add(&cond->__seq, 1);
+    futex_wake(&cond->__seq, 1);
+    return 0;
+}
+
+int pthread_cond_broadcast(pthread_cond_t* cond) {
+    atomic_add(&cond->__seq, 1);
+    futex_wake(&cond->__seq, 0x7FFFFFFF);
+    return 0;
+}
+
+/* ---- Read-Write Lock ---- */
+int pthread_rwlock_init(pthread_rwlock_t* rwlock, const pthread_rwlockattr_t* attr) {
+    (void)attr;
+    if (!rwlock) return 22;
+    rwlock->__readers = 0;
+    rwlock->__writer = 0;
+    return 0;
+}
+
+int pthread_rwlock_destroy(pthread_rwlock_t* rwlock) {
+    (void)rwlock;
+    return 0;
+}
+
+int pthread_rwlock_rdlock(pthread_rwlock_t* rwlock) {
+    while (1) {
+        while (rwlock->__writer)
+            futex_wait(&rwlock->__writer, 1);
+        atomic_add(&rwlock->__readers, 1);
+        if (!rwlock->__writer) return 0;
+        atomic_add(&rwlock->__readers, -1);
+    }
+}
+
+int pthread_rwlock_wrlock(pthread_rwlock_t* rwlock) {
+    while (atomic_xchg(&rwlock->__writer, 1) != 0)
+        futex_wait(&rwlock->__writer, 1);
+    while (rwlock->__readers > 0)
+        futex_wait(&rwlock->__readers, rwlock->__readers);
+    return 0;
+}
+
+int pthread_rwlock_tryrdlock(pthread_rwlock_t* rwlock) {
+    if (rwlock->__writer) return 16; /* EBUSY */
+    atomic_add(&rwlock->__readers, 1);
+    if (rwlock->__writer) {
+        atomic_add(&rwlock->__readers, -1);
+        return 16;
+    }
+    return 0;
+}
+
+int pthread_rwlock_trywrlock(pthread_rwlock_t* rwlock) {
+    if (atomic_cas(&rwlock->__writer, 0, 1) != 0) return 16;
+    if (rwlock->__readers > 0) {
+        rwlock->__writer = 0;
+        return 16;
+    }
+    return 0;
+}
+
+int pthread_rwlock_unlock(pthread_rwlock_t* rwlock) {
+    if (rwlock->__writer) {
+        rwlock->__writer = 0;
+        futex_wake(&rwlock->__writer, 0x7FFFFFFF);
+    } else {
+        atomic_add(&rwlock->__readers, -1);
+        if (rwlock->__readers == 0)
+            futex_wake(&rwlock->__readers, 1);
+    }
+    return 0;
+}
+
+/* ---- Thread-Specific Data ---- */
+#define PTHREAD_KEYS_MAX 32
+static void* _tsd_values[PTHREAD_KEYS_MAX];
+static void (*_tsd_destructors[PTHREAD_KEYS_MAX])(void*);
+static int _tsd_used[PTHREAD_KEYS_MAX];
+static int _tsd_next_key = 0;
+
+int pthread_key_create(pthread_key_t* key, void (*destructor)(void*)) {
+    if (!key) return 22;
+    if (_tsd_next_key >= PTHREAD_KEYS_MAX) return 11; /* EAGAIN */
+    int k = _tsd_next_key++;
+    _tsd_used[k] = 1;
+    _tsd_destructors[k] = destructor;
+    _tsd_values[k] = (void*)0;
+    *key = (pthread_key_t)k;
+    return 0;
+}
+
+int pthread_key_delete(pthread_key_t key) {
+    if (key >= PTHREAD_KEYS_MAX || !_tsd_used[key]) return 22;
+    _tsd_used[key] = 0;
+    _tsd_destructors[key] = (void*)0;
+    _tsd_values[key] = (void*)0;
+    return 0;
+}
+
+void* pthread_getspecific(pthread_key_t key) {
+    if (key >= PTHREAD_KEYS_MAX) return (void*)0;
+    return _tsd_values[key];
+}
+
+int pthread_setspecific(pthread_key_t key, const void* value) {
+    if (key >= PTHREAD_KEYS_MAX) return 22;
+    _tsd_values[key] = (void*)(uintptr_t)value;
+    return 0;
+}
+
+/* ---- Once ---- */
+int pthread_once(pthread_once_t* once_control, void (*init_routine)(void)) {
+    if (!once_control || !init_routine) return 22;
+    if (atomic_cas(once_control, 0, 1) == 0) {
+        init_routine();
+        *once_control = 2;
+        futex_wake(once_control, 0x7FFFFFFF);
+    } else {
+        while (*once_control == 1)
+            futex_wait(once_control, 1);
+    }
+    return 0;
+}
+
+/* ---- Barrier ---- */
+int pthread_barrier_init(pthread_barrier_t* barrier,
+                         const pthread_barrierattr_t* attr, unsigned count) {
+    (void)attr;
+    if (!barrier || count == 0) return 22;
+    barrier->__count = 0;
+    barrier->__total = (int)count;
+    barrier->__seq = 0;
+    return 0;
+}
+
+int pthread_barrier_destroy(pthread_barrier_t* barrier) {
+    (void)barrier;
+    return 0;
+}
+
+int pthread_barrier_wait(pthread_barrier_t* barrier) {
+    int seq = barrier->__seq;
+    int n;
+    atomic_add(&barrier->__count, 1);
+    n = barrier->__count;
+    if (n >= barrier->__total) {
+        barrier->__count = 0;
+        atomic_add(&barrier->__seq, 1);
+        futex_wake(&barrier->__seq, 0x7FFFFFFF);
+        return PTHREAD_BARRIER_SERIAL_THREAD;
+    }
+    while (barrier->__seq == seq)
+        futex_wait(&barrier->__seq, seq);
+    return 0;
+}

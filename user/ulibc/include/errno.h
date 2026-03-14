@@ -55,6 +55,8 @@ extern int errno;
 #define ENOPROTOOPT     92
 #define EPROTONOSUPPORT 93
 #define EOPNOTSUPP      95
+#define ENOTSOCK        88
+#define ENETUNREACH     101
 #define EWOULDBLOCK     EAGAIN
 
 /* Convert raw syscall return to errno-style */

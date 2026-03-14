@@ -62,4 +62,32 @@ int tcsetattr(int fd, int actions, const struct termios* t);
 #define TCSADRAIN 1
 #define TCSAFLUSH 2
 
+typedef unsigned int speed_t;
+
+#define B0      0
+#define B9600   9600
+#define B19200  19200
+#define B38400  38400
+#define B115200 115200
+
+speed_t cfgetispeed(const struct termios* t);
+speed_t cfgetospeed(const struct termios* t);
+int     cfsetispeed(struct termios* t, speed_t speed);
+int     cfsetospeed(struct termios* t, speed_t speed);
+void    cfmakeraw(struct termios* t);
+int     tcdrain(int fd);
+int     tcflush(int fd, int queue_selector);
+int     tcflow(int fd, int action);
+int     tcsendbreak(int fd, int duration);
+int     tcgetpgrp(int fd);
+int     tcsetpgrp(int fd, int pgrp);
+
+#define TCIFLUSH  0
+#define TCOFLUSH  1
+#define TCIOFLUSH 2
+#define TCOOFF    0
+#define TCOON     1
+#define TCIOFF    2
+#define TCION     3
+
 #endif

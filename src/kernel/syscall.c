@@ -4944,6 +4944,50 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         return;
     }
 
+    if (syscall_no == SYSCALL_UMOUNT2) {
+        if (!current_process || current_process->euid != 0) {
+            sc_ret(regs) = (uint32_t)-EPERM;
+            return;
+        }
+        const char* user_target = (const char*)sc_arg0(regs);
+        char ktarget[128];
+        if (path_resolve_user(user_target, ktarget, sizeof(ktarget)) < 0) {
+            sc_ret(regs) = (uint32_t)-EFAULT;
+            return;
+        }
+        sc_ret(regs) = (uint32_t)vfs_umount(ktarget);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_WAIT4) {
+        int pid     = (int)sc_arg0(regs);
+        int* ustatus = (int*)sc_arg1(regs);
+        int options = (int)sc_arg2(regs);
+        void* urusage = (void*)sc_arg3(regs);
+
+        if (ustatus && user_range_ok(ustatus, sizeof(int)) == 0) {
+            sc_ret(regs) = (uint32_t)-EFAULT; return;
+        }
+
+        int kstatus = 0;
+        int ret = process_waitpid(pid, &kstatus, options);
+        if (ret < 0) {
+            sc_ret(regs) = (uint32_t)ret;
+            return;
+        }
+        if (ret > 0 && ustatus) {
+            (void)copy_to_user(ustatus, &kstatus, sizeof(kstatus));
+        }
+        if (ret > 0 && urusage) {
+            /* Zero out rusage — detailed accounting deferred */
+            char zeros[64];
+            memset(zeros, 0, sizeof(zeros));
+            (void)copy_to_user(urusage, zeros, sizeof(zeros));
+        }
+        sc_ret(regs) = (uint32_t)ret;
+        return;
+    }
+
     sc_ret(regs) = (uint32_t)-ENOSYS;
 }
 
