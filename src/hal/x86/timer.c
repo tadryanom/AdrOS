@@ -21,13 +21,10 @@ static hal_timer_tick_cb_t g_tick_cb = 0;
 
 static void timer_irq(struct registers* regs) {
     (void)regs;
-    if (lapic_is_enabled() && lapic_get_id() != 0) {
-        /* AP: only run the local scheduler — tick accounting, VGA flush,
-         * UART poll, and sleep-queue wake are handled by the BSP. */
-        extern void schedule(void);
-        schedule();
-        return;
-    }
+    /* All CPUs (BSP and APs) go through the tick bridge.
+     * The bridge dispatches BSP-only work (tick counter, sleep wakeups,
+     * VGA flush, load balancing) and AP-only work (sched_ap_tick),
+     * then calls schedule() on all CPUs. */
     if (g_tick_cb) g_tick_cb();
 }
 

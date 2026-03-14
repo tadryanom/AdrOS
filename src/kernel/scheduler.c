@@ -548,6 +548,7 @@ void process_exit_notify(int status) {
         }
     }
 
+    uint32_t wake_cpu = (uint32_t)-1;
     if (current_process->pid != 0) {
         struct process* parent = process_find_locked(current_process->parent_pid);
         if (parent && parent->state == PROCESS_BLOCKED && parent->waiting) {
@@ -555,12 +556,16 @@ void process_exit_notify(int status) {
                 parent->wait_result_pid = (int)current_process->pid;
                 parent->wait_result_status = status;
                 parent->state = PROCESS_READY;
-                rq_enqueue(pcpu_rq[parent->cpu_id].active, parent);
+                uint32_t pcpu = parent->cpu_id < SCHED_MAX_CPUS ? parent->cpu_id : 0;
+                rq_enqueue(pcpu_rq[pcpu].active, parent);
+                sched_pcpu_inc_load(pcpu);
+                wake_cpu = pcpu;
             }
         }
     }
 
     spin_unlock_irqrestore(&sched_lock, flags);
+    if (wake_cpu != (uint32_t)-1) sched_ipi_resched(wake_cpu);
 }
 
 static void fork_child_trampoline(void) {
@@ -1198,14 +1203,19 @@ void process_wake_check(uint32_t current_tick) {
         current_process->utime++;
     }
 
-    /* O(1) sleep queue: pop expired entries from the sorted head */
+    /* O(1) sleep queue: pop expired entries from the sorted head.
+     * Track which remote CPUs need an IPI to pick up newly-ready work. */
+    uint32_t ipi_mask = 0;  /* bitmask of CPUs needing IPI */
     while (sleep_head && current_tick >= sleep_head->wake_at_tick) {
         struct process* p = sleep_head;
         sleep_queue_remove(p);
         if (p->state == PROCESS_SLEEPING) {
             p->state = PROCESS_READY;
             if (p->priority > 0) p->priority--;
-            rq_enqueue(pcpu_rq[p->cpu_id].active, p);
+            uint32_t tcpu = p->cpu_id < SCHED_MAX_CPUS ? p->cpu_id : 0;
+            rq_enqueue(pcpu_rq[tcpu].active, p);
+            sched_pcpu_inc_load(tcpu);
+            if (tcpu < 32) ipi_mask |= (1U << tcpu);
         }
     }
 
@@ -1243,6 +1253,100 @@ void process_wake_check(uint32_t current_tick) {
     }
 
     spin_unlock_irqrestore(&sched_lock, flags);
+
+    /* Send IPI to remote CPUs that received newly-ready processes */
+    uint32_t my_cpu = percpu_cpu_index();
+    ipi_mask &= ~(1U << my_cpu);  /* no self-IPI */
+    while (ipi_mask) {
+        uint32_t c = (uint32_t)__builtin_ctz(ipi_mask);
+        sched_ipi_resched(c);
+        ipi_mask &= ~(1U << c);
+    }
+}
+
+void sched_ap_tick(void) {
+    /* Called from AP timer interrupt — per-CPU accounting.
+     * Sleep/alarm queues and global tick are managed by BSP. */
+    uintptr_t flags = spin_lock_irqsave(&sched_lock);
+
+    if (current_process && current_process->state == PROCESS_RUNNING) {
+        current_process->utime++;
+
+        /* ITIMER_VIRTUAL: decrement when running in user mode */
+        if (current_process->itimer_virt_value > 0) {
+            current_process->itimer_virt_value--;
+            if (current_process->itimer_virt_value == 0) {
+                current_process->sig_pending_mask |= (1U << 26); /* SIGVTALRM */
+                current_process->itimer_virt_value = current_process->itimer_virt_interval;
+            }
+        }
+        /* ITIMER_PROF: decrement when running (user + kernel) */
+        if (current_process->itimer_prof_value > 0) {
+            current_process->itimer_prof_value--;
+            if (current_process->itimer_prof_value == 0) {
+                current_process->sig_pending_mask |= (1U << 27); /* SIGPROF */
+                current_process->itimer_prof_value = current_process->itimer_prof_interval;
+            }
+        }
+    }
+
+    spin_unlock_irqrestore(&sched_lock, flags);
+}
+
+void sched_load_balance(void) {
+    /* Periodic work stealing: called from BSP timer tick.
+     * Migrates one process from the busiest CPU to the idlest CPU
+     * if the load imbalance exceeds a threshold. */
+    uint32_t ncpus = sched_pcpu_count();
+    if (ncpus <= 1) return;
+
+    uint32_t max_cpu = 0, min_cpu = 0;
+    uint32_t max_load = 0, min_load = (uint32_t)-1;
+
+    for (uint32_t i = 0; i < ncpus && i < SCHED_MAX_CPUS; i++) {
+        uint32_t load = sched_pcpu_get_load(i);
+        if (load > max_load) { max_load = load; max_cpu = i; }
+        if (load < min_load) { min_load = load; min_cpu = i; }
+    }
+
+    /* Only migrate if imbalance >= 2 (avoids ping-pong) */
+    if (max_cpu == min_cpu || max_load < min_load + 2) return;
+
+    uintptr_t flags = spin_lock_irqsave(&sched_lock);
+
+    struct cpu_rq *src = &pcpu_rq[max_cpu];
+
+    /* Find a migratable process in the source's expired queue first,
+     * then active.  Skip idle processes and the currently running process. */
+    struct process* victim = NULL;
+    for (int pass = 0; pass < 2 && !victim; pass++) {
+        struct runqueue* rq = (pass == 0) ? src->expired : src->active;
+        if (!rq->bitmap) continue;
+        /* Try lowest-priority queue first (least disruptive) */
+        for (int prio = SCHED_NUM_PRIOS - 1; prio >= 0 && !victim; prio--) {
+            if (!(rq->bitmap & (1U << prio))) continue;
+            struct process* p = rq->queue[prio].head;
+            while (p) {
+                if (p != src->idle && p->state == PROCESS_READY) {
+                    victim = p;
+                    rq_dequeue(rq, p);
+                    break;
+                }
+                p = p->rq_next;
+            }
+        }
+    }
+
+    if (victim) {
+        victim->cpu_id = min_cpu;
+        rq_enqueue(pcpu_rq[min_cpu].active, victim);
+        sched_pcpu_dec_load(max_cpu);
+        sched_pcpu_inc_load(min_cpu);
+    }
+
+    spin_unlock_irqrestore(&sched_lock, flags);
+
+    if (victim) sched_ipi_resched(min_cpu);
 }
 
 uint32_t process_alarm_set(struct process* p, uint32_t tick) {

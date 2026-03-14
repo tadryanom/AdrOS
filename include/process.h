@@ -228,4 +228,10 @@ struct process* process_find_by_pid(uint32_t pid);
 // Skips insertion if the process is no longer PROCESS_SLEEPING.
 void sched_sleep_enqueue_self(void);
 
+// Per-CPU tick accounting for AP cores (utime, itimers).
+void sched_ap_tick(void);
+
+// Periodic load balancing: migrate one process from busiest to idlest CPU.
+void sched_load_balance(void);
+
 #endif

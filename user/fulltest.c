@@ -4406,6 +4406,43 @@ void _start(void) {
         sys_write(1, "[init] uname OK\n", (uint32_t)(sizeof("[init] uname OK\n") - 1));
     }
 
+    // H1: SMP parallel fork test — exercises multi-CPU scheduling + load balancing
+    {
+        #define SMP_NCHILD 8
+        int smp_pids[SMP_NCHILD];
+        int smp_ok = 1;
+
+        for (int i = 0; i < SMP_NCHILD; i++) {
+            int pid = sys_fork();
+            if (pid == 0) {
+                /* Child: busy loop to consume a time slice, then exit with index */
+                volatile uint32_t sum = 0;
+                for (uint32_t j = 0; j < 50000; j++) sum += j;
+                (void)sum;
+                sys_exit(i + 1);
+            }
+            smp_pids[i] = pid;
+        }
+
+        /* Parent: wait for all children, verify each returned correct status */
+        for (int i = 0; i < SMP_NCHILD; i++) {
+            int st = 0;
+            int wp = sys_waitpid(smp_pids[i], &st, 0);
+            if (wp != smp_pids[i] || st != (i + 1)) {
+                smp_ok = 0;
+            }
+        }
+
+        if (smp_ok) {
+            static const char msg[] = "[init] SMP parallel fork OK\n";
+            (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+        } else {
+            static const char msg[] = "[init] SMP parallel fork FAIL\n";
+            (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+        }
+        #undef SMP_NCHILD
+    }
+
     (void)sys_write(1, "[init] execve(/bin/echo)\n",
                     (uint32_t)(sizeof("[init] execve(/bin/echo)\n") - 1));
     static const char* const argv[] = {"echo", "[echo]", "hello", "from", "echo", 0};

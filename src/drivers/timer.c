@@ -17,6 +17,10 @@
 #include "hal/timer.h"
 #include "hal/uart.h"
 
+#ifdef __i386__
+#include "arch/x86/percpu.h"
+#endif
+
 static uint32_t tick = 0;
 
 /* TSC-based nanosecond timekeeping */
@@ -60,10 +64,12 @@ uint64_t clock_gettime_ns(void) {
     return sec_part + frac_part;
 }
 
+static uint32_t lb_counter = 0;
+#define LOAD_BALANCE_INTERVAL 10  /* every 10 ticks (~200ms at 50Hz) */
+
 static void hal_tick_bridge(void) {
 #ifdef __i386__
-    extern uint32_t smp_current_cpu(void);
-    uint32_t cpu = smp_current_cpu();
+    uint32_t cpu = percpu_cpu_index();
 #else
     uint32_t cpu = 0;
 #endif
@@ -75,6 +81,15 @@ static void hal_tick_bridge(void) {
         vga_flush();
         hal_uart_poll_rx();
         process_wake_check(tick);
+
+        /* Periodic load balancing */
+        if (++lb_counter >= LOAD_BALANCE_INTERVAL) {
+            lb_counter = 0;
+            sched_load_balance();
+        }
+    } else {
+        /* AP: per-CPU tick accounting (utime, itimers) */
+        sched_ap_tick();
     }
 
     /* All CPUs: run the scheduler to pick up new work */
