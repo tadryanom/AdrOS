@@ -113,10 +113,12 @@ for ATA and E1000). No audio support.
 
 ---
 
-## 6E. USTAR InitRD Format (Priority: Low, Effort: Small — 2-3 days)
+## 6E. USTAR InitRD Format (Priority: Low, Effort: Small — 2-3 days) — ✅ DONE
 
-**Current state:** Custom binary initrd format with LZ4 decompression. Works well but
-non-standard.
+**Current state:** Fully implemented. `tools/mkinitrd.c` produces USTAR archives
+compressed with LZ4 Frame format. Kernel (`src/drivers/initrd.c`) detects LZ4 magic,
+decompresses via `lz4_decompress_frame()`, and parses standard USTAR 512-byte headers.
+Backward-compatible with legacy LZ4B format.
 
 ### Steps:
 1. **USTAR parser** — Parse 512-byte USTAR headers in initrd blob
@@ -182,7 +184,7 @@ Binutils 2.42) and Newlib port are complete.
 | ~~2~~ | ~~**6F** Minor POSIX gaps~~ | ✅ DONE |
 | ~~3~~ | ~~**6A** Full SMP~~ | ✅ DONE (commit 1374a6f) |
 | 4 | **6C** Rump Kernel | Unlocks USB, better drivers |
-| 5 | **6E** USTAR initrd | Small, improves developer experience |
+| ~~5~~ | ~~**6E** USTAR initrd~~ | ✅ DONE |
 | 6 | **6D** HDA Audio | Nice-to-have |
 | 7 | **6B** Multi-arch | Very large, low urgency |
 
@@ -196,7 +198,7 @@ Binutils 2.42) and Newlib port are complete.
 | 6B | Multi-arch (ARM64/RV/MIPS) subsystems | 4-8 weeks | Medium |
 | 6C | Rump Kernel integration | 4-6 weeks | Medium |
 | 6D | Intel HDA audio driver | 1-2 weeks | Low |
-| 6E | USTAR initrd format | 2-3 days | Low |
+| 6E | USTAR initrd format | ✅ DONE | Low |
 | 6F | Minor POSIX gaps (madvise, mntent, utmp) | ✅ DONE | Low |
 | 6G | Bash & Busybox ports | ✅ DONE | High |
 

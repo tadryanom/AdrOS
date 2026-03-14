@@ -216,7 +216,7 @@ Unix-like, POSIX-compatible operating system.
 
 This score reflects that AdrOS has a **mature and feature-rich kernel** with virtually
 all core POSIX subsystems implemented and working end-to-end. All 31 planned tasks
-have been completed, plus 44 additional features (75 total). See `POSIX_ROADMAP.md`
+have been completed, plus 60 additional features (91 total). See `POSIX_ROADMAP.md`
 for the full list. All previously identified Tier 1/2/3 gaps have been resolved.
 
 ### What AdrOS Already Has (Strengths)
@@ -270,7 +270,7 @@ for the full list. All previously identified Tier 1/2/3 gaps have been resolved.
 
 | Dimension | Supplementary Material | AdrOS Current | Verdict |
 |-----------|----------------------|---------------|----------|
-| **Boot flow** | GRUB → Stub (LZ4) → Kernel → USTAR InitRD | GRUB → Kernel → Custom InitRD → OverlayFS | Both valid; AdrOS is simpler |
+| **Boot flow** | GRUB → Stub (LZ4) → Kernel → USTAR InitRD | GRUB → Kernel → USTAR+LZ4 InitRD → OverlayFS | **Comparable** |
 | **Memory architecture** | PMM + Slab + CoW + Zero-Copy DMA | PMM (spinlock+refcount+contig) + Slab + CoW + Heap (64MB) + SMEP/SMAP + PAE/NX + ASLR + Guard pages + vDSO + Zero-copy DMA | **AdrOS is more advanced** |
 | **Scheduler** | O(1) with bitmap + active/expired arrays | O(1) with bitmap + active/expired, 32 levels, decay-based priority, per-CPU infra | **Comparable** |
 | **VFS** | USTAR + FAT (planned) | tmpfs + devfs + overlayfs + diskfs + persistfs + procfs + FAT12/16/32 + ext2 | **AdrOS is more advanced** |
