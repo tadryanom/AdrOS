@@ -1,0 +1,6 @@
+[submodule "third_party/lwip"]
+	path = third_party/lwip
+	url = https://github.com/lwip-tcpip/lwip.git
+[submodule "user/doom/doomgeneric"]
+	path = user/doom/doomgeneric
+	url = https://github.com/ozkl/doomgeneric.git
