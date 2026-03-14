@@ -176,6 +176,7 @@ enum {
     SYSCALL_GETPEERNAME  = 134,
     SYSCALL_GETSOCKNAME  = 135,
     SYSCALL_UNAME        = 136,
+    SYSCALL_GETRUSAGE    = 137,
 };
 
 #endif
