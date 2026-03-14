@@ -160,13 +160,43 @@ void* memchr(const void* s, int c, size_t n) {
 static char* strtok_state = (void*)0;
 
 char* strtok(char* str, const char* delim) {
-    if (str) strtok_state = str;
-    if (!strtok_state) return (void*)0;
+    return strtok_r(str, delim, &strtok_state);
+}
+
+char* strtok_r(char* str, const char* delim, char** saveptr) {
+    if (str) *saveptr = str;
+    if (!*saveptr) return (void*)0;
     /* skip leading delimiters */
-    while (*strtok_state && strchr(delim, *strtok_state)) strtok_state++;
-    if (!*strtok_state) return (void*)0;
-    char* start = strtok_state;
-    while (*strtok_state && !strchr(delim, *strtok_state)) strtok_state++;
-    if (*strtok_state) *strtok_state++ = 0;
+    while (**saveptr && strchr(delim, **saveptr)) (*saveptr)++;
+    if (!**saveptr) return (void*)0;
+    char* start = *saveptr;
+    while (**saveptr && !strchr(delim, **saveptr)) (*saveptr)++;
+    if (**saveptr) *(*saveptr)++ = 0;
     return start;
+}
+
+size_t strnlen(const char* s, size_t maxlen) {
+    size_t i = 0;
+    while (i < maxlen && s[i]) i++;
+    return i;
+}
+
+size_t strspn(const char* s, const char* accept) {
+    size_t i = 0;
+    while (s[i] && strchr(accept, s[i])) i++;
+    return i;
+}
+
+size_t strcspn(const char* s, const char* reject) {
+    size_t i = 0;
+    while (s[i] && !strchr(reject, s[i])) i++;
+    return i;
+}
+
+char* strpbrk(const char* s, const char* accept) {
+    while (*s) {
+        if (strchr(accept, *s)) return (char*)s;
+        s++;
+    }
+    return (void*)0;
 }

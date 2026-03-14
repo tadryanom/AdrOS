@@ -21,10 +21,21 @@ void*   realloc(void* ptr, size_t size);
 int     atoi(const char* s);
 double  atof(const char* s);
 long    strtol(const char* nptr, char** endptr, int base);
+unsigned long strtoul(const char* nptr, char** endptr, int base);
+long long strtoll(const char* nptr, char** endptr, int base);
+unsigned long long strtoull(const char* nptr, char** endptr, int base);
 char*   realpath(const char* path, char* resolved);
 char*   getenv(const char* name);
 int     abs(int x);
 long    labs(long x);
+int     setenv(const char* name, const char* value, int overwrite);
+int     unsetenv(const char* name);
+int     putenv(char* string);
+int     atexit(void (*func)(void));
+void    abort(void) __attribute__((noreturn));
+int     rand(void);
+void    srand(unsigned int seed);
+#define RAND_MAX 0x7FFF
 
 void    qsort(void* base, size_t nmemb, size_t size,
               int (*compar)(const void*, const void*));

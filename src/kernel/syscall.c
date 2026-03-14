@@ -3907,6 +3907,45 @@ void syscall_handler(struct registers* regs) {
         return;
     }
 
+    if (syscall_no == SYSCALL_GETRLIMIT) {
+        uint32_t resource = sc_arg0(regs);
+        void* user_rlim = (void*)sc_arg1(regs);
+        if (!current_process) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
+        if (resource >= _RLIMIT_COUNT) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
+        if (!user_rlim || user_range_ok(user_rlim, 8) == 0) {
+            sc_ret(regs) = (uint32_t)-EFAULT; return;
+        }
+        if (copy_to_user(user_rlim, &current_process->rlimits[resource], 8) < 0) {
+            sc_ret(regs) = (uint32_t)-EFAULT; return;
+        }
+        sc_ret(regs) = 0;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SETRLIMIT) {
+        uint32_t resource = sc_arg0(regs);
+        const void* user_rlim = (const void*)sc_arg1(regs);
+        if (!current_process) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
+        if (resource >= _RLIMIT_COUNT) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
+        if (!user_rlim || user_range_ok(user_rlim, 8) == 0) {
+            sc_ret(regs) = (uint32_t)-EFAULT; return;
+        }
+        struct { uint32_t cur; uint32_t max; } new_rl;
+        if (copy_from_user(&new_rl, user_rlim, 8) < 0) {
+            sc_ret(regs) = (uint32_t)-EFAULT; return;
+        }
+        /* Non-root cannot raise max above current max */
+        if (new_rl.max > current_process->rlimits[resource].rlim_max &&
+            current_process->euid != 0) {
+            sc_ret(regs) = (uint32_t)-EPERM; return;
+        }
+        if (new_rl.cur > new_rl.max) new_rl.cur = new_rl.max;
+        current_process->rlimits[resource].rlim_cur = new_rl.cur;
+        current_process->rlimits[resource].rlim_max = new_rl.max;
+        sc_ret(regs) = 0;
+        return;
+    }
+
     if (syscall_no == SYSCALL_MPROTECT) {
         uintptr_t addr = (uintptr_t)sc_arg0(regs);
         uint32_t  len  = sc_arg1(regs);
@@ -4767,6 +4806,73 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         extern int init_mount_fs(const char* fstype, int drive, uint32_t lba, const char* mountpoint);
         int rc = init_mount_fs(ktype, drive, 0, kmp);
         sc_ret(regs) = (uint32_t)(rc < 0 ? -EIO : 0);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SETSOCKOPT) {
+        int sid = sock_fd_get_sid((int)sc_arg0(regs));
+        if (sid < 0) { sc_ret(regs) = (uint32_t)-EBADF; return; }
+        int level = (int)sc_arg1(regs);
+        int optname = (int)sc_arg2(regs);
+        uint32_t optlen = sc_arg4(regs);
+        int kval = 0;
+        if (optlen >= 4 && sc_arg3(regs)) {
+            if (copy_from_user(&kval, (const void*)sc_arg3(regs), 4) < 0) {
+                sc_ret(regs) = (uint32_t)-EFAULT; return;
+            }
+        }
+        sc_ret(regs) = (uint32_t)ksocket_setsockopt(sid, level, optname, &kval, optlen);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_GETSOCKOPT) {
+        int sid = sock_fd_get_sid((int)sc_arg0(regs));
+        if (sid < 0) { sc_ret(regs) = (uint32_t)-EBADF; return; }
+        int level = (int)sc_arg1(regs);
+        int optname = (int)sc_arg2(regs);
+        int kval = 0;
+        uint32_t klen = 4;
+        int r = ksocket_getsockopt(sid, level, optname, &kval, &klen);
+        if (r == 0 && sc_arg3(regs) && sc_arg4(regs)) {
+            if (copy_to_user((void*)sc_arg3(regs), &kval, 4) < 0) {
+                sc_ret(regs) = (uint32_t)-EFAULT; return;
+            }
+            (void)copy_to_user((void*)sc_arg4(regs), &klen, 4);
+        }
+        sc_ret(regs) = (uint32_t)r;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SHUTDOWN) {
+        int sid = sock_fd_get_sid((int)sc_arg0(regs));
+        if (sid < 0) { sc_ret(regs) = (uint32_t)-EBADF; return; }
+        sc_ret(regs) = (uint32_t)ksocket_shutdown(sid, (int)sc_arg1(regs));
+        return;
+    }
+
+    if (syscall_no == SYSCALL_GETPEERNAME) {
+        int sid = sock_fd_get_sid((int)sc_arg0(regs));
+        if (sid < 0) { sc_ret(regs) = (uint32_t)-EBADF; return; }
+        struct sockaddr_in sa;
+        memset(&sa, 0, sizeof(sa));
+        int r = ksocket_getpeername(sid, &sa);
+        if (r == 0 && sc_arg1(regs)) {
+            (void)copy_to_user((void*)sc_arg1(regs), &sa, sizeof(sa));
+        }
+        sc_ret(regs) = (uint32_t)r;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_GETSOCKNAME) {
+        int sid = sock_fd_get_sid((int)sc_arg0(regs));
+        if (sid < 0) { sc_ret(regs) = (uint32_t)-EBADF; return; }
+        struct sockaddr_in sa;
+        memset(&sa, 0, sizeof(sa));
+        int r = ksocket_getsockname(sid, &sa);
+        if (r == 0 && sc_arg1(regs)) {
+            (void)copy_to_user((void*)sc_arg1(regs), &sa, sizeof(sa));
+        }
+        sc_ret(regs) = (uint32_t)r;
         return;
     }
 

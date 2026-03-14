@@ -50,5 +50,8 @@
 #define EMSGSIZE 90
 #define EROFS 30
 #define EWOULDBLOCK EAGAIN
+#define ENOPROTOOPT 92
+#define EOVERFLOW 75
+#define ELOOP 40
 
 #endif

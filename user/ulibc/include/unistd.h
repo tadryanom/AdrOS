@@ -76,6 +76,14 @@ int     symlink(const char* target, const char* linkpath);
 int     readlink(const char* path, char* buf, size_t bufsiz);
 int     kill(int pid, int sig);
 int     rename(const char* oldpath, const char* newpath);
+unsigned int sleep(unsigned int seconds);
+int     usleep(unsigned int usec);
+int     execvp(const char* file, char* const argv[]);
+int     execlp(const char* file, const char* arg, ...);
+int     execl(const char* path, const char* arg, ...);
+int     getopt(int argc, char* const argv[], const char* optstring);
+extern char* optarg;
+extern int   optind, opterr, optopt;
 
 void    _exit(int status) __attribute__((noreturn));
 

@@ -88,6 +88,11 @@ int  ksocket_sendto(int sid, const void* buf, size_t len, int flags,
 int  ksocket_recvfrom(int sid, void* buf, size_t len, int flags,
                       struct sockaddr_in* src);
 int  ksocket_close(int sid);
+int  ksocket_setsockopt(int sid, int level, int optname, const void* optval, uint32_t optlen);
+int  ksocket_getsockopt(int sid, int level, int optname, void* optval, uint32_t* optlen);
+int  ksocket_shutdown(int sid, int how);
+int  ksocket_getpeername(int sid, struct sockaddr_in* addr);
+int  ksocket_getsockname(int sid, struct sockaddr_in* addr);
 int  ksocket_poll(int sid, int events);
 void ksocket_init(void);
 

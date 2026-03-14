@@ -33,5 +33,11 @@ int     strncasecmp(const char* a, const char* b, size_t n);
 char*   strstr(const char* haystack, const char* needle);
 void*   memchr(const void* s, int c, size_t n);
 char*   strtok(char* str, const char* delim);
+char*   strtok_r(char* str, const char* delim, char** saveptr);
+char*   strerror(int errnum);
+size_t  strnlen(const char* s, size_t maxlen);
+size_t  strspn(const char* s, const char* accept);
+size_t  strcspn(const char* s, const char* reject);
+char*   strpbrk(const char* s, const char* accept);
 
 #endif

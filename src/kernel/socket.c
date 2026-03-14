@@ -448,6 +448,102 @@ int ksocket_close(int sid) {
     return 0;
 }
 
+int ksocket_setsockopt(int sid, int level, int optname, const void* optval, uint32_t optlen) {
+    struct ksocket* s = get_socket(sid);
+    if (!s) return -EBADF;
+
+    /* SOL_SOCKET level */
+    if (level == 1) {  /* SOL_SOCKET */
+        if (optname == 2 /* SO_REUSEADDR */ && optlen >= 4) {
+            /* lwIP tcp_bind already allows reuse; just accept the call */
+            (void)optval;
+            return 0;
+        }
+        if (optname == 9 /* SO_KEEPALIVE */ && s->type == SOCK_STREAM && optlen >= 4) {
+            int val = *(const int*)optval;
+            if (s->pcb.tcp) {
+                if (val) s->pcb.tcp->so_options |= SOF_KEEPALIVE;
+                else     s->pcb.tcp->so_options &= (uint8_t)~SOF_KEEPALIVE;
+            }
+            return 0;
+        }
+        /* SO_RCVBUF / SO_SNDBUF — accept but ignore (fixed buffers) */
+        if ((optname == 8 /* SO_RCVBUF */ || optname == 7 /* SO_SNDBUF */) && optlen >= 4) {
+            return 0;
+        }
+    }
+
+    return -ENOPROTOOPT;
+}
+
+int ksocket_getsockopt(int sid, int level, int optname, void* optval, uint32_t* optlen) {
+    struct ksocket* s = get_socket(sid);
+    if (!s) return -EBADF;
+
+    if (level == 1) {  /* SOL_SOCKET */
+        if (optname == 4 /* SO_ERROR */ && *optlen >= 4) {
+            int err = s->error;
+            s->error = 0;
+            *(int*)optval = err;
+            *optlen = 4;
+            return 0;
+        }
+        if (optname == 3 /* SO_TYPE */ && *optlen >= 4) {
+            *(int*)optval = s->type;
+            *optlen = 4;
+            return 0;
+        }
+    }
+
+    return -ENOPROTOOPT;
+}
+
+int ksocket_shutdown(int sid, int how) {
+    struct ksocket* s = get_socket(sid);
+    if (!s) return -EBADF;
+    if (s->type != SOCK_STREAM || !s->pcb.tcp) return -ENOTCONN;
+
+    /* how: 0=SHUT_RD, 1=SHUT_WR, 2=SHUT_RDWR */
+    if (how == 1 || how == 2) {
+        tcp_shutdown(s->pcb.tcp, 0, 1);  /* shut_rx=0, shut_tx=1 */
+    }
+    if (how == 0 || how == 2) {
+        s->state = KSOCK_PEER_CLOSED;
+        wq_wake_all(&s->rx_wq);
+    }
+    return 0;
+}
+
+int ksocket_getpeername(int sid, struct sockaddr_in* addr) {
+    struct ksocket* s = get_socket(sid);
+    if (!s) return -EBADF;
+    if (s->type == SOCK_STREAM && s->pcb.tcp && s->state == KSOCK_CONNECTED) {
+        addr->sin_family = AF_INET;
+        addr->sin_port = htons(s->pcb.tcp->remote_port);
+        addr->sin_addr = ip_addr_get_ip4_u32(&s->pcb.tcp->remote_ip);
+        return 0;
+    }
+    return -ENOTCONN;
+}
+
+int ksocket_getsockname(int sid, struct sockaddr_in* addr) {
+    struct ksocket* s = get_socket(sid);
+    if (!s) return -EBADF;
+    if (s->type == SOCK_STREAM && s->pcb.tcp) {
+        addr->sin_family = AF_INET;
+        addr->sin_port = htons(s->pcb.tcp->local_port);
+        addr->sin_addr = ip_addr_get_ip4_u32(&s->pcb.tcp->local_ip);
+        return 0;
+    }
+    if (s->type == SOCK_DGRAM && s->pcb.udp) {
+        addr->sin_family = AF_INET;
+        addr->sin_port = htons(s->pcb.udp->local_port);
+        addr->sin_addr = ip_addr_get_ip4_u32(&s->pcb.udp->local_ip);
+        return 0;
+    }
+    return -EINVAL;
+}
+
 int ksocket_poll(int sid, int events) {
     if (sid < 0 || sid >= KSOCKET_MAX) return VFS_POLL_ERR;
     struct ksocket* s = &sockets[sid];

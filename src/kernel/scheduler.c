@@ -786,6 +786,7 @@ struct process* process_clone_create(uint32_t clone_flags,
     proc->egid = current_process->egid;
     proc->heap_start = current_process->heap_start;
     proc->heap_break = current_process->heap_break;
+    memcpy(proc->rlimits, current_process->rlimits, sizeof(proc->rlimits));
 
     memcpy(proc->fpu_state, current_process->fpu_state, FPU_STATE_SIZE);
 

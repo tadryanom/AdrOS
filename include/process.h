@@ -111,6 +111,19 @@ struct process {
     uintptr_t heap_start;
     uintptr_t heap_break;
 
+    /* POSIX resource limits */
+#define RLIMIT_CPU      0
+#define RLIMIT_FSIZE    1
+#define RLIMIT_DATA     2
+#define RLIMIT_STACK    3
+#define RLIMIT_CORE     4
+#define RLIMIT_NOFILE   5
+#define RLIMIT_AS       6
+#define RLIMIT_NPROC    7
+#define _RLIMIT_COUNT   8
+#define RLIM_INFINITY   0xFFFFFFFFU
+    struct { uint32_t rlim_cur; uint32_t rlim_max; } rlimits[_RLIMIT_COUNT];
+
     char cwd[128];
     char cmdline[128];
     uint32_t umask;

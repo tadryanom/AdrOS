@@ -77,5 +77,8 @@ int     rename(const char* oldpath, const char* newpath);
 #define _IONBF 2  /* unbuffered */
 int     setvbuf(FILE* fp, char* buf, int mode, size_t size);
 void    setbuf(FILE* fp, char* buf);
+void    perror(const char* s);
+int     fileno(FILE* fp);
+FILE*   fdopen(int fd, const char* mode);
 
 #endif

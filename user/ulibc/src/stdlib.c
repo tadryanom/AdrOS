@@ -16,39 +16,119 @@
 char** __environ = 0;
 
 /*
- * Minimal bump allocator using brk() syscall.
- * No free() support yet — memory is only reclaimed on process exit.
- * A proper free-list allocator can be added later.
+ * Free-list allocator using brk() syscall.
+ *
+ * Each allocated block has a header: [size | in_use_flag]
+ * Free blocks are linked in an explicit free list.
+ * Coalescing is done on free() (merge with adjacent free blocks).
+ *
+ * Layout: [header 8 bytes] [user data ...]
+ *   header.size = total block size including header (aligned to 8)
+ *   header.next = pointer to next free block (only valid when free)
  */
+
+#define ALLOC_ALIGN 8
+#define ALLOC_HDR_SIZE 8  /* must == sizeof(struct block_hdr) */
+#define ALLOC_USED_BIT 1U
+
+struct block_hdr {
+    uint32_t size;       /* total size including header; bit 0 = used flag */
+    uint32_t next_free;  /* pointer to next free block (as uintptr_t), 0 = end */
+};
+
+static struct block_hdr* free_list = 0;
 static void* heap_base = 0;
 static void* heap_end = 0;
 
-void* malloc(size_t size) {
-    if (size == 0) return (void*)0;
+static inline uint32_t blk_size(struct block_hdr* b) { return b->size & ~ALLOC_USED_BIT; }
+static inline int      blk_used(struct block_hdr* b) { return (int)(b->size & ALLOC_USED_BIT); }
 
-    /* Align to 8 bytes */
-    size = (size + 7) & ~(size_t)7;
-
+static void* sbrk_grow(size_t inc) {
     if (!heap_base) {
         heap_base = brk(0);
         heap_end = heap_base;
     }
-
     void* old_end = heap_end;
-    void* new_end = (void*)((char*)heap_end + size);
+    void* new_end = (void*)((char*)heap_end + inc);
     void* result = brk(new_end);
-
-    if ((uintptr_t)result < (uintptr_t)new_end) {
-        return (void*)0;  /* OOM */
-    }
-
+    if ((uintptr_t)result < (uintptr_t)new_end)
+        return (void*)0;
     heap_end = new_end;
     return old_end;
 }
 
+void* malloc(size_t size) {
+    if (size == 0) return (void*)0;
+
+    /* Align to 8 bytes, add header */
+    size = (size + ALLOC_ALIGN - 1) & ~(size_t)(ALLOC_ALIGN - 1);
+    uint32_t total = (uint32_t)size + ALLOC_HDR_SIZE;
+
+    /* First-fit search in free list */
+    struct block_hdr** prev = &free_list;
+    struct block_hdr* cur = free_list;
+    while (cur) {
+        uint32_t bsz = blk_size(cur);
+        if (bsz >= total) {
+            /* Split if remainder is large enough for another block */
+            if (bsz >= total + ALLOC_HDR_SIZE + ALLOC_ALIGN) {
+                struct block_hdr* split = (struct block_hdr*)((char*)cur + total);
+                split->size = bsz - total;
+                split->next_free = cur->next_free;
+                *prev = split;
+                cur->size = total | ALLOC_USED_BIT;
+            } else {
+                /* Use entire block */
+                *prev = (struct block_hdr*)(uintptr_t)cur->next_free;
+                cur->size = bsz | ALLOC_USED_BIT;
+            }
+            return (void*)((char*)cur + ALLOC_HDR_SIZE);
+        }
+        prev = (struct block_hdr**)&cur->next_free;
+        cur = (struct block_hdr*)(uintptr_t)cur->next_free;
+    }
+
+    /* No free block found — grow heap */
+    void* p = sbrk_grow(total);
+    if (!p) return (void*)0;
+    struct block_hdr* b = (struct block_hdr*)p;
+    b->size = total | ALLOC_USED_BIT;
+    b->next_free = 0;
+    return (void*)((char*)b + ALLOC_HDR_SIZE);
+}
+
 void free(void* ptr) {
-    /* Bump allocator: no-op for now */
-    (void)ptr;
+    if (!ptr) return;
+    struct block_hdr* b = (struct block_hdr*)((char*)ptr - ALLOC_HDR_SIZE);
+    b->size &= ~ALLOC_USED_BIT;  /* mark free */
+
+    /* Insert into free list (address-ordered for coalescing) */
+    struct block_hdr** prev = &free_list;
+    struct block_hdr* cur = free_list;
+    while (cur && (uintptr_t)cur < (uintptr_t)b) {
+        prev = (struct block_hdr**)&cur->next_free;
+        cur = (struct block_hdr*)(uintptr_t)cur->next_free;
+    }
+
+    b->next_free = (uint32_t)(uintptr_t)cur;
+    *prev = b;
+
+    /* Coalesce with next block if adjacent */
+    if (cur && (char*)b + blk_size(b) == (char*)cur) {
+        b->size += blk_size(cur);
+        b->next_free = cur->next_free;
+    }
+
+    /* Coalesce with previous block if adjacent */
+    struct block_hdr* p_prev = free_list;
+    if (p_prev != b) {
+        while (p_prev && (struct block_hdr*)(uintptr_t)p_prev->next_free != b)
+            p_prev = (struct block_hdr*)(uintptr_t)p_prev->next_free;
+        if (p_prev && (char*)p_prev + blk_size(p_prev) == (char*)b) {
+            p_prev->size += blk_size(b);
+            p_prev->next_free = b->next_free;
+        }
+    }
 }
 
 void* calloc(size_t nmemb, size_t size) {
@@ -62,11 +142,17 @@ void* calloc(size_t nmemb, size_t size) {
 void* realloc(void* ptr, size_t size) {
     if (!ptr) return malloc(size);
     if (size == 0) { free(ptr); return (void*)0; }
-    /* Bump allocator: just allocate new and copy.
-     * We don't know the old size, so copy 'size' bytes
-     * (caller must ensure old block >= size). */
+
+    struct block_hdr* b = (struct block_hdr*)((char*)ptr - ALLOC_HDR_SIZE);
+    uint32_t old_usable = blk_size(b) - ALLOC_HDR_SIZE;
+
+    if (old_usable >= size) return ptr;  /* already large enough */
+
     void* new_ptr = malloc(size);
-    if (new_ptr) memcpy(new_ptr, ptr, size);
+    if (new_ptr) {
+        memcpy(new_ptr, ptr, old_usable);
+        free(ptr);
+    }
     return new_ptr;
 }
 
@@ -214,8 +300,4 @@ void qsort(void* base, size_t nmemb, size_t size,
 int system(const char* cmd) {
     (void)cmd;
     return -1;
-}
-
-void exit(int status) {
-    _exit(status);
 }

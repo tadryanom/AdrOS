@@ -68,6 +68,18 @@ static void userspace_init_thread(void) {
     current_process->addr_space = user_as;
     current_process->heap_start = heap_brk;
     current_process->heap_break = heap_brk;
+
+    /* Initialize default resource limits */
+    for (int i = 0; i < _RLIMIT_COUNT; i++) {
+        current_process->rlimits[i].rlim_cur = RLIM_INFINITY;
+        current_process->rlimits[i].rlim_max = RLIM_INFINITY;
+    }
+    current_process->rlimits[RLIMIT_NOFILE].rlim_cur = PROCESS_MAX_FILES;
+    current_process->rlimits[RLIMIT_NOFILE].rlim_max = PROCESS_MAX_FILES;
+    current_process->rlimits[RLIMIT_STACK].rlim_cur = 8 * 1024 * 1024;  /* 8MB */
+    current_process->rlimits[RLIMIT_STACK].rlim_max = RLIM_INFINITY;
+    current_process->rlimits[RLIMIT_CORE].rlim_cur = 0;  /* no core dumps */
+    current_process->rlimits[RLIMIT_CORE].rlim_max = 0;
     strncpy(current_process->cmdline, init_path, sizeof(current_process->cmdline) - 1);
     current_process->cmdline[sizeof(current_process->cmdline) - 1] = '\0';
     vmm_as_activate(user_as);

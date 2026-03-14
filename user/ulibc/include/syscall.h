@@ -93,6 +93,13 @@ enum {
     SYS_MOUNT = 126,
     SYS_GETTIMEOFDAY = 127,
     SYS_MPROTECT = 128,
+    SYS_GETRLIMIT = 129,
+    SYS_SETRLIMIT = 130,
+    SYS_SETSOCKOPT = 131,
+    SYS_GETSOCKOPT = 132,
+    SYS_SHUTDOWN = 133,
+    SYS_GETPEERNAME = 134,
+    SYS_GETSOCKNAME = 135,
 };
 
 /* Raw syscall wrappers — up to 5 args via INT 0x80 */
