@@ -289,10 +289,12 @@ patch_newlib() {
     patch_config_sub "$d/config.sub"
 
     # newlib/configure.host — add after i[34567]86-*-rdos* block
+    # have_crt0="no" because crt0.o is provided by libgloss/adros, not libc/sys
     if ! grep -q 'adros' "$d/newlib/configure.host"; then
         sed -i '/i\[34567\]86-\*-rdos\*)/,/;;/{/;;/a\
   i[34567]86-*-adros*)\
 \tsys_dir=adros\
+\thave_crt0="no"\
 \tnewlib_cflags="${newlib_cflags} -DSIGNAL_PROVIDED -DHAVE_OPENDIR -DHAVE_SYSTEM -DMALLOC_PROVIDED"\
 \t;;
 }' "$d/newlib/configure.host"
@@ -314,30 +316,12 @@ patch_newlib() {
         step "Patched newlib/libc/include/sys/config.h"
     fi
 
-    # Create newlib/libc/sys/adros/ stub directory
+    # Create newlib/libc/sys/adros/ stub directory (non-recursive Makefile.inc)
+    # This is empty because all syscalls are in libgloss/adros.
     if [[ ! -d "$d/newlib/libc/sys/adros" ]]; then
         mkdir -p "$d/newlib/libc/sys/adros"
-        cat > "$d/newlib/libc/sys/adros/Makefile.am" <<'EOF'
-## AdrOS system directory — empty (syscalls are in libgloss/adros)
-AUTOMAKE_OPTIONS = cygnus
-INCLUDES = $(NEWLIB_CFLAGS) $(CROSS_CFLAGS) $(TARGET_CFLAGS)
-AM_CCASFLAGS = $(INCLUDES)
-
-noinst_LIBRARIES = lib.a
-lib_a_SOURCES =
-lib_a_CCASFLAGS = $(AM_CCASFLAGS)
-
-ACLOCAL_AMFLAGS = -I ../../..
-EOF
-        cat > "$d/newlib/libc/sys/adros/configure.in" <<'EOF'
-AC_PREREQ(2.59)
-AC_INIT([newlib],[NEWLIB_VERSION])
-AC_CONFIG_SRCDIR([Makefile.am])
-AC_CANONICAL_SYSTEM
-AM_INIT_AUTOMAKE([cygnus])
-AM_MAINTAINER_MODE
-AC_CONFIG_FILES([Makefile])
-AC_OUTPUT
+        cat > "$d/newlib/libc/sys/adros/Makefile.inc" <<'EOF'
+## AdrOS system directory — empty (syscalls provided by libgloss/adros)
 EOF
         step "Created newlib/libc/sys/adros/"
     fi
@@ -558,8 +542,10 @@ if [[ ! -f "$BUILD_DIR/gcc-full/.built" ]]; then
         --disable-libquadmath \
         2>&1 | tee "$LOG_DIR/gcc-full-configure.log"
 
-    make -j"$JOBS" 2>&1 | tee "$LOG_DIR/gcc-full-build.log"
-    make install   2>&1 | tee "$LOG_DIR/gcc-full-install.log"
+    make -j"$JOBS" all-gcc all-target-libgcc \
+        2>&1 | tee "$LOG_DIR/gcc-full-build.log"
+    make install-gcc install-target-libgcc \
+        2>&1 | tee "$LOG_DIR/gcc-full-install.log"
     touch "$BUILD_DIR/gcc-full/.built"
     step "Full GCC installed: ${PREFIX}/bin/${TARGET}-g++"
 else
