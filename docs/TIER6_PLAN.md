@@ -13,7 +13,7 @@ Each sub-tier is independent and can be implemented in any order.
 
 ---
 
-## 6A. Full SMP Scheduling (Priority: High, Effort: Large — 1-2 weeks)
+## 6A. Full SMP Scheduling (Priority: High, Effort: Large — 1-2 weeks) — ✅ DONE
 
 **Current state:** 4 CPUs boot via INIT-SIPI-SIPI, per-CPU data via GS segment,
 per-CPU runqueue infrastructure exists (load counters with atomics), but APs idle
@@ -180,7 +180,7 @@ Binutils 2.42) and Newlib port are complete.
 |----------|----------|-----------|
 | 1 | **6G** Bash/Busybox | Highest user-visible impact, all blockers resolved |
 | 2 | **6F** Minor POSIX gaps | Quick wins, improves compatibility |
-| 3 | **6A** Full SMP | Major architectural milestone |
+| ~~3~~ | ~~**6A** Full SMP~~ | ✅ DONE (commit 1374a6f) |
 | 4 | **6C** Rump Kernel | Unlocks USB, better drivers |
 | 5 | **6E** USTAR initrd | Small, improves developer experience |
 | 6 | **6D** HDA Audio | Nice-to-have |
@@ -192,7 +192,7 @@ Binutils 2.42) and Newlib port are complete.
 
 | Sub-tier | Description | Effort | Priority |
 |----------|-------------|--------|----------|
-| 6A | Full SMP scheduling | 1-2 weeks | High |
+| 6A | Full SMP scheduling | ✅ DONE | High |
 | 6B | Multi-arch (ARM64/RV/MIPS) subsystems | 4-8 weeks | Medium |
 | 6C | Rump Kernel integration | 4-6 weeks | Medium |
 | 6D | Intel HDA audio driver | 1-2 weeks | Low |
