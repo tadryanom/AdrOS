@@ -9,6 +9,7 @@
  */
 
 #include "time.h"
+#include "sys/time.h"
 #include "syscall.h"
 #include "errno.h"
 
@@ -18,4 +19,9 @@ int nanosleep(const struct timespec* req, struct timespec* rem) {
 
 int clock_gettime(int clk_id, struct timespec* tp) {
     return __syscall_ret(_syscall2(SYS_CLOCK_GETTIME, clk_id, (int)tp));
+}
+
+int gettimeofday(struct timeval* tv, void* tz) {
+    (void)tz;
+    return __syscall_ret(_syscall2(SYS_GETTIMEOFDAY, (int)tv, 0));
 }

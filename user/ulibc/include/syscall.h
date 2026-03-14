@@ -91,6 +91,8 @@ enum {
     SYS_SETITIMER = 92,
     SYS_GETITIMER = 93,
     SYS_MOUNT = 126,
+    SYS_GETTIMEOFDAY = 127,
+    SYS_MPROTECT = 128,
 };
 
 /* Raw syscall wrappers — up to 5 args via INT 0x80 */

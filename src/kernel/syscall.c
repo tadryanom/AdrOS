@@ -3887,6 +3887,75 @@ void syscall_handler(struct registers* regs) {
         return;
     }
 
+    if (syscall_no == SYSCALL_GETTIMEOFDAY) {
+        struct { uint32_t tv_sec; uint32_t tv_usec; } tv;
+        void* user_tv  = (void*)sc_arg0(regs);
+        /* arg1 = timezone, ignored (obsolete per POSIX) */
+
+        if (!user_tv) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
+        if (user_range_ok(user_tv, 8) == 0) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
+
+        uint64_t ns = clock_gettime_ns();
+        uint32_t epoch_sec = rtc_unix_timestamp();
+        tv.tv_sec  = epoch_sec;
+        tv.tv_usec = (uint32_t)((ns % 1000000000ULL) / 1000ULL);
+
+        if (copy_to_user(user_tv, &tv, 8) < 0) {
+            sc_ret(regs) = (uint32_t)-EFAULT; return;
+        }
+        sc_ret(regs) = 0;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_MPROTECT) {
+        uintptr_t addr = (uintptr_t)sc_arg0(regs);
+        uint32_t  len  = sc_arg1(regs);
+        uint32_t  prot = sc_arg2(regs);
+
+        if (!current_process) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
+        if (addr == 0 || (addr & 0xFFF)) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
+        if (len == 0) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
+
+        /* Verify the range belongs to this process (heap, mmap, or stack) */
+        uint32_t aligned_len = (len + 0xFFFU) & ~(uint32_t)0xFFFU;
+        int owned = 0;
+
+        /* Check heap region */
+        if (addr >= current_process->heap_start && addr + aligned_len <= current_process->heap_break)
+            owned = 1;
+
+        /* Check mmap regions */
+        if (!owned) {
+            for (int i = 0; i < PROCESS_MAX_MMAPS; i++) {
+                uintptr_t mbase = current_process->mmaps[i].base;
+                uint32_t  mlen  = current_process->mmaps[i].length;
+                if (mlen == 0) continue;
+                if (addr >= mbase && addr + aligned_len <= mbase + mlen) {
+                    owned = 1;
+                    break;
+                }
+            }
+        }
+
+        /* Check stack region (user stack is below 0xC0000000, typically around 0xBFxxxxxx) */
+        if (!owned) {
+            uintptr_t kern_base = hal_mm_kernel_virt_base();
+            if (kern_base && addr < kern_base && addr >= 0x08000000U)
+                owned = 1;  /* permissive: allow for text/data/bss/stack regions */
+        }
+
+        if (!owned) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
+
+        /* Convert POSIX PROT_* to VMM flags */
+        uint32_t vmm_flags = VMM_FLAG_PRESENT | VMM_FLAG_USER;
+        if (prot & PROT_WRITE) vmm_flags |= VMM_FLAG_RW;
+        if (!(prot & PROT_EXEC)) vmm_flags |= VMM_FLAG_NX;
+
+        vmm_protect_range((uint64_t)addr, (uint64_t)aligned_len, vmm_flags);
+        sc_ret(regs) = 0;
+        return;
+    }
+
     /* ---- Socket syscalls ---- */
     socket_syscall_dispatch(regs, syscall_no);
     /* If socket dispatch handled it, the return register is set and we return.

@@ -166,6 +166,9 @@ enum {
     SYSCALL_AIO_SUSPEND = 125,
 
     SYSCALL_MOUNT = 126,
+
+    SYSCALL_GETTIMEOFDAY = 127,
+    SYSCALL_MPROTECT     = 128,
 };
 
 #endif

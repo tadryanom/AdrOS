@@ -30,5 +30,6 @@ struct itimerval {
 int getitimer(int which, struct itimerval *curr_value);
 int setitimer(int which, const struct itimerval *new_value,
               struct itimerval *old_value);
+int gettimeofday(struct timeval *tv, void *tz);
 
 #endif
