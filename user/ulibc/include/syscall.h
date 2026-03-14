@@ -152,6 +152,8 @@ enum {
     SYS_GETRUSAGE = 137,
     SYS_UMOUNT2 = 138,
     SYS_WAIT4 = 139,
+    SYS_MADVISE = 140,
+    SYS_EXECVEAT = 141,
 };
 
 /* Raw syscall wrappers — up to 5 args via INT 0x80 */

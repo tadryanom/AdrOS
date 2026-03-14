@@ -29,3 +29,7 @@ int munmap(void* addr, size_t length) {
 int mprotect(void* addr, size_t len, int prot) {
     return __syscall_ret(_syscall3(SYS_MPROTECT, (int)addr, (int)len, prot));
 }
+
+int madvise(void* addr, size_t length, int advice) {
+    return __syscall_ret(_syscall3(SYS_MADVISE, (int)addr, (int)length, advice));
+}

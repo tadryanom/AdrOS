@@ -4988,6 +4988,30 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         return;
     }
 
+    if (syscall_no == SYSCALL_MADVISE) {
+        /* madvise — advisory only, always succeed (no-op) */
+        sc_ret(regs) = 0;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_EXECVEAT) {
+        int dirfd = (int)sc_arg0(regs);
+        const char* user_path = (const char*)sc_arg1(regs);
+        const char* const* user_argv = (const char* const*)sc_arg2(regs);
+        const char* const* user_envp = (const char* const*)sc_arg3(regs);
+        /* uint32_t flags = sc_arg4(regs); -- AT_EMPTY_PATH etc, ignored */
+
+        /* Only AT_FDCWD supported for now */
+        if (dirfd != -100 /* AT_FDCWD */) {
+            sc_ret(regs) = (uint32_t)-ENOSYS;
+            return;
+        }
+
+        int r = syscall_execve_impl(regs, user_path, user_argv, user_envp);
+        if (r < 0) sc_ret(regs) = (uint32_t)r;
+        return;
+    }
+
     sc_ret(regs) = (uint32_t)-ENOSYS;
 }
 

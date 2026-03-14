@@ -141,6 +141,7 @@ set tests {
     {"readdir /bin"        "\\[init\\] readdir /bin OK"}
     {"gettimeofday"        "\\[init\\] gettimeofday OK"}
     {"mprotect"            "\\[init\\] mprotect OK"}
+    {"madvise"             "\\[init\\] madvise OK"}
     {"getrlimit/setrlimit" "\\[init\\] getrlimit/setrlimit OK"}
     {"uname"               "\\[init\\] uname OK"}
     {"SMP parallel fork"   "\\[init\\] SMP parallel fork OK"}

@@ -54,6 +54,10 @@ int execve(const char* path, const char* const* argv, const char* const* envp) {
     return __syscall_ret(_syscall3(SYS_EXECVE, (int)path, (int)argv, (int)envp));
 }
 
+int execveat(int dirfd, const char* path, char* const argv[], char* const envp[], int flags) {
+    return __syscall_ret(_syscall5(SYS_EXECVEAT, dirfd, (int)path, (int)argv, (int)envp, flags));
+}
+
 int getpid(void) {
     return _syscall0(SYS_GETPID);
 }

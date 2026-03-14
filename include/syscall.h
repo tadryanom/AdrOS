@@ -180,6 +180,8 @@ enum {
     SYSCALL_GETRUSAGE    = 137,
     SYSCALL_UMOUNT2      = 138,
     SYSCALL_WAIT4        = 139,
+    SYSCALL_MADVISE      = 140,
+    SYSCALL_EXECVEAT     = 141,
 };
 
 #endif

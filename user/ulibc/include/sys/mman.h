@@ -25,8 +25,16 @@
 
 #define MAP_FAILED ((void*)-1)
 
+/* madvise advice values */
+#define MADV_NORMAL     0
+#define MADV_RANDOM     1
+#define MADV_SEQUENTIAL 2
+#define MADV_WILLNEED   3
+#define MADV_DONTNEED   4
+
 void* mmap(void* addr, size_t length, int prot, int flags, int fd, int offset);
 int   munmap(void* addr, size_t length);
 int   mprotect(void* addr, size_t len, int prot);
+int   madvise(void* addr, size_t length, int advice);
 
 #endif

@@ -158,6 +158,7 @@ enum {
     SYSCALL_GETRLIMIT    = 129,
     SYSCALL_SETRLIMIT    = 130,
     SYSCALL_UNAME        = 136,
+    SYSCALL_MADVISE      = 140,
 };
 
 enum {
@@ -1355,6 +1356,12 @@ static int sys_gettimeofday(struct timeval* tv) {
 static int sys_mprotect(uintptr_t addr, uint32_t len, uint32_t prot) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_MPROTECT), "b"(addr), "c"(len), "d"(prot) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_madvise(uintptr_t addr, uint32_t len, uint32_t advice) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_MADVISE), "b"(addr), "c"(len), "d"(advice) : "memory");
     return __syscall_fix(ret);
 }
 
@@ -4281,6 +4288,18 @@ void _start(void) {
             }
         } else {
             static const char msg[] = "[init] mprotect brk failed\n";
+            (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+        }
+    }
+
+    /* ---- madvise test ---- */
+    {
+        int r = sys_madvise(0, 4096, 0 /* MADV_NORMAL */);
+        if (r == 0) {
+            static const char msg[] = "[init] madvise OK\n";
+            (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+        } else {
+            static const char msg[] = "[init] madvise failed\n";
             (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
         }
     }

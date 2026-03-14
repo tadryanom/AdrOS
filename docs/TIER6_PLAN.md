@@ -130,7 +130,7 @@ non-standard.
 
 ---
 
-## 6F. Remaining Minor POSIX Gaps (Priority: Low, Effort: Small — 1-2 days)
+## 6F. Remaining Minor POSIX Gaps (Priority: Low, Effort: Small — 1-2 days) — ✅ DONE
 
 ### Kernel syscalls:
 | Syscall | Description | Effort |
@@ -155,7 +155,7 @@ non-standard.
 
 ---
 
-## 6G. Bash & Busybox Ports (Priority: High, Effort: Medium — 1-2 weeks)
+## 6G. Bash & Busybox Ports (Priority: High, Effort: Medium — 1-2 weeks) — ✅ DONE
 
 **Current state:** All kernel/library blockers resolved. Native toolchain (GCC 13.2 +
 Binutils 2.42) and Newlib port are complete.
@@ -178,8 +178,8 @@ Binutils 2.42) and Newlib port are complete.
 
 | Priority | Sub-tier | Rationale |
 |----------|----------|-----------|
-| 1 | **6G** Bash/Busybox | Highest user-visible impact, all blockers resolved |
-| 2 | **6F** Minor POSIX gaps | Quick wins, improves compatibility |
+| ~~1~~ | ~~**6G** Bash/Busybox~~ | ✅ DONE |
+| ~~2~~ | ~~**6F** Minor POSIX gaps~~ | ✅ DONE |
 | ~~3~~ | ~~**6A** Full SMP~~ | ✅ DONE (commit 1374a6f) |
 | 4 | **6C** Rump Kernel | Unlocks USB, better drivers |
 | 5 | **6E** USTAR initrd | Small, improves developer experience |
@@ -197,7 +197,7 @@ Binutils 2.42) and Newlib port are complete.
 | 6C | Rump Kernel integration | 4-6 weeks | Medium |
 | 6D | Intel HDA audio driver | 1-2 weeks | Low |
 | 6E | USTAR initrd format | 2-3 days | Low |
-| 6F | Minor POSIX gaps (madvise, mntent, utmp) | 1-2 days | Low |
-| 6G | Bash & Busybox ports | 1-2 weeks | High |
+| 6F | Minor POSIX gaps (madvise, mntent, utmp) | ✅ DONE | Low |
+| 6G | Bash & Busybox ports | ✅ DONE | High |
 
 **Total estimated effort:** 12-22 weeks (if done sequentially; many items are parallel).

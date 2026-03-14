@@ -87,7 +87,7 @@ int     ungetc(int c, FILE* fp);
 int     getc(FILE* fp);
 int     putc(int c, FILE* fp);
 
-typedef long ssize_t;
+#include <sys/types.h>
 ssize_t getline(char** lineptr, size_t* n, FILE* stream);
 ssize_t getdelim(char** lineptr, size_t* n, int delim, FILE* stream);
 

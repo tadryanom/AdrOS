@@ -112,6 +112,7 @@ int     gethostname(char* name, size_t len);
 char*   ttyname(int fd);
 int     pipe2(int fds[2], int flags);
 int     execle(const char* path, const char* arg, ...);
+int     execveat(int dirfd, const char* path, char* const argv[], char* const envp[], int flags);
 char*   getlogin(void);
 int     getlogin_r(char* buf, size_t bufsize);
 int     tcgetpgrp(int fd);
