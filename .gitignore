@@ -37,5 +37,6 @@ supplementary-material
 .vscode/
 *.swp
 *~
-third_party/
-user/doom/doomgeneric
+# Third-party dependencies are git submodules — do NOT ignore them
+# third_party/lwip -> git submodule
+# user/doom/doomgeneric -> git submodule
