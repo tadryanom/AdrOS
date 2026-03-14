@@ -113,28 +113,334 @@ extract "$SRC_DIR/gcc-${GCC_VER}.tar.xz"           "$SRC_DIR/gcc-${GCC_VER}"
 extract "$SRC_DIR/newlib-${NEWLIB_VER}.tar.gz"      "$SRC_DIR/newlib-${NEWLIB_VER}"
 [[ $SKIP_BASH -eq 0 ]] && extract "$SRC_DIR/bash-${BASH_VER}.tar.gz" "$SRC_DIR/bash-${BASH_VER}"
 
-# ---- Apply patches ----
-apply_patch() {
-    local src_dir="$1" patch_file="$2" marker="$1/.adros_patched_$(basename "$2")"
-    if [[ -f "$marker" ]]; then
-        step "Already patched: $(basename "$patch_file")"
-        return
+# ---- Apply AdrOS target patches (sed-based, robust against line shifts) ----
+
+# Patch config.sub to recognise 'adros' as an OS.
+# Two insertions: (1) canonicalisation case, (2) OS validation list.
+patch_config_sub() {
+    local f="$1"
+    # 1) Add adros case before the pikeos case in the canonicalisation switch
+    if ! grep -q 'adros' "$f"; then
+        sed -i '/^[[:space:]]*pikeos\*)/i\
+\tadros*)\
+\t\tos=adros\
+\t\t;;' "$f"
+        # 2) Add adros* to the validation list (same line as dicos*)
+        sed -i 's/| dicos\*/| dicos* | adros*/' "$f"
+        step "Patched $(basename "$(dirname "$f")")/config.sub"
     fi
-    step "Applying $(basename "$patch_file") to $(basename "$src_dir")..."
-    patch -d "$src_dir" -p1 < "$patch_file"
+}
+
+patch_binutils() {
+    local d="$SRC_DIR/binutils-${BINUTILS_VER}"
+    local marker="$d/.adros_patched"
+    [[ -f "$marker" ]] && { step "Binutils already patched"; return; }
+
+    patch_config_sub "$d/config.sub"
+
+    # bfd/config.bfd — add before i[3-7]86-*-linux-*
+    if ! grep -q 'adros' "$d/bfd/config.bfd"; then
+        sed -i '/^  i\[3-7\]86-\*-linux-\*)/i\
+  i[3-7]86-*-adros*)\
+    targ_defvec=i386_elf32_vec\
+    targ_selvecs=\
+    targ64_selvecs=x86_64_elf64_vec\
+    ;;' "$d/bfd/config.bfd"
+        step "Patched bfd/config.bfd"
+    fi
+
+    # gas/configure.tgt — add after i386-*-darwin*
+    if ! grep -q 'adros' "$d/gas/configure.tgt"; then
+        sed -i '/i386-\*-darwin\*)/a\
+  i386-*-adros*)\t\t\t\tfmt=elf ;;' "$d/gas/configure.tgt"
+        step "Patched gas/configure.tgt"
+    fi
+
+    # ld/configure.tgt — add before i[3-7]86-*-linux-*
+    if ! grep -q 'adros' "$d/ld/configure.tgt"; then
+        sed -i '/^i\[3-7\]86-\*-linux-\*)/i\
+i[3-7]86-*-adros*)\ttarg_emul=elf_i386\
+\t\t\t\t;;' "$d/ld/configure.tgt"
+        step "Patched ld/configure.tgt"
+    fi
+
+    touch "$marker"
+}
+
+patch_gcc() {
+    local d="$SRC_DIR/gcc-${GCC_VER}"
+    local marker="$d/.adros_patched"
+    [[ -f "$marker" ]] && { step "GCC already patched"; return; }
+
+    patch_config_sub "$d/config.sub"
+
+    # gcc/config.gcc — add before x86_64-*-elf*
+    if ! grep -q 'adros' "$d/gcc/config.gcc"; then
+        sed -i '/^x86_64-\*-elf\*)/i\
+i[34567]86-*-adros*)\
+\ttm_file="${tm_file} i386/unix.h i386/att.h elfos.h newlib-stdint.h i386/adros.h"\
+\ttmake_file="${tmake_file} i386/t-crtstuff"\
+\tuse_gcc_stdint=wrap\
+\tdefault_use_cxa_atexit=yes\
+\t;;' "$d/gcc/config.gcc"
+        step "Patched gcc/config.gcc"
+    fi
+
+    # gcc/config/i386/adros.h — create target header
+    if [[ ! -f "$d/gcc/config/i386/adros.h" ]]; then
+        cat > "$d/gcc/config/i386/adros.h" <<'ADROS_H'
+/* Target definitions for i386 AdrOS. */
+
+#undef  TARGET_OS_CPP_BUILTINS
+#define TARGET_OS_CPP_BUILTINS()         \
+  do {                                    \
+    builtin_define ("__adros__");         \
+    builtin_define ("__AdrOS__");         \
+    builtin_define ("__unix__");          \
+    builtin_assert ("system=adros");      \
+    builtin_assert ("system=unix");       \
+    builtin_assert ("system=posix");      \
+  } while (0)
+
+#undef  OBJECT_FORMAT_ELF
+#define OBJECT_FORMAT_ELF 1
+
+#undef  TARGET_64BIT_DEFAULT
+#define TARGET_64BIT_DEFAULT 0
+
+#undef  STARTFILE_SPEC
+#define STARTFILE_SPEC "crt0.o%s crti.o%s crtbegin.o%s"
+
+#undef  ENDFILE_SPEC
+#define ENDFILE_SPEC "crtend.o%s crtn.o%s"
+
+#undef  LIB_SPEC
+#define LIB_SPEC "-lc -ladros -lgcc"
+
+#undef  LINK_SPEC
+#define LINK_SPEC "-m elf_i386 %{shared:-shared} %{static:-static} %{!static: %{rdynamic:-export-dynamic}}"
+
+#undef  SIZE_TYPE
+#define SIZE_TYPE "unsigned int"
+
+#undef  PTRDIFF_TYPE
+#define PTRDIFF_TYPE "int"
+
+#undef  WCHAR_TYPE
+#define WCHAR_TYPE "int"
+
+#undef  WCHAR_TYPE_SIZE
+#define WCHAR_TYPE_SIZE 32
+ADROS_H
+        step "Created gcc/config/i386/adros.h"
+    fi
+
+    # libgcc/config.host — add before x86_64-*-elf*
+    if ! grep -q 'adros' "$d/libgcc/config.host"; then
+        sed -i '/^x86_64-\*-elf\* | x86_64-\*-rtems\*)/i\
+i[34567]86-*-adros*)\
+\ttmake_file="$tmake_file i386/t-crtstuff t-crtstuff-pic t-libgcc-pic"\
+\textra_parts="$extra_parts crti.o crtn.o"\
+\t;;' "$d/libgcc/config.host"
+        step "Patched libgcc/config.host"
+    fi
+
+    # crti.S and crtn.S for AdrOS
+    if [[ ! -f "$d/libgcc/config/i386/crti-adros.S" ]]; then
+        cat > "$d/libgcc/config/i386/crti-adros.S" <<'EOF'
+/* crti.S for AdrOS — .init/.fini prologue */
+	.section .init
+	.global _init
+	.type _init, @function
+_init:
+	push %ebp
+	mov  %esp, %ebp
+
+	.section .fini
+	.global _fini
+	.type _fini, @function
+_fini:
+	push %ebp
+	mov  %esp, %ebp
+EOF
+        cat > "$d/libgcc/config/i386/crtn-adros.S" <<'EOF'
+/* crtn.S for AdrOS — .init/.fini epilogue */
+	.section .init
+	pop %ebp
+	ret
+
+	.section .fini
+	pop %ebp
+	ret
+
+	.section .note.GNU-stack,"",@progbits
+EOF
+        step "Created crti-adros.S / crtn-adros.S"
+    fi
+
+    touch "$marker"
+}
+
+patch_newlib() {
+    local d="$SRC_DIR/newlib-${NEWLIB_VER}"
+    local marker="$d/.adros_patched"
+    [[ -f "$marker" ]] && { step "Newlib already patched"; return; }
+
+    patch_config_sub "$d/config.sub"
+
+    # newlib/configure.host — add after i[34567]86-*-rdos* block
+    if ! grep -q 'adros' "$d/newlib/configure.host"; then
+        sed -i '/i\[34567\]86-\*-rdos\*)/,/;;/{/;;/a\
+  i[34567]86-*-adros*)\
+\tsys_dir=adros\
+\tnewlib_cflags="${newlib_cflags} -DSIGNAL_PROVIDED -DHAVE_OPENDIR -DHAVE_SYSTEM -DMALLOC_PROVIDED"\
+\t;;
+}' "$d/newlib/configure.host"
+        step "Patched newlib/configure.host"
+    fi
+
+    # newlib/libc/include/sys/config.h — add after __rtems__ block
+    if ! grep -q '__adros__' "$d/newlib/libc/include/sys/config.h"; then
+        sed -i '/#if defined(__rtems__)/,/#endif/{/#endif/a\
+\
+/* AdrOS target configuration */\
+#ifdef __adros__\
+#define _READ_WRITE_RETURN_TYPE int\
+#define __DYNAMIC_REENT__\
+#define HAVE_SYSTEM\
+#define HAVE_OPENDIR\
+#endif
+}' "$d/newlib/libc/include/sys/config.h"
+        step "Patched newlib/libc/include/sys/config.h"
+    fi
+
+    # Create newlib/libc/sys/adros/ stub directory
+    if [[ ! -d "$d/newlib/libc/sys/adros" ]]; then
+        mkdir -p "$d/newlib/libc/sys/adros"
+        cat > "$d/newlib/libc/sys/adros/Makefile.am" <<'EOF'
+## AdrOS system directory — empty (syscalls are in libgloss/adros)
+AUTOMAKE_OPTIONS = cygnus
+INCLUDES = $(NEWLIB_CFLAGS) $(CROSS_CFLAGS) $(TARGET_CFLAGS)
+AM_CCASFLAGS = $(INCLUDES)
+
+noinst_LIBRARIES = lib.a
+lib_a_SOURCES =
+lib_a_CCASFLAGS = $(AM_CCASFLAGS)
+
+ACLOCAL_AMFLAGS = -I ../../..
+EOF
+        cat > "$d/newlib/libc/sys/adros/configure.in" <<'EOF'
+AC_PREREQ(2.59)
+AC_INIT([newlib],[NEWLIB_VERSION])
+AC_CONFIG_SRCDIR([Makefile.am])
+AC_CANONICAL_SYSTEM
+AM_INIT_AUTOMAKE([cygnus])
+AM_MAINTAINER_MODE
+AC_CONFIG_FILES([Makefile])
+AC_OUTPUT
+EOF
+        step "Created newlib/libc/sys/adros/"
+    fi
+
+    # libgloss/configure.ac — add after i[[3456]]86-*-elf* block
+    if ! grep -q 'adros' "$d/libgloss/configure.ac"; then
+        sed -i '/i\[\[3456\]\]86-\*-elf\* | i\[\[3456\]\]86-\*-coff\*)/,/;;/{/;;/a\
+  i[[3456]]86-*-adros*)\
+\tAC_CONFIG_FILES([adros/Makefile])\
+\tsubdirs="$subdirs adros"\
+\t;;
+}' "$d/libgloss/configure.ac"
+        step "Patched libgloss/configure.ac"
+    fi
+
+    # Copy our libgloss/adros stubs into the Newlib source tree
+    if [[ ! -d "$d/libgloss/adros" ]]; then
+        cp -r "$ADROS_ROOT/newlib/libgloss/adros" "$d/libgloss/adros"
+        step "Copied libgloss/adros/ stubs"
+    fi
+
+    # Create libgloss/adros autoconf files if not present
+    if [[ ! -f "$d/libgloss/adros/configure.in" ]]; then
+        cat > "$d/libgloss/adros/configure.in" <<'EOF'
+dnl AdrOS libgloss configure
+AC_PREREQ(2.59)
+AC_INIT([libgloss-adros],[0.1])
+AC_CANONICAL_SYSTEM
+AM_INIT_AUTOMAKE([cygnus])
+AM_MAINTAINER_MODE
+
+AC_PROG_CC
+AC_PROG_AS
+AC_PROG_AR
+AC_PROG_RANLIB
+AM_PROG_AS
+
+host_makefile_frag=${srcdir}/../config/default.mh
+AC_SUBST(host_makefile_frag)
+
+AC_CONFIG_FILES([Makefile])
+AC_OUTPUT
+EOF
+        step "Created libgloss/adros/configure.in"
+    fi
+
+    if [[ ! -f "$d/libgloss/adros/Makefile.in" ]]; then
+        cat > "$d/libgloss/adros/Makefile.in" <<'EOF'
+# Makefile for AdrOS libgloss (autotools-generated template)
+
+srcdir = @srcdir@
+VPATH = @srcdir@
+
+prefix = @prefix@
+exec_prefix = @exec_prefix@
+tooldir = $(exec_prefix)/$(target_alias)
+
+INSTALL = @INSTALL@
+INSTALL_PROGRAM = @INSTALL_PROGRAM@
+INSTALL_DATA = @INSTALL_DATA@
+
+CC = @CC@
+AS = @AS@
+AR = @AR@
+RANLIB = @RANLIB@
+
+CFLAGS = -g
+
+BSP = libadros.a
+OBJS = syscalls.o
+CRT0 = crt0.o
+
+all: $(CRT0) $(BSP)
+
+$(BSP): $(OBJS)
+	$(AR) rcs $@ $^
+	$(RANLIB) $@
+
+crt0.o: crt0.S
+	$(CC) $(CFLAGS) -c $< -o $@
+
+syscalls.o: syscalls.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+install: all
+	$(INSTALL_DATA) $(CRT0) $(tooldir)/lib/$(CRT0)
+	$(INSTALL_DATA) $(BSP) $(tooldir)/lib/$(BSP)
+
+clean:
+	rm -f $(OBJS) $(CRT0) $(BSP)
+
+.PHONY: all install clean
+EOF
+        step "Created libgloss/adros/Makefile.in"
+    fi
+
     touch "$marker"
 }
 
 msg "Applying AdrOS target patches"
-apply_patch "$SRC_DIR/binutils-${BINUTILS_VER}" "$PATCH_DIR/binutils-adros.patch"
-apply_patch "$SRC_DIR/gcc-${GCC_VER}"           "$PATCH_DIR/gcc-adros.patch"
-apply_patch "$SRC_DIR/newlib-${NEWLIB_VER}"      "$PATCH_DIR/newlib-adros.patch"
-
-# Copy libgloss stubs into Newlib source tree
-if [[ ! -d "$SRC_DIR/newlib-${NEWLIB_VER}/libgloss/adros" ]]; then
-    step "Copying libgloss/adros/ into Newlib source tree..."
-    cp -r "$ADROS_ROOT/newlib/libgloss/adros" "$SRC_DIR/newlib-${NEWLIB_VER}/libgloss/adros"
-fi
+patch_binutils
+patch_gcc
+patch_newlib
 
 # ---- Install sysroot headers ----
 msg "Installing sysroot headers"
