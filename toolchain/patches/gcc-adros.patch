@@ -1,0 +1,145 @@
+--- a/config.sub
++++ b/config.sub
+@@ -1749,6 +1749,9 @@
+ 	-dicos*)
+ 		os=-dicos
+ 		;;
++	-adros*)
++		os=-adros
++		;;
+ 	-nacl*)
+ 		;;
+ 	-ios)
+--- a/gcc/config.gcc
++++ b/gcc/config.gcc
+@@ -1020,6 +1020,12 @@
+ i[34567]86-*-elf*)
+ 	tm_file="${tm_file} i386/unix.h i386/att.h elfos.h newlib-stdint.h i386/i386elf.h"
+ 	;;
++i[34567]86-*-adros*)
++	tm_file="${tm_file} i386/unix.h i386/att.h elfos.h newlib-stdint.h i386/adros.h"
++	tmake_file="${tmake_file} i386/t-crtstuff"
++	use_gcc_stdint=wrap
++	default_use_cxa_atexit=yes
++	;;
+ x86_64-*-elf*)
+ 	tm_file="${tm_file} i386/unix.h i386/att.h elfos.h newlib-stdint.h i386/i386elf.h i386/x86-64.h"
+ 	;;
+--- /dev/null
++++ b/gcc/config/i386/adros.h
+@@ -0,0 +1,69 @@
++/* Target definitions for i386 AdrOS.
++   Copyright (C) 2024 Free Software Foundation, Inc.
++
++This file is part of GCC.
++
++GCC is free software; you can redistribute it and/or modify
++it under the terms of the GNU General Public License as published by
++the Free Software Foundation; either version 3, or (at your option)
++any later version.
++
++GCC is distributed in the hope that it will be useful,
++but WITHOUT ANY WARRANTY; without even the implied warranty of
++MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++GNU General Public License for more details.
++
++Under Section 7 of GPL version 3, you are granted additional
++permissions described in the GCC Runtime Library Exception, version
++3.1, as published by the Free Software Foundation.
++
++You should have received a copy of the GNU General Public License and
++a copy of the GCC Runtime Library Exception along with this program;
++see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
++<http://www.gnu.org/licenses/>.  */
++
++/* AdrOS is a 32-bit POSIX-like operating system */
++
++#undef  TARGET_OS_CPP_BUILTINS
++#define TARGET_OS_CPP_BUILTINS()         \
++  do {                                    \
++    builtin_define ("__adros__");         \
++    builtin_define ("__AdrOS__");         \
++    builtin_define ("__unix__");          \
++    builtin_assert ("system=adros");      \
++    builtin_assert ("system=unix");       \
++    builtin_assert ("system=posix");      \
++  } while (0)
++
++/* Use ELF object format */
++#undef  OBJECT_FORMAT_ELF
++#define OBJECT_FORMAT_ELF 1
++
++/* Default to 32-bit */
++#undef  TARGET_64BIT_DEFAULT
++#define TARGET_64BIT_DEFAULT 0
++
++/* Use crt0.o from libgloss/adros */
++#undef  STARTFILE_SPEC
++#define STARTFILE_SPEC "crt0.o%s crti.o%s crtbegin.o%s"
++
++#undef  ENDFILE_SPEC
++#define ENDFILE_SPEC "crtend.o%s crtn.o%s"
++
++/* Link against Newlib's libc and our libgloss stub library */
++#undef  LIB_SPEC
++#define LIB_SPEC "-lc -ladros -lgcc"
++
++/* Dynamic linker — not used yet (static linking only for now) */
++#undef  LINK_SPEC
++#define LINK_SPEC "-m elf_i386 %{shared:-shared} %{static:-static} %{!static: %{rdynamic:-export-dynamic}}"
++
++/* Use Newlib's stdint types */
++#undef  SIZE_TYPE
++#define SIZE_TYPE "unsigned int"
++
++#undef  PTRDIFF_TYPE
++#define PTRDIFF_TYPE "int"
++
++#undef  WCHAR_TYPE
++#define WCHAR_TYPE "int"
++
++#undef  WCHAR_TYPE_SIZE
++#define WCHAR_TYPE_SIZE 32
+--- a/libgcc/config.host
++++ b/libgcc/config.host
+@@ -685,6 +685,10 @@
+ i[34567]86-*-elf*)
+ 	tmake_file="$tmake_file i386/t-crtstuff t-crtstuff-pic t-libgcc-pic"
+ 	;;
++i[34567]86-*-adros*)
++	tmake_file="$tmake_file i386/t-crtstuff t-crtstuff-pic t-libgcc-pic"
++	extra_parts="$extra_parts crti.o crtn.o"
++	;;
+ x86_64-*-elf* | x86_64-*-rtems*)
+ 	tmake_file="$tmake_file i386/t-crtstuff t-crtstuff-pic t-libgcc-pic"
+ 	;;
+--- /dev/null
++++ b/libgcc/config/i386/crti-adros.S
+@@ -0,0 +1,14 @@
++/* crti.S for AdrOS — .init/.fini prologue */
++	.section .init
++	.global _init
++	.type _init, @function
++_init:
++	push %ebp
++	mov  %esp, %ebp
++
++	.section .fini
++	.global _fini
++	.type _fini, @function
++_fini:
++	push %ebp
++	mov  %esp, %ebp
+--- /dev/null
++++ b/libgcc/config/i386/crtn-adros.S
+@@ -0,0 +1,10 @@
++/* crtn.S for AdrOS — .init/.fini epilogue */
++	.section .init
++	pop %ebp
++	ret
++
++	.section .fini
++	pop %ebp
++	ret
++
++	.section .note.GNU-stack,"",@progbits

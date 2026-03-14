@@ -139,6 +139,9 @@ set tests {
     {"pipe EOF"            "\\[init\\] pipe EOF OK"}
     {"readdir /proc"       "\\[init\\] readdir /proc OK"}
     {"readdir /bin"        "\\[init\\] readdir /bin OK"}
+    {"gettimeofday"        "\\[init\\] gettimeofday OK"}
+    {"mprotect"            "\\[init\\] mprotect OK"}
+    {"getrlimit/setrlimit" "\\[init\\] getrlimit/setrlimit OK"}
     {"LZ4 Frame decomp"    "\\[INITRD\\] LZ4"}
 }
 

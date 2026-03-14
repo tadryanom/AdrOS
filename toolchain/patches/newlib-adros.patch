@@ -1,0 +1,146 @@
+--- a/config.sub
++++ b/config.sub
+@@ -1749,6 +1749,9 @@
+ 	-dicos*)
+ 		os=-dicos
+ 		;;
++	-adros*)
++		os=-adros
++		;;
+ 	-nacl*)
+ 		;;
+ 	-ios)
+--- a/newlib/configure.host
++++ b/newlib/configure.host
+@@ -243,6 +243,10 @@
+   i[3-7]86-*-rdos*)
+ 	sys_dir=rdos
+ 	;;
++  i[3-7]86-*-adros*)
++	sys_dir=adros
++	newlib_cflags="${newlib_cflags} -DSIGNAL_PROVIDED -DHAVE_OPENDIR -DHAVE_SYSTEM -DMALLOC_PROVIDED"
++	;;
+   i[3-7]86-*-netware*)
+ 	;;
+   m68k-*-netware*)
+--- a/newlib/libc/include/sys/config.h
++++ b/newlib/libc/include/sys/config.h
+@@ -28,6 +28,14 @@
+ #define __DYNAMIC_REENT__
+ #endif
+ 
++/* AdrOS target configuration */
++#ifdef __adros__
++#define _READ_WRITE_RETURN_TYPE int
++#define __DYNAMIC_REENT__
++#define HAVE_SYSTEM
++#define HAVE_OPENDIR
++#endif
++
+ /* RTEMS uses Newlib reentrancy, not dynamic */
+ #ifdef __rtems__
+ #define __DYNAMIC_REENT__
+--- /dev/null
++++ b/newlib/libc/sys/adros/Makefile.am
+@@ -0,0 +1,10 @@
++## AdrOS system directory — empty (syscalls are in libgloss/adros)
++AUTOMAKE_OPTIONS = cygnus
++INCLUDES = $(NEWLIB_CFLAGS) $(CROSS_CFLAGS) $(TARGET_CFLAGS)
++AM_CCASFLAGS = $(INCLUDES)
++
++noinst_LIBRARIES = lib.a
++lib_a_SOURCES =
++lib_a_CCASFLAGS = $(AM_CCASFLAGS)
++
++ACLOCAL_AMFLAGS = -I ../../..
+--- /dev/null
++++ b/newlib/libc/sys/adros/configure.in
+@@ -0,0 +1,8 @@
++AC_PREREQ(2.59)
++AC_INIT([newlib],[NEWLIB_VERSION])
++AC_CONFIG_SRCDIR([Makefile.am])
++AC_CANONICAL_SYSTEM
++AM_INIT_AUTOMAKE([cygnus])
++AM_MAINTAINER_MODE
++AC_CONFIG_FILES([Makefile])
++AC_OUTPUT
+--- a/libgloss/configure.in
++++ b/libgloss/configure.in
+@@ -100,6 +100,9 @@
+   i[3-7]86-*-elf* | i[3-7]86-*-coff*)
+ 	AC_CONFIG_SUBDIRS([i386])
+ 	;;
++  i[3-7]86-*-adros*)
++	AC_CONFIG_SUBDIRS([adros])
++	;;
+   m32r-*-*)
+ 	AC_CONFIG_SUBDIRS([m32r])
+ 	;;
+--- /dev/null
++++ b/libgloss/adros/configure.in
+@@ -0,0 +1,21 @@
++dnl AdrOS libgloss configure
++AC_PREREQ(2.59)
++AC_INIT([libgloss-adros],[0.1])
++AC_CANONICAL_SYSTEM
++AM_INIT_AUTOMAKE([cygnus])
++AM_MAINTAINER_MODE
++
++AC_PROG_CC
++AC_PROG_AS
++AC_PROG_AR
++AC_PROG_RANLIB
++AM_PROG_AS
++
++host_makefile_frag=${srcdir}/../config/default.mh
++AC_SUBST(host_makefile_frag)
++
++AC_CONFIG_FILES([Makefile])
++AC_OUTPUT
+--- /dev/null
++++ b/libgloss/adros/Makefile.in
+@@ -0,0 +1,44 @@
++# Makefile for AdrOS libgloss (autotools-generated template)
++
++srcdir = @srcdir@
++VPATH = @srcdir@
++
++prefix = @prefix@
++exec_prefix = @exec_prefix@
++tooldir = $(exec_prefix)/$(target_alias)
++
++INSTALL = @INSTALL@
++INSTALL_PROGRAM = @INSTALL_PROGRAM@
++INSTALL_DATA = @INSTALL_DATA@
++
++CC = @CC@
++AS = @AS@
++AR = @AR@
++RANLIB = @RANLIB@
++
++CFLAGS = -g
++
++BSP = libadros.a
++OBJS = syscalls.o
++CRT0 = crt0.o
++
++all: $(CRT0) $(BSP)
++
++$(BSP): $(OBJS)
++	$(AR) rcs $@ $^
++	$(RANLIB) $@
++
++crt0.o: crt0.S
++	$(CC) $(CFLAGS) -c $< -o $@
++
++syscalls.o: syscalls.c
++	$(CC) $(CFLAGS) -c $< -o $@
++
++install: all
++	$(INSTALL_DATA) $(CRT0) $(tooldir)/lib/$(CRT0)
++	$(INSTALL_DATA) $(BSP) $(tooldir)/lib/$(BSP)
++
++clean:
++	rm -f $(OBJS) $(CRT0) $(BSP)
++
++.PHONY: all install clean
