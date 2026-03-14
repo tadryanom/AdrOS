@@ -23,8 +23,13 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/times.h>
+#include <sys/time.h>
 #include <errno.h>
 #include <stdint.h>
+
+#ifndef _CADDR_T
+typedef char *caddr_t;
+#endif
 
 /* ---- AdrOS syscall numbers (must match include/syscall.h) ---- */
 #define SYS_WRITE       1
@@ -84,15 +89,11 @@ static inline int _check(int r) {
     return r;
 }
 
-/* ---- Environment ---- */
-char *__env[1] = { 0 };
-char **environ = __env;
-
 /* ---- Heap management via brk() ---- */
 
 static char *_heap_end = 0;
 
-caddr_t _sbrk(int incr) {
+caddr_t sbrk(int incr) {
     if (!_heap_end) {
         /* Get current break */
         _heap_end = (char *)(uintptr_t)_sc1(SYS_BRK, 0);
@@ -117,53 +118,51 @@ caddr_t _sbrk(int incr) {
 
 /* ---- File I/O ---- */
 
-int _open(const char *name, int flags, int mode) {
+int open(const char *name, int flags, int mode) {
     (void)mode;
     return _check(_sc2(SYS_OPEN, (int)name, flags));
 }
 
-int _close(int fd) {
+int close(int fd) {
     return _check(_sc1(SYS_CLOSE, fd));
 }
 
-int _read(int fd, char *buf, int len) {
+int read(int fd, char *buf, int len) {
     return _check(_sc3(SYS_READ, fd, (int)buf, len));
 }
 
-int _write(int fd, const char *buf, int len) {
+int write(int fd, const char *buf, int len) {
     return _check(_sc3(SYS_WRITE, fd, (int)buf, len));
 }
 
-int _lseek(int fd, int offset, int whence) {
+int lseek(int fd, int offset, int whence) {
     return _check(_sc3(SYS_LSEEK, fd, offset, whence));
 }
 
-int _fstat(int fd, struct stat *st) {
+int fstat(int fd, struct stat *st) {
     return _check(_sc2(SYS_FSTAT, fd, (int)st));
 }
 
-int _stat(const char *path, struct stat *st) {
+int stat(const char *path, struct stat *st) {
     return _check(_sc2(SYS_STAT, (int)path, (int)st));
 }
 
-int _link(const char *oldpath, const char *newpath) {
+int link(const char *oldpath, const char *newpath) {
     return _check(_sc2(SYS_LINK, (int)oldpath, (int)newpath));
 }
 
-int _unlink(const char *name) {
+int unlink(const char *name) {
     return _check(_sc1(SYS_UNLINK, (int)name));
 }
 
-int _rename(const char *oldpath, const char *newpath) {
-    return _check(_sc2(SYS_RENAME, (int)oldpath, (int)newpath));
-}
+/* rename is provided by newlib libc.a */
 
-int _mkdir(const char *path, int mode) {
+int mkdir(const char *path, mode_t mode) {
     (void)mode;
     return _check(_sc1(SYS_MKDIR, (int)path));
 }
 
-int _isatty(int fd) {
+int isatty(int fd) {
     /* Use ioctl TIOCGPGRP (0x540F) — if it succeeds, fd is a tty */
     int r = _sc3(SYS_IOCTL, fd, 0x540F, 0);
     if (r < 0) {
@@ -180,33 +179,33 @@ void _exit(int status) {
     __builtin_unreachable();
 }
 
-int _getpid(void) {
+int getpid(void) {
     return _sc0(SYS_GETPID);
 }
 
-int _kill(int pid, int sig) {
+int kill(int pid, int sig) {
     return _check(_sc2(SYS_KILL, pid, sig));
 }
 
-int _fork(void) {
+int fork(void) {
     return _check(_sc0(SYS_FORK));
 }
 
-int _execve(const char *name, char *const argv[], char *const envp[]) {
+int execve(const char *name, char *const argv[], char *const envp[]) {
     return _check(_sc3(SYS_EXECVE, (int)name, (int)argv, (int)envp));
 }
 
-int _wait(int *status) {
+int wait(int *status) {
     return _check(_sc3(SYS_WAITPID, -1, (int)status, 0));
 }
 
 /* ---- Time ---- */
 
-int _gettimeofday(struct timeval *tv, void *tz) {
+int gettimeofday(struct timeval *tv, void *tz) {
     (void)tz;
     return _check(_sc2(SYS_GETTIMEOFDAY, (int)tv, 0));
 }
 
-int _times(struct tms *buf) {
-    return _check(_sc1(SYS_TIMES, (int)buf));
+clock_t times(struct tms *buf) {
+    return (clock_t)_check(_sc1(SYS_TIMES, (int)buf));
 }

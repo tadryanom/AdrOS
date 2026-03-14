@@ -215,7 +215,7 @@ i[34567]86-*-adros*)\
 #define ENDFILE_SPEC "crtend.o%s crtn.o%s"
 
 #undef  LIB_SPEC
-#define LIB_SPEC "-lc -ladros -lgcc"
+#define LIB_SPEC "--start-group -lc -ladros --end-group -lgcc"
 
 #undef  LINK_SPEC
 #define LINK_SPEC "-m elf_i386 %{shared:-shared} %{static:-static} %{!static: %{rdynamic:-export-dynamic}}"
@@ -240,7 +240,7 @@ ADROS_H
         sed -i '/^x86_64-\*-elf\* | x86_64-\*-rtems\*)/i\
 i[34567]86-*-adros*)\
 \ttmake_file="$tmake_file i386/t-crtstuff t-crtstuff-pic t-libgcc-pic"\
-\textra_parts="$extra_parts crti.o crtn.o"\
+\textra_parts="$extra_parts crti.o crtn.o crtbegin.o crtend.o"\
 \t;;' "$d/libgcc/config.host"
         step "Patched libgcc/config.host"
     fi
@@ -295,7 +295,7 @@ patch_newlib() {
   i[34567]86-*-adros*)\
 \tsys_dir=adros\
 \thave_crt0="no"\
-\tnewlib_cflags="${newlib_cflags} -DSIGNAL_PROVIDED -DHAVE_OPENDIR -DHAVE_SYSTEM -DMALLOC_PROVIDED"\
+\tnewlib_cflags="${newlib_cflags} -DSIGNAL_PROVIDED -DHAVE_OPENDIR -DHAVE_SYSTEM"\
 \t;;
 }' "$d/newlib/configure.host"
         step "Patched newlib/configure.host"
@@ -308,7 +308,6 @@ patch_newlib() {
 /* AdrOS target configuration */\
 #ifdef __adros__\
 #define _READ_WRITE_RETURN_TYPE int\
-#define __DYNAMIC_REENT__\
 #define HAVE_SYSTEM\
 #define HAVE_OPENDIR\
 #endif
@@ -337,11 +336,10 @@ EOF
         step "Patched libgloss/configure.ac"
     fi
 
-    # Copy our libgloss/adros stubs into the Newlib source tree
-    if [[ ! -d "$d/libgloss/adros" ]]; then
-        cp -r "$ADROS_ROOT/newlib/libgloss/adros" "$d/libgloss/adros"
-        step "Copied libgloss/adros/ stubs"
-    fi
+    # Copy/sync our libgloss/adros stubs into the Newlib source tree
+    mkdir -p "$d/libgloss/adros"
+    cp -u "$ADROS_ROOT/newlib/libgloss/adros/"*.{c,S,h} "$d/libgloss/adros/" 2>/dev/null || true
+    step "Synced libgloss/adros/ stubs"
 
     # Create libgloss/adros autoconf files if not present
     if [[ ! -f "$d/libgloss/adros/configure.in" ]]; then
@@ -421,24 +419,173 @@ EOF
     touch "$marker"
 }
 
+patch_bash() {
+    local d="$SRC_DIR/bash-${BASH_VER}"
+    [[ ! -d "$d" ]] && return
+    local marker="$d/.adros_patched"
+    [[ -f "$marker" ]] && { step "Bash already patched"; return; }
+
+    patch_config_sub "$d/support/config.sub"
+
+    touch "$marker"
+}
+
 msg "Applying AdrOS target patches"
 patch_binutils
 patch_gcc
 patch_newlib
+patch_bash
 
-# ---- Install sysroot headers ----
-msg "Installing sysroot headers"
-step "Copying ulibc headers to ${SYSROOT}/include..."
-mkdir -p "${SYSROOT}/include/sys" "${SYSROOT}/include/linux"
-cp -r "$ADROS_ROOT/user/ulibc/include/"*.h "${SYSROOT}/include/" 2>/dev/null || true
-cp -r "$ADROS_ROOT/user/ulibc/include/sys/"*.h "${SYSROOT}/include/sys/" 2>/dev/null || true
-cp -r "$ADROS_ROOT/user/ulibc/include/linux/"*.h "${SYSROOT}/include/linux/" 2>/dev/null || true
-
-# Copy kernel headers needed by the toolchain
-step "Copying kernel headers to sysroot..."
-for h in errno.h syscall.h socket.h; do
-    [[ -f "$ADROS_ROOT/include/$h" ]] && cp "$ADROS_ROOT/include/$h" "${SYSROOT}/include/kernel_${h}"
+# ---- Install AdrOS-specific sysroot headers ----
+# NOTE: We do NOT copy the full ulibc headers here because they conflict
+# with Newlib's POSIX-compliant headers (signal.h, errno.h, stdio.h, etc.).
+# ulibc headers are for AdrOS userland built with -nostdlib; the cross-
+# toolchain uses Newlib headers instead.  Only truly AdrOS-specific headers
+# (syscall numbers, ioctl defs) are installed under a kernel_ prefix.
+msg "Installing AdrOS-specific sysroot headers"
+mkdir -p "${SYSROOT}/include/sys"
+for h in syscall.h; do
+    if [[ -f "$ADROS_ROOT/user/ulibc/include/$h" ]]; then
+        cp "$ADROS_ROOT/user/ulibc/include/$h" "${SYSROOT}/include/$h"
+        step "Installed $h"
+    fi
 done
+
+# Create sys/ioctl.h stub (newlib doesn't provide one)
+if [[ ! -f "${SYSROOT}/include/sys/ioctl.h" ]]; then
+    cat > "${SYSROOT}/include/sys/ioctl.h" << 'IOCTL_H'
+#ifndef _SYS_IOCTL_H
+#define _SYS_IOCTL_H
+#define TIOCGPGRP  0x540F
+#define TIOCSPGRP  0x5410
+#define TIOCGWINSZ 0x5413
+#define TIOCSWINSZ 0x5414
+#define FIONREAD   0x541B
+struct winsize {
+    unsigned short ws_row;
+    unsigned short ws_col;
+    unsigned short ws_xpixel;
+    unsigned short ws_ypixel;
+};
+int ioctl(int fd, unsigned long request, ...);
+#endif
+IOCTL_H
+    step "Created sys/ioctl.h stub"
+fi
+
+# Create sys/termios.h (newlib's termios.h includes it but doesn't provide it)
+if [[ ! -f "${SYSROOT}/include/sys/termios.h" ]]; then
+    cat > "${SYSROOT}/include/sys/termios.h" << 'TERMIOS_H'
+#ifndef _SYS_TERMIOS_H
+#define _SYS_TERMIOS_H
+#include <sys/types.h>
+#define NCCS 32
+typedef unsigned int tcflag_t;
+typedef unsigned char cc_t;
+typedef unsigned int speed_t;
+struct termios {
+    tcflag_t c_iflag; tcflag_t c_oflag;
+    tcflag_t c_cflag; tcflag_t c_lflag;
+    cc_t c_cc[NCCS]; speed_t c_ispeed; speed_t c_ospeed;
+};
+#define ECHO 0x0008
+#define ECHOE 0x0010
+#define ECHOK 0x0020
+#define ECHONL 0x0040
+#define ICANON 0x0002
+#define ISIG 0x0001
+#define NOFLSH 0x0080
+#define TOSTOP 0x0100
+#define IEXTEN 0x8000
+#define ECHOCTL 0x0200
+#define ECHOKE 0x0400
+#define IGNBRK 0x0001
+#define BRKINT 0x0002
+#define IGNPAR 0x0004
+#define PARMRK 0x0008
+#define INPCK 0x0010
+#define ISTRIP 0x0020
+#define INLCR 0x0040
+#define IGNCR 0x0080
+#define ICRNL 0x0100
+#define IXON 0x0400
+#define IXOFF 0x1000
+#define IXANY 0x0800
+#define OPOST 0x0001
+#define ONLCR 0x0004
+#define CSIZE 0x0030
+#define CS5 0x0000
+#define CS6 0x0010
+#define CS7 0x0020
+#define CS8 0x0030
+#define CSTOPB 0x0040
+#define CREAD 0x0080
+#define PARENB 0x0100
+#define HUPCL 0x0400
+#define CLOCAL 0x0800
+#define VEOF 0
+#define VEOL 1
+#define VERASE 2
+#define VKILL 3
+#define VINTR 4
+#define VQUIT 5
+#define VSUSP 6
+#define VSTART 7
+#define VSTOP 8
+#define VMIN 9
+#define VTIME 10
+#define TCSANOW 0
+#define TCSADRAIN 1
+#define TCSAFLUSH 2
+#define TCOON 1
+#define TCOOFF 0
+#define TCION 2
+#define TCIOFF 3
+#define TCIFLUSH 0
+#define TCOFLUSH 1
+#define TCIOFLUSH 2
+#define B0 0
+#define B9600 13
+#define B19200 14
+#define B38400 15
+#define B57600 16
+#define B115200 17
+int tcgetattr(int, struct termios *);
+int tcsetattr(int, int, const struct termios *);
+pid_t tcgetpgrp(int);
+int tcsetpgrp(int, pid_t);
+speed_t cfgetispeed(const struct termios *);
+speed_t cfgetospeed(const struct termios *);
+int cfsetispeed(struct termios *, speed_t);
+int cfsetospeed(struct termios *, speed_t);
+int tcsendbreak(int, int);
+#endif
+TERMIOS_H
+    step "Created sys/termios.h stub"
+fi
+
+# Create sys/dirent.h (newlib's default one just #errors)
+if grep -q '#error' "${SYSROOT}/include/sys/dirent.h" 2>/dev/null; then
+    cat > "${SYSROOT}/include/sys/dirent.h" << 'DIRENT_H'
+#ifndef _SYS_DIRENT_H
+#define _SYS_DIRENT_H
+#include <sys/types.h>
+#define MAXNAMLEN 255
+struct dirent {
+    ino_t  d_ino;
+    char   d_name[MAXNAMLEN + 1];
+};
+typedef struct {
+    int dd_fd; int dd_loc; int dd_size; char *dd_buf;
+} DIR;
+DIR *opendir(const char *);
+struct dirent *readdir(DIR *);
+int closedir(DIR *);
+void rewinddir(DIR *);
+#endif
+DIRENT_H
+    step "Created sys/dirent.h stub"
+fi
 
 # ==================================================================
 # STEP 1: Build Binutils
@@ -522,6 +669,36 @@ else
 fi
 
 # ==================================================================
+# STEP 3b: Build libgloss/adros (crt0.o + libadros.a)
+# ==================================================================
+msg "Building libgloss/adros (crt0.o + libadros.a)"
+if [[ ! -f "${SYSROOT}/lib/libadros.a" ]]; then
+    local_gloss="$SRC_DIR/newlib-${NEWLIB_VER}/libgloss/adros"
+    ${TARGET}-gcc -c "$local_gloss/crt0.S"     -o /tmp/adros_crt0.o
+    ${TARGET}-gcc -c "$local_gloss/syscalls.c"     -o /tmp/adros_syscalls.o
+    ${TARGET}-gcc -c "$local_gloss/posix_stubs.c"  -o /tmp/adros_posix_stubs.o
+    ${TARGET}-ar rcs /tmp/libadros.a /tmp/adros_syscalls.o /tmp/adros_posix_stubs.o
+    cp /tmp/adros_crt0.o   "${SYSROOT}/lib/crt0.o"
+    cp /tmp/libadros.a     "${SYSROOT}/lib/libadros.a"
+    rm -f /tmp/adros_crt0.o /tmp/adros_syscalls.o /tmp/adros_posix_stubs.o /tmp/libadros.a
+    step "crt0.o + libadros.a installed to sysroot"
+else
+    step "libadros.a already installed"
+fi
+
+# ==================================================================
+# STEP 3c: Create GCC specs file (fix LIB_SPEC link order)
+# ==================================================================
+SPECS_FILE="$PREFIX/lib/gcc/${TARGET}/${GCC_VER}/specs"
+if [[ ! -f "$SPECS_FILE" ]]; then
+    ${TARGET}-gcc -dumpspecs > "$SPECS_FILE"
+    sed -i 's/-lc -ladros -lgcc/--start-group -lc -ladros --end-group -lgcc/' "$SPECS_FILE"
+    step "Created specs file with corrected LIB_SPEC"
+else
+    step "Specs file already exists"
+fi
+
+# ==================================================================
 # STEP 4: Rebuild GCC (full, with Newlib)
 # ==================================================================
 msg "Rebuilding GCC ${GCC_VER} (full, with Newlib sysroot)"
@@ -562,31 +739,194 @@ if [[ $SKIP_BASH -eq 0 ]]; then
 
     if [[ ! -f "$BUILD_DIR/bash/bash" ]]; then
         # Bash needs a config.cache for cross-compilation
+        # Comprehensive cross-compilation cache for Bash on AdrOS/newlib.
+        # Cross-compile configure tests can't run programs, so we must
+        # pre-seed results for functions/headers that newlib provides.
         cat > config.cache <<'CACHE_EOF'
+# --- Types ---
+ac_cv_type_getgroups=gid_t
+ac_cv_type_sigset_t=yes
+ac_cv_type_sig_atomic_t=yes
+ac_cv_type_clock_t=yes
+ac_cv_c_long_double=yes
+ac_cv_sizeof_int=4
+ac_cv_sizeof_long=4
+ac_cv_sizeof_char_p=4
+ac_cv_sizeof_double=8
+ac_cv_sizeof_long_long=8
+ac_cv_sizeof_intmax_t=4
+ac_cv_sizeof_wchar_t=4
+
+# --- Headers (newlib provides these) ---
+ac_cv_header_unistd_h=yes
+ac_cv_header_stdlib_h=yes
+ac_cv_header_string_h=yes
+ac_cv_header_strings_h=yes
+ac_cv_header_memory_h=yes
+ac_cv_header_locale_h=yes
+ac_cv_header_termios_h=yes
+ac_cv_header_termio_h=no
+ac_cv_header_sys_wait_h=yes
+ac_cv_header_sys_select_h=yes
+ac_cv_header_sys_file_h=no
+ac_cv_header_sys_resource_h=yes
+ac_cv_header_sys_param_h=yes
+ac_cv_header_sys_socket_h=no
+ac_cv_header_sys_ioctl_h=yes
+ac_cv_header_sys_mman_h=no
+ac_cv_header_sys_pte_h=no
+ac_cv_header_sys_ptem_h=no
+ac_cv_header_sys_stream_h=no
+ac_cv_header_dirent_h=yes
+ac_cv_header_dirent_dirent_h=yes
+ac_cv_header_grp_h=yes
+ac_cv_header_pwd_h=yes
+ac_cv_header_regex_h=yes
+ac_cv_header_fnmatch_h=yes
+ac_cv_header_dlfcn_h=no
+ac_cv_header_netdb_h=no
+ac_cv_header_netinet_in_h=no
+ac_cv_header_arpa_inet_h=no
+ac_cv_header_wctype_h=yes
+ac_cv_header_wchar_h=yes
+ac_cv_header_langinfo_h=no
+ac_cv_header_libintl_h=no
+ac_cv_header_stdint_h=yes
+ac_cv_header_inttypes_h=yes
+ac_cv_header_stdbool_h=yes
+ac_cv_header_sys_stat_h=yes
+ac_cv_header_sys_types_h=yes
+ac_cv_header_fcntl_h=yes
+ac_cv_header_signal_h=yes
+ac_cv_header_limits_h=yes
+
+# --- Functions in newlib libc.a ---
+ac_cv_func_memmove=yes
+ac_cv_func_memset=yes
+ac_cv_func_strchr=yes
+ac_cv_func_strerror=yes
+ac_cv_func_strtol=yes
+ac_cv_func_strtoul=yes
+ac_cv_func_strtod=yes
+ac_cv_func_strtoimax=yes
+ac_cv_func_strtoumax=yes
+ac_cv_func_snprintf=yes
+ac_cv_func_vsnprintf=yes
+ac_cv_func_setlocale=yes
+ac_cv_func_putenv=yes
+ac_cv_func_setenv=yes
+ac_cv_func_mkstemp=yes
+ac_cv_func_rename=yes
+ac_cv_func_mbrtowc=yes
+ac_cv_func_wcrtomb=yes
+ac_cv_func_wctomb=yes
+ac_cv_func_mbrlen=yes
+ac_cv_func_regcomp=yes
+ac_cv_func_regexec=yes
+ac_cv_func_fnmatch=yes
+ac_cv_func_strsignal=yes
+ac_cv_func_raise=yes
+ac_cv_func_getopt=no
+
+# --- Functions provided by libadros.a stubs ---
+ac_cv_func_dup2=yes
+ac_cv_func_fcntl=yes
+ac_cv_func_getcwd=yes
+ac_cv_func_pipe=yes
+ac_cv_func_select=yes
+ac_cv_func_pselect=yes
+ac_cv_func_chown=yes
+ac_cv_func_lstat=yes
+ac_cv_func_readlink=no
+ac_cv_func_killpg=yes
+ac_cv_func_tcgetattr=yes
+ac_cv_func_tcsetattr=yes
+ac_cv_func_tcgetpgrp=yes
+ac_cv_func_tcsetpgrp=yes
+ac_cv_func_tcsendbreak=no
+ac_cv_func_cfgetospeed=no
+ac_cv_func_sigaction=yes
+ac_cv_func_sigprocmask=yes
+ac_cv_func_siginterrupt=no
+ac_cv_func_waitpid=yes
+ac_cv_func_gethostname=yes
+ac_cv_func_getpwnam=yes
+ac_cv_func_getpwuid=yes
+ac_cv_func_getpwent=no
+ac_cv_func_getgroups=no
+ac_cv_func_getrlimit=no
+ac_cv_func_setrlimit=no
+ac_cv_func_sysconf=no
+ac_cv_func_pathconf=no
+ac_cv_func_getpagesize=no
+ac_cv_func_getdtablesize=no
+ac_cv_func_mkfifo=yes
+ac_cv_func_opendir=yes
+ac_cv_func_readdir=yes
+ac_cv_func_closedir=yes
 ac_cv_func_mmap_fixed_mapped=no
 ac_cv_func_setvbuf_reversed=no
 ac_cv_func_strcoll_works=yes
 ac_cv_func_working_mktime=yes
-ac_cv_type_getgroups=gid_t
+ac_cv_func_getenv=yes
+ac_cv_func_setpgid=yes
+ac_cv_func_setsid=yes
+ac_cv_func_getpgrp=yes
+ac_cv_func_setpgrp=no
+ac_cv_func_getpeername=no
+ac_cv_func_gethostbyname=no
+ac_cv_func_getaddrinfo=no
+ac_cv_func_getservbyname=no
+ac_cv_func_getservent=no
+ac_cv_func_inet_aton=no
+ac_cv_func_dlopen=no
+ac_cv_func_dlclose=no
+ac_cv_func_dlsym=no
+ac_cv_func_confstr=no
+ac_cv_func_eaccess=no
+ac_cv_func_faccessat=no
+ac_cv_func_arc4random=no
+ac_cv_func_getrandom=no
+ac_cv_func_getentropy=no
+ac_cv_func_iconv=no
+ac_cv_func_getwd=no
+ac_cv_func_doprnt=no
+ac_cv_func_mbscasecmp=no
+ac_cv_func_mbschr=no
+ac_cv_func_mbscmp=no
+ac_cv_func_setdtablesize=no
+ac_cv_func_getrusage=no
+ac_cv_func_locale_charset=no
+
+# --- Bash-specific cross-compile overrides ---
 ac_cv_rl_version=8.2
-bash_cv_func_sigsetjmp=present
+bash_cv_func_sigsetjmp=missing
 bash_cv_func_ctype_nonascii=no
-bash_cv_must_reinstall_sighandlers=no
 bash_cv_func_snprintf=yes
 bash_cv_func_vsnprintf=yes
 bash_cv_printf_a_format=no
+bash_cv_must_reinstall_sighandlers=no
 bash_cv_pgrp_pipe=no
 bash_cv_sys_named_pipes=missing
 bash_cv_job_control_missing=present
 bash_cv_sys_siglist=yes
 bash_cv_under_sys_siglist=yes
 bash_cv_opendir_not_robust=no
-bash_cv_ulimit_maxfds=yes
+bash_cv_ulimit_maxfds=no
 bash_cv_getenv_redef=yes
 bash_cv_getcwd_malloc=yes
 bash_cv_type_rlimit=long
 bash_cv_type_intmax_t=int
 bash_cv_type_uintmax_t=unsigned
+bash_cv_posix_signals=yes
+bash_cv_bsd_signals=no
+bash_cv_sysv_signals=no
+bash_cv_speed_t_in_sys_types=no
+bash_cv_struct_winsize_header=other
+bash_cv_struct_winsize_in_ioctl=yes
+bash_cv_tiocstat_in_ioctl=no
+bash_cv_tiocgwinsz_in_ioctl=yes
+bash_cv_unusedvar=yes
 CACHE_EOF
 
         "$SRC_DIR/bash-${BASH_VER}/configure" \
@@ -598,8 +938,8 @@ CACHE_EOF
             CC="${TARGET}-gcc" \
             AR="${TARGET}-ar" \
             RANLIB="${TARGET}-ranlib" \
-            CFLAGS="-Os -static" \
-            LDFLAGS="-static" \
+            CFLAGS="-Os -static -D_POSIX_VERSION=200112L" \
+            LDFLAGS="-static -Wl,--allow-multiple-definition" \
             2>&1 | tee "$LOG_DIR/bash-configure.log"
 
         make -j"$JOBS" 2>&1 | tee "$LOG_DIR/bash-build.log"
