@@ -18,8 +18,8 @@
 #
 # The output is doom.elf which gets packaged into the AdrOS initrd.
 
-CC  ?= i686-elf-gcc
-LD  ?= i686-elf-ld
+CC  := i686-elf-gcc
+LD  := i686-elf-ld
 
 ULIBC_DIR := ../ulibc
 ULIBC_INC := $(ULIBC_DIR)/include
@@ -34,7 +34,7 @@ CFLAGS := -m32 -O2 -ffreestanding -nostdlib -fPIC -fno-plt \
           -DNORMALUNIX -DLINUX
 
 LIBGCC  := $(shell $(CC) -print-libgcc-file-name)
-LDFLAGS := -m elf_i386 --dynamic-linker=/lib/ld.so -T $(DYN_LINKER) -L$(ULIBC_DIR) -rpath /lib
+LDFLAGS := -m elf_i386 --dynamic-linker=/lib/ld.so -T $(DYN_LINKER) -L$(ULIBC_DIR) -rpath /lib --unresolved-symbols=ignore-in-shared-libs
 
 # doomgeneric engine sources (nested inside cloned repo)
 # Exclude platform adapters and files requiring external libraries

@@ -88,8 +88,8 @@ ifeq ($(ARCH),x86)
     USER_LD  ?= i686-elf-ld
     USER_AR  ?= i686-elf-ar
 
-    # User build output directory
-    USER_BUILD := build/user
+    # User build output directory (under build/$ARCH/ to keep arch-separated)
+    USER_BUILD := build/$(ARCH)/user
 
     # List of dynamically-linked user commands (built via user/cmds/<name>/Makefile)
     USER_CMD_NAMES := echo sh cat ls mkdir rm cp mv touch ln \
@@ -210,13 +210,13 @@ FORCE:
 
 # --- Special builds (fulltest, ldso, pie_test) ---
 $(FULLTEST_ELF): user/cmds/fulltest/fulltest.c user/cmds/fulltest/errno.c user/linker.ld
-	@$(MAKE) --no-print-directory -C user/cmds/fulltest TOPDIR=$(CURDIR) USER_CC="$(USER_CC)"
+	@$(MAKE) --no-print-directory -C user/cmds/fulltest TOPDIR=$(CURDIR) BUILDDIR=$(CURDIR)/$(USER_BUILD)/cmds/fulltest USER_CC="$(USER_CC)"
 
 $(LDSO_ELF): user/cmds/ldso/ldso.c user/ldso_linker.ld
-	@$(MAKE) --no-print-directory -C user/cmds/ldso TOPDIR=$(CURDIR) USER_CC="$(USER_CC)"
+	@$(MAKE) --no-print-directory -C user/cmds/ldso TOPDIR=$(CURDIR) BUILDDIR=$(CURDIR)/$(USER_BUILD)/cmds/ldso USER_CC="$(USER_CC)"
 
 $(PIE_SO) $(PIE_ELF): user/cmds/pie_test/pie_main.c user/cmds/pie_test/pie_func.c user/pie_linker.ld
-	@$(MAKE) --no-print-directory -C user/cmds/pie_test TOPDIR=$(CURDIR) USER_CC="$(USER_CC)" USER_LD="$(USER_LD)"
+	@$(MAKE) --no-print-directory -C user/cmds/pie_test TOPDIR=$(CURDIR) BUILDDIR=$(CURDIR)/$(USER_BUILD)/cmds/pie_test USER_CC="$(USER_CC)" USER_LD="$(USER_LD)"
 
 # --- Dynamically-linked user commands (generic rule via sub-Makefiles) ---
 # Use absolute paths so they work from sub-Makefile directories
@@ -228,6 +228,7 @@ ABS_DYN_LD := $(USER_LD) -m elf_i386 --dynamic-linker=/lib/ld.so -T $(CURDIR)/us
 define USER_CMD_RULE
 $(USER_BUILD)/cmds/$(1)/$(1).elf: user/cmds/$(1)/$(1).c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
 	@$$(MAKE) --no-print-directory -C user/cmds/$(1) TOPDIR=$$(CURDIR) \
+		BUILDDIR=$$(CURDIR)/$(USER_BUILD)/cmds/$(1) \
 		DYN_CC="$$(ABS_DYN_CC)" DYN_LD="$$(ABS_DYN_LD)" CRT0="$(ABS_ULIBC)/src/crt0.o"
 endef
 $(foreach cmd,$(USER_CMD_NAMES),$(eval $(call USER_CMD_RULE,$(cmd))))

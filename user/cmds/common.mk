@@ -17,7 +17,7 @@
 #   include ../common.mk
 
 TOPDIR   ?= $(abspath ../../..)
-BUILDDIR := $(TOPDIR)/build/user/cmds/$(NAME)
+BUILDDIR ?= $(TOPDIR)/build/x86/user/cmds/$(NAME)
 
 ULIBC_DIR := $(TOPDIR)/user/ulibc
 DYN_CC   ?= i686-elf-gcc -m32 -ffreestanding -nostdlib -O2 -Wall -Wextra -fPIC -fno-plt -I$(ULIBC_DIR)/include

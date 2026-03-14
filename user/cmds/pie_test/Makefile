@@ -12,7 +12,7 @@
 NAME := pie_test
 
 TOPDIR   ?= $(abspath ../../..)
-BUILDDIR := $(TOPDIR)/build/user/cmds/$(NAME)
+BUILDDIR ?= $(TOPDIR)/build/x86/user/cmds/$(NAME)
 USER_CC  ?= i686-elf-gcc
 USER_LD  ?= i686-elf-ld
 

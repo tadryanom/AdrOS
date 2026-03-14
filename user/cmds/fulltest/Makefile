@@ -12,7 +12,7 @@
 NAME := fulltest
 
 TOPDIR   ?= $(abspath ../../..)
-BUILDDIR := $(TOPDIR)/build/user/cmds/$(NAME)
+BUILDDIR ?= $(TOPDIR)/build/x86/user/cmds/$(NAME)
 USER_CC  ?= i686-elf-gcc
 
 ELF := $(BUILDDIR)/fulltest.elf
