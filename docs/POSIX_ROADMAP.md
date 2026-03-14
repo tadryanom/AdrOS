@@ -274,6 +274,7 @@ Notes:
 |---------|--------|-------|
 | `pivot_root` | [x] | Swap root filesystem; mounts old root at specified path |
 | LZ4 initrd decompression | [x] | LZ4 frame decompression for compressed initrd images (`src/kernel/lz4.c`) |
+| USTAR initrd format | [x] | `tools/mkinitrd.c` produces standard USTAR archives; kernel parses 512-byte USTAR headers |
 
 ## 12. Dynamic Linking
 
@@ -345,7 +346,7 @@ Notes:
 
 ## Implementation Progress
 
-### All 31 planned tasks completed ✅ + 59 additional features (90 total)
+### All 31 planned tasks completed ✅ + 60 additional features (91 total)
 
 **High Priority (8/8):**
 1. ~~`raise()` em ulibc~~ ✅
@@ -444,6 +445,7 @@ Notes:
 88. ~~Host utility test harness (68 cross-platform tests)~~ ✅
 89. ~~Native toolchain (GCC 13.2 + Binutils 2.42, Canadian cross for i686-adros)~~ ✅
 90. ~~`mount` syscall — runtime filesystem mounting~~ ✅
+91. ~~USTAR InitRD format with LZ4 Frame compression~~ ✅
 
 ---
 
@@ -460,4 +462,4 @@ Potential future enhancements:
 | **Full SMP scheduling** | Move processes to AP runqueues; per-CPU dispatching (infrastructure in place) |
 | **ARM64/RISC-V/MIPS subsystems** | PMM, VMM, scheduler, syscalls for non-x86 |
 | **Intel HDA audio** | DMA ring buffer audio driver |
-| **USTAR initrd format** | Alternative to custom binary format (LZ4 decompression already implemented) |
+| ~~**USTAR initrd format**~~ | ✅ Implemented — USTAR + LZ4 Frame format |

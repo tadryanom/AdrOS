@@ -204,7 +204,7 @@ QEMU debug helpers:
 
 See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for a detailed checklist.
 
-**All 31 planned POSIX tasks are complete**, plus 59 additional features (90 total). The kernel covers **~98%** of the core POSIX interfaces needed for a practical Unix-like system. All 102 smoke tests, 16 battery checks, and 115 host tests pass clean. ARM64, RISC-V 64, and MIPS32 boot on QEMU.
+**All 31 planned POSIX tasks are complete**, plus 60 additional features (91 total). The kernel covers **~98%** of the core POSIX interfaces needed for a practical Unix-like system. All 102 smoke tests, 16 battery checks, and 115 host tests pass clean. ARM64, RISC-V 64, and MIPS32 boot on QEMU.
 
 Rump Kernel integration is in progress — prerequisites (condition variables, TSC nanosecond clock, IRQ chaining) are implemented and the `rumpuser` hypercall scaffold is in place.
 
@@ -224,6 +224,6 @@ Rump Kernel integration is in progress — prerequisites (condition variables, T
 - `user/doom/` — DOOM port (doomgeneric engine + AdrOS platform adapter)
 - `user/ulibc/` — Minimal C library (`printf`, `malloc`, `string.h`, `errno.h`, `pthread.h`, `signal.h`, `stdio.h`, `stdlib.h`, `ctype.h`, `math.h`, `sys/mman.h`, `sys/ioctl.h`, `sys/uio.h`, `time.h`, `linux/futex.h`)
 - `tests/` — Host unit tests, smoke tests, GDB scripted checks
-- `tools/` — Build tools (`mkinitrd`)
+- `tools/` — Build tools (`mkinitrd` — produces USTAR archives with LZ4 Frame compression)
 - `docs/` — Documentation (POSIX roadmap, audit report, supplementary analysis, testing plan)
 - `third_party/lwip/` — lwIP TCP/IP stack (vendored)
