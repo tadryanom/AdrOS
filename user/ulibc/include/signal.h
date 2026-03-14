@@ -37,7 +37,17 @@
 #define SIGVTALRM 26
 #define SIGPROF  27
 
-#define SA_SIGINFO 0x00000004U
+#define SA_RESTART  0x10000000U
+#define SA_SIGINFO  0x00000004U
+#define SA_NOCLDSTOP 0x00000001U
+#define SA_NOCLDWAIT 0x00000002U
+#define SA_NODEFER   0x40000000U
+#define SA_RESETHAND 0x80000000U
+
+#define SIG_ERR ((void (*)(int))-1)
+
+typedef void (*sighandler_t)(int);
+sighandler_t signal(int signum, sighandler_t handler);
 
 #define SIG_DFL ((void (*)(int))0)
 #define SIG_IGN ((void (*)(int))1)

@@ -21,5 +21,11 @@ static inline int isprint(int c) { return c >= 0x20 && c <= 0x7E; }
 static inline int toupper(int c) { return islower(c) ? c - 32 : c; }
 static inline int tolower(int c) { return isupper(c) ? c + 32 : c; }
 static inline int isxdigit(int c) { return isdigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'); }
+static inline int iscntrl(int c) { return (c >= 0 && c < 0x20) || c == 0x7F; }
+static inline int isgraph(int c) { return c > 0x20 && c <= 0x7E; }
+static inline int ispunct(int c) { return isgraph(c) && !isalnum(c); }
+static inline int isascii(int c) { return (unsigned)c <= 0x7F; }
+static inline int isblank(int c) { return c == ' ' || c == '\t'; }
+static inline int toascii(int c) { return c & 0x7F; }
 
 #endif

@@ -1,0 +1,48 @@
+--- a/config.sub
++++ b/config.sub
+@@ -1749,6 +1749,9 @@
+ 	-dicos*)
+ 		os=-dicos
+ 		;;
++	-adros*)
++		os=-adros
++		;;
+ 	-nacl*)
+ 		;;
+ 	-ios)
+--- a/bfd/config.bfd
++++ b/bfd/config.bfd
+@@ -659,6 +659,11 @@
+     targ_selvecs=
+     targ64_selvecs=x86_64_elf64_vec
+     ;;
++  i[3-7]86-*-adros*)
++    targ_defvec=i386_elf32_vec
++    targ_selvecs=
++    targ64_selvecs=x86_64_elf64_vec
++    ;;
+   i[3-7]86-*-linux-*)
+     targ_defvec=i386_elf32_vec
+     targ_selvecs="iamcu_elf32_vec i386_pei_vec"
+--- a/gas/configure.tgt
++++ b/gas/configure.tgt
+@@ -224,6 +224,7 @@
+   i386-*-*nt*)				fmt=coff em=pe ;;
+   i386-*-rdos*)				fmt=elf ;;
+   i386-*-darwin*)			fmt=macho ;;
++  i386-*-adros*)			fmt=elf ;;
+
+   ia16-*-elf*)				fmt=elf ;;
+
+--- a/ld/configure.tgt
++++ b/ld/configure.tgt
+@@ -344,6 +344,9 @@
+ 			targ_extra_libpath=$targ_extra_emuls
+ 			;;
+ i[3-7]86-*-linux-*)	targ_emul=elf_i386
++			;;
++i[3-7]86-*-adros*)	targ_emul=elf_i386
++			targ_extra_emuls="elf_i386"
+ 			;;
+ i[3-7]86-*-redox*)	targ_emul=elf_i386
+ 			;;

@@ -152,6 +152,11 @@ enum {
     SYSCALL_POSIX_SPAWN = 96,
     SYSCALL_SETUID = 76,
     SYSCALL_SETGID = 77,
+    SYSCALL_MOUNT  = 126,
+    SYSCALL_GETTIMEOFDAY = 127,
+    SYSCALL_MPROTECT     = 128,
+    SYSCALL_GETRLIMIT    = 129,
+    SYSCALL_SETRLIMIT    = 130,
 };
 
 enum {
@@ -293,6 +298,23 @@ enum {
 struct timeval {
     uint32_t tv_sec;
     uint32_t tv_usec;
+};
+
+struct rlimit {
+    uint32_t rlim_cur;
+    uint32_t rlim_max;
+};
+
+enum {
+    RLIMIT_CPU    = 0,
+    RLIMIT_FSIZE  = 1,
+    RLIMIT_DATA   = 2,
+    RLIMIT_STACK  = 3,
+    RLIMIT_CORE   = 4,
+    RLIMIT_NOFILE = 5,
+    RLIMIT_AS     = 6,
+    RLIMIT_NPROC  = 7,
+    RLIM_INFINITY = 0xFFFFFFFFU,
 };
 
 struct itimerval {
@@ -1320,6 +1342,30 @@ static int sys_setegid(uint32_t egid) {
 static int sys_sigsuspend(const uint32_t* mask) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SIGSUSPEND), "b"(mask) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_gettimeofday(struct timeval* tv) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_GETTIMEOFDAY), "b"(tv), "c"(0) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_mprotect(uintptr_t addr, uint32_t len, uint32_t prot) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_MPROTECT), "b"(addr), "c"(len), "d"(prot) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_getrlimit(int resource, struct rlimit* rlim) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_GETRLIMIT), "b"(resource), "c"(rlim) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_setrlimit(int resource, const struct rlimit* rlim) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SETRLIMIT), "b"(resource), "c"(rlim) : "memory");
     return __syscall_fix(ret);
 }
 
@@ -4184,6 +4230,71 @@ void _start(void) {
         }
         if (wp == 0) {
             (void)sys_waitpid(pid, &st, 0);
+        }
+    }
+
+    /* ---- gettimeofday test ---- */
+    {
+        struct timeval tv;
+        tv.tv_sec = 0; tv.tv_usec = 0;
+        int r = sys_gettimeofday(&tv);
+        if (r == 0 && tv.tv_sec > 1000000000U) {
+            static const char msg[] = "[init] gettimeofday OK\n";
+            (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+        } else {
+            static const char msg[] = "[init] gettimeofday failed\n";
+            (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+        }
+    }
+
+    /* ---- mprotect test ---- */
+    {
+        /* Test mprotect on heap memory (brk region) — simpler than mmap */
+        uintptr_t old_brk = sys_brk(0);
+        uintptr_t page = (old_brk + 0xFFFU) & ~(uintptr_t)0xFFFU;
+        uintptr_t new_brk = page + 4096;
+        uintptr_t r_brk = sys_brk(new_brk);
+        if (r_brk >= new_brk) {
+            *(volatile uint32_t*)page = 0xDEADBEEF;
+            int r = sys_mprotect(page, 4096, PROT_READ | PROT_WRITE);
+            if (r == 0) {
+                static const char msg[] = "[init] mprotect OK\n";
+                (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+            } else {
+                static const char msg[] = "[init] mprotect call failed\n";
+                (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+            }
+        } else {
+            static const char msg[] = "[init] mprotect brk failed\n";
+            (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+        }
+    }
+
+    /* ---- getrlimit/setrlimit test ---- */
+    {
+        struct rlimit rl;
+        int r = sys_getrlimit(RLIMIT_NOFILE, &rl);
+        if (r == 0 && rl.rlim_cur > 0 && rl.rlim_cur <= 1024) {
+            /* Try setting a lower soft limit */
+            struct rlimit new_rl;
+            new_rl.rlim_cur = rl.rlim_cur / 2;
+            new_rl.rlim_max = rl.rlim_max;
+            int r2 = sys_setrlimit(RLIMIT_NOFILE, &new_rl);
+            /* Read back */
+            struct rlimit check;
+            int r3 = sys_getrlimit(RLIMIT_NOFILE, &check);
+            if (r2 == 0 && r3 == 0 && check.rlim_cur == new_rl.rlim_cur) {
+                static const char msg[] = "[init] getrlimit/setrlimit OK\n";
+                (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+            } else {
+                static const char msg[] = "[init] setrlimit failed\n";
+                (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+            }
+            /* Restore */
+            (void)sys_setrlimit(RLIMIT_NOFILE, &rl);
+        } else {
+            static const char msg[] = "[init] getrlimit failed\n";
+            (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
         }
     }
 
