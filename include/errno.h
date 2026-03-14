@@ -52,5 +52,7 @@
 #define ENOPROTOOPT 92
 #define EOVERFLOW 75
 #define ELOOP 40
+#define ENOTSOCK 88
+#define ENETUNREACH 101
 
 #endif
