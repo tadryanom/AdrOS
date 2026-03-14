@@ -142,6 +142,7 @@ set tests {
     {"gettimeofday"        "\\[init\\] gettimeofday OK"}
     {"mprotect"            "\\[init\\] mprotect OK"}
     {"getrlimit/setrlimit" "\\[init\\] getrlimit/setrlimit OK"}
+    {"uname"               "\\[init\\] uname OK"}
     {"LZ4 Frame decomp"    "\\[INITRD\\] LZ4"}
 }
 

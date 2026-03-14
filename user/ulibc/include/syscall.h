@@ -100,6 +100,7 @@ enum {
     SYS_SHUTDOWN = 133,
     SYS_GETPEERNAME = 134,
     SYS_GETSOCKNAME = 135,
+    SYS_UNAME = 136,
 };
 
 /* Raw syscall wrappers — up to 5 args via INT 0x80 */

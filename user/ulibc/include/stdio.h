@@ -80,5 +80,19 @@ void    setbuf(FILE* fp, char* buf);
 void    perror(const char* s);
 int     fileno(FILE* fp);
 FILE*   fdopen(int fd, const char* mode);
+void    clearerr(FILE* fp);
+int     ungetc(int c, FILE* fp);
+int     getc(FILE* fp);
+int     putc(int c, FILE* fp);
+
+typedef long ssize_t;
+ssize_t getline(char** lineptr, size_t* n, FILE* stream);
+ssize_t getdelim(char** lineptr, size_t* n, int delim, FILE* stream);
+
+FILE*   popen(const char* command, const char* type);
+int     pclose(FILE* fp);
+
+FILE*   tmpfile(void);
+char*   tmpnam(char* s);
 
 #endif

@@ -87,6 +87,31 @@ extern int   optind, opterr, optopt;
 
 void    _exit(int status) __attribute__((noreturn));
 
+/* sysconf / pathconf constants */
+#define _SC_CLK_TCK        2
+#define _SC_PAGE_SIZE      30
+#define _SC_PAGESIZE       _SC_PAGE_SIZE
+#define _SC_OPEN_MAX       4
+#define _SC_NGROUPS_MAX    3
+#define _SC_CHILD_MAX      1
+#define _SC_ARG_MAX        0
+#define _SC_HOST_NAME_MAX  180
+#define _SC_LOGIN_NAME_MAX 71
+#define _SC_LINE_MAX       43
+
+#define _PC_PATH_MAX  4
+#define _PC_NAME_MAX  3
+#define _PC_PIPE_BUF  5
+#define _PC_LINK_MAX  0
+
+long sysconf(int name);
+long pathconf(const char* path, int name);
+long fpathconf(int fd, int name);
+
+int     gethostname(char* name, size_t len);
+char*   ttyname(int fd);
+int     pipe2(int fds[2], int flags);
+
 /* Environment pointer (set by crt0) */
 extern char** __environ;
 

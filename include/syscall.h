@@ -176,6 +176,7 @@ enum {
     SYSCALL_SHUTDOWN     = 133,
     SYSCALL_GETPEERNAME  = 134,
     SYSCALL_GETSOCKNAME  = 135,
+    SYSCALL_UNAME        = 136,
 };
 
 #endif

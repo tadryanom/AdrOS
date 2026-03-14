@@ -11,6 +11,7 @@
 #include "stdio.h"
 #include "unistd.h"
 #include "string.h"
+#include "stdlib.h"
 #include <stdarg.h>
 
 static FILE _stdin_file  = { .fd = 0, .flags = _STDIO_READ };
@@ -459,4 +460,129 @@ int printf(const char* fmt, ...) {
     int r = vprintf(fmt, ap);
     va_end(ap);
     return r;
+}
+
+void clearerr(FILE* fp) {
+    if (fp) fp->flags &= ~(_STDIO_EOF | _STDIO_ERR);
+}
+
+int ungetc(int c, FILE* fp) {
+    if (!fp || c == EOF) return EOF;
+    /* Simple 1-byte pushback: store in buf_pos-1 if possible */
+    if (fp->buf_pos > 0) {
+        fp->buf_pos--;
+        fp->buf[fp->buf_pos] = (char)c;
+    } else if (fp->buf_len < (int)sizeof(fp->buf)) {
+        /* Shift buffer right by 1 */
+        for (int i = fp->buf_len; i > 0; i--)
+            fp->buf[i] = fp->buf[i - 1];
+        fp->buf[0] = (char)c;
+        fp->buf_len++;
+    } else {
+        return EOF;
+    }
+    fp->flags &= ~_STDIO_EOF;
+    return (unsigned char)c;
+}
+
+int getc(FILE* fp) { return fgetc(fp); }
+int putc(int c, FILE* fp) { return fputc(c, fp); }
+
+ssize_t getdelim(char** lineptr, size_t* n, int delim, FILE* stream) {
+    if (!lineptr || !n || !stream) { return -1; }
+
+    if (!*lineptr || *n == 0) {
+        *n = 128;
+        *lineptr = (char*)malloc(*n);
+        if (!*lineptr) return -1;
+    }
+
+    size_t pos = 0;
+    int c;
+    while ((c = fgetc(stream)) != EOF) {
+        if (pos + 2 > *n) {
+            size_t newn = *n * 2;
+            char* tmp = (char*)realloc(*lineptr, newn);
+            if (!tmp) return -1;
+            *lineptr = tmp;
+            *n = newn;
+        }
+        (*lineptr)[pos++] = (char)c;
+        if (c == delim) break;
+    }
+    if (pos == 0 && c == EOF) return -1;
+    (*lineptr)[pos] = '\0';
+    return (ssize_t)pos;
+}
+
+ssize_t getline(char** lineptr, size_t* n, FILE* stream) {
+    return getdelim(lineptr, n, '\n', stream);
+}
+
+FILE* popen(const char* command, const char* type) {
+    int fds[2];
+    extern int pipe(int[2]);
+    extern int fork(void);
+    extern int execl(const char*, const char*, ...);
+    extern int dup2(int, int);
+    extern int close(int);
+    extern void _exit(int);
+
+    if (pipe(fds) < 0) return (FILE*)0;
+
+    int pid = fork();
+    if (pid < 0) {
+        close(fds[0]);
+        close(fds[1]);
+        return (FILE*)0;
+    }
+    if (pid == 0) {
+        /* Child */
+        if (type[0] == 'r') {
+            close(fds[0]);
+            dup2(fds[1], 1);
+            close(fds[1]);
+        } else {
+            close(fds[1]);
+            dup2(fds[0], 0);
+            close(fds[0]);
+        }
+        execl("/bin/sh", "sh", "-c", command, (char*)0);
+        _exit(127);
+    }
+    /* Parent */
+    if (type[0] == 'r') {
+        close(fds[1]);
+        return fdopen(fds[0], "r");
+    } else {
+        close(fds[0]);
+        return fdopen(fds[1], "w");
+    }
+}
+
+int pclose(FILE* fp) {
+    extern int waitpid(int, int*, int);
+    if (!fp) return -1;
+    int fd = fileno(fp);
+    (void)fd;
+    fclose(fp);
+    int status = 0;
+    waitpid(-1, &status, 0);
+    return status;
+}
+
+FILE* tmpfile(void) {
+    static int tmpcount = 0;
+    char name[32];
+    extern int getpid(void);
+    snprintf(name, sizeof(name), "/tmp/.tmpf_%d_%d", getpid(), tmpcount++);
+    return fopen(name, "w+");
+}
+
+char* tmpnam(char* s) {
+    static char buf[32];
+    static int count = 0;
+    snprintf(buf, sizeof(buf), "/tmp/tmp_%d", count++);
+    if (s) { strcpy(s, buf); return s; }
+    return buf;
 }

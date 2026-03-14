@@ -4876,6 +4876,33 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         return;
     }
 
+    if (syscall_no == SYSCALL_UNAME) {
+        /* struct utsname: 5 fields of 65 bytes each = 325 bytes */
+        void* user_buf = (void*)sc_arg0(regs);
+        if (!user_buf) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
+        if (user_range_ok(user_buf, 325) == 0) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
+
+        struct {
+            char sysname[65];
+            char nodename[65];
+            char release[65];
+            char version[65];
+            char machine[65];
+        } uts;
+        memset(&uts, 0, sizeof(uts));
+        strcpy(uts.sysname,  "AdrOS");
+        strcpy(uts.nodename, "adros");
+        strcpy(uts.release,  "1.0.0");
+        strcpy(uts.version,  "AdrOS 1.0.0 POSIX");
+        strcpy(uts.machine,  "i686");
+
+        if (copy_to_user(user_buf, &uts, sizeof(uts)) < 0) {
+            sc_ret(regs) = (uint32_t)-EFAULT; return;
+        }
+        sc_ret(regs) = 0;
+        return;
+    }
+
     sc_ret(regs) = (uint32_t)-ENOSYS;
 }
 

@@ -157,6 +157,7 @@ enum {
     SYSCALL_MPROTECT     = 128,
     SYSCALL_GETRLIMIT    = 129,
     SYSCALL_SETRLIMIT    = 130,
+    SYSCALL_UNAME        = 136,
 };
 
 enum {
@@ -1360,6 +1361,20 @@ static int sys_mprotect(uintptr_t addr, uint32_t len, uint32_t prot) {
 static int sys_getrlimit(int resource, struct rlimit* rlim) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_GETRLIMIT), "b"(resource), "c"(rlim) : "memory");
+    return __syscall_fix(ret);
+}
+
+struct utsname {
+    char sysname[65];
+    char nodename[65];
+    char release[65];
+    char version[65];
+    char machine[65];
+};
+
+static int sys_uname(struct utsname* buf) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_UNAME), "b"(buf) : "memory");
     return __syscall_fix(ret);
 }
 
@@ -4366,6 +4381,29 @@ void _start(void) {
     } else {
         static const char wbad[] = "[init] waitpid failed (100 children, explicit)\n";
         (void)sys_write(1, wbad, (uint32_t)(sizeof(wbad) - 1));
+    }
+
+    // G1: uname syscall test
+    {
+        struct utsname uts;
+        for (uint32_t i = 0; i < sizeof(uts); i++) ((char*)&uts)[i] = 0;
+        int r = sys_uname(&uts);
+        if (r < 0) {
+            sys_write(1, "[init] uname failed\n", (uint32_t)(sizeof("[init] uname failed\n") - 1));
+            sys_exit(1);
+        }
+        /* Verify sysname == "AdrOS" */
+        if (uts.sysname[0] != 'A' || uts.sysname[1] != 'd' || uts.sysname[2] != 'r' ||
+            uts.sysname[3] != 'O' || uts.sysname[4] != 'S' || uts.sysname[5] != 0) {
+            sys_write(1, "[init] uname sysname bad\n", (uint32_t)(sizeof("[init] uname sysname bad\n") - 1));
+            sys_exit(1);
+        }
+        /* Verify machine == "i686" */
+        if (uts.machine[0] != 'i' || uts.machine[1] != '6' || uts.machine[2] != '8' || uts.machine[3] != '6') {
+            sys_write(1, "[init] uname machine bad\n", (uint32_t)(sizeof("[init] uname machine bad\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[init] uname OK\n", (uint32_t)(sizeof("[init] uname OK\n") - 1));
     }
 
     (void)sys_write(1, "[init] execve(/bin/echo)\n",

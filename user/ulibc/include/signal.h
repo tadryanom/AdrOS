@@ -75,6 +75,30 @@ int sigprocmask(int how, const uint32_t* set, uint32_t* oldset);
 int sigpending(uint32_t* set);
 int sigsuspend(const uint32_t* mask);
 
+/* sigset_t manipulation macros (signal mask is a 32-bit bitmask) */
+typedef uint32_t sigset_t;
+
+#define _SIGMASK(sig) (1U << ((sig) - 1))
+
+static inline int sigemptyset(sigset_t* set) { *set = 0; return 0; }
+static inline int sigfillset(sigset_t* set)  { *set = 0xFFFFFFFFU; return 0; }
+static inline int sigaddset(sigset_t* set, int sig) {
+    if (sig < 1 || sig > 32) return -1;
+    *set |= _SIGMASK(sig); return 0;
+}
+static inline int sigdelset(sigset_t* set, int sig) {
+    if (sig < 1 || sig > 32) return -1;
+    *set &= ~_SIGMASK(sig); return 0;
+}
+static inline int sigismember(const sigset_t* set, int sig) {
+    if (sig < 1 || sig > 32) return -1;
+    return (*set & _SIGMASK(sig)) ? 1 : 0;
+}
+
+#define SIG_BLOCK   0
+#define SIG_UNBLOCK 1
+#define SIG_SETMASK 2
+
 #define SS_DISABLE 2
 typedef struct {
     void*    ss_sp;

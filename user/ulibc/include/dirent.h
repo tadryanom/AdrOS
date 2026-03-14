@@ -12,6 +12,7 @@
 #define ULIBC_DIRENT_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 struct dirent {
     uint32_t d_ino;
@@ -26,5 +27,17 @@ struct dirent {
 #define DT_CHR     2
 #define DT_BLK     6
 #define DT_LNK    10
+
+typedef struct _DIR {
+    int   fd;
+    int   pos;
+    int   len;
+    char  buf[4096];
+} DIR;
+
+DIR*           opendir(const char* name);
+struct dirent* readdir(DIR* dirp);
+int            closedir(DIR* dirp);
+void           rewinddir(DIR* dirp);
 
 #endif
