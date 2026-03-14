@@ -142,7 +142,7 @@ The fulltest binary (`/sbin/fulltest`) runs a comprehensive suite of 102 smoke t
 - Dynamic linking: lazy PLT resolution, PLT caching
 - LZ4 initrd decompression
 
-All tests print `[init] ... OK` on success. Any failure calls `sys_exit(1)`.
+All tests print `[test] ... OK` on success. Any failure calls `sys_exit(1)`.
 
 ### Testing
 

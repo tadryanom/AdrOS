@@ -88,66 +88,41 @@ ifeq ($(ARCH),x86)
     USER_LD  ?= i686-elf-ld
     USER_AR  ?= i686-elf-ar
 
-    FULLTEST_ELF := user/fulltest.elf
-    ECHO_ELF := user/echo.elf
-    SH_ELF := user/sh.elf
-    CAT_ELF := user/cat.elf
-    LS_ELF := user/ls.elf
-    MKDIR_ELF := user/mkdir.elf
-    RM_ELF := user/rm.elf
-    CP_ELF := user/cp.elf
-    MV_ELF := user/mv.elf
-    TOUCH_ELF := user/touch.elf
-    LN_ELF := user/ln.elf
-    HEAD_ELF := user/head.elf
-    TAIL_ELF := user/tail.elf
-    WC_ELF := user/wc.elf
-    SORT_ELF := user/sort.elf
-    UNIQ_ELF := user/uniq.elf
-    CUT_ELF := user/cut.elf
-    CHMOD_ELF := user/chmod.elf
-    CHOWN_ELF := user/chown.elf
-    CHGRP_ELF := user/chgrp.elf
-    DATE_ELF := user/date.elf
-    HOSTNAME_ELF := user/hostname.elf
-    UPTIME_ELF := user/uptime.elf
-    MOUNT_ELF := user/mount.elf
-    UMOUNT_ELF := user/umount.elf
-    ENV_ELF := user/env.elf
-    KILL_ELF := user/kill.elf
-    SLEEP_ELF := user/sleep.elf
-    CLEAR_ELF := user/clear.elf
-    PS_ELF := user/ps.elf
-    DF_ELF := user/df.elf
-    FREE_ELF := user/free.elf
-    TEE_ELF := user/tee.elf
-    BASENAME_ELF := user/basename.elf
-    DIRNAME_ELF := user/dirname.elf
-    RMDIR_ELF := user/rmdir.elf
-    GREP_ELF := user/grep.elf
-    ID_ELF := user/id.elf
-    UNAME_ELF := user/uname.elf
-    DMESG_ELF := user/dmesg.elf
-    PRINTENV_ELF := user/printenv.elf
-    TR_ELF := user/tr.elf
-    DD_ELF := user/dd.elf
-    PWD_ELF := user/pwd.elf
-    STAT_ELF := user/stat.elf
-    SED_ELF := user/sed.elf
-    AWK_ELF := user/awk.elf
-    WHO_ELF := user/who.elf
-    TOP_ELF := user/top.elf
-    DU_ELF := user/du.elf
-    FIND_ELF := user/find.elf
-    WHICH_ELF := user/which.elf
-    INIT_ELF := user/init.elf
-    LDSO_ELF := user/ld.so
-    ULIBC_SO := user/ulibc/libc.so
-    PIE_SO := user/libpietest.so
-    PIE_ELF := user/pie_test.elf
+    # User build output directory
+    USER_BUILD := build/user
+
+    # List of dynamically-linked user commands (built via user/cmds/<name>/Makefile)
+    USER_CMD_NAMES := echo sh cat ls mkdir rm cp mv touch ln \
+                      head tail wc sort uniq cut \
+                      chmod chown chgrp \
+                      date hostname uptime \
+                      mount umount env kill sleep \
+                      clear ps df free tee \
+                      basename dirname rmdir \
+                      grep id uname dmesg \
+                      printenv tr dd pwd stat \
+                      sed awk who top du find which \
+                      init
+
+    # ELF paths for dynamically-linked commands
+    USER_CMD_ELFS := $(foreach cmd,$(USER_CMD_NAMES),$(USER_BUILD)/cmds/$(cmd)/$(cmd).elf)
+
+    # Special builds (not dynamically-linked via common.mk)
+    FULLTEST_ELF := $(USER_BUILD)/cmds/fulltest/fulltest.elf
+    LDSO_ELF     := $(USER_BUILD)/cmds/ldso/ld.so
+    PIE_SO       := $(USER_BUILD)/cmds/pie_test/libpietest.so
+    PIE_ELF      := $(USER_BUILD)/cmds/pie_test/pie_test.elf
+
+    # ulibc
+    ULIBC_DIR := user/ulibc
+    ULIBC_SO  := $(USER_BUILD)/ulibc/libc.so
+    ULIBC_LIB := $(USER_BUILD)/ulibc/libulibc.a
+
+    # doom
     DOOM_ELF := user/doom/doom.elf
+
     INITRD_IMG := initrd.img
-    MKINITRD := tools/mkinitrd
+    MKINITRD   := tools/mkinitrd
 endif
 
 # --- ARM64 Configuration ---
@@ -224,285 +199,56 @@ iso: $(KERNEL_NAME) $(INITRD_IMG)
 $(MKINITRD): tools/mkinitrd.c include/xxhash32.h
 	@gcc -Iinclude tools/mkinitrd.c -o $(MKINITRD)
 
-ULIBC_DIR := user/ulibc
-ULIBC_LIB := $(ULIBC_DIR)/libulibc.a
+# --- ulibc build (output into build/user/ulibc/) ---
+$(ULIBC_LIB) $(ULIBC_SO): FORCE
+	@mkdir -p $(USER_BUILD)/ulibc
+	@$(MAKE) -C $(ULIBC_DIR) CC="$(USER_CC)" AS="$(USER_CC:gcc=as)" AR="$(USER_AR)" LD="$(USER_LD)" \
+		libulibc.a libc.so --no-print-directory
+	@cp -u $(ULIBC_DIR)/libulibc.a $(ULIBC_LIB)
+	@cp -u $(ULIBC_DIR)/libc.so $(ULIBC_SO)
+FORCE:
 
-$(ULIBC_LIB):
-	@$(MAKE) -C $(ULIBC_DIR) CC="$(USER_CC)" AS="$(USER_CC:gcc=as)" AR="$(USER_AR)" LD="$(USER_LD)" --no-print-directory
+# --- Special builds (fulltest, ldso, pie_test) ---
+$(FULLTEST_ELF): user/cmds/fulltest/fulltest.c user/cmds/fulltest/errno.c user/linker.ld
+	@$(MAKE) --no-print-directory -C user/cmds/fulltest TOPDIR=$(CURDIR) USER_CC="$(USER_CC)"
 
-$(ULIBC_SO):
-	@$(MAKE) -C $(ULIBC_DIR) CC="$(USER_CC)" AS="$(USER_CC:gcc=as)" AR="$(USER_AR)" LD="$(USER_LD)" libc.so --no-print-directory
+$(LDSO_ELF): user/cmds/ldso/ldso.c user/ldso_linker.ld
+	@$(MAKE) --no-print-directory -C user/cmds/ldso TOPDIR=$(CURDIR) USER_CC="$(USER_CC)"
 
-$(FULLTEST_ELF): user/fulltest.c user/linker.ld
-	@$(USER_CC) -m32 -I include -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/linker.ld -o $(FULLTEST_ELF) user/fulltest.c user/errno.c
+$(PIE_SO) $(PIE_ELF): user/cmds/pie_test/pie_main.c user/cmds/pie_test/pie_func.c user/pie_linker.ld
+	@$(MAKE) --no-print-directory -C user/cmds/pie_test TOPDIR=$(CURDIR) USER_CC="$(USER_CC)" USER_LD="$(USER_LD)"
 
-# --- Dynamic linking helper: compile .c to PIC .o, link as PIE with crt0 + libc.so ---
-ULIBC_CRT0 := $(ULIBC_DIR)/src/crt0.o
-DYN_CC := $(USER_CC) -m32 -ffreestanding -nostdlib -O2 -Wall -Wextra -fPIC -fno-plt -I$(ULIBC_DIR)/include
-DYN_LD := $(USER_LD) -m elf_i386 --dynamic-linker=/lib/ld.so -T user/dyn_linker.ld -L$(ULIBC_DIR) -rpath /lib
+# --- Dynamically-linked user commands (generic rule via sub-Makefiles) ---
+# Use absolute paths so they work from sub-Makefile directories
+ABS_ULIBC := $(CURDIR)/$(ULIBC_DIR)
+ABS_DYN_CC := $(USER_CC) -m32 -ffreestanding -nostdlib -O2 -Wall -Wextra -fPIC -fno-plt -I$(ABS_ULIBC)/include
+ABS_DYN_LD := $(USER_LD) -m elf_i386 --dynamic-linker=/lib/ld.so -T $(CURDIR)/user/dyn_linker.ld -L$(ABS_ULIBC) -rpath /lib --unresolved-symbols=ignore-in-shared-libs
 
-$(ECHO_ELF): user/echo.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/echo.c -o user/echo.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/echo.o -lc
+# Generate build rules for each dynamically-linked command
+define USER_CMD_RULE
+$(USER_BUILD)/cmds/$(1)/$(1).elf: user/cmds/$(1)/$(1).c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
+	@$$(MAKE) --no-print-directory -C user/cmds/$(1) TOPDIR=$$(CURDIR) \
+		DYN_CC="$$(ABS_DYN_CC)" DYN_LD="$$(ABS_DYN_LD)" CRT0="$(ABS_ULIBC)/src/crt0.o"
+endef
+$(foreach cmd,$(USER_CMD_NAMES),$(eval $(call USER_CMD_RULE,$(cmd))))
 
-$(SH_ELF): user/sh.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/sh.c -o user/sh.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/sh.o -lc
+# Commands that go to /bin/ in rootfs (all except init)
+USER_BIN_NAMES := $(filter-out init,$(USER_CMD_NAMES))
 
-$(CAT_ELF): user/cat.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/cat.c -o user/cat.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/cat.o -lc
-
-$(LS_ELF): user/ls.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/ls.c -o user/ls.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/ls.o -lc
-
-$(MKDIR_ELF): user/mkdir.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/mkdir.c -o user/mkdir.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/mkdir.o -lc
-
-$(RM_ELF): user/rm.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/rm.c -o user/rm.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/rm.o -lc
-
-$(CP_ELF): user/cp.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/cp.c -o user/cp.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/cp.o -lc
-
-$(MV_ELF): user/mv.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/mv.c -o user/mv.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/mv.o -lc
-
-$(TOUCH_ELF): user/touch.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/touch.c -o user/touch.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/touch.o -lc
-
-$(LN_ELF): user/ln.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/ln.c -o user/ln.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/ln.o -lc
-
-$(HEAD_ELF): user/head.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/head.c -o user/head.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/head.o -lc
-
-$(TAIL_ELF): user/tail.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/tail.c -o user/tail.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/tail.o -lc
-
-$(WC_ELF): user/wc.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/wc.c -o user/wc.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/wc.o -lc
-
-$(SORT_ELF): user/sort.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/sort.c -o user/sort.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/sort.o -lc
-
-$(UNIQ_ELF): user/uniq.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/uniq.c -o user/uniq.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/uniq.o -lc
-
-$(CUT_ELF): user/cut.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/cut.c -o user/cut.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/cut.o -lc
-
-$(CHMOD_ELF): user/chmod.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/chmod.c -o user/chmod.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/chmod.o -lc
-
-$(CHOWN_ELF): user/chown.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/chown.c -o user/chown.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/chown.o -lc
-
-$(CHGRP_ELF): user/chgrp.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/chgrp.c -o user/chgrp.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/chgrp.o -lc
-
-$(DATE_ELF): user/date.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/date.c -o user/date.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/date.o -lc
-
-$(HOSTNAME_ELF): user/hostname.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/hostname.c -o user/hostname.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/hostname.o -lc
-
-$(UPTIME_ELF): user/uptime.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/uptime.c -o user/uptime.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/uptime.o -lc
-
-$(INIT_ELF): user/init.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/init.c -o user/init.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/init.o -lc
-
-$(MOUNT_ELF): user/mount.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/mount.c -o user/mount.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/mount.o -lc
-
-$(UMOUNT_ELF): user/umount.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/umount.c -o user/umount.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/umount.o -lc
-
-$(ENV_ELF): user/env.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/env.c -o user/env.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/env.o -lc
-
-$(KILL_ELF): user/kill.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/kill.c -o user/kill.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/kill.o -lc
-
-$(SLEEP_ELF): user/sleep.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/sleep.c -o user/sleep.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/sleep.o -lc
-
-$(CLEAR_ELF): user/clear.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/clear.c -o user/clear.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/clear.o -lc
-
-$(PS_ELF): user/ps.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/ps.c -o user/ps.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/ps.o -lc
-
-$(DF_ELF): user/df.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/df.c -o user/df.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/df.o -lc
-
-$(FREE_ELF): user/free.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/free.c -o user/free.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/free.o -lc
-
-$(TEE_ELF): user/tee.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/tee.c -o user/tee.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/tee.o -lc
-
-$(BASENAME_ELF): user/basename.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/basename.c -o user/basename.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/basename.o -lc
-
-$(DIRNAME_ELF): user/dirname.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/dirname.c -o user/dirname.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/dirname.o -lc
-
-$(RMDIR_ELF): user/rmdir.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/rmdir.c -o user/rmdir.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/rmdir.o -lc
-
-$(GREP_ELF): user/grep.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/grep.c -o user/grep.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/grep.o -lc
-
-$(ID_ELF): user/id.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/id.c -o user/id.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/id.o -lc
-
-$(UNAME_ELF): user/uname.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/uname.c -o user/uname.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/uname.o -lc
-
-$(DMESG_ELF): user/dmesg.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/dmesg.c -o user/dmesg.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/dmesg.o -lc
-
-$(PRINTENV_ELF): user/printenv.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/printenv.c -o user/printenv.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/printenv.o -lc
-
-$(TR_ELF): user/tr.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/tr.c -o user/tr.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/tr.o -lc
-
-$(DD_ELF): user/dd.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/dd.c -o user/dd.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/dd.o -lc
-
-$(PWD_ELF): user/pwd.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/pwd.c -o user/pwd.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/pwd.o -lc
-
-$(STAT_ELF): user/stat.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/stat.c -o user/stat.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/stat.o -lc
-
-$(SED_ELF): user/sed.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/sed.c -o user/sed.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/sed.o -lc
-
-$(AWK_ELF): user/awk.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/awk.c -o user/awk.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/awk.o -lc
-
-$(WHO_ELF): user/who.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/who.c -o user/who.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/who.o -lc
-
-$(TOP_ELF): user/top.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/top.c -o user/top.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/top.o -lc
-
-$(DU_ELF): user/du.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/du.c -o user/du.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/du.o -lc
-
-$(FIND_ELF): user/find.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/find.c -o user/find.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/find.o -lc
-
-$(WHICH_ELF): user/which.c user/dyn_linker.ld $(ULIBC_SO) $(ULIBC_LIB)
-	@$(DYN_CC) -c user/which.c -o user/which.o
-	@$(DYN_LD) -o $@ $(ULIBC_CRT0) user/which.o -lc
-
-$(LDSO_ELF): user/ldso.c user/ldso_linker.ld
-	@$(USER_CC) -m32 -ffreestanding -fno-pie -no-pie -nostdlib -Wl,-T,user/ldso_linker.ld -o $(LDSO_ELF) user/ldso.c
-
-$(PIE_SO): user/pie_func.c
-	@$(USER_CC) -m32 -fPIC -fno-plt -c user/pie_func.c -o user/pie_func.o
-	@$(USER_LD) -m elf_i386 -shared -soname libpietest.so -o $(PIE_SO) user/pie_func.o
-
-$(PIE_ELF): user/pie_main.c user/pie_linker.ld $(PIE_SO)
-	@$(USER_CC) -m32 -fPIC -c user/pie_main.c -o user/pie_main.o
-	@$(USER_LD) -m elf_i386 -pie --dynamic-linker=/lib/ld.so -T user/pie_linker.ld -o $(PIE_ELF) user/pie_main.o $(PIE_SO) -rpath /lib
-
-# All dynamically-linked user commands
-USER_CMDS := $(ECHO_ELF) $(SH_ELF) $(CAT_ELF) $(LS_ELF) $(MKDIR_ELF) $(RM_ELF) \
-             $(CP_ELF) $(MV_ELF) $(TOUCH_ELF) $(LN_ELF) \
-             $(HEAD_ELF) $(TAIL_ELF) $(WC_ELF) $(SORT_ELF) $(UNIQ_ELF) $(CUT_ELF) \
-             $(CHMOD_ELF) $(CHOWN_ELF) $(CHGRP_ELF) \
-             $(DATE_ELF) $(HOSTNAME_ELF) $(UPTIME_ELF) \
-             $(MOUNT_ELF) $(UMOUNT_ELF) $(ENV_ELF) $(KILL_ELF) $(SLEEP_ELF) \
-             $(CLEAR_ELF) $(PS_ELF) $(DF_ELF) $(FREE_ELF) $(TEE_ELF) \
-             $(BASENAME_ELF) $(DIRNAME_ELF) $(RMDIR_ELF) \
-             $(GREP_ELF) $(ID_ELF) $(UNAME_ELF) $(DMESG_ELF) \
-             $(PRINTENV_ELF) $(TR_ELF) $(DD_ELF) $(PWD_ELF) $(STAT_ELF) \
-             $(SED_ELF) $(AWK_ELF) $(WHO_ELF) $(TOP_ELF) $(DU_ELF) \
-             $(FIND_ELF) $(WHICH_ELF) \
-             $(INIT_ELF)
-
+# Build INITRD_FILES list: <elf>:<rootfs-path>
 FSTAB := rootfs/etc/fstab
 INITRD_FILES := $(FULLTEST_ELF):sbin/fulltest \
-    $(INIT_ELF):sbin/init \
-    $(ECHO_ELF):bin/echo $(SH_ELF):bin/sh $(CAT_ELF):bin/cat $(LS_ELF):bin/ls \
-    $(MKDIR_ELF):bin/mkdir $(RM_ELF):bin/rm $(CP_ELF):bin/cp $(MV_ELF):bin/mv \
-    $(TOUCH_ELF):bin/touch $(LN_ELF):bin/ln \
-    $(HEAD_ELF):bin/head $(TAIL_ELF):bin/tail $(WC_ELF):bin/wc \
-    $(SORT_ELF):bin/sort $(UNIQ_ELF):bin/uniq $(CUT_ELF):bin/cut \
-    $(CHMOD_ELF):bin/chmod $(CHOWN_ELF):bin/chown $(CHGRP_ELF):bin/chgrp \
-    $(DATE_ELF):bin/date $(HOSTNAME_ELF):bin/hostname $(UPTIME_ELF):bin/uptime \
-    $(MOUNT_ELF):bin/mount $(UMOUNT_ELF):bin/umount $(ENV_ELF):bin/env \
-    $(KILL_ELF):bin/kill $(SLEEP_ELF):bin/sleep $(CLEAR_ELF):bin/clear \
-    $(PS_ELF):bin/ps $(DF_ELF):bin/df $(FREE_ELF):bin/free \
-    $(TEE_ELF):bin/tee $(BASENAME_ELF):bin/basename $(DIRNAME_ELF):bin/dirname \
-    $(RMDIR_ELF):bin/rmdir \
-    $(GREP_ELF):bin/grep $(ID_ELF):bin/id $(UNAME_ELF):bin/uname \
-    $(DMESG_ELF):bin/dmesg $(PRINTENV_ELF):bin/printenv $(TR_ELF):bin/tr \
-    $(SED_ELF):bin/sed $(AWK_ELF):bin/awk $(WHO_ELF):bin/who \
-    $(TOP_ELF):bin/top $(DU_ELF):bin/du $(FIND_ELF):bin/find $(WHICH_ELF):bin/which \
-    $(DD_ELF):bin/dd $(PWD_ELF):bin/pwd $(STAT_ELF):bin/stat \
+    $(USER_BUILD)/cmds/init/init.elf:sbin/init \
+    $(foreach cmd,$(USER_BIN_NAMES),$(USER_BUILD)/cmds/$(cmd)/$(cmd).elf:bin/$(cmd)) \
     $(LDSO_ELF):lib/ld.so $(ULIBC_SO):lib/libc.so \
     $(PIE_SO):lib/libpietest.so $(PIE_ELF):bin/pie_test \
     $(FSTAB):etc/fstab
-INITRD_DEPS := $(MKINITRD) $(FULLTEST_ELF) $(USER_CMDS) $(LDSO_ELF) $(ULIBC_SO) $(PIE_SO) $(PIE_ELF) $(FSTAB)
+
+INITRD_DEPS := $(MKINITRD) $(FULLTEST_ELF) $(USER_CMD_ELFS) $(LDSO_ELF) $(ULIBC_SO) $(PIE_SO) $(PIE_ELF) $(FSTAB)
 
 # Include doom.elf if it has been built
 ifneq ($(wildcard $(DOOM_ELF)),)
-INITRD_FILES += $(DOOM_ELF):bin/doom
+INITRD_FILES += $(DOOM_ELF):usr/games/doom
 INITRD_DEPS += $(DOOM_ELF)
 endif
 
@@ -647,6 +393,8 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.S
 	@$(AS) $(ASFLAGS) $< -o $@
 
 clean:
-	rm -rf build $(KERNEL_NAME)
+	rm -rf build $(KERNEL_NAME) $(INITRD_IMG) adros-*.iso
+	@$(MAKE) -C user/ulibc clean --no-print-directory 2>/dev/null || true
+	@if [ -f user/doom/Makefile ]; then $(MAKE) -C user/doom clean --no-print-directory 2>/dev/null || true; fi
 
 .PHONY: all clean iso run run-arm run-riscv run-mips cppcheck sparse analyzer check test test-1cpu test-battery test-host test-gdb test-all scan-build mkinitrd-asan

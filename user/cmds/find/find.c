@@ -11,9 +11,11 @@
 /* AdrOS find utility — search for files in directory hierarchy */
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
-#include <fcntl.h>
 #include <dirent.h>
+
+#ifndef DT_DIR
+#define DT_DIR 4
+#endif
 
 static const char* name_pattern = NULL;
 static int type_filter = 0; /* 0=any, 'f'=file, 'd'=dir */
@@ -33,7 +35,7 @@ static int match_name(const char* name) {
         char sub[256];
         int slen = plen - 2;
         if (slen <= 0) return 1;
-        memcpy(sub, pat + 1, slen);
+        memcpy(sub, pat + 1, (size_t)slen);
         sub[slen] = '\0';
         return strstr(name, sub) != NULL;
     }
@@ -45,44 +47,40 @@ static int match_name(const char* name) {
         return strcmp(name + nlen - slen, suffix) == 0;
     }
     if (trail_star) {
-        return strncmp(name, pat, plen - 1) == 0;
+        return strncmp(name, pat, (size_t)(plen - 1)) == 0;
     }
     return strcmp(name, pat) == 0;
 }
 
 static void find_recurse(const char* path) {
-    int fd = open(path, O_RDONLY);
-    if (fd < 0) return;
+    DIR* dir = opendir(path);
+    if (!dir) return;
 
-    char buf[2048];
-    int rc;
-    while ((rc = getdents(fd, buf, sizeof(buf))) > 0) {
-        int off = 0;
-        while (off < rc) {
-            struct dirent* d = (struct dirent*)(buf + off);
-            if (d->d_reclen == 0) break;
-            if (strcmp(d->d_name, ".") != 0 && strcmp(d->d_name, "..") != 0) {
-                char child[512];
-                if (path[strlen(path)-1] == '/')
-                    snprintf(child, sizeof(child), "%s%s", path, d->d_name);
-                else
-                    snprintf(child, sizeof(child), "%s/%s", path, d->d_name);
+    struct dirent* d;
+    while ((d = readdir(dir)) != NULL) {
+        if (strcmp(d->d_name, ".") == 0 || strcmp(d->d_name, "..") == 0)
+            continue;
 
-                int show = match_name(d->d_name);
-                if (show && type_filter) {
-                    if (type_filter == 'f' && d->d_type == 4) show = 0; /* DT_DIR=4 */
-                    if (type_filter == 'd' && d->d_type != 4) show = 0;
-                }
-                if (show) printf("%s\n", child);
+        char child[512];
+        size_t plen = strlen(path);
+        if (plen > 0 && path[plen - 1] == '/')
+            snprintf(child, sizeof(child), "%s%s", path, d->d_name);
+        else
+            snprintf(child, sizeof(child), "%s/%s", path, d->d_name);
 
-                if (d->d_type == 4) { /* DT_DIR */
-                    find_recurse(child);
-                }
-            }
-            off += d->d_reclen;
+        int is_dir = (d->d_type == DT_DIR);
+        int show = match_name(d->d_name);
+        if (show && type_filter) {
+            if (type_filter == 'f' && is_dir) show = 0;
+            if (type_filter == 'd' && !is_dir) show = 0;
+        }
+        if (show) printf("%s\n", child);
+
+        if (is_dir) {
+            find_recurse(child);
         }
     }
-    close(fd);
+    closedir(dir);
 }
 
 int main(int argc, char** argv) {

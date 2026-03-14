@@ -49,102 +49,102 @@ set tests {
     {"ATA DMA mode"         "\\[ATA\\] Channel 0: DMA mode."}
     {"SMP CPUs active"      "CPU\\(s\\) active."}
     {"User ring3 entry"     "\\[USER\\] enter ring3"}
-    {"init.elf hello"       "\\[init\\] hello from init.elf"}
-    {"open/read/close"      "\\[init\\] open/read/close OK"}
-    {"overlay copy-up"      "\\[init\\] overlay copy-up OK"}
-    {"lseek/stat/fstat"     "\\[init\\] lseek/stat/fstat OK"}
-    {"dup2 restore"         "\\[init\\] dup2 restore tty OK"}
-    {"kill SIGKILL"         "\\[init\\] kill\\(SIGKILL\\) OK"}
-    {"poll pipe"            "\\[init\\] poll\\(pipe\\) OK"}
-    {"select pipe"          "\\[init\\] select\\(pipe\\) OK"}
-    {"ioctl tty"            "\\[init\\] ioctl\\(/dev/tty\\) OK"}
-    {"job control"          "\\[init\\] job control \\(SIGTTIN/SIGTTOU\\) OK"}
-    {"poll /dev/null"       "\\[init\\] poll\\(/dev/null\\) OK"}
-    {"pty bidirectional"    "\\[init\\] pty OK"}
-    {"setsid/setpgid"       "\\[init\\] setsid/setpgid/getpgrp OK"}
-    {"sigaction SIGUSR1"    "\\[init\\] sigaction/kill\\(SIGUSR1\\) OK"}
-    {"sigreturn"            "\\[init\\] sigreturn OK"}
-    {"tmpfs/mount"          "\\[init\\] tmpfs/mount OK"}
-    {"dev null"             "\\[init\\] /dev/null OK"}
-    {"persist counter"      "\\[init\\] /persist/counter="}
-    {"dev tty write"        "\\[init\\] /dev/tty write OK"}
-    {"diskfs test"          "\\[init\\] /disk/test prev="}
-    {"diskfs mkdir/unlink"  "\\[init\\] diskfs mkdir/unlink OK"}
-    {"diskfs getdents"      "\\[init\\] diskfs getdents OK"}
-    {"isatty"               "\\[init\\] isatty OK"}
-    {"O_NONBLOCK"           "\\[init\\] O_NONBLOCK OK"}
-    {"pipe2/dup3"           "\\[init\\] pipe2/dup3 OK"}
-    {"chdir/getcwd"         "\\[init\\] chdir/getcwd OK"}
-    {"*at syscalls"         "\\[init\\] \\*at OK"}
-    {"rename/rmdir"         "\\[init\\] rename/rmdir OK"}
-    {"getdents multi-fs"    "\\[init\\] getdents multi-fs OK"}
-    {"brk heap"             "\\[init\\] brk OK"}
-    {"mmap/munmap"          "\\[init\\] mmap/munmap OK"}
-    {"clock_gettime"        "\\[init\\] clock_gettime OK"}
-    {"dev zero"             "\\[init\\] /dev/zero OK"}
-    {"dev random"           "\\[init\\] /dev/random OK"}
-    {"procfs"               "\\[init\\] procfs OK"}
-    {"pread/pwrite"         "\\[init\\] pread/pwrite OK"}
-    {"ftruncate"            "\\[init\\] ftruncate OK"}
-    {"symlink/readlink"     "\\[init\\] symlink/readlink OK"}
-    {"access"               "\\[init\\] access OK"}
-    {"sigprocmask"          "\\[init\\] sigprocmask/sigpending OK"}
-    {"alarm SIGALRM"        "\\[init\\] alarm/SIGALRM OK"}
-    {"shmget/shmat"         "\\[init\\] shmget/shmat/shmdt OK"}
-    {"O_APPEND"             "\\[init\\] O_APPEND OK"}
-    {"umask"                "\\[init\\] umask OK"}
-    {"pipe capacity"        "\\[init\\] pipe capacity OK"}
-    {"waitid"               "\\[init\\] waitid OK"}
-    {"setitimer/getitimer"  "\\[init\\] setitimer/getitimer OK"}
-    {"select regfile"       "\\[init\\] select regfile OK"}
-    {"poll regfile"         "\\[init\\] poll regfile OK"}
-    {"hard link"            "\\[init\\] hard link OK"}
-    {"epoll"                "\\[init\\] epoll OK"}
-    {"epollet"              "\\[init\\] epollet OK"}
-    {"inotify"              "\\[init\\] inotify OK"}
-    {"aio"                  "\\[init\\] aio OK"}
-    {"nanosleep"            "\\[init\\] nanosleep OK"}
-    {"CLOCK_REALTIME"       "\\[init\\] CLOCK_REALTIME OK"}
-    {"dev urandom"          "\\[init\\] /dev/urandom OK"}
-    {"proc cmdline"         "\\[init\\] /proc/cmdline OK"}
-    {"CoW fork"             "\\[init\\] CoW fork OK"}
-    {"readv/writev"         "\\[init\\] readv/writev OK"}
-    {"fsync"                "\\[init\\] fsync OK"}
-    {"truncate path"        "\\[init\\] truncate OK"}
-    {"getuid/getgid"        "\\[init\\] getuid/getgid OK"}
-    {"chmod"                "\\[init\\] chmod OK"}
-    {"flock"                "\\[init\\] flock OK"}
-    {"times"                "\\[init\\] times OK"}
-    {"gettid"               "\\[init\\] gettid OK"}
-    {"posix_spawn"          "\\[init\\] posix_spawn OK"}
-    {"clock_ns precision"   "\\[init\\] clock_ns precision OK"}
-    {"getppid"              "\\[init\\] getppid OK"}
-    {"waitpid WNOHANG"      "\\[init\\] waitpid WNOHANG OK"}
-    {"SIGSEGV handler"      "\\[init\\] SIGSEGV OK"}
-    {"waitpid 100 children" "\\[init\\] waitpid OK \\(100 children"}
-    {"lazy PLT"             "\\[init\\] lazy PLT OK"}
-    {"PLT cached"           "\\[init\\] PLT cached OK"}
+    {"init.elf hello"       "\\[test\\] hello from init.elf"}
+    {"open/read/close"      "\\[test\\] open/read/close OK"}
+    {"overlay copy-up"      "\\[test\\] overlay copy-up OK"}
+    {"lseek/stat/fstat"     "\\[test\\] lseek/stat/fstat OK"}
+    {"dup2 restore"         "\\[test\\] dup2 restore tty OK"}
+    {"kill SIGKILL"         "\\[test\\] kill\\(SIGKILL\\) OK"}
+    {"poll pipe"            "\\[test\\] poll\\(pipe\\) OK"}
+    {"select pipe"          "\\[test\\] select\\(pipe\\) OK"}
+    {"ioctl tty"            "\\[test\\] ioctl\\(/dev/tty\\) OK"}
+    {"job control"          "\\[test\\] job control \\(SIGTTIN/SIGTTOU\\) OK"}
+    {"poll /dev/null"       "\\[test\\] poll\\(/dev/null\\) OK"}
+    {"pty bidirectional"    "\\[test\\] pty OK"}
+    {"setsid/setpgid"       "\\[test\\] setsid/setpgid/getpgrp OK"}
+    {"sigaction SIGUSR1"    "\\[test\\] sigaction/kill\\(SIGUSR1\\) OK"}
+    {"sigreturn"            "\\[test\\] sigreturn OK"}
+    {"tmpfs/mount"          "\\[test\\] tmpfs/mount OK"}
+    {"dev null"             "\\[test\\] /dev/null OK"}
+    {"persist counter"      "\\[test\\] /persist/counter="}
+    {"dev tty write"        "\\[test\\] /dev/tty write OK"}
+    {"diskfs test"          "\\[test\\] /disk/test prev="}
+    {"diskfs mkdir/unlink"  "\\[test\\] diskfs mkdir/unlink OK"}
+    {"diskfs getdents"      "\\[test\\] diskfs getdents OK"}
+    {"isatty"               "\\[test\\] isatty OK"}
+    {"O_NONBLOCK"           "\\[test\\] O_NONBLOCK OK"}
+    {"pipe2/dup3"           "\\[test\\] pipe2/dup3 OK"}
+    {"chdir/getcwd"         "\\[test\\] chdir/getcwd OK"}
+    {"*at syscalls"         "\\[test\\] \\*at OK"}
+    {"rename/rmdir"         "\\[test\\] rename/rmdir OK"}
+    {"getdents multi-fs"    "\\[test\\] getdents multi-fs OK"}
+    {"brk heap"             "\\[test\\] brk OK"}
+    {"mmap/munmap"          "\\[test\\] mmap/munmap OK"}
+    {"clock_gettime"        "\\[test\\] clock_gettime OK"}
+    {"dev zero"             "\\[test\\] /dev/zero OK"}
+    {"dev random"           "\\[test\\] /dev/random OK"}
+    {"procfs"               "\\[test\\] procfs OK"}
+    {"pread/pwrite"         "\\[test\\] pread/pwrite OK"}
+    {"ftruncate"            "\\[test\\] ftruncate OK"}
+    {"symlink/readlink"     "\\[test\\] symlink/readlink OK"}
+    {"access"               "\\[test\\] access OK"}
+    {"sigprocmask"          "\\[test\\] sigprocmask/sigpending OK"}
+    {"alarm SIGALRM"        "\\[test\\] alarm/SIGALRM OK"}
+    {"shmget/shmat"         "\\[test\\] shmget/shmat/shmdt OK"}
+    {"O_APPEND"             "\\[test\\] O_APPEND OK"}
+    {"umask"                "\\[test\\] umask OK"}
+    {"pipe capacity"        "\\[test\\] pipe capacity OK"}
+    {"waitid"               "\\[test\\] waitid OK"}
+    {"setitimer/getitimer"  "\\[test\\] setitimer/getitimer OK"}
+    {"select regfile"       "\\[test\\] select regfile OK"}
+    {"poll regfile"         "\\[test\\] poll regfile OK"}
+    {"hard link"            "\\[test\\] hard link OK"}
+    {"epoll"                "\\[test\\] epoll OK"}
+    {"epollet"              "\\[test\\] epollet OK"}
+    {"inotify"              "\\[test\\] inotify OK"}
+    {"aio"                  "\\[test\\] aio OK"}
+    {"nanosleep"            "\\[test\\] nanosleep OK"}
+    {"CLOCK_REALTIME"       "\\[test\\] CLOCK_REALTIME OK"}
+    {"dev urandom"          "\\[test\\] /dev/urandom OK"}
+    {"proc cmdline"         "\\[test\\] /proc/cmdline OK"}
+    {"CoW fork"             "\\[test\\] CoW fork OK"}
+    {"readv/writev"         "\\[test\\] readv/writev OK"}
+    {"fsync"                "\\[test\\] fsync OK"}
+    {"truncate path"        "\\[test\\] truncate OK"}
+    {"getuid/getgid"        "\\[test\\] getuid/getgid OK"}
+    {"chmod"                "\\[test\\] chmod OK"}
+    {"flock"                "\\[test\\] flock OK"}
+    {"times"                "\\[test\\] times OK"}
+    {"gettid"               "\\[test\\] gettid OK"}
+    {"posix_spawn"          "\\[test\\] posix_spawn OK"}
+    {"clock_ns precision"   "\\[test\\] clock_ns precision OK"}
+    {"getppid"              "\\[test\\] getppid OK"}
+    {"waitpid WNOHANG"      "\\[test\\] waitpid WNOHANG OK"}
+    {"SIGSEGV handler"      "\\[test\\] SIGSEGV OK"}
+    {"waitpid 100 children" "\\[test\\] waitpid OK \\(100 children"}
+    {"lazy PLT"             "\\[test\\] lazy PLT OK"}
+    {"PLT cached"           "\\[test\\] PLT cached OK"}
     {"PING network"         "\\[PING\\] .*received.*network OK"}
     {"echo execve"          "\\[echo\\] hello from echo"}
-    {"setuid/setgid"        "\\[init\\] setuid/setgid OK"}
-    {"fcntl F_GETFL/SETFL"  "\\[init\\] fcntl F_GETFL/F_SETFL OK"}
-    {"fcntl FD_CLOEXEC"     "\\[init\\] fcntl FD_CLOEXEC OK"}
-    {"sigsuspend"           "\\[init\\] sigsuspend OK"}
-    {"orphan reparent"      "\\[init\\] orphan reparent OK"}
-    {"proc PID cmdline"    "\\[init\\] /proc/PID/cmdline OK"}
-    {"proc PID status"     "\\[init\\] /proc/PID/status OK"}
-    {"dev console"         "\\[init\\] /dev/console OK"}
-    {"multi-pty"           "\\[init\\] multi-pty OK"}
-    {"dup standalone"      "\\[init\\] dup OK"}
-    {"pipe EOF"            "\\[init\\] pipe EOF OK"}
-    {"readdir /proc"       "\\[init\\] readdir /proc OK"}
-    {"readdir /bin"        "\\[init\\] readdir /bin OK"}
-    {"gettimeofday"        "\\[init\\] gettimeofday OK"}
-    {"mprotect"            "\\[init\\] mprotect OK"}
-    {"madvise"             "\\[init\\] madvise OK"}
-    {"getrlimit/setrlimit" "\\[init\\] getrlimit/setrlimit OK"}
-    {"uname"               "\\[init\\] uname OK"}
-    {"SMP parallel fork"   "\\[init\\] SMP parallel fork OK"}
+    {"setuid/setgid"        "\\[test\\] setuid/setgid OK"}
+    {"fcntl F_GETFL/SETFL"  "\\[test\\] fcntl F_GETFL/F_SETFL OK"}
+    {"fcntl FD_CLOEXEC"     "\\[test\\] fcntl FD_CLOEXEC OK"}
+    {"sigsuspend"           "\\[test\\] sigsuspend OK"}
+    {"orphan reparent"      "\\[test\\] orphan reparent OK"}
+    {"proc PID cmdline"    "\\[test\\] /proc/PID/cmdline OK"}
+    {"proc PID status"     "\\[test\\] /proc/PID/status OK"}
+    {"dev console"         "\\[test\\] /dev/console OK"}
+    {"multi-pty"           "\\[test\\] multi-pty OK"}
+    {"dup standalone"      "\\[test\\] dup OK"}
+    {"pipe EOF"            "\\[test\\] pipe EOF OK"}
+    {"readdir /proc"       "\\[test\\] readdir /proc OK"}
+    {"readdir /bin"        "\\[test\\] readdir /bin OK"}
+    {"gettimeofday"        "\\[test\\] gettimeofday OK"}
+    {"mprotect"            "\\[test\\] mprotect OK"}
+    {"madvise"             "\\[test\\] madvise OK"}
+    {"getrlimit/setrlimit" "\\[test\\] getrlimit/setrlimit OK"}
+    {"uname"               "\\[test\\] uname OK"}
+    {"SMP parallel fork"   "\\[test\\] SMP parallel fork OK"}
     {"LZ4 Frame decomp"    "\\[INITRD\\] LZ4"}
 }
 

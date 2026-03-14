@@ -50,7 +50,7 @@ echo ""
 
 # ---------- echo ----------
 echo "--- echo ---"
-if compile echo_test user/echo.c; then
+if compile echo_test user/cmds/echo/echo.c; then
     out=$("$BUILDDIR/echo_test" hello world)
     [ "$out" = "hello world" ] && pass "echo basic" || fail "echo basic" "got: $out"
 
@@ -69,7 +69,7 @@ fi
 
 # ---------- cat ----------
 echo "--- cat ---"
-if compile cat_test user/cat.c; then
+if compile cat_test user/cmds/cat/cat.c; then
     echo "hello cat" > "$BUILDDIR/cat_in.txt"
     out=$("$BUILDDIR/cat_test" "$BUILDDIR/cat_in.txt")
     [ "$out" = "hello cat" ] && pass "cat file" || fail "cat file" "got: $out"
@@ -88,7 +88,7 @@ fi
 
 # ---------- head ----------
 echo "--- head ---"
-if compile head_test user/head.c; then
+if compile head_test user/cmds/head/head.c; then
     printf "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n" > "$BUILDDIR/head_in.txt"
     out=$("$BUILDDIR/head_test" "$BUILDDIR/head_in.txt" | wc -l)
     [ "$out" -eq 10 ] && pass "head default 10" || fail "head default 10" "got $out lines"
@@ -106,7 +106,7 @@ fi
 
 # ---------- tail ----------
 echo "--- tail ---"
-if compile tail_test user/tail.c; then
+if compile tail_test user/cmds/tail/tail.c; then
     printf "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n" > "$BUILDDIR/tail_in.txt"
     out=$("$BUILDDIR/tail_test" -n 3 "$BUILDDIR/tail_in.txt")
     expected=$(printf "10\n11\n12")
@@ -117,7 +117,7 @@ fi
 
 # ---------- wc ----------
 echo "--- wc ---"
-if compile wc_test user/wc.c; then
+if compile wc_test user/cmds/wc/wc.c; then
     printf "hello world\nfoo bar baz\n" > "$BUILDDIR/wc_in.txt"
     out=$("$BUILDDIR/wc_test" "$BUILDDIR/wc_in.txt")
     # Should contain line count (2), word count (5), byte count
@@ -129,7 +129,7 @@ fi
 
 # ---------- sort ----------
 echo "--- sort ---"
-if compile sort_test user/sort.c; then
+if compile sort_test user/cmds/sort/sort.c; then
     printf "banana\napple\ncherry\n" | "$BUILDDIR/sort_test" > "$BUILDDIR/sort_out.txt"
     expected=$(printf "apple\nbanana\ncherry")
     out=$(cat "$BUILDDIR/sort_out.txt")
@@ -145,7 +145,7 @@ fi
 
 # ---------- uniq ----------
 echo "--- uniq ---"
-if compile uniq_test user/uniq.c; then
+if compile uniq_test user/cmds/uniq/uniq.c; then
     printf "aaa\naaa\nbbb\nccc\nccc\n" | "$BUILDDIR/uniq_test" > "$BUILDDIR/uniq_out.txt"
     expected=$(printf "aaa\nbbb\nccc")
     out=$(cat "$BUILDDIR/uniq_out.txt")
@@ -160,7 +160,7 @@ fi
 
 # ---------- cut ----------
 echo "--- cut ---"
-if compile cut_test user/cut.c; then
+if compile cut_test user/cmds/cut/cut.c; then
     out=$(printf "a:b:c\n" | "$BUILDDIR/cut_test" -d: -f2)
     [ "$out" = "b" ] && pass "cut -d: -f2" || fail "cut -d: -f2" "got: $out"
 
@@ -175,7 +175,7 @@ fi
 
 # ---------- grep ----------
 echo "--- grep ---"
-if compile grep_test user/grep.c; then
+if compile grep_test user/cmds/grep/grep.c; then
     printf "hello world\nfoo bar\nhello again\n" > "$BUILDDIR/grep_in.txt"
     out=$("$BUILDDIR/grep_test" hello "$BUILDDIR/grep_in.txt")
     lines=$(echo "$out" | wc -l)
@@ -198,7 +198,7 @@ fi
 
 # ---------- tr ----------
 echo "--- tr ---"
-if compile tr_test user/tr.c; then
+if compile tr_test user/cmds/tr/tr.c; then
     out=$(echo "hello" | "$BUILDDIR/tr_test" 'elo' 'ELO')
     [ "$out" = "hELLO" ] && pass "tr translate" || fail "tr translate" "got: $out"
 
@@ -210,7 +210,7 @@ fi
 
 # ---------- basename ----------
 echo "--- basename ---"
-if compile basename_test user/basename.c; then
+if compile basename_test user/cmds/basename/basename.c; then
     out=$("$BUILDDIR/basename_test" /usr/bin/foo)
     [ "$out" = "foo" ] && pass "basename path" || fail "basename path" "got: $out"
 
@@ -225,7 +225,7 @@ fi
 
 # ---------- dirname ----------
 echo "--- dirname ---"
-if compile dirname_test user/dirname.c; then
+if compile dirname_test user/cmds/dirname/dirname.c; then
     out=$("$BUILDDIR/dirname_test" /usr/bin/foo)
     [ "$out" = "/usr/bin" ] && pass "dirname path" || fail "dirname path" "got: $out"
 
@@ -240,7 +240,7 @@ fi
 
 # ---------- tee ----------
 echo "--- tee ---"
-if compile tee_test user/tee.c; then
+if compile tee_test user/cmds/tee/tee.c; then
     out=$(echo "tee test" | "$BUILDDIR/tee_test" "$BUILDDIR/tee_out.txt")
     file_content=$(cat "$BUILDDIR/tee_out.txt")
     [ "$out" = "tee test" ] && pass "tee stdout" || fail "tee stdout" "got: $out"
@@ -257,7 +257,7 @@ fi
 
 # ---------- dd ----------
 echo "--- dd ---"
-if compile dd_test user/dd.c; then
+if compile dd_test user/cmds/dd/dd.c; then
     echo "hello dd test data" > "$BUILDDIR/dd_in.txt"
     "$BUILDDIR/dd_test" if="$BUILDDIR/dd_in.txt" of="$BUILDDIR/dd_out.txt" bs=512 2>/dev/null
     out=$(cat "$BUILDDIR/dd_out.txt")
@@ -268,7 +268,7 @@ fi
 
 # ---------- pwd ----------
 echo "--- pwd ---"
-if compile pwd_test user/pwd.c; then
+if compile pwd_test user/cmds/pwd/pwd.c; then
     out=$("$BUILDDIR/pwd_test")
     expected=$(pwd)
     [ -n "$out" ] && pass "pwd output" || fail "pwd output" "empty"
@@ -278,7 +278,7 @@ fi
 
 # ---------- uname ----------
 echo "--- uname ---"
-if compile uname_test user/uname.c; then
+if compile uname_test user/cmds/uname/uname.c; then
     out=$("$BUILDDIR/uname_test")
     [ "$out" = "AdrOS" ] && pass "uname default" || fail "uname default" "got: $out"
 
@@ -297,7 +297,7 @@ fi
 
 # ---------- id ----------
 echo "--- id ---"
-if compile id_test user/id.c; then
+if compile id_test user/cmds/id/id.c; then
     out=$("$BUILDDIR/id_test")
     echo "$out" | grep -q "uid=" && pass "id uid" || fail "id uid" "got: $out"
     echo "$out" | grep -q "gid=" && pass "id gid" || fail "id gid" "got: $out"
@@ -307,7 +307,7 @@ fi
 
 # ---------- printenv ----------
 echo "--- printenv ---"
-if compile printenv_test user/printenv.c; then
+if compile printenv_test user/cmds/printenv/printenv.c; then
     out=$(HOME=/test/home "$BUILDDIR/printenv_test" HOME)
     [ "$out" = "/test/home" ] && pass "printenv HOME" || fail "printenv HOME" "got: $out"
 
@@ -323,7 +323,7 @@ fi
 
 # ---------- cp ----------
 echo "--- cp ---"
-if compile cp_test user/cp.c; then
+if compile cp_test user/cmds/cp/cp.c; then
     echo "cp source" > "$BUILDDIR/cp_src.txt"
     "$BUILDDIR/cp_test" "$BUILDDIR/cp_src.txt" "$BUILDDIR/cp_dst.txt"
     out=$(cat "$BUILDDIR/cp_dst.txt")
@@ -334,7 +334,7 @@ fi
 
 # ---------- mv ----------
 echo "--- mv ---"
-if compile mv_test user/mv.c; then
+if compile mv_test user/cmds/mv/mv.c; then
     echo "mv data" > "$BUILDDIR/mv_src.txt"
     "$BUILDDIR/mv_test" "$BUILDDIR/mv_src.txt" "$BUILDDIR/mv_dst.txt"
     [ ! -f "$BUILDDIR/mv_src.txt" ] && pass "mv src removed" || fail "mv src removed" "still exists"
@@ -347,10 +347,10 @@ fi
 # ---------- touch/rm/mkdir/rmdir ----------
 echo "--- touch/rm/mkdir/rmdir ---"
 compile_ok=1
-compile touch_test user/touch.c || compile_ok=0
-compile rm_test user/rm.c || compile_ok=0
-compile mkdir_test user/mkdir.c || compile_ok=0
-compile rmdir_test user/rmdir.c || compile_ok=0
+compile touch_test user/cmds/touch/touch.c || compile_ok=0
+compile rm_test user/cmds/rm/rm.c || compile_ok=0
+compile mkdir_test user/cmds/mkdir/mkdir.c || compile_ok=0
+compile rmdir_test user/cmds/rmdir/rmdir.c || compile_ok=0
 if [ "$compile_ok" -eq 1 ]; then
     "$BUILDDIR/touch_test" "$BUILDDIR/touchfile"
     [ -f "$BUILDDIR/touchfile" ] && pass "touch create" || fail "touch create" "not created"
@@ -369,7 +369,7 @@ fi
 
 # ---------- ln ----------
 echo "--- ln ---"
-if compile ln_test user/ln.c; then
+if compile ln_test user/cmds/ln/ln.c; then
     echo "link target" > "$BUILDDIR/ln_src.txt"
     "$BUILDDIR/ln_test" -s "$BUILDDIR/ln_src.txt" "$BUILDDIR/ln_link.txt" 2>/dev/null || true
     if [ -L "$BUILDDIR/ln_link.txt" ]; then
@@ -390,7 +390,7 @@ fi
 
 # ---------- sed ----------
 echo "--- sed ---"
-if compile sed_test user/sed.c; then
+if compile sed_test user/cmds/sed/sed.c; then
     out=$(echo "hello world" | "$BUILDDIR/sed_test" 's/world/earth/')
     [ "$out" = "hello earth" ] && pass "sed s///" || fail "sed s///" "got: $out"
 
@@ -410,7 +410,7 @@ fi
 
 # ---------- awk ----------
 echo "--- awk ---"
-if compile awk_test user/awk.c; then
+if compile awk_test user/cmds/awk/awk.c; then
     out=$(echo "hello world foo" | "$BUILDDIR/awk_test" '{print $2}')
     [ "$out" = "world" ] && pass "awk print \$2" || fail "awk print \$2" "got: $out"
 
@@ -426,7 +426,7 @@ fi
 
 # ---------- who ----------
 echo "--- who ---"
-if compile who_test user/who.c; then
+if compile who_test user/cmds/who/who.c; then
     out=$("$BUILDDIR/who_test")
     echo "$out" | grep -q "root" && pass "who output" || fail "who output" "got: $out"
 else
@@ -435,7 +435,7 @@ fi
 
 # ---------- find ----------
 echo "--- find ---"
-if compile find_test user/find.c; then
+if compile find_test user/cmds/find/find.c; then
     mkdir -p "$BUILDDIR/findtest/sub"
     touch "$BUILDDIR/findtest/a.txt"
     touch "$BUILDDIR/findtest/b.c"
@@ -453,10 +453,10 @@ fi
 
 # ---------- which ----------
 echo "--- which ---"
-if compile which_test user/which.c; then
+if compile which_test user/cmds/which/which.c; then
     # which looks in /bin and /sbin hardcoded, so just check it runs
-    "$BUILDDIR/which_test" nonexistent_cmd > /dev/null 2>&1
-    [ $? -ne 0 ] && pass "which not found" || fail "which not found" "should return nonzero"
+    "$BUILDDIR/which_test" nonexistent_cmd > /dev/null 2>&1 || rc=$?
+    [ "${rc:-1}" -ne 0 ] && pass "which not found" || fail "which not found" "should return nonzero"
 else
     skip "which (compile failed)"
 fi

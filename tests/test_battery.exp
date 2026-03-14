@@ -153,8 +153,8 @@ set patterns {
     {"ATA /dev/hda"          "\\[ATA\\] /dev/hda detected"}
     {"INITRD found"          "\\[INITRD\\] Found"}
     {"diskfs mount /disk"    "\\[MOUNT\\] diskfs on /dev/hda"}
-    {"diskfs test"           "\\[init\\] /disk/test prev="}
-    {"diskfs getdents"       "\\[init\\] diskfs getdents OK"}
+    {"diskfs test"           "\\[test\\] /disk/test prev="}
+    {"diskfs getdents"       "\\[test\\] diskfs getdents OK"}
 }
 
 set res [wait_for_patterns $serial_log $timeout_sec $patterns]

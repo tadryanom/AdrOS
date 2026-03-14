@@ -14,8 +14,8 @@ AS  ?= i686-elf-as
 AR  ?= i686-elf-ar
 LD  ?= i686-elf-ld
 
-CFLAGS := -m32 -ffreestanding -fno-pie -no-pie -nostdlib -O2 -Wall -Wextra -Iinclude
-CFLAGS_PIC := -m32 -ffreestanding -nostdlib -O2 -Wall -Wextra -Iinclude -fPIC -fno-plt
+CFLAGS := -m32 -ffreestanding -fno-pie -no-pie -nostdlib -O2 -Wall -Wextra -Wno-incompatible-pointer-types -Iinclude
+CFLAGS_PIC := -m32 -ffreestanding -nostdlib -O2 -Wall -Wextra -Wno-incompatible-pointer-types -Iinclude -fPIC -fno-plt
 ASFLAGS := --32
 
 SRC_C := $(wildcard src/*.c)

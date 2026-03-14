@@ -1413,8 +1413,8 @@ static volatile int got_alrm = 0;
 static void usr1_handler(int sig) {
     (void)sig;
     got_usr1 = 1;
-    sys_write(1, "[init] SIGUSR1 handler OK\n",
-              (uint32_t)(sizeof("[init] SIGUSR1 handler OK\n") - 1));
+    sys_write(1, "[test] SIGUSR1 handler OK\n",
+              (uint32_t)(sizeof("[test] SIGUSR1 handler OK\n") - 1));
 }
 
 static void usr1_ret_handler(int sig) {
@@ -1439,14 +1439,14 @@ static void ttou_handler(int sig) {
 
 static void sigsegv_exit_handler(int sig) {
     (void)sig;
-    static const char msg[] = "[init] SIGSEGV handler invoked\n";
+    static const char msg[] = "[test] SIGSEGV handler invoked\n";
     (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
     sys_exit(0);
 }
 
 static void sigsegv_info_handler(int sig, siginfo_t* info, void* uctx) {
     (void)uctx;
-    static const char msg[] = "[init] SIGSEGV siginfo handler invoked\n";
+    static const char msg[] = "[test] SIGSEGV siginfo handler invoked\n";
     (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
     const uintptr_t expected = 0x12345000U;
     if (sig == SIGSEGV && info && (uintptr_t)info->si_addr == expected) {
@@ -1464,14 +1464,14 @@ void _start(void) {
         "mov %ax, %gs\n"
     );
 
-    static const char msg[] = "[init] hello from init.elf\n";
+    static const char msg[] = "[test] hello from init.elf\n";
     (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
 
     static const char path[] = "/sbin/fulltest";
 
     int fd = sys_open(path, 0);
     if (fd < 0) {
-        sys_write(1, "[init] open failed fd=", (uint32_t)(sizeof("[init] open failed fd=") - 1));
+        sys_write(1, "[test] open failed fd=", (uint32_t)(sizeof("[test] open failed fd=") - 1));
         write_int_dec(fd);
         sys_write(1, "\n", 1);
         sys_exit(1);
@@ -1481,10 +1481,10 @@ void _start(void) {
     int rd = sys_read(fd, hdr, 4);
     (void)sys_close(fd);
     if (rd == 4 && hdr[0] == 0x7F && hdr[1] == 'E' && hdr[2] == 'L' && hdr[3] == 'F') {
-        sys_write(1, "[init] open/read/close OK (ELF magic)\n",
-                  (uint32_t)(sizeof("[init] open/read/close OK (ELF magic)\n") - 1));
+        sys_write(1, "[test] open/read/close OK (ELF magic)\n",
+                  (uint32_t)(sizeof("[test] open/read/close OK (ELF magic)\n") - 1));
     } else {
-        sys_write(1, "[init] read failed or bad header rd=", (uint32_t)(sizeof("[init] read failed or bad header rd=") - 1));
+        sys_write(1, "[test] read failed or bad header rd=", (uint32_t)(sizeof("[test] read failed or bad header rd=") - 1));
         write_int_dec(rd);
         sys_write(1, " hdr=", (uint32_t)(sizeof(" hdr=") - 1));
         for (int i = 0; i < 4; i++) {
@@ -1496,161 +1496,161 @@ void _start(void) {
 
     fd = sys_open("/sbin/fulltest", 0);
     if (fd < 0) {
-        sys_write(1, "[init] overlay open failed\n",
-                  (uint32_t)(sizeof("[init] overlay open failed\n") - 1));
+        sys_write(1, "[test] overlay open failed\n",
+                  (uint32_t)(sizeof("[test] overlay open failed\n") - 1));
         sys_exit(1);
     }
 
     uint8_t orig0 = 0;
     if (sys_lseek(fd, 0, SEEK_SET) < 0 || sys_read(fd, &orig0, 1) != 1) {
-        sys_write(1, "[init] overlay read failed\n",
-                  (uint32_t)(sizeof("[init] overlay read failed\n") - 1));
+        sys_write(1, "[test] overlay read failed\n",
+                  (uint32_t)(sizeof("[test] overlay read failed\n") - 1));
         sys_exit(1);
     }
 
     uint8_t x = (uint8_t)(orig0 ^ 0xFF);
     if (sys_lseek(fd, 0, SEEK_SET) < 0 || sys_write(fd, &x, 1) != 1) {
-        sys_write(1, "[init] overlay write failed\n",
-                  (uint32_t)(sizeof("[init] overlay write failed\n") - 1));
+        sys_write(1, "[test] overlay write failed\n",
+                  (uint32_t)(sizeof("[test] overlay write failed\n") - 1));
         sys_exit(1);
     }
 
     if (sys_close(fd) < 0) {
-        sys_write(1, "[init] overlay close failed\n",
-                  (uint32_t)(sizeof("[init] overlay close failed\n") - 1));
+        sys_write(1, "[test] overlay close failed\n",
+                  (uint32_t)(sizeof("[test] overlay close failed\n") - 1));
         sys_exit(1);
     }
 
     fd = sys_open("/sbin/fulltest", 0);
     if (fd < 0) {
-        sys_write(1, "[init] overlay open2 failed\n",
-                  (uint32_t)(sizeof("[init] overlay open2 failed\n") - 1));
+        sys_write(1, "[test] overlay open2 failed\n",
+                  (uint32_t)(sizeof("[test] overlay open2 failed\n") - 1));
         sys_exit(1);
     }
 
     uint8_t chk = 0;
     if (sys_lseek(fd, 0, SEEK_SET) < 0 || sys_read(fd, &chk, 1) != 1 || chk != x) {
-        sys_write(1, "[init] overlay verify failed\n",
-                  (uint32_t)(sizeof("[init] overlay verify failed\n") - 1));
+        sys_write(1, "[test] overlay verify failed\n",
+                  (uint32_t)(sizeof("[test] overlay verify failed\n") - 1));
         sys_exit(1);
     }
 
     if (sys_lseek(fd, 0, SEEK_SET) < 0 || sys_write(fd, &orig0, 1) != 1) {
-        sys_write(1, "[init] overlay restore failed\n",
-                  (uint32_t)(sizeof("[init] overlay restore failed\n") - 1));
+        sys_write(1, "[test] overlay restore failed\n",
+                  (uint32_t)(sizeof("[test] overlay restore failed\n") - 1));
         sys_exit(1);
     }
 
     if (sys_close(fd) < 0) {
-        sys_write(1, "[init] overlay close2 failed\n",
-                  (uint32_t)(sizeof("[init] overlay close2 failed\n") - 1));
+        sys_write(1, "[test] overlay close2 failed\n",
+                  (uint32_t)(sizeof("[test] overlay close2 failed\n") - 1));
         sys_exit(1);
     }
 
-    sys_write(1, "[init] overlay copy-up OK\n",
-              (uint32_t)(sizeof("[init] overlay copy-up OK\n") - 1));
+    sys_write(1, "[test] overlay copy-up OK\n",
+              (uint32_t)(sizeof("[test] overlay copy-up OK\n") - 1));
 
     fd = sys_open("/sbin/fulltest", 0);
     if (fd < 0) {
-        sys_write(1, "[init] open2 failed\n", (uint32_t)(sizeof("[init] open2 failed\n") - 1));
+        sys_write(1, "[test] open2 failed\n", (uint32_t)(sizeof("[test] open2 failed\n") - 1));
         sys_exit(1);
     }
 
     struct stat st;
     if (sys_fstat(fd, &st) < 0) {
-        sys_write(1, "[init] fstat failed\n", (uint32_t)(sizeof("[init] fstat failed\n") - 1));
+        sys_write(1, "[test] fstat failed\n", (uint32_t)(sizeof("[test] fstat failed\n") - 1));
         sys_exit(1);
     }
 
     if ((st.st_mode & S_IFMT) != S_IFREG || st.st_size == 0) {
-        sys_write(1, "[init] fstat bad\n", (uint32_t)(sizeof("[init] fstat bad\n") - 1));
+        sys_write(1, "[test] fstat bad\n", (uint32_t)(sizeof("[test] fstat bad\n") - 1));
         sys_exit(1);
     }
 
     if (sys_lseek(fd, 0, SEEK_SET) < 0) {
-        sys_write(1, "[init] lseek set failed\n",
-                  (uint32_t)(sizeof("[init] lseek set failed\n") - 1));
+        sys_write(1, "[test] lseek set failed\n",
+                  (uint32_t)(sizeof("[test] lseek set failed\n") - 1));
         sys_exit(1);
     }
 
     uint8_t m2[4];
     if (sys_read(fd, m2, 4) != 4) {
-        sys_write(1, "[init] read2 failed\n", (uint32_t)(sizeof("[init] read2 failed\n") - 1));
+        sys_write(1, "[test] read2 failed\n", (uint32_t)(sizeof("[test] read2 failed\n") - 1));
         sys_exit(1);
     }
     if (m2[0] != 0x7F || m2[1] != 'E' || m2[2] != 'L' || m2[3] != 'F') {
-        sys_write(1, "[init] lseek/read mismatch\n",
-                  (uint32_t)(sizeof("[init] lseek/read mismatch\n") - 1));
+        sys_write(1, "[test] lseek/read mismatch\n",
+                  (uint32_t)(sizeof("[test] lseek/read mismatch\n") - 1));
         sys_exit(1);
     }
 
     if (sys_close(fd) < 0) {
-        sys_write(1, "[init] close2 failed\n", (uint32_t)(sizeof("[init] close2 failed\n") - 1));
+        sys_write(1, "[test] close2 failed\n", (uint32_t)(sizeof("[test] close2 failed\n") - 1));
         sys_exit(1);
     }
 
     if (sys_stat("/sbin/fulltest", &st) < 0) {
-        sys_write(1, "[init] stat failed\n", (uint32_t)(sizeof("[init] stat failed\n") - 1));
+        sys_write(1, "[test] stat failed\n", (uint32_t)(sizeof("[test] stat failed\n") - 1));
         sys_exit(1);
     }
     if ((st.st_mode & S_IFMT) != S_IFREG || st.st_size == 0) {
-        sys_write(1, "[init] stat bad\n", (uint32_t)(sizeof("[init] stat bad\n") - 1));
+        sys_write(1, "[test] stat bad\n", (uint32_t)(sizeof("[test] stat bad\n") - 1));
         sys_exit(1);
     }
 
-    sys_write(1, "[init] lseek/stat/fstat OK\n",
-              (uint32_t)(sizeof("[init] lseek/stat/fstat OK\n") - 1));
+    sys_write(1, "[test] lseek/stat/fstat OK\n",
+              (uint32_t)(sizeof("[test] lseek/stat/fstat OK\n") - 1));
 
     fd = sys_open("/tmp/hello.txt", 0);
     if (fd < 0) {
-        sys_write(1, "[init] tmpfs open failed\n",
-                  (uint32_t)(sizeof("[init] tmpfs open failed\n") - 1));
+        sys_write(1, "[test] tmpfs open failed\n",
+                  (uint32_t)(sizeof("[test] tmpfs open failed\n") - 1));
         sys_exit(1);
     }
 
     if (sys_lseek(fd, 0, SEEK_END) < 0) {
-        sys_write(1, "[init] dup2 prep lseek failed\n",
-                  (uint32_t)(sizeof("[init] dup2 prep lseek failed\n") - 1));
+        sys_write(1, "[test] dup2 prep lseek failed\n",
+                  (uint32_t)(sizeof("[test] dup2 prep lseek failed\n") - 1));
         sys_exit(1);
     }
 
     if (sys_dup2(fd, 1) != 1) {
-        sys_write(1, "[init] dup2 failed\n", (uint32_t)(sizeof("[init] dup2 failed\n") - 1));
+        sys_write(1, "[test] dup2 failed\n", (uint32_t)(sizeof("[test] dup2 failed\n") - 1));
         sys_exit(1);
     }
 
     (void)sys_close(fd);
 
     {
-        static const char m[] = "[init] dup2 stdout->file OK\n";
+        static const char m[] = "[test] dup2 stdout->file OK\n";
         if (sys_write(1, m, (uint32_t)(sizeof(m) - 1)) != (int)(sizeof(m) - 1)) {
             sys_exit(1);
         }
     }
 
     (void)sys_close(1);
-    sys_write(1, "[init] dup2 restore tty OK\n",
-              (uint32_t)(sizeof("[init] dup2 restore tty OK\n") - 1));
+    sys_write(1, "[test] dup2 restore tty OK\n",
+              (uint32_t)(sizeof("[test] dup2 restore tty OK\n") - 1));
 
     {
         int pfds[2];
         if (sys_pipe(pfds) < 0) {
-            sys_write(1, "[init] pipe failed\n", (uint32_t)(sizeof("[init] pipe failed\n") - 1));
+            sys_write(1, "[test] pipe failed\n", (uint32_t)(sizeof("[test] pipe failed\n") - 1));
             sys_exit(1);
         }
 
         static const char pmsg[] = "pipe-test";
         if (sys_write(pfds[1], pmsg, (uint32_t)(sizeof(pmsg) - 1)) != (int)(sizeof(pmsg) - 1)) {
-            sys_write(1, "[init] pipe write failed\n",
-                      (uint32_t)(sizeof("[init] pipe write failed\n") - 1));
+            sys_write(1, "[test] pipe write failed\n",
+                      (uint32_t)(sizeof("[test] pipe write failed\n") - 1));
             sys_exit(1);
         }
 
         char rbuf[16];
         int prd = sys_read(pfds[0], rbuf, (uint32_t)(sizeof(pmsg) - 1));
         if (prd != (int)(sizeof(pmsg) - 1)) {
-            sys_write(1, "[init] pipe read failed\n",
-                      (uint32_t)(sizeof("[init] pipe read failed\n") - 1));
+            sys_write(1, "[test] pipe read failed\n",
+                      (uint32_t)(sizeof("[test] pipe read failed\n") - 1));
             sys_exit(1);
         }
 
@@ -1659,14 +1659,14 @@ void _start(void) {
             if ((uint8_t)rbuf[i] != (uint8_t)pmsg[i]) ok = 0;
         }
         if (!ok) {
-            sys_write(1, "[init] pipe mismatch\n",
-                      (uint32_t)(sizeof("[init] pipe mismatch\n") - 1));
+            sys_write(1, "[test] pipe mismatch\n",
+                      (uint32_t)(sizeof("[test] pipe mismatch\n") - 1));
             sys_exit(1);
         }
 
         if (sys_dup2(pfds[1], 1) != 1) {
-            sys_write(1, "[init] pipe dup2 failed\n",
-                      (uint32_t)(sizeof("[init] pipe dup2 failed\n") - 1));
+            sys_write(1, "[test] pipe dup2 failed\n",
+                      (uint32_t)(sizeof("[test] pipe dup2 failed\n") - 1));
             sys_exit(1);
         }
 
@@ -1677,24 +1677,24 @@ void _start(void) {
 
         int prd2 = sys_read(pfds[0], rbuf, (uint32_t)(sizeof(p2) - 1));
         if (prd2 != (int)(sizeof(p2) - 1)) {
-            sys_write(1, "[init] pipe dup2 read failed\n",
-                      (uint32_t)(sizeof("[init] pipe dup2 read failed\n") - 1));
+            sys_write(1, "[test] pipe dup2 read failed\n",
+                      (uint32_t)(sizeof("[test] pipe dup2 read failed\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] pipe OK\n", (uint32_t)(sizeof("[init] pipe OK\n") - 1));
+        sys_write(1, "[test] pipe OK\n", (uint32_t)(sizeof("[test] pipe OK\n") - 1));
 
         (void)sys_close(pfds[0]);
         (void)sys_close(pfds[1]);
 
         int tfd = sys_open("/dev/tty", 0);
         if (tfd < 0) {
-            sys_write(1, "[init] /dev/tty open failed\n",
-                      (uint32_t)(sizeof("[init] /dev/tty open failed\n") - 1));
+            sys_write(1, "[test] /dev/tty open failed\n",
+                      (uint32_t)(sizeof("[test] /dev/tty open failed\n") - 1));
             sys_exit(1);
         }
         if (sys_dup2(tfd, 1) != 1) {
-            sys_write(1, "[init] dup2 restore tty failed\n",
-                      (uint32_t)(sizeof("[init] dup2 restore tty failed\n") - 1));
+            sys_write(1, "[test] dup2 restore tty failed\n",
+                      (uint32_t)(sizeof("[test] dup2 restore tty failed\n") - 1));
             sys_exit(1);
         }
         (void)sys_close(tfd);
@@ -1704,8 +1704,8 @@ void _start(void) {
     {
         int pid = sys_fork();
         if (pid < 0) {
-            sys_write(1, "[init] kill test fork failed\n",
-                      (uint32_t)(sizeof("[init] kill test fork failed\n") - 1));
+            sys_write(1, "[test] kill test fork failed\n",
+                      (uint32_t)(sizeof("[test] kill test fork failed\n") - 1));
             sys_exit(1);
         }
 
@@ -1716,28 +1716,28 @@ void _start(void) {
         }
 
         if (sys_kill(pid, SIGKILL) < 0) {
-            sys_write(1, "[init] kill(SIGKILL) failed\n",
-                      (uint32_t)(sizeof("[init] kill(SIGKILL) failed\n") - 1));
+            sys_write(1, "[test] kill(SIGKILL) failed\n",
+                      (uint32_t)(sizeof("[test] kill(SIGKILL) failed\n") - 1));
             sys_exit(1);
         }
 
         int st = 0;
         int rp = sys_waitpid(pid, &st, 0);
         if (rp != pid || st != (128 + SIGKILL)) {
-            sys_write(1, "[init] kill test waitpid mismatch\n",
-                      (uint32_t)(sizeof("[init] kill test waitpid mismatch\n") - 1));
+            sys_write(1, "[test] kill test waitpid mismatch\n",
+                      (uint32_t)(sizeof("[test] kill test waitpid mismatch\n") - 1));
             sys_exit(1);
         }
 
-        sys_write(1, "[init] kill(SIGKILL) OK\n",
-                  (uint32_t)(sizeof("[init] kill(SIGKILL) OK\n") - 1));
+        sys_write(1, "[test] kill(SIGKILL) OK\n",
+                  (uint32_t)(sizeof("[test] kill(SIGKILL) OK\n") - 1));
     }
 
     {
         int fds[2];
         if (sys_pipe(fds) < 0) {
-            sys_write(1, "[init] poll pipe setup failed\n",
-                      (uint32_t)(sizeof("[init] poll pipe setup failed\n") - 1));
+            sys_write(1, "[test] poll pipe setup failed\n",
+                      (uint32_t)(sizeof("[test] poll pipe setup failed\n") - 1));
             sys_exit(1);
         }
 
@@ -1747,36 +1747,36 @@ void _start(void) {
         p.revents = 0;
         int rc = sys_poll(&p, 1, 0);
         if (rc != 0) {
-            sys_write(1, "[init] poll(pipe) expected 0\n",
-                      (uint32_t)(sizeof("[init] poll(pipe) expected 0\n") - 1));
+            sys_write(1, "[test] poll(pipe) expected 0\n",
+                      (uint32_t)(sizeof("[test] poll(pipe) expected 0\n") - 1));
             sys_exit(1);
         }
 
         static const char a = 'A';
         if (sys_write(fds[1], &a, 1) != 1) {
-            sys_write(1, "[init] poll pipe write failed\n",
-                      (uint32_t)(sizeof("[init] poll pipe write failed\n") - 1));
+            sys_write(1, "[test] poll pipe write failed\n",
+                      (uint32_t)(sizeof("[test] poll pipe write failed\n") - 1));
             sys_exit(1);
         }
 
         p.revents = 0;
         rc = sys_poll(&p, 1, 0);
         if (rc != 1 || (p.revents & POLLIN) == 0) {
-            sys_write(1, "[init] poll(pipe) expected POLLIN\n",
-                      (uint32_t)(sizeof("[init] poll(pipe) expected POLLIN\n") - 1));
+            sys_write(1, "[test] poll(pipe) expected POLLIN\n",
+                      (uint32_t)(sizeof("[test] poll(pipe) expected POLLIN\n") - 1));
             sys_exit(1);
         }
 
         (void)sys_close(fds[0]);
         (void)sys_close(fds[1]);
-        sys_write(1, "[init] poll(pipe) OK\n", (uint32_t)(sizeof("[init] poll(pipe) OK\n") - 1));
+        sys_write(1, "[test] poll(pipe) OK\n", (uint32_t)(sizeof("[test] poll(pipe) OK\n") - 1));
     }
 
     {
         int fds[2];
         if (sys_pipe(fds) < 0) {
-            sys_write(1, "[init] select pipe setup failed\n",
-                      (uint32_t)(sizeof("[init] select pipe setup failed\n") - 1));
+            sys_write(1, "[test] select pipe setup failed\n",
+                      (uint32_t)(sizeof("[test] select pipe setup failed\n") - 1));
             sys_exit(1);
         }
 
@@ -1785,15 +1785,15 @@ void _start(void) {
         r |= (1ULL << (uint32_t)fds[0]);
         int rc = sys_select((uint32_t)(fds[0] + 1), &r, &w, 0, 0);
         if (rc != 0) {
-            sys_write(1, "[init] select(pipe) expected 0\n",
-                      (uint32_t)(sizeof("[init] select(pipe) expected 0\n") - 1));
+            sys_write(1, "[test] select(pipe) expected 0\n",
+                      (uint32_t)(sizeof("[test] select(pipe) expected 0\n") - 1));
             sys_exit(1);
         }
 
         static const char a = 'B';
         if (sys_write(fds[1], &a, 1) != 1) {
-            sys_write(1, "[init] select pipe write failed\n",
-                      (uint32_t)(sizeof("[init] select pipe write failed\n") - 1));
+            sys_write(1, "[test] select pipe write failed\n",
+                      (uint32_t)(sizeof("[test] select pipe write failed\n") - 1));
             sys_exit(1);
         }
 
@@ -1802,102 +1802,102 @@ void _start(void) {
         r |= (1ULL << (uint32_t)fds[0]);
         rc = sys_select((uint32_t)(fds[0] + 1), &r, &w, 0, 0);
         if (rc != 1 || ((r >> (uint32_t)fds[0]) & 1ULL) == 0) {
-            sys_write(1, "[init] select(pipe) expected readable\n",
-                      (uint32_t)(sizeof("[init] select(pipe) expected readable\n") - 1));
+            sys_write(1, "[test] select(pipe) expected readable\n",
+                      (uint32_t)(sizeof("[test] select(pipe) expected readable\n") - 1));
             sys_exit(1);
         }
 
         (void)sys_close(fds[0]);
         (void)sys_close(fds[1]);
-        sys_write(1, "[init] select(pipe) OK\n",
-                  (uint32_t)(sizeof("[init] select(pipe) OK\n") - 1));
+        sys_write(1, "[test] select(pipe) OK\n",
+                  (uint32_t)(sizeof("[test] select(pipe) OK\n") - 1));
     }
 
     {
         int fd = sys_open("/dev/tty", 0);
         if (fd < 0) {
-            sys_write(1, "[init] ioctl(/dev/tty) open failed\n",
-                      (uint32_t)(sizeof("[init] ioctl(/dev/tty) open failed\n") - 1));
+            sys_write(1, "[test] ioctl(/dev/tty) open failed\n",
+                      (uint32_t)(sizeof("[test] ioctl(/dev/tty) open failed\n") - 1));
             sys_exit(1);
         }
 
         int fg = -1;
         if (sys_ioctl(fd, TIOCGPGRP, &fg) < 0 || fg != 0) {
-            sys_write(1, "[init] ioctl TIOCGPGRP failed\n",
-                      (uint32_t)(sizeof("[init] ioctl TIOCGPGRP failed\n") - 1));
+            sys_write(1, "[test] ioctl TIOCGPGRP failed\n",
+                      (uint32_t)(sizeof("[test] ioctl TIOCGPGRP failed\n") - 1));
             sys_exit(1);
         }
 
         fg = 0;
         if (sys_ioctl(fd, TIOCSPGRP, &fg) < 0) {
-            sys_write(1, "[init] ioctl TIOCSPGRP failed\n",
-                      (uint32_t)(sizeof("[init] ioctl TIOCSPGRP failed\n") - 1));
+            sys_write(1, "[test] ioctl TIOCSPGRP failed\n",
+                      (uint32_t)(sizeof("[test] ioctl TIOCSPGRP failed\n") - 1));
             sys_exit(1);
         }
 
         fg = 1;
         if (sys_ioctl(fd, TIOCSPGRP, &fg) >= 0) {
-            sys_write(1, "[init] ioctl TIOCSPGRP expected fail\n",
-                      (uint32_t)(sizeof("[init] ioctl TIOCSPGRP expected fail\n") - 1));
+            sys_write(1, "[test] ioctl TIOCSPGRP expected fail\n",
+                      (uint32_t)(sizeof("[test] ioctl TIOCSPGRP expected fail\n") - 1));
             sys_exit(1);
         }
 
         struct termios oldt;
         if (sys_ioctl(fd, TCGETS, &oldt) < 0) {
-            sys_write(1, "[init] ioctl TCGETS failed\n",
-                      (uint32_t)(sizeof("[init] ioctl TCGETS failed\n") - 1));
+            sys_write(1, "[test] ioctl TCGETS failed\n",
+                      (uint32_t)(sizeof("[test] ioctl TCGETS failed\n") - 1));
             sys_exit(1);
         }
 
         struct termios t = oldt;
         t.c_lflag &= ~(uint32_t)(ECHO | ICANON);
         if (sys_ioctl(fd, TCSETS, &t) < 0) {
-            sys_write(1, "[init] ioctl TCSETS failed\n",
-                      (uint32_t)(sizeof("[init] ioctl TCSETS failed\n") - 1));
+            sys_write(1, "[test] ioctl TCSETS failed\n",
+                      (uint32_t)(sizeof("[test] ioctl TCSETS failed\n") - 1));
             sys_exit(1);
         }
 
         struct termios chk;
         if (sys_ioctl(fd, TCGETS, &chk) < 0) {
-            sys_write(1, "[init] ioctl TCGETS2 failed\n",
-                      (uint32_t)(sizeof("[init] ioctl TCGETS2 failed\n") - 1));
+            sys_write(1, "[test] ioctl TCGETS2 failed\n",
+                      (uint32_t)(sizeof("[test] ioctl TCGETS2 failed\n") - 1));
             sys_exit(1);
         }
 
         if ((chk.c_lflag & (uint32_t)(ECHO | ICANON)) != 0) {
-            sys_write(1, "[init] ioctl verify failed\n",
-                      (uint32_t)(sizeof("[init] ioctl verify failed\n") - 1));
+            sys_write(1, "[test] ioctl verify failed\n",
+                      (uint32_t)(sizeof("[test] ioctl verify failed\n") - 1));
             sys_exit(1);
         }
 
         (void)sys_ioctl(fd, TCSETS, &oldt);
         (void)sys_close(fd);
 
-        sys_write(1, "[init] ioctl(/dev/tty) OK\n",
-                  (uint32_t)(sizeof("[init] ioctl(/dev/tty) OK\n") - 1));
+        sys_write(1, "[test] ioctl(/dev/tty) OK\n",
+                  (uint32_t)(sizeof("[test] ioctl(/dev/tty) OK\n") - 1));
     }
 
     // A2: basic job control. A background pgrp read/write on controlling TTY should raise SIGTTIN/SIGTTOU.
     {
         int leader = sys_fork();
         if (leader < 0) {
-            sys_write(1, "[init] fork(job control leader) failed\n",
-                      (uint32_t)(sizeof("[init] fork(job control leader) failed\n") - 1));
+            sys_write(1, "[test] fork(job control leader) failed\n",
+                      (uint32_t)(sizeof("[test] fork(job control leader) failed\n") - 1));
             sys_exit(1);
         }
         if (leader == 0) {
             int me = sys_getpid();
             int sid = sys_setsid();
             if (sid != me) {
-                sys_write(1, "[init] setsid(job control) failed\n",
-                          (uint32_t)(sizeof("[init] setsid(job control) failed\n") - 1));
+                sys_write(1, "[test] setsid(job control) failed\n",
+                          (uint32_t)(sizeof("[test] setsid(job control) failed\n") - 1));
                 sys_exit(1);
             }
 
             int tfd = sys_open("/dev/tty", 0);
             if (tfd < 0) {
-                sys_write(1, "[init] open(/dev/tty) for job control failed\n",
-                          (uint32_t)(sizeof("[init] open(/dev/tty) for job control failed\n") - 1));
+                sys_write(1, "[test] open(/dev/tty) for job control failed\n",
+                          (uint32_t)(sizeof("[test] open(/dev/tty) for job control failed\n") - 1));
                 sys_exit(1);
             }
 
@@ -1907,15 +1907,15 @@ void _start(void) {
 
             fg = me;
             if (sys_ioctl(tfd, TIOCSPGRP, &fg) < 0) {
-                sys_write(1, "[init] ioctl TIOCSPGRP(job control) failed\n",
-                          (uint32_t)(sizeof("[init] ioctl TIOCSPGRP(job control) failed\n") - 1));
+                sys_write(1, "[test] ioctl TIOCSPGRP(job control) failed\n",
+                          (uint32_t)(sizeof("[test] ioctl TIOCSPGRP(job control) failed\n") - 1));
                 sys_exit(1);
             }
 
             int bg = sys_fork();
             if (bg < 0) {
-                sys_write(1, "[init] fork(job control bg) failed\n",
-                          (uint32_t)(sizeof("[init] fork(job control bg) failed\n") - 1));
+                sys_write(1, "[test] fork(job control bg) failed\n",
+                          (uint32_t)(sizeof("[test] fork(job control bg) failed\n") - 1));
                 sys_exit(1);
             }
             if (bg == 0) {
@@ -1927,16 +1927,16 @@ void _start(void) {
                 uint8_t b = 0;
                 (void)sys_read(tfd, &b, 1);
                 if (!got_ttin) {
-                    sys_write(1, "[init] SIGTTIN job control failed\n",
-                              (uint32_t)(sizeof("[init] SIGTTIN job control failed\n") - 1));
+                    sys_write(1, "[test] SIGTTIN job control failed\n",
+                              (uint32_t)(sizeof("[test] SIGTTIN job control failed\n") - 1));
                     sys_exit(1);
                 }
 
                 const char msg2[] = "x";
                 (void)sys_write(tfd, msg2, 1);
                 if (!got_ttou) {
-                    sys_write(1, "[init] SIGTTOU job control failed\n",
-                              (uint32_t)(sizeof("[init] SIGTTOU job control failed\n") - 1));
+                    sys_write(1, "[test] SIGTTOU job control failed\n",
+                              (uint32_t)(sizeof("[test] SIGTTOU job control failed\n") - 1));
                     sys_exit(1);
                 }
 
@@ -1946,7 +1946,7 @@ void _start(void) {
             int st2 = 0;
             int wp2 = sys_waitpid(bg, &st2, 0);
             if (wp2 != bg || st2 != 0) {
-                sys_write(1, "[init] waitpid(job control bg) failed wp=", (uint32_t)(sizeof("[init] waitpid(job control bg) failed wp=") - 1));
+                sys_write(1, "[test] waitpid(job control bg) failed wp=", (uint32_t)(sizeof("[test] waitpid(job control bg) failed wp=") - 1));
                 write_int_dec(wp2);
                 sys_write(1, " st=", (uint32_t)(sizeof(" st=") - 1));
                 write_int_dec(st2);
@@ -1961,7 +1961,7 @@ void _start(void) {
         int stL = 0;
         int wpL = sys_waitpid(leader, &stL, 0);
         if (wpL != leader || stL != 0) {
-            sys_write(1, "[init] waitpid(job control leader) failed wp=", (uint32_t)(sizeof("[init] waitpid(job control leader) failed wp=") - 1));
+            sys_write(1, "[test] waitpid(job control leader) failed wp=", (uint32_t)(sizeof("[test] waitpid(job control leader) failed wp=") - 1));
             write_int_dec(wpL);
             sys_write(1, " st=", (uint32_t)(sizeof(" st=") - 1));
             write_int_dec(stL);
@@ -1969,15 +1969,15 @@ void _start(void) {
             sys_exit(1);
         }
 
-        sys_write(1, "[init] job control (SIGTTIN/SIGTTOU) OK\n",
-                  (uint32_t)(sizeof("[init] job control (SIGTTIN/SIGTTOU) OK\n") - 1));
+        sys_write(1, "[test] job control (SIGTTIN/SIGTTOU) OK\n",
+                  (uint32_t)(sizeof("[test] job control (SIGTTIN/SIGTTOU) OK\n") - 1));
     }
 
     {
         int fd = sys_open("/dev/null", 0);
         if (fd < 0) {
-            sys_write(1, "[init] poll(/dev/null) open failed\n",
-                      (uint32_t)(sizeof("[init] poll(/dev/null) open failed\n") - 1));
+            sys_write(1, "[test] poll(/dev/null) open failed\n",
+                      (uint32_t)(sizeof("[test] poll(/dev/null) open failed\n") - 1));
             sys_exit(1);
         }
         struct pollfd p;
@@ -1986,28 +1986,28 @@ void _start(void) {
         p.revents = 0;
         int rc = sys_poll(&p, 1, 0);
         if (rc != 1 || (p.revents & POLLOUT) == 0) {
-            sys_write(1, "[init] poll(/dev/null) expected POLLOUT\n",
-                      (uint32_t)(sizeof("[init] poll(/dev/null) expected POLLOUT\n") - 1));
+            sys_write(1, "[test] poll(/dev/null) expected POLLOUT\n",
+                      (uint32_t)(sizeof("[test] poll(/dev/null) expected POLLOUT\n") - 1));
             sys_exit(1);
         }
         (void)sys_close(fd);
-        sys_write(1, "[init] poll(/dev/null) OK\n",
-                  (uint32_t)(sizeof("[init] poll(/dev/null) OK\n") - 1));
+        sys_write(1, "[test] poll(/dev/null) OK\n",
+                  (uint32_t)(sizeof("[test] poll(/dev/null) OK\n") - 1));
     }
 
     {
         int mfd = sys_open("/dev/ptmx", 0);
         int sfd = sys_open("/dev/pts/0", 0);
         if (mfd < 0 || sfd < 0) {
-            sys_write(1, "[init] pty open failed\n",
-                      (uint32_t)(sizeof("[init] pty open failed\n") - 1));
+            sys_write(1, "[test] pty open failed\n",
+                      (uint32_t)(sizeof("[test] pty open failed\n") - 1));
             sys_exit(1);
         }
 
         static const char m2s[] = "m2s";
         if (sys_write(mfd, m2s, (uint32_t)(sizeof(m2s) - 1)) != (int)(sizeof(m2s) - 1)) {
-            sys_write(1, "[init] pty write master failed\n",
-                      (uint32_t)(sizeof("[init] pty write master failed\n") - 1));
+            sys_write(1, "[test] pty write master failed\n",
+                      (uint32_t)(sizeof("[test] pty write master failed\n") - 1));
             sys_exit(1);
         }
 
@@ -2017,23 +2017,23 @@ void _start(void) {
         p.revents = 0;
         int rc = sys_poll(&p, 1, 50);
         if (rc != 1 || (p.revents & POLLIN) == 0) {
-            sys_write(1, "[init] pty poll slave failed\n",
-                      (uint32_t)(sizeof("[init] pty poll slave failed\n") - 1));
+            sys_write(1, "[test] pty poll slave failed\n",
+                      (uint32_t)(sizeof("[test] pty poll slave failed\n") - 1));
             sys_exit(1);
         }
 
         char buf[8];
         int rd = sys_read(sfd, buf, (uint32_t)(sizeof(m2s) - 1));
         if (rd != (int)(sizeof(m2s) - 1) || !memeq(buf, m2s, (uint32_t)(sizeof(m2s) - 1))) {
-            sys_write(1, "[init] pty read slave failed\n",
-                      (uint32_t)(sizeof("[init] pty read slave failed\n") - 1));
+            sys_write(1, "[test] pty read slave failed\n",
+                      (uint32_t)(sizeof("[test] pty read slave failed\n") - 1));
             sys_exit(1);
         }
 
         static const char s2m[] = "s2m";
         if (sys_write(sfd, s2m, (uint32_t)(sizeof(s2m) - 1)) != (int)(sizeof(s2m) - 1)) {
-            sys_write(1, "[init] pty write slave failed\n",
-                      (uint32_t)(sizeof("[init] pty write slave failed\n") - 1));
+            sys_write(1, "[test] pty write slave failed\n",
+                      (uint32_t)(sizeof("[test] pty write slave failed\n") - 1));
             sys_exit(1);
         }
 
@@ -2042,35 +2042,35 @@ void _start(void) {
         p.revents = 0;
         rc = sys_poll(&p, 1, 50);
         if (rc != 1 || (p.revents & POLLIN) == 0) {
-            sys_write(1, "[init] pty poll master failed\n",
-                      (uint32_t)(sizeof("[init] pty poll master failed\n") - 1));
+            sys_write(1, "[test] pty poll master failed\n",
+                      (uint32_t)(sizeof("[test] pty poll master failed\n") - 1));
             sys_exit(1);
         }
 
         rd = sys_read(mfd, buf, (uint32_t)(sizeof(s2m) - 1));
         if (rd != (int)(sizeof(s2m) - 1) || !memeq(buf, s2m, (uint32_t)(sizeof(s2m) - 1))) {
-            sys_write(1, "[init] pty read master failed\n",
-                      (uint32_t)(sizeof("[init] pty read master failed\n") - 1));
+            sys_write(1, "[test] pty read master failed\n",
+                      (uint32_t)(sizeof("[test] pty read master failed\n") - 1));
             sys_exit(1);
         }
 
         (void)sys_close(mfd);
         (void)sys_close(sfd);
-        sys_write(1, "[init] pty OK\n", (uint32_t)(sizeof("[init] pty OK\n") - 1));
+        sys_write(1, "[test] pty OK\n", (uint32_t)(sizeof("[test] pty OK\n") - 1));
     }
 
     {
-        sys_write(1, "[init] setsid test: before fork\n",
-                  (uint32_t)(sizeof("[init] setsid test: before fork\n") - 1));
+        sys_write(1, "[test] setsid test: before fork\n",
+                  (uint32_t)(sizeof("[test] setsid test: before fork\n") - 1));
         int pid = sys_fork();
         if (pid < 0) {
-            static const char smsg[] = "[init] fork failed\n";
+            static const char smsg[] = "[test] fork failed\n";
             (void)sys_write(1, smsg, (uint32_t)(sizeof(smsg) - 1));
             sys_exit(2);
         }
         if (pid == 0) {
-            sys_write(1, "[init] setsid test: child start\n",
-                      (uint32_t)(sizeof("[init] setsid test: child start\n") - 1));
+            sys_write(1, "[test] setsid test: child start\n",
+                      (uint32_t)(sizeof("[test] setsid test: child start\n") - 1));
             int me = sys_getpid();
             int sid = sys_setsid();
             if (sid != me) sys_exit(2);
@@ -2085,32 +2085,32 @@ void _start(void) {
             sys_exit(0);
         }
 
-        sys_write(1, "[init] setsid test: parent waitpid\n",
-                  (uint32_t)(sizeof("[init] setsid test: parent waitpid\n") - 1));
+        sys_write(1, "[test] setsid test: parent waitpid\n",
+                  (uint32_t)(sizeof("[test] setsid test: parent waitpid\n") - 1));
         int st = 0;
         int wp = sys_waitpid(pid, &st, 0);
         if (wp != pid || st != 0) {
-            sys_write(1, "[init] setsid/setpgid/getpgrp failed\n",
-                      (uint32_t)(sizeof("[init] setsid/setpgid/getpgrp failed\n") - 1));
+            sys_write(1, "[test] setsid/setpgid/getpgrp failed\n",
+                      (uint32_t)(sizeof("[test] setsid/setpgid/getpgrp failed\n") - 1));
             sys_exit(1);
         }
 
-        sys_write(1, "[init] setsid/setpgid/getpgrp OK\n",
-                  (uint32_t)(sizeof("[init] setsid/setpgid/getpgrp OK\n") - 1));
+        sys_write(1, "[test] setsid/setpgid/getpgrp OK\n",
+                  (uint32_t)(sizeof("[test] setsid/setpgid/getpgrp OK\n") - 1));
     }
 
     {
         uintptr_t oldh = 0;
         if (sys_sigaction(SIGUSR1, usr1_handler, &oldh) < 0) {
-            sys_write(1, "[init] sigaction failed\n",
-                      (uint32_t)(sizeof("[init] sigaction failed\n") - 1));
+            sys_write(1, "[test] sigaction failed\n",
+                      (uint32_t)(sizeof("[test] sigaction failed\n") - 1));
             sys_exit(1);
         }
 
         int me = sys_getpid();
         if (sys_kill(me, SIGUSR1) < 0) {
-            sys_write(1, "[init] kill(SIGUSR1) failed\n",
-                      (uint32_t)(sizeof("[init] kill(SIGUSR1) failed\n") - 1));
+            sys_write(1, "[test] kill(SIGUSR1) failed\n",
+                      (uint32_t)(sizeof("[test] kill(SIGUSR1) failed\n") - 1));
             sys_exit(1);
         }
 
@@ -2119,148 +2119,148 @@ void _start(void) {
         }
 
         if (!got_usr1) {
-            sys_write(1, "[init] SIGUSR1 not delivered\n",
-                      (uint32_t)(sizeof("[init] SIGUSR1 not delivered\n") - 1));
+            sys_write(1, "[test] SIGUSR1 not delivered\n",
+                      (uint32_t)(sizeof("[test] SIGUSR1 not delivered\n") - 1));
             sys_exit(1);
         }
 
-        sys_write(1, "[init] sigaction/kill(SIGUSR1) OK\n",
-                  (uint32_t)(sizeof("[init] sigaction/kill(SIGUSR1) OK\n") - 1));
+        sys_write(1, "[test] sigaction/kill(SIGUSR1) OK\n",
+                  (uint32_t)(sizeof("[test] sigaction/kill(SIGUSR1) OK\n") - 1));
     }
 
     // Verify that returning from a signal handler does not corrupt the user stack.
     {
         if (sys_sigaction(SIGUSR1, usr1_ret_handler, 0) < 0) {
-            sys_write(1, "[init] sigaction (sigreturn test) failed\n",
-                      (uint32_t)(sizeof("[init] sigaction (sigreturn test) failed\n") - 1));
+            sys_write(1, "[test] sigaction (sigreturn test) failed\n",
+                      (uint32_t)(sizeof("[test] sigaction (sigreturn test) failed\n") - 1));
             sys_exit(1);
         }
 
         volatile uint32_t canary = 0x11223344U;
         int me = sys_getpid();
         if (sys_kill(me, SIGUSR1) < 0) {
-            sys_write(1, "[init] kill(SIGUSR1) (sigreturn test) failed\n",
-                      (uint32_t)(sizeof("[init] kill(SIGUSR1) (sigreturn test) failed\n") - 1));
+            sys_write(1, "[test] kill(SIGUSR1) (sigreturn test) failed\n",
+                      (uint32_t)(sizeof("[test] kill(SIGUSR1) (sigreturn test) failed\n") - 1));
             sys_exit(1);
         }
 
         if (!got_usr1_ret) {
-            sys_write(1, "[init] SIGUSR1 not delivered (sigreturn test)\n",
-                      (uint32_t)(sizeof("[init] SIGUSR1 not delivered (sigreturn test)\n") - 1));
+            sys_write(1, "[test] SIGUSR1 not delivered (sigreturn test)\n",
+                      (uint32_t)(sizeof("[test] SIGUSR1 not delivered (sigreturn test)\n") - 1));
             sys_exit(1);
         }
 
         if (canary != 0x11223344U) {
-            sys_write(1, "[init] sigreturn test stack corruption\n",
-                      (uint32_t)(sizeof("[init] sigreturn test stack corruption\n") - 1));
+            sys_write(1, "[test] sigreturn test stack corruption\n",
+                      (uint32_t)(sizeof("[test] sigreturn test stack corruption\n") - 1));
             sys_exit(1);
         }
 
-        sys_write(1, "[init] sigreturn OK\n",
-                  (uint32_t)(sizeof("[init] sigreturn OK\n") - 1));
+        sys_write(1, "[test] sigreturn OK\n",
+                  (uint32_t)(sizeof("[test] sigreturn OK\n") - 1));
     }
 
     fd = sys_open("/tmp/hello.txt", 0);
     if (fd < 0) {
-        sys_write(1, "[init] tmpfs open2 failed\n",
-                  (uint32_t)(sizeof("[init] tmpfs open2 failed\n") - 1));
+        sys_write(1, "[test] tmpfs open2 failed\n",
+                  (uint32_t)(sizeof("[test] tmpfs open2 failed\n") - 1));
         sys_exit(1);
     }
 
     if (sys_stat("/tmp/hello.txt", &st) < 0) {
-        sys_write(1, "[init] tmpfs stat failed\n",
-                  (uint32_t)(sizeof("[init] tmpfs stat failed\n") - 1));
+        sys_write(1, "[test] tmpfs stat failed\n",
+                  (uint32_t)(sizeof("[test] tmpfs stat failed\n") - 1));
         sys_exit(1);
     }
     if ((st.st_mode & S_IFMT) != S_IFREG) {
-        sys_write(1, "[init] tmpfs stat not reg\n",
-                  (uint32_t)(sizeof("[init] tmpfs stat not reg\n") - 1));
+        sys_write(1, "[test] tmpfs stat not reg\n",
+                  (uint32_t)(sizeof("[test] tmpfs stat not reg\n") - 1));
         sys_exit(1);
     }
     if (st.st_size == 0) {
-        sys_write(1, "[init] tmpfs stat size 0\n",
-                  (uint32_t)(sizeof("[init] tmpfs stat size 0\n") - 1));
+        sys_write(1, "[test] tmpfs stat size 0\n",
+                  (uint32_t)(sizeof("[test] tmpfs stat size 0\n") - 1));
         sys_exit(1);
     }
 
     struct stat fst;
     if (sys_fstat(fd, &fst) < 0) {
-        sys_write(1, "[init] tmpfs fstat failed\n",
-                  (uint32_t)(sizeof("[init] tmpfs fstat failed\n") - 1));
+        sys_write(1, "[test] tmpfs fstat failed\n",
+                  (uint32_t)(sizeof("[test] tmpfs fstat failed\n") - 1));
         sys_exit(1);
     }
     if (fst.st_size != st.st_size) {
-        sys_write(1, "[init] tmpfs stat size mismatch\n",
-                  (uint32_t)(sizeof("[init] tmpfs stat size mismatch\n") - 1));
+        sys_write(1, "[test] tmpfs stat size mismatch\n",
+                  (uint32_t)(sizeof("[test] tmpfs stat size mismatch\n") - 1));
         sys_exit(1);
     }
 
     int end = sys_lseek(fd, 0, SEEK_END);
     if (end < 0 || (uint32_t)end != st.st_size) {
-        sys_write(1, "[init] tmpfs lseek end bad\n",
-                  (uint32_t)(sizeof("[init] tmpfs lseek end bad\n") - 1));
+        sys_write(1, "[test] tmpfs lseek end bad\n",
+                  (uint32_t)(sizeof("[test] tmpfs lseek end bad\n") - 1));
         sys_exit(1);
     }
 
     uint8_t eofb;
     if (sys_read(fd, &eofb, 1) != 0) {
-        sys_write(1, "[init] tmpfs eof read bad\n",
-                  (uint32_t)(sizeof("[init] tmpfs eof read bad\n") - 1));
+        sys_write(1, "[test] tmpfs eof read bad\n",
+                  (uint32_t)(sizeof("[test] tmpfs eof read bad\n") - 1));
         sys_exit(1);
     }
 
     if (sys_lseek(fd, 0, 999) >= 0) {
-        sys_write(1, "[init] tmpfs lseek whence bad\n",
-                  (uint32_t)(sizeof("[init] tmpfs lseek whence bad\n") - 1));
+        sys_write(1, "[test] tmpfs lseek whence bad\n",
+                  (uint32_t)(sizeof("[test] tmpfs lseek whence bad\n") - 1));
         sys_exit(1);
     }
 
     if (sys_lseek(fd, 0, SEEK_SET) < 0) {
-        sys_write(1, "[init] tmpfs lseek set failed\n",
-                  (uint32_t)(sizeof("[init] tmpfs lseek set failed\n") - 1));
+        sys_write(1, "[test] tmpfs lseek set failed\n",
+                  (uint32_t)(sizeof("[test] tmpfs lseek set failed\n") - 1));
         sys_exit(1);
     }
 
     uint8_t tbuf[6];
     if (sys_read(fd, tbuf, 5) != 5) {
-        sys_write(1, "[init] tmpfs read failed\n",
-                  (uint32_t)(sizeof("[init] tmpfs read failed\n") - 1));
+        sys_write(1, "[test] tmpfs read failed\n",
+                  (uint32_t)(sizeof("[test] tmpfs read failed\n") - 1));
         sys_exit(1);
     }
     tbuf[5] = 0;
     if (tbuf[0] != 'h' || tbuf[1] != 'e' || tbuf[2] != 'l' || tbuf[3] != 'l' || tbuf[4] != 'o') {
-        sys_write(1, "[init] tmpfs bad data\n", (uint32_t)(sizeof("[init] tmpfs bad data\n") - 1));
+        sys_write(1, "[test] tmpfs bad data\n", (uint32_t)(sizeof("[test] tmpfs bad data\n") - 1));
         sys_exit(1);
     }
 
     if (sys_close(fd) < 0) {
-        sys_write(1, "[init] tmpfs close failed\n",
-                  (uint32_t)(sizeof("[init] tmpfs close failed\n") - 1));
+        sys_write(1, "[test] tmpfs close failed\n",
+                  (uint32_t)(sizeof("[test] tmpfs close failed\n") - 1));
         sys_exit(1);
     }
 
     if (sys_open("/tmp/does_not_exist", 0) >= 0) {
-        sys_write(1, "[init] tmpfs open nonexist bad\n",
-                  (uint32_t)(sizeof("[init] tmpfs open nonexist bad\n") - 1));
+        sys_write(1, "[test] tmpfs open nonexist bad\n",
+                  (uint32_t)(sizeof("[test] tmpfs open nonexist bad\n") - 1));
         sys_exit(1);
     }
 
     fd = sys_open("/tmp/hello.txt", 0);
     if (fd < 0) {
-        sys_write(1, "[init] tmpfs open3 failed\n",
-                  (uint32_t)(sizeof("[init] tmpfs open3 failed\n") - 1));
+        sys_write(1, "[test] tmpfs open3 failed\n",
+                  (uint32_t)(sizeof("[test] tmpfs open3 failed\n") - 1));
         sys_exit(1);
     }
 
     if (sys_fstat(fd, &fst) < 0) {
-        sys_write(1, "[init] tmpfs fstat2 failed\n",
-                  (uint32_t)(sizeof("[init] tmpfs fstat2 failed\n") - 1));
+        sys_write(1, "[test] tmpfs fstat2 failed\n",
+                  (uint32_t)(sizeof("[test] tmpfs fstat2 failed\n") - 1));
         sys_exit(1);
     }
 
     if (sys_lseek(fd, 0, SEEK_END) < 0) {
-        sys_write(1, "[init] tmpfs lseek end2 failed\n",
-                  (uint32_t)(sizeof("[init] tmpfs lseek end2 failed\n") - 1));
+        sys_write(1, "[test] tmpfs lseek end2 failed\n",
+                  (uint32_t)(sizeof("[test] tmpfs lseek end2 failed\n") - 1));
         sys_exit(1);
     }
 
@@ -2269,65 +2269,65 @@ void _start(void) {
     suf[1] = 'Y';
     suf[2] = 'Z';
     if (sys_write(fd, suf, 3) != 3) {
-        sys_write(1, "[init] tmpfs write failed\n",
-                  (uint32_t)(sizeof("[init] tmpfs write failed\n") - 1));
+        sys_write(1, "[test] tmpfs write failed\n",
+                  (uint32_t)(sizeof("[test] tmpfs write failed\n") - 1));
         sys_exit(1);
     }
 
     if (sys_fstat(fd, &fst) < 0) {
-        sys_write(1, "[init] tmpfs fstat3 failed\n",
-                  (uint32_t)(sizeof("[init] tmpfs fstat3 failed\n") - 1));
+        sys_write(1, "[test] tmpfs fstat3 failed\n",
+                  (uint32_t)(sizeof("[test] tmpfs fstat3 failed\n") - 1));
         sys_exit(1);
     }
     if (fst.st_size != st.st_size + 3) {
-        sys_write(1, "[init] tmpfs size not grown\n",
-                  (uint32_t)(sizeof("[init] tmpfs size not grown\n") - 1));
+        sys_write(1, "[test] tmpfs size not grown\n",
+                  (uint32_t)(sizeof("[test] tmpfs size not grown\n") - 1));
         sys_exit(1);
     }
 
     if (sys_lseek(fd, -3, SEEK_END) < 0) {
-        sys_write(1, "[init] tmpfs lseek back failed\n",
-                  (uint32_t)(sizeof("[init] tmpfs lseek back failed\n") - 1));
+        sys_write(1, "[test] tmpfs lseek back failed\n",
+                  (uint32_t)(sizeof("[test] tmpfs lseek back failed\n") - 1));
         sys_exit(1);
     }
     uint8_t s2[3];
     if (sys_read(fd, s2, 3) != 3 || s2[0] != 'X' || s2[1] != 'Y' || s2[2] != 'Z') {
-        sys_write(1, "[init] tmpfs suffix mismatch\n",
-                  (uint32_t)(sizeof("[init] tmpfs suffix mismatch\n") - 1));
+        sys_write(1, "[test] tmpfs suffix mismatch\n",
+                  (uint32_t)(sizeof("[test] tmpfs suffix mismatch\n") - 1));
         sys_exit(1);
     }
 
     if (sys_close(fd) < 0) {
-        sys_write(1, "[init] tmpfs close3 failed\n",
-                  (uint32_t)(sizeof("[init] tmpfs close3 failed\n") - 1));
+        sys_write(1, "[test] tmpfs close3 failed\n",
+                  (uint32_t)(sizeof("[test] tmpfs close3 failed\n") - 1));
         sys_exit(1);
     }
 
-    sys_write(1, "[init] tmpfs/mount OK\n", (uint32_t)(sizeof("[init] tmpfs/mount OK\n") - 1));
+    sys_write(1, "[test] tmpfs/mount OK\n", (uint32_t)(sizeof("[test] tmpfs/mount OK\n") - 1));
 
     {
         int fd = sys_open("/dev/null", 0);
         if (fd < 0) {
-            sys_write(1, "[init] /dev/null open failed\n",
-                      (uint32_t)(sizeof("[init] /dev/null open failed\n") - 1));
+            sys_write(1, "[test] /dev/null open failed\n",
+                      (uint32_t)(sizeof("[test] /dev/null open failed\n") - 1));
             sys_exit(1);
         }
         static const char z[] = "discard me";
         if (sys_write(fd, z, (uint32_t)(sizeof(z) - 1)) != (int)(sizeof(z) - 1)) {
-            sys_write(1, "[init] /dev/null write failed\n",
-                      (uint32_t)(sizeof("[init] /dev/null write failed\n") - 1));
+            sys_write(1, "[test] /dev/null write failed\n",
+                      (uint32_t)(sizeof("[test] /dev/null write failed\n") - 1));
             sys_exit(1);
         }
         (void)sys_close(fd);
-        sys_write(1, "[init] /dev/null OK\n", (uint32_t)(sizeof("[init] /dev/null OK\n") - 1));
+        sys_write(1, "[test] /dev/null OK\n", (uint32_t)(sizeof("[test] /dev/null OK\n") - 1));
     }
 
     // B1: persistent storage smoke. Value should increment across reboots (disk.img).
     {
         int fd = sys_open("/persist/counter", 0);
         if (fd < 0) {
-            sys_write(1, "[init] /persist/counter open failed\n",
-                      (uint32_t)(sizeof("[init] /persist/counter open failed\n") - 1));
+            sys_write(1, "[test] /persist/counter open failed\n",
+                      (uint32_t)(sizeof("[test] /persist/counter open failed\n") - 1));
             sys_exit(1);
         }
 
@@ -2335,8 +2335,8 @@ void _start(void) {
         uint8_t b[4] = {0, 0, 0, 0};
         int rd = sys_read(fd, b, 4);
         if (rd != 4) {
-            sys_write(1, "[init] /persist/counter read failed\n",
-                      (uint32_t)(sizeof("[init] /persist/counter read failed\n") - 1));
+            sys_write(1, "[test] /persist/counter read failed\n",
+                      (uint32_t)(sizeof("[test] /persist/counter read failed\n") - 1));
             sys_exit(1);
         }
 
@@ -2350,14 +2350,14 @@ void _start(void) {
         (void)sys_lseek(fd, 0, SEEK_SET);
         int wr = sys_write(fd, b, 4);
         if (wr != 4) {
-            sys_write(1, "[init] /persist/counter write failed\n",
-                      (uint32_t)(sizeof("[init] /persist/counter write failed\n") - 1));
+            sys_write(1, "[test] /persist/counter write failed\n",
+                      (uint32_t)(sizeof("[test] /persist/counter write failed\n") - 1));
             sys_exit(1);
         }
 
         (void)sys_close(fd);
 
-        sys_write(1, "[init] /persist/counter=", (uint32_t)(sizeof("[init] /persist/counter=") - 1));
+        sys_write(1, "[test] /persist/counter=", (uint32_t)(sizeof("[test] /persist/counter=") - 1));
         write_int_dec((int)v);
         sys_write(1, "\n", 1);
     }
@@ -2365,15 +2365,15 @@ void _start(void) {
     {
         int fd = sys_open("/dev/tty", 0);
         if (fd < 0) {
-            sys_write(1, "[init] /dev/tty open failed\n",
-                      (uint32_t)(sizeof("[init] /dev/tty open failed\n") - 1));
+            sys_write(1, "[test] /dev/tty open failed\n",
+                      (uint32_t)(sizeof("[test] /dev/tty open failed\n") - 1));
             sys_exit(1);
         }
-        static const char m[] = "[init] /dev/tty write OK\n";
+        static const char m[] = "[test] /dev/tty write OK\n";
         int wr = sys_write(fd, m, (uint32_t)(sizeof(m) - 1));
         if (wr != (int)(sizeof(m) - 1)) {
-            sys_write(1, "[init] /dev/tty write failed\n",
-                      (uint32_t)(sizeof("[init] /dev/tty write failed\n") - 1));
+            sys_write(1, "[test] /dev/tty write failed\n",
+                      (uint32_t)(sizeof("[test] /dev/tty write failed\n") - 1));
             sys_exit(1);
         }
         (void)sys_close(fd);
@@ -2383,8 +2383,8 @@ void _start(void) {
     {
         int fd = sys_open("/disk/test", O_CREAT);
         if (fd < 0) {
-            sys_write(1, "[init] /disk/test open failed\n",
-                      (uint32_t)(sizeof("[init] /disk/test open failed\n") - 1));
+            sys_write(1, "[test] /disk/test open failed\n",
+                      (uint32_t)(sizeof("[test] /disk/test open failed\n") - 1));
             sys_exit(1);
         }
 
@@ -2402,8 +2402,8 @@ void _start(void) {
 
         fd = sys_open("/disk/test", O_CREAT | O_TRUNC);
         if (fd < 0) {
-            sys_write(1, "[init] /disk/test open2 failed\n",
-                      (uint32_t)(sizeof("[init] /disk/test open2 failed\n") - 1));
+            sys_write(1, "[test] /disk/test open2 failed\n",
+                      (uint32_t)(sizeof("[test] /disk/test open2 failed\n") - 1));
             sys_exit(1);
         }
 
@@ -2426,28 +2426,28 @@ void _start(void) {
         }
 
         if (sys_write(fd, out, (uint32_t)n) != n) {
-            sys_write(1, "[init] /disk/test write failed\n",
-                      (uint32_t)(sizeof("[init] /disk/test write failed\n") - 1));
+            sys_write(1, "[test] /disk/test write failed\n",
+                      (uint32_t)(sizeof("[test] /disk/test write failed\n") - 1));
             sys_exit(1);
         }
         (void)sys_close(fd);
 
         fd = sys_open("/disk/test", 0);
         if (fd < 0) {
-            sys_write(1, "[init] /disk/test open3 failed\n",
-                      (uint32_t)(sizeof("[init] /disk/test open3 failed\n") - 1));
+            sys_write(1, "[test] /disk/test open3 failed\n",
+                      (uint32_t)(sizeof("[test] /disk/test open3 failed\n") - 1));
             sys_exit(1);
         }
         for (uint32_t i = 0; i < (uint32_t)sizeof(buf); i++) buf[i] = 0;
         rd = sys_read(fd, buf, sizeof(buf));
         (void)sys_close(fd);
         if (rd != n || !memeq(buf, out, (uint32_t)n)) {
-            sys_write(1, "[init] /disk/test verify failed\n",
-                      (uint32_t)(sizeof("[init] /disk/test verify failed\n") - 1));
+            sys_write(1, "[test] /disk/test verify failed\n",
+                      (uint32_t)(sizeof("[test] /disk/test verify failed\n") - 1));
             sys_exit(1);
         }
 
-        sys_write(1, "[init] /disk/test prev=", (uint32_t)(sizeof("[init] /disk/test prev=") - 1));
+        sys_write(1, "[test] /disk/test prev=", (uint32_t)(sizeof("[test] /disk/test prev=") - 1));
         write_int_dec(prev);
         sys_write(1, " next=", (uint32_t)(sizeof(" next=") - 1));
         write_int_dec(next);
@@ -2458,7 +2458,7 @@ void _start(void) {
     {
         int r = sys_mkdir("/disk/dir");
         if (r < 0 && errno != 17) {
-            sys_write(1, "[init] mkdir /disk/dir failed errno=", (uint32_t)(sizeof("[init] mkdir /disk/dir failed errno=") - 1));
+            sys_write(1, "[test] mkdir /disk/dir failed errno=", (uint32_t)(sizeof("[test] mkdir /disk/dir failed errno=") - 1));
             write_int_dec(errno);
             sys_write(1, "\n", 1);
             sys_exit(1);
@@ -2466,41 +2466,41 @@ void _start(void) {
 
         int fd = sys_open("/disk/dir/file", O_CREAT | O_TRUNC);
         if (fd < 0) {
-            sys_write(1, "[init] open /disk/dir/file failed\n",
-                      (uint32_t)(sizeof("[init] open /disk/dir/file failed\n") - 1));
+            sys_write(1, "[test] open /disk/dir/file failed\n",
+                      (uint32_t)(sizeof("[test] open /disk/dir/file failed\n") - 1));
             sys_exit(1);
         }
         static const char msg2[] = "ok";
         if (sys_write(fd, msg2, 2) != 2) {
-            sys_write(1, "[init] write /disk/dir/file failed\n",
-                      (uint32_t)(sizeof("[init] write /disk/dir/file failed\n") - 1));
+            sys_write(1, "[test] write /disk/dir/file failed\n",
+                      (uint32_t)(sizeof("[test] write /disk/dir/file failed\n") - 1));
             sys_exit(1);
         }
         (void)sys_close(fd);
 
         r = sys_unlink("/disk/dir/file");
         if (r < 0) {
-            sys_write(1, "[init] unlink /disk/dir/file failed\n",
-                      (uint32_t)(sizeof("[init] unlink /disk/dir/file failed\n") - 1));
+            sys_write(1, "[test] unlink /disk/dir/file failed\n",
+                      (uint32_t)(sizeof("[test] unlink /disk/dir/file failed\n") - 1));
             sys_exit(1);
         }
 
         fd = sys_open("/disk/dir/file", 0);
         if (fd >= 0) {
-            sys_write(1, "[init] unlink did not remove file\n",
-                      (uint32_t)(sizeof("[init] unlink did not remove file\n") - 1));
+            sys_write(1, "[test] unlink did not remove file\n",
+                      (uint32_t)(sizeof("[test] unlink did not remove file\n") - 1));
             sys_exit(1);
         }
 
-        sys_write(1, "[init] diskfs mkdir/unlink OK\n",
-                  (uint32_t)(sizeof("[init] diskfs mkdir/unlink OK\n") - 1));
+        sys_write(1, "[test] diskfs mkdir/unlink OK\n",
+                  (uint32_t)(sizeof("[test] diskfs mkdir/unlink OK\n") - 1));
     }
 
     // B4: diskfs getdents smoke
     {
         int r = sys_mkdir("/disk/ls");
         if (r < 0 && errno != 17) {
-            sys_write(1, "[init] mkdir /disk/ls failed errno=", (uint32_t)(sizeof("[init] mkdir /disk/ls failed errno=") - 1));
+            sys_write(1, "[test] mkdir /disk/ls failed errno=", (uint32_t)(sizeof("[test] mkdir /disk/ls failed errno=") - 1));
             write_int_dec(errno);
             sys_write(1, "\n", 1);
             sys_exit(1);
@@ -2508,24 +2508,24 @@ void _start(void) {
 
         int fd = sys_open("/disk/ls/file1", O_CREAT | O_TRUNC);
         if (fd < 0) {
-            sys_write(1, "[init] create /disk/ls/file1 failed\n",
-                      (uint32_t)(sizeof("[init] create /disk/ls/file1 failed\n") - 1));
+            sys_write(1, "[test] create /disk/ls/file1 failed\n",
+                      (uint32_t)(sizeof("[test] create /disk/ls/file1 failed\n") - 1));
             sys_exit(1);
         }
         (void)sys_close(fd);
 
         fd = sys_open("/disk/ls/file2", O_CREAT | O_TRUNC);
         if (fd < 0) {
-            sys_write(1, "[init] create /disk/ls/file2 failed\n",
-                      (uint32_t)(sizeof("[init] create /disk/ls/file2 failed\n") - 1));
+            sys_write(1, "[test] create /disk/ls/file2 failed\n",
+                      (uint32_t)(sizeof("[test] create /disk/ls/file2 failed\n") - 1));
             sys_exit(1);
         }
         (void)sys_close(fd);
 
         int dfd = sys_open("/disk/ls", 0);
         if (dfd < 0) {
-            sys_write(1, "[init] open dir /disk/ls failed\n",
-                      (uint32_t)(sizeof("[init] open dir /disk/ls failed\n") - 1));
+            sys_write(1, "[test] open dir /disk/ls failed\n",
+                      (uint32_t)(sizeof("[test] open dir /disk/ls failed\n") - 1));
             sys_exit(1);
         }
 
@@ -2539,8 +2539,8 @@ void _start(void) {
         int n = sys_getdents(dfd, ents, (uint32_t)sizeof(ents));
         (void)sys_close(dfd);
         if (n <= 0) {
-            sys_write(1, "[init] getdents failed\n",
-                      (uint32_t)(sizeof("[init] getdents failed\n") - 1));
+            sys_write(1, "[test] getdents failed\n",
+                      (uint32_t)(sizeof("[test] getdents failed\n") - 1));
             sys_exit(1);
         }
 
@@ -2554,80 +2554,80 @@ void _start(void) {
         }
 
         if (!saw_dot || !saw_dotdot || !saw_f1 || !saw_f2) {
-            sys_write(1, "[init] getdents verify failed\n",
-                      (uint32_t)(sizeof("[init] getdents verify failed\n") - 1));
+            sys_write(1, "[test] getdents verify failed\n",
+                      (uint32_t)(sizeof("[test] getdents verify failed\n") - 1));
             sys_exit(1);
         }
 
-        sys_write(1, "[init] diskfs getdents OK\n",
-                  (uint32_t)(sizeof("[init] diskfs getdents OK\n") - 1));
+        sys_write(1, "[test] diskfs getdents OK\n",
+                  (uint32_t)(sizeof("[test] diskfs getdents OK\n") - 1));
     }
 
     // B5: isatty() POSIX-like smoke (via ioctl TCGETS)
     {
         int fd = sys_open("/dev/tty", 0);
         if (fd < 0) {
-            sys_write(1, "[init] isatty open /dev/tty failed\n",
-                      (uint32_t)(sizeof("[init] isatty open /dev/tty failed\n") - 1));
+            sys_write(1, "[test] isatty open /dev/tty failed\n",
+                      (uint32_t)(sizeof("[test] isatty open /dev/tty failed\n") - 1));
             sys_exit(1);
         }
         int r = isatty_fd(fd);
         (void)sys_close(fd);
         if (r != 1) {
-            sys_write(1, "[init] isatty(/dev/tty) failed\n",
-                      (uint32_t)(sizeof("[init] isatty(/dev/tty) failed\n") - 1));
+            sys_write(1, "[test] isatty(/dev/tty) failed\n",
+                      (uint32_t)(sizeof("[test] isatty(/dev/tty) failed\n") - 1));
             sys_exit(1);
         }
 
         fd = sys_open("/dev/null", 0);
         if (fd < 0) {
-            sys_write(1, "[init] isatty open /dev/null failed\n",
-                      (uint32_t)(sizeof("[init] isatty open /dev/null failed\n") - 1));
+            sys_write(1, "[test] isatty open /dev/null failed\n",
+                      (uint32_t)(sizeof("[test] isatty open /dev/null failed\n") - 1));
             sys_exit(1);
         }
         r = isatty_fd(fd);
         (void)sys_close(fd);
         if (r != 0) {
-            sys_write(1, "[init] isatty(/dev/null) expected 0\n",
-                      (uint32_t)(sizeof("[init] isatty(/dev/null) expected 0\n") - 1));
+            sys_write(1, "[test] isatty(/dev/null) expected 0\n",
+                      (uint32_t)(sizeof("[test] isatty(/dev/null) expected 0\n") - 1));
             sys_exit(1);
         }
 
-        sys_write(1, "[init] isatty OK\n", (uint32_t)(sizeof("[init] isatty OK\n") - 1));
+        sys_write(1, "[test] isatty OK\n", (uint32_t)(sizeof("[test] isatty OK\n") - 1));
     }
 
     // B6: O_NONBLOCK smoke (pipe + pty)
     {
         int fds[2];
         if (sys_pipe(fds) < 0) {
-            sys_write(1, "[init] pipe for nonblock failed\n",
-                      (uint32_t)(sizeof("[init] pipe for nonblock failed\n") - 1));
+            sys_write(1, "[test] pipe for nonblock failed\n",
+                      (uint32_t)(sizeof("[test] pipe for nonblock failed\n") - 1));
             sys_exit(1);
         }
 
         if (sys_fcntl(fds[0], F_SETFL, O_NONBLOCK) < 0) {
-            sys_write(1, "[init] fcntl nonblock pipe failed\n",
-                      (uint32_t)(sizeof("[init] fcntl nonblock pipe failed\n") - 1));
+            sys_write(1, "[test] fcntl nonblock pipe failed\n",
+                      (uint32_t)(sizeof("[test] fcntl nonblock pipe failed\n") - 1));
             sys_exit(1);
         }
 
         char b;
         int r = sys_read(fds[0], &b, 1);
         if (r != -1 || errno != EAGAIN) {
-            sys_write(1, "[init] nonblock pipe read expected EAGAIN\n",
-                      (uint32_t)(sizeof("[init] nonblock pipe read expected EAGAIN\n") - 1));
+            sys_write(1, "[test] nonblock pipe read expected EAGAIN\n",
+                      (uint32_t)(sizeof("[test] nonblock pipe read expected EAGAIN\n") - 1));
             sys_exit(1);
         }
 
         if (sys_write(fds[1], "x", 1) != 1) {
-            sys_write(1, "[init] pipe write failed\n",
-                      (uint32_t)(sizeof("[init] pipe write failed\n") - 1));
+            sys_write(1, "[test] pipe write failed\n",
+                      (uint32_t)(sizeof("[test] pipe write failed\n") - 1));
             sys_exit(1);
         }
         r = sys_read(fds[0], &b, 1);
         if (r != 1 || b != 'x') {
-            sys_write(1, "[init] nonblock pipe read after write failed\n",
-                      (uint32_t)(sizeof("[init] nonblock pipe read after write failed\n") - 1));
+            sys_write(1, "[test] nonblock pipe read after write failed\n",
+                      (uint32_t)(sizeof("[test] nonblock pipe read after write failed\n") - 1));
             sys_exit(1);
         }
 
@@ -2636,87 +2636,87 @@ void _start(void) {
 
         int p = sys_open("/dev/ptmx", 0);
         if (p < 0) {
-            sys_write(1, "[init] open /dev/ptmx failed\n",
-                      (uint32_t)(sizeof("[init] open /dev/ptmx failed\n") - 1));
+            sys_write(1, "[test] open /dev/ptmx failed\n",
+                      (uint32_t)(sizeof("[test] open /dev/ptmx failed\n") - 1));
             sys_exit(1);
         }
         if (sys_fcntl(p, F_SETFL, O_NONBLOCK) < 0) {
-            sys_write(1, "[init] fcntl nonblock ptmx failed\n",
-                      (uint32_t)(sizeof("[init] fcntl nonblock ptmx failed\n") - 1));
+            sys_write(1, "[test] fcntl nonblock ptmx failed\n",
+                      (uint32_t)(sizeof("[test] fcntl nonblock ptmx failed\n") - 1));
             sys_exit(1);
         }
         char pch;
         r = sys_read(p, &pch, 1);
         if (r != -1 || errno != EAGAIN) {
-            sys_write(1, "[init] nonblock ptmx read expected EAGAIN\n",
-                      (uint32_t)(sizeof("[init] nonblock ptmx read expected EAGAIN\n") - 1));
+            sys_write(1, "[test] nonblock ptmx read expected EAGAIN\n",
+                      (uint32_t)(sizeof("[test] nonblock ptmx read expected EAGAIN\n") - 1));
             sys_exit(1);
         }
         (void)sys_close(p);
 
-        sys_write(1, "[init] O_NONBLOCK OK\n",
-                  (uint32_t)(sizeof("[init] O_NONBLOCK OK\n") - 1));
+        sys_write(1, "[test] O_NONBLOCK OK\n",
+                  (uint32_t)(sizeof("[test] O_NONBLOCK OK\n") - 1));
     }
 
     // B6b: pipe2 + dup3 smoke
     {
         int fds[2];
         if (sys_pipe2(fds, O_NONBLOCK) < 0) {
-            sys_write(1, "[init] pipe2 failed\n",
-                      (uint32_t)(sizeof("[init] pipe2 failed\n") - 1));
+            sys_write(1, "[test] pipe2 failed\n",
+                      (uint32_t)(sizeof("[test] pipe2 failed\n") - 1));
             sys_exit(1);
         }
 
         char b;
         int r = sys_read(fds[0], &b, 1);
         if (r != -1 || errno != EAGAIN) {
-            sys_write(1, "[init] pipe2 nonblock read expected EAGAIN\n",
-                      (uint32_t)(sizeof("[init] pipe2 nonblock read expected EAGAIN\n") - 1));
+            sys_write(1, "[test] pipe2 nonblock read expected EAGAIN\n",
+                      (uint32_t)(sizeof("[test] pipe2 nonblock read expected EAGAIN\n") - 1));
             sys_exit(1);
         }
 
         int d = sys_dup3(fds[0], fds[0], 0);
         if (d != -1 || errno != EINVAL) {
-            sys_write(1, "[init] dup3 samefd expected EINVAL\n",
-                      (uint32_t)(sizeof("[init] dup3 samefd expected EINVAL\n") - 1));
+            sys_write(1, "[test] dup3 samefd expected EINVAL\n",
+                      (uint32_t)(sizeof("[test] dup3 samefd expected EINVAL\n") - 1));
             sys_exit(1);
         }
 
         (void)sys_close(fds[0]);
         (void)sys_close(fds[1]);
-        sys_write(1, "[init] pipe2/dup3 OK\n",
-                  (uint32_t)(sizeof("[init] pipe2/dup3 OK\n") - 1));
+        sys_write(1, "[test] pipe2/dup3 OK\n",
+                  (uint32_t)(sizeof("[test] pipe2/dup3 OK\n") - 1));
     }
 
     // B7: chdir/getcwd smoke + relative paths
     {
         int r = sys_mkdir("/disk/cwd");
         if (r < 0 && errno != 17) {
-            sys_write(1, "[init] mkdir /disk/cwd failed\n",
-                      (uint32_t)(sizeof("[init] mkdir /disk/cwd failed\n") - 1));
+            sys_write(1, "[test] mkdir /disk/cwd failed\n",
+                      (uint32_t)(sizeof("[test] mkdir /disk/cwd failed\n") - 1));
             sys_exit(1);
         }
 
         r = sys_chdir("/disk/cwd");
         if (r < 0) {
-            sys_write(1, "[init] chdir failed\n",
-                      (uint32_t)(sizeof("[init] chdir failed\n") - 1));
+            sys_write(1, "[test] chdir failed\n",
+                      (uint32_t)(sizeof("[test] chdir failed\n") - 1));
             sys_exit(1);
         }
 
         char cwd[64];
         for (uint32_t i = 0; i < (uint32_t)sizeof(cwd); i++) cwd[i] = 0;
         if (sys_getcwd(cwd, (uint32_t)sizeof(cwd)) < 0) {
-            sys_write(1, "[init] getcwd failed\n",
-                      (uint32_t)(sizeof("[init] getcwd failed\n") - 1));
+            sys_write(1, "[test] getcwd failed\n",
+                      (uint32_t)(sizeof("[test] getcwd failed\n") - 1));
             sys_exit(1);
         }
 
         // Create file using relative path.
         int fd = sys_open("rel", O_CREAT | O_TRUNC);
         if (fd < 0) {
-            sys_write(1, "[init] open relative failed\n",
-                      (uint32_t)(sizeof("[init] open relative failed\n") - 1));
+            sys_write(1, "[test] open relative failed\n",
+                      (uint32_t)(sizeof("[test] open relative failed\n") - 1));
             sys_exit(1);
         }
         (void)sys_close(fd);
@@ -2724,46 +2724,46 @@ void _start(void) {
         // Stat with relative path.
         struct stat st;
         if (sys_stat("rel", &st) < 0) {
-            sys_write(1, "[init] stat relative failed\n",
-                      (uint32_t)(sizeof("[init] stat relative failed\n") - 1));
+            sys_write(1, "[test] stat relative failed\n",
+                      (uint32_t)(sizeof("[test] stat relative failed\n") - 1));
             sys_exit(1);
         }
 
-        sys_write(1, "[init] chdir/getcwd OK\n",
-                  (uint32_t)(sizeof("[init] chdir/getcwd OK\n") - 1));
+        sys_write(1, "[test] chdir/getcwd OK\n",
+                  (uint32_t)(sizeof("[test] chdir/getcwd OK\n") - 1));
     }
 
     // B8: *at() syscalls smoke (AT_FDCWD)
     {
         int fd = sys_openat(AT_FDCWD, "atfile", O_CREAT | O_TRUNC, 0);
         if (fd < 0) {
-            sys_write(1, "[init] openat failed\n",
-                      (uint32_t)(sizeof("[init] openat failed\n") - 1));
+            sys_write(1, "[test] openat failed\n",
+                      (uint32_t)(sizeof("[test] openat failed\n") - 1));
             sys_exit(1);
         }
         (void)sys_close(fd);
 
         struct stat st;
         if (sys_fstatat(AT_FDCWD, "atfile", &st, 0) < 0) {
-            sys_write(1, "[init] fstatat failed\n",
-                      (uint32_t)(sizeof("[init] fstatat failed\n") - 1));
+            sys_write(1, "[test] fstatat failed\n",
+                      (uint32_t)(sizeof("[test] fstatat failed\n") - 1));
             sys_exit(1);
         }
 
         if (sys_unlinkat(AT_FDCWD, "atfile", 0) < 0) {
-            sys_write(1, "[init] unlinkat failed\n",
-                      (uint32_t)(sizeof("[init] unlinkat failed\n") - 1));
+            sys_write(1, "[test] unlinkat failed\n",
+                      (uint32_t)(sizeof("[test] unlinkat failed\n") - 1));
             sys_exit(1);
         }
 
         if (sys_stat("atfile", &st) >= 0) {
-            sys_write(1, "[init] unlinkat did not remove file\n",
-                      (uint32_t)(sizeof("[init] unlinkat did not remove file\n") - 1));
+            sys_write(1, "[test] unlinkat did not remove file\n",
+                      (uint32_t)(sizeof("[test] unlinkat did not remove file\n") - 1));
             sys_exit(1);
         }
 
-        sys_write(1, "[init] *at OK\n",
-                  (uint32_t)(sizeof("[init] *at OK\n") - 1));
+        sys_write(1, "[test] *at OK\n",
+                  (uint32_t)(sizeof("[test] *at OK\n") - 1));
     }
 
     // B9: rename + rmdir smoke
@@ -2771,28 +2771,28 @@ void _start(void) {
         // Create a file, rename it, verify old gone and new exists.
         int fd = sys_open("/disk/rnold", O_CREAT | O_TRUNC);
         if (fd < 0) {
-            sys_write(1, "[init] rename: create failed\n",
-                      (uint32_t)(sizeof("[init] rename: create failed\n") - 1));
+            sys_write(1, "[test] rename: create failed\n",
+                      (uint32_t)(sizeof("[test] rename: create failed\n") - 1));
             sys_exit(1);
         }
         (void)sys_write(fd, "RN", 2);
         (void)sys_close(fd);
 
         if (sys_rename("/disk/rnold", "/disk/rnnew") < 0) {
-            sys_write(1, "[init] rename failed\n",
-                      (uint32_t)(sizeof("[init] rename failed\n") - 1));
+            sys_write(1, "[test] rename failed\n",
+                      (uint32_t)(sizeof("[test] rename failed\n") - 1));
             sys_exit(1);
         }
 
         struct stat st;
         if (sys_stat("/disk/rnold", &st) >= 0) {
-            sys_write(1, "[init] rename: old still exists\n",
-                      (uint32_t)(sizeof("[init] rename: old still exists\n") - 1));
+            sys_write(1, "[test] rename: old still exists\n",
+                      (uint32_t)(sizeof("[test] rename: old still exists\n") - 1));
             sys_exit(1);
         }
         if (sys_stat("/disk/rnnew", &st) < 0) {
-            sys_write(1, "[init] rename: new not found\n",
-                      (uint32_t)(sizeof("[init] rename: new not found\n") - 1));
+            sys_write(1, "[test] rename: new not found\n",
+                      (uint32_t)(sizeof("[test] rename: new not found\n") - 1));
             sys_exit(1);
         }
 
@@ -2800,80 +2800,80 @@ void _start(void) {
 
         // mkdir, then rmdir
         if (sys_mkdir("/disk/rmtmp") < 0 && errno != 17) {
-            sys_write(1, "[init] rmdir: mkdir failed\n",
-                      (uint32_t)(sizeof("[init] rmdir: mkdir failed\n") - 1));
+            sys_write(1, "[test] rmdir: mkdir failed\n",
+                      (uint32_t)(sizeof("[test] rmdir: mkdir failed\n") - 1));
             sys_exit(1);
         }
         if (sys_rmdir("/disk/rmtmp") < 0) {
-            sys_write(1, "[init] rmdir failed\n",
-                      (uint32_t)(sizeof("[init] rmdir failed\n") - 1));
+            sys_write(1, "[test] rmdir failed\n",
+                      (uint32_t)(sizeof("[test] rmdir failed\n") - 1));
             sys_exit(1);
         }
         if (sys_stat("/disk/rmtmp", &st) >= 0) {
-            sys_write(1, "[init] rmdir: dir still exists\n",
-                      (uint32_t)(sizeof("[init] rmdir: dir still exists\n") - 1));
+            sys_write(1, "[test] rmdir: dir still exists\n",
+                      (uint32_t)(sizeof("[test] rmdir: dir still exists\n") - 1));
             sys_exit(1);
         }
 
-        sys_write(1, "[init] rename/rmdir OK\n",
-                  (uint32_t)(sizeof("[init] rename/rmdir OK\n") - 1));
+        sys_write(1, "[test] rename/rmdir OK\n",
+                  (uint32_t)(sizeof("[test] rename/rmdir OK\n") - 1));
     }
 
     // B10: getdents on /dev (devfs) and /tmp (tmpfs)
     {
         int devfd = sys_open("/dev", 0);
         if (devfd < 0) {
-            sys_write(1, "[init] open /dev failed\n",
-                      (uint32_t)(sizeof("[init] open /dev failed\n") - 1));
+            sys_write(1, "[test] open /dev failed\n",
+                      (uint32_t)(sizeof("[test] open /dev failed\n") - 1));
             sys_exit(1);
         }
         char dbuf[256];
         int dr = sys_getdents(devfd, dbuf, (uint32_t)sizeof(dbuf));
         (void)sys_close(devfd);
         if (dr <= 0) {
-            sys_write(1, "[init] getdents /dev failed\n",
-                      (uint32_t)(sizeof("[init] getdents /dev failed\n") - 1));
+            sys_write(1, "[test] getdents /dev failed\n",
+                      (uint32_t)(sizeof("[test] getdents /dev failed\n") - 1));
             sys_exit(1);
         }
 
         int tmpfd = sys_open("/tmp", 0);
         if (tmpfd < 0) {
-            sys_write(1, "[init] open /tmp failed\n",
-                      (uint32_t)(sizeof("[init] open /tmp failed\n") - 1));
+            sys_write(1, "[test] open /tmp failed\n",
+                      (uint32_t)(sizeof("[test] open /tmp failed\n") - 1));
             sys_exit(1);
         }
         char tbuf[256];
         int tr = sys_getdents(tmpfd, tbuf, (uint32_t)sizeof(tbuf));
         (void)sys_close(tmpfd);
         if (tr <= 0) {
-            sys_write(1, "[init] getdents /tmp failed\n",
-                      (uint32_t)(sizeof("[init] getdents /tmp failed\n") - 1));
+            sys_write(1, "[test] getdents /tmp failed\n",
+                      (uint32_t)(sizeof("[test] getdents /tmp failed\n") - 1));
             sys_exit(1);
         }
 
-        sys_write(1, "[init] getdents multi-fs OK\n",
-                  (uint32_t)(sizeof("[init] getdents multi-fs OK\n") - 1));
+        sys_write(1, "[test] getdents multi-fs OK\n",
+                  (uint32_t)(sizeof("[test] getdents multi-fs OK\n") - 1));
     }
 
     // C1: brk (user heap growth)
     {
         uintptr_t cur = sys_brk(0);
         if (cur == 0) {
-            sys_write(1, "[init] brk(0) failed\n", (uint32_t)(sizeof("[init] brk(0) failed\n") - 1));
+            sys_write(1, "[test] brk(0) failed\n", (uint32_t)(sizeof("[test] brk(0) failed\n") - 1));
             sys_exit(1);
         }
         uintptr_t next = sys_brk(cur + 4096);
         if (next < cur + 4096) {
-            sys_write(1, "[init] brk grow failed\n", (uint32_t)(sizeof("[init] brk grow failed\n") - 1));
+            sys_write(1, "[test] brk grow failed\n", (uint32_t)(sizeof("[test] brk grow failed\n") - 1));
             sys_exit(1);
         }
         volatile uint32_t* p = (volatile uint32_t*)cur;
         *p = 0xDEADBEEF;
         if (*p != 0xDEADBEEF) {
-            sys_write(1, "[init] brk memory bad\n", (uint32_t)(sizeof("[init] brk memory bad\n") - 1));
+            sys_write(1, "[test] brk memory bad\n", (uint32_t)(sizeof("[test] brk memory bad\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] brk OK\n", (uint32_t)(sizeof("[init] brk OK\n") - 1));
+        sys_write(1, "[test] brk OK\n", (uint32_t)(sizeof("[test] brk OK\n") - 1));
     }
 
     // C2: mmap/munmap (anonymous)
@@ -2881,46 +2881,46 @@ void _start(void) {
         uintptr_t addr = sys_mmap(0, 4096, PROT_READ | PROT_WRITE,
                                   MAP_PRIVATE | MAP_ANONYMOUS, -1);
         if (addr == MAP_FAILED_VAL || addr == 0) {
-            sys_write(1, "[init] mmap failed\n", (uint32_t)(sizeof("[init] mmap failed\n") - 1));
+            sys_write(1, "[test] mmap failed\n", (uint32_t)(sizeof("[test] mmap failed\n") - 1));
             sys_exit(1);
         }
         volatile uint32_t* p = (volatile uint32_t*)addr;
         *p = 0xCAFEBABE;
         if (*p != 0xCAFEBABE) {
-            sys_write(1, "[init] mmap memory bad\n", (uint32_t)(sizeof("[init] mmap memory bad\n") - 1));
+            sys_write(1, "[test] mmap memory bad\n", (uint32_t)(sizeof("[test] mmap memory bad\n") - 1));
             sys_exit(1);
         }
         if (sys_munmap(addr, 4096) < 0) {
-            sys_write(1, "[init] munmap failed\n", (uint32_t)(sizeof("[init] munmap failed\n") - 1));
+            sys_write(1, "[test] munmap failed\n", (uint32_t)(sizeof("[test] munmap failed\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] mmap/munmap OK\n", (uint32_t)(sizeof("[init] mmap/munmap OK\n") - 1));
+        sys_write(1, "[test] mmap/munmap OK\n", (uint32_t)(sizeof("[test] mmap/munmap OK\n") - 1));
     }
 
     // C3: clock_gettime (CLOCK_MONOTONIC)
     {
         struct timespec ts1, ts2;
         if (sys_clock_gettime(CLOCK_MONOTONIC, &ts1) < 0) {
-            sys_write(1, "[init] clock_gettime failed\n", (uint32_t)(sizeof("[init] clock_gettime failed\n") - 1));
+            sys_write(1, "[test] clock_gettime failed\n", (uint32_t)(sizeof("[test] clock_gettime failed\n") - 1));
             sys_exit(1);
         }
         for (volatile uint32_t i = 0; i < 500000U; i++) { }
         if (sys_clock_gettime(CLOCK_MONOTONIC, &ts2) < 0) {
-            sys_write(1, "[init] clock_gettime2 failed\n", (uint32_t)(sizeof("[init] clock_gettime2 failed\n") - 1));
+            sys_write(1, "[test] clock_gettime2 failed\n", (uint32_t)(sizeof("[test] clock_gettime2 failed\n") - 1));
             sys_exit(1);
         }
         if (ts2.tv_sec < ts1.tv_sec || (ts2.tv_sec == ts1.tv_sec && ts2.tv_nsec <= ts1.tv_nsec)) {
-            sys_write(1, "[init] clock_gettime not monotonic\n", (uint32_t)(sizeof("[init] clock_gettime not monotonic\n") - 1));
+            sys_write(1, "[test] clock_gettime not monotonic\n", (uint32_t)(sizeof("[test] clock_gettime not monotonic\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] clock_gettime OK\n", (uint32_t)(sizeof("[init] clock_gettime OK\n") - 1));
+        sys_write(1, "[test] clock_gettime OK\n", (uint32_t)(sizeof("[test] clock_gettime OK\n") - 1));
     }
 
     // C4: /dev/zero read
     {
         int fd = sys_open("/dev/zero", 0);
         if (fd < 0) {
-            sys_write(1, "[init] /dev/zero open failed\n", (uint32_t)(sizeof("[init] /dev/zero open failed\n") - 1));
+            sys_write(1, "[test] /dev/zero open failed\n", (uint32_t)(sizeof("[test] /dev/zero open failed\n") - 1));
             sys_exit(1);
         }
         uint8_t zbuf[8];
@@ -2928,113 +2928,113 @@ void _start(void) {
         int r = sys_read(fd, zbuf, 8);
         (void)sys_close(fd);
         if (r != 8) {
-            sys_write(1, "[init] /dev/zero read failed\n", (uint32_t)(sizeof("[init] /dev/zero read failed\n") - 1));
+            sys_write(1, "[test] /dev/zero read failed\n", (uint32_t)(sizeof("[test] /dev/zero read failed\n") - 1));
             sys_exit(1);
         }
         int allz = 1;
         for (int i = 0; i < 8; i++) { if (zbuf[i] != 0) allz = 0; }
         if (!allz) {
-            sys_write(1, "[init] /dev/zero not zero\n", (uint32_t)(sizeof("[init] /dev/zero not zero\n") - 1));
+            sys_write(1, "[test] /dev/zero not zero\n", (uint32_t)(sizeof("[test] /dev/zero not zero\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] /dev/zero OK\n", (uint32_t)(sizeof("[init] /dev/zero OK\n") - 1));
+        sys_write(1, "[test] /dev/zero OK\n", (uint32_t)(sizeof("[test] /dev/zero OK\n") - 1));
     }
 
     // C5: /dev/random read (just verify it returns data)
     {
         int fd = sys_open("/dev/random", 0);
         if (fd < 0) {
-            sys_write(1, "[init] /dev/random open failed\n", (uint32_t)(sizeof("[init] /dev/random open failed\n") - 1));
+            sys_write(1, "[test] /dev/random open failed\n", (uint32_t)(sizeof("[test] /dev/random open failed\n") - 1));
             sys_exit(1);
         }
         uint8_t rbuf[4];
         int r = sys_read(fd, rbuf, 4);
         (void)sys_close(fd);
         if (r != 4) {
-            sys_write(1, "[init] /dev/random read failed\n", (uint32_t)(sizeof("[init] /dev/random read failed\n") - 1));
+            sys_write(1, "[test] /dev/random read failed\n", (uint32_t)(sizeof("[test] /dev/random read failed\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] /dev/random OK\n", (uint32_t)(sizeof("[init] /dev/random OK\n") - 1));
+        sys_write(1, "[test] /dev/random OK\n", (uint32_t)(sizeof("[test] /dev/random OK\n") - 1));
     }
 
     // C6: procfs (/proc/meminfo)
     {
         int fd = sys_open("/proc/meminfo", 0);
         if (fd < 0) {
-            sys_write(1, "[init] /proc/meminfo open failed\n", (uint32_t)(sizeof("[init] /proc/meminfo open failed\n") - 1));
+            sys_write(1, "[test] /proc/meminfo open failed\n", (uint32_t)(sizeof("[test] /proc/meminfo open failed\n") - 1));
             sys_exit(1);
         }
         char pbuf[64];
         int r = sys_read(fd, pbuf, 63);
         (void)sys_close(fd);
         if (r <= 0) {
-            sys_write(1, "[init] /proc/meminfo read failed\n", (uint32_t)(sizeof("[init] /proc/meminfo read failed\n") - 1));
+            sys_write(1, "[test] /proc/meminfo read failed\n", (uint32_t)(sizeof("[test] /proc/meminfo read failed\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] procfs OK\n", (uint32_t)(sizeof("[init] procfs OK\n") - 1));
+        sys_write(1, "[test] procfs OK\n", (uint32_t)(sizeof("[test] procfs OK\n") - 1));
     }
 
     // C7: pread/pwrite (positional I/O)
     {
         int fd = sys_open("/disk/preadtest", O_CREAT | O_TRUNC);
         if (fd < 0) {
-            sys_write(1, "[init] pread test open failed\n", (uint32_t)(sizeof("[init] pread test open failed\n") - 1));
+            sys_write(1, "[test] pread test open failed\n", (uint32_t)(sizeof("[test] pread test open failed\n") - 1));
             sys_exit(1);
         }
         static const char pw[] = "ABCDEFGH";
         if (sys_write(fd, pw, 8) != 8) {
-            sys_write(1, "[init] pread test write failed\n", (uint32_t)(sizeof("[init] pread test write failed\n") - 1));
+            sys_write(1, "[test] pread test write failed\n", (uint32_t)(sizeof("[test] pread test write failed\n") - 1));
             sys_exit(1);
         }
         char pb[4];
         int r = sys_pread(fd, pb, 4, 2);
         if (r != 4 || pb[0] != 'C' || pb[1] != 'D' || pb[2] != 'E' || pb[3] != 'F') {
-            sys_write(1, "[init] pread data bad\n", (uint32_t)(sizeof("[init] pread data bad\n") - 1));
+            sys_write(1, "[test] pread data bad\n", (uint32_t)(sizeof("[test] pread data bad\n") - 1));
             sys_exit(1);
         }
         if (sys_pwrite(fd, "XY", 2, 1) != 2) {
-            sys_write(1, "[init] pwrite failed\n", (uint32_t)(sizeof("[init] pwrite failed\n") - 1));
+            sys_write(1, "[test] pwrite failed\n", (uint32_t)(sizeof("[test] pwrite failed\n") - 1));
             sys_exit(1);
         }
         r = sys_pread(fd, pb, 3, 0);
         if (r != 3 || pb[0] != 'A' || pb[1] != 'X' || pb[2] != 'Y') {
-            sys_write(1, "[init] pwrite verify bad\n", (uint32_t)(sizeof("[init] pwrite verify bad\n") - 1));
+            sys_write(1, "[test] pwrite verify bad\n", (uint32_t)(sizeof("[test] pwrite verify bad\n") - 1));
             sys_exit(1);
         }
         (void)sys_close(fd);
         (void)sys_unlink("/disk/preadtest");
-        sys_write(1, "[init] pread/pwrite OK\n", (uint32_t)(sizeof("[init] pread/pwrite OK\n") - 1));
+        sys_write(1, "[test] pread/pwrite OK\n", (uint32_t)(sizeof("[test] pread/pwrite OK\n") - 1));
     }
 
     // C8: ftruncate
     {
         int fd = sys_open("/disk/trunctest", O_CREAT | O_TRUNC);
         if (fd < 0) {
-            sys_write(1, "[init] truncate open failed\n", (uint32_t)(sizeof("[init] truncate open failed\n") - 1));
+            sys_write(1, "[test] truncate open failed\n", (uint32_t)(sizeof("[test] truncate open failed\n") - 1));
             sys_exit(1);
         }
         if (sys_write(fd, "ABCDEFGHIJ", 10) != 10) {
-            sys_write(1, "[init] truncate write failed\n", (uint32_t)(sizeof("[init] truncate write failed\n") - 1));
+            sys_write(1, "[test] truncate write failed\n", (uint32_t)(sizeof("[test] truncate write failed\n") - 1));
             sys_exit(1);
         }
         if (sys_ftruncate(fd, 5) < 0) {
-            sys_write(1, "[init] ftruncate failed\n", (uint32_t)(sizeof("[init] ftruncate failed\n") - 1));
+            sys_write(1, "[test] ftruncate failed\n", (uint32_t)(sizeof("[test] ftruncate failed\n") - 1));
             sys_exit(1);
         }
         struct stat tst;
         if (sys_fstat(fd, &tst) < 0 || tst.st_size != 5) {
-            sys_write(1, "[init] ftruncate size bad\n", (uint32_t)(sizeof("[init] ftruncate size bad\n") - 1));
+            sys_write(1, "[test] ftruncate size bad\n", (uint32_t)(sizeof("[test] ftruncate size bad\n") - 1));
             sys_exit(1);
         }
         (void)sys_close(fd);
         (void)sys_unlink("/disk/trunctest");
-        sys_write(1, "[init] ftruncate OK\n", (uint32_t)(sizeof("[init] ftruncate OK\n") - 1));
+        sys_write(1, "[test] ftruncate OK\n", (uint32_t)(sizeof("[test] ftruncate OK\n") - 1));
     }
 
     // C9: symlink/readlink (use existing /tmp/hello.txt as target)
     {
         if (sys_symlink("/tmp/hello.txt", "/tmp/symlink") < 0) {
-            sys_write(1, "[init] symlink failed\n", (uint32_t)(sizeof("[init] symlink failed\n") - 1));
+            sys_write(1, "[test] symlink failed\n", (uint32_t)(sizeof("[test] symlink failed\n") - 1));
             sys_exit(1);
         }
 
@@ -3042,41 +3042,41 @@ void _start(void) {
         for (uint32_t i = 0; i < 64; i++) lbuf[i] = 0;
         int r = sys_readlink("/tmp/symlink", lbuf, 63);
         if (r <= 0) {
-            sys_write(1, "[init] readlink failed\n", (uint32_t)(sizeof("[init] readlink failed\n") - 1));
+            sys_write(1, "[test] readlink failed\n", (uint32_t)(sizeof("[test] readlink failed\n") - 1));
             sys_exit(1);
         }
 
         int fd = sys_open("/tmp/symlink", 0);
         if (fd < 0) {
-            sys_write(1, "[init] symlink follow failed\n", (uint32_t)(sizeof("[init] symlink follow failed\n") - 1));
+            sys_write(1, "[test] symlink follow failed\n", (uint32_t)(sizeof("[test] symlink follow failed\n") - 1));
             sys_exit(1);
         }
         char sb[6];
         r = sys_read(fd, sb, 5);
         (void)sys_close(fd);
         if (r != 5 || sb[0] != 'h' || sb[1] != 'e' || sb[2] != 'l' || sb[3] != 'l' || sb[4] != 'o') {
-            sys_write(1, "[init] symlink data bad\n", (uint32_t)(sizeof("[init] symlink data bad\n") - 1));
+            sys_write(1, "[test] symlink data bad\n", (uint32_t)(sizeof("[test] symlink data bad\n") - 1));
             sys_exit(1);
         }
         (void)sys_unlink("/tmp/symlink");
-        sys_write(1, "[init] symlink/readlink OK\n", (uint32_t)(sizeof("[init] symlink/readlink OK\n") - 1));
+        sys_write(1, "[test] symlink/readlink OK\n", (uint32_t)(sizeof("[test] symlink/readlink OK\n") - 1));
     }
 
     // C10: access
     {
         if (sys_access("/sbin/fulltest", F_OK) < 0) {
-            sys_write(1, "[init] access F_OK failed\n", (uint32_t)(sizeof("[init] access F_OK failed\n") - 1));
+            sys_write(1, "[test] access F_OK failed\n", (uint32_t)(sizeof("[test] access F_OK failed\n") - 1));
             sys_exit(1);
         }
         if (sys_access("/sbin/fulltest", R_OK) < 0) {
-            sys_write(1, "[init] access R_OK failed\n", (uint32_t)(sizeof("[init] access R_OK failed\n") - 1));
+            sys_write(1, "[test] access R_OK failed\n", (uint32_t)(sizeof("[test] access R_OK failed\n") - 1));
             sys_exit(1);
         }
         if (sys_access("/nonexistent", F_OK) >= 0) {
-            sys_write(1, "[init] access nonexist expected fail\n", (uint32_t)(sizeof("[init] access nonexist expected fail\n") - 1));
+            sys_write(1, "[test] access nonexist expected fail\n", (uint32_t)(sizeof("[test] access nonexist expected fail\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] access OK\n", (uint32_t)(sizeof("[init] access OK\n") - 1));
+        sys_write(1, "[test] access OK\n", (uint32_t)(sizeof("[test] access OK\n") - 1));
     }
 
     // C11: sigprocmask/sigpending
@@ -3084,7 +3084,7 @@ void _start(void) {
         uint32_t mask = (1U << SIGUSR1);
         uint32_t oldmask = 0;
         if (sys_sigprocmask(SIG_BLOCK, mask, &oldmask) < 0) {
-            sys_write(1, "[init] sigprocmask block failed\n", (uint32_t)(sizeof("[init] sigprocmask block failed\n") - 1));
+            sys_write(1, "[test] sigprocmask block failed\n", (uint32_t)(sizeof("[test] sigprocmask block failed\n") - 1));
             sys_exit(1);
         }
         int me = sys_getpid();
@@ -3092,18 +3092,18 @@ void _start(void) {
 
         uint32_t pending = 0;
         if (sys_sigpending(&pending) < 0) {
-            sys_write(1, "[init] sigpending failed\n", (uint32_t)(sizeof("[init] sigpending failed\n") - 1));
+            sys_write(1, "[test] sigpending failed\n", (uint32_t)(sizeof("[test] sigpending failed\n") - 1));
             sys_exit(1);
         }
         if (!(pending & (1U << SIGUSR1))) {
-            sys_write(1, "[init] sigpending SIGUSR1 not set\n", (uint32_t)(sizeof("[init] sigpending SIGUSR1 not set\n") - 1));
+            sys_write(1, "[test] sigpending SIGUSR1 not set\n", (uint32_t)(sizeof("[test] sigpending SIGUSR1 not set\n") - 1));
             sys_exit(1);
         }
         if (sys_sigprocmask(SIG_UNBLOCK, mask, 0) < 0) {
-            sys_write(1, "[init] sigprocmask unblock failed\n", (uint32_t)(sizeof("[init] sigprocmask unblock failed\n") - 1));
+            sys_write(1, "[test] sigprocmask unblock failed\n", (uint32_t)(sizeof("[test] sigprocmask unblock failed\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] sigprocmask/sigpending OK\n", (uint32_t)(sizeof("[init] sigprocmask/sigpending OK\n") - 1));
+        sys_write(1, "[test] sigprocmask/sigpending OK\n", (uint32_t)(sizeof("[test] sigprocmask/sigpending OK\n") - 1));
     }
 
     // C12: alarm/SIGALRM
@@ -3119,42 +3119,42 @@ void _start(void) {
             (void)sys_nanosleep(&_ts, 0);
         }
         if (!got_alrm) {
-            sys_write(1, "[init] alarm/SIGALRM not delivered\n", (uint32_t)(sizeof("[init] alarm/SIGALRM not delivered\n") - 1));
+            sys_write(1, "[test] alarm/SIGALRM not delivered\n", (uint32_t)(sizeof("[test] alarm/SIGALRM not delivered\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] alarm/SIGALRM OK\n", (uint32_t)(sizeof("[init] alarm/SIGALRM OK\n") - 1));
+        sys_write(1, "[test] alarm/SIGALRM OK\n", (uint32_t)(sizeof("[test] alarm/SIGALRM OK\n") - 1));
     }
 
     // C13: shmget/shmat/shmdt (shared memory)
     {
         int shmid = sys_shmget(IPC_PRIVATE, 4096, IPC_CREAT | 0666);
         if (shmid < 0) {
-            sys_write(1, "[init] shmget failed\n", (uint32_t)(sizeof("[init] shmget failed\n") - 1));
+            sys_write(1, "[test] shmget failed\n", (uint32_t)(sizeof("[test] shmget failed\n") - 1));
             sys_exit(1);
         }
         uintptr_t addr = sys_shmat(shmid, 0, 0);
         if (addr == MAP_FAILED_VAL || addr == 0) {
-            sys_write(1, "[init] shmat failed\n", (uint32_t)(sizeof("[init] shmat failed\n") - 1));
+            sys_write(1, "[test] shmat failed\n", (uint32_t)(sizeof("[test] shmat failed\n") - 1));
             sys_exit(1);
         }
         volatile uint32_t* sp = (volatile uint32_t*)addr;
         *sp = 0x12345678;
         if (*sp != 0x12345678) {
-            sys_write(1, "[init] shm memory bad\n", (uint32_t)(sizeof("[init] shm memory bad\n") - 1));
+            sys_write(1, "[test] shm memory bad\n", (uint32_t)(sizeof("[test] shm memory bad\n") - 1));
             sys_exit(1);
         }
         if (sys_shmdt(addr) < 0) {
-            sys_write(1, "[init] shmdt failed\n", (uint32_t)(sizeof("[init] shmdt failed\n") - 1));
+            sys_write(1, "[test] shmdt failed\n", (uint32_t)(sizeof("[test] shmdt failed\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] shmget/shmat/shmdt OK\n", (uint32_t)(sizeof("[init] shmget/shmat/shmdt OK\n") - 1));
+        sys_write(1, "[test] shmget/shmat/shmdt OK\n", (uint32_t)(sizeof("[test] shmget/shmat/shmdt OK\n") - 1));
     }
 
     // C14: O_APPEND
     {
         int fd = sys_open("/disk/appendtest", O_CREAT | O_TRUNC);
         if (fd < 0) {
-            sys_write(1, "[init] O_APPEND create failed\n", (uint32_t)(sizeof("[init] O_APPEND create failed\n") - 1));
+            sys_write(1, "[test] O_APPEND create failed\n", (uint32_t)(sizeof("[test] O_APPEND create failed\n") - 1));
             sys_exit(1);
         }
         (void)sys_write(fd, "AAA", 3);
@@ -3162,7 +3162,7 @@ void _start(void) {
 
         fd = sys_open("/disk/appendtest", O_APPEND);
         if (fd < 0) {
-            sys_write(1, "[init] O_APPEND open failed\n", (uint32_t)(sizeof("[init] O_APPEND open failed\n") - 1));
+            sys_write(1, "[test] O_APPEND open failed\n", (uint32_t)(sizeof("[test] O_APPEND open failed\n") - 1));
             sys_exit(1);
         }
         (void)sys_write(fd, "BBB", 3);
@@ -3170,7 +3170,7 @@ void _start(void) {
 
         fd = sys_open("/disk/appendtest", 0);
         if (fd < 0) {
-            sys_write(1, "[init] O_APPEND verify open failed\n", (uint32_t)(sizeof("[init] O_APPEND verify open failed\n") - 1));
+            sys_write(1, "[test] O_APPEND verify open failed\n", (uint32_t)(sizeof("[test] O_APPEND verify open failed\n") - 1));
             sys_exit(1);
         }
         char abuf[8];
@@ -3178,10 +3178,10 @@ void _start(void) {
         (void)sys_close(fd);
         (void)sys_unlink("/disk/appendtest");
         if (r != 6 || abuf[0] != 'A' || abuf[3] != 'B') {
-            sys_write(1, "[init] O_APPEND data bad\n", (uint32_t)(sizeof("[init] O_APPEND data bad\n") - 1));
+            sys_write(1, "[test] O_APPEND data bad\n", (uint32_t)(sizeof("[test] O_APPEND data bad\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] O_APPEND OK\n", (uint32_t)(sizeof("[init] O_APPEND OK\n") - 1));
+        sys_write(1, "[test] O_APPEND OK\n", (uint32_t)(sizeof("[test] O_APPEND OK\n") - 1));
     }
 
     // C15b: umask
@@ -3189,37 +3189,37 @@ void _start(void) {
         int old = sys_umask(0077);
         int cur = sys_umask((uint32_t)old);
         if (cur != 0077) {
-            sys_write(1, "[init] umask set/get failed\n", (uint32_t)(sizeof("[init] umask set/get failed\n") - 1));
+            sys_write(1, "[test] umask set/get failed\n", (uint32_t)(sizeof("[test] umask set/get failed\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] umask OK\n", (uint32_t)(sizeof("[init] umask OK\n") - 1));
+        sys_write(1, "[test] umask OK\n", (uint32_t)(sizeof("[test] umask OK\n") - 1));
     }
 
     // C16: F_GETPIPE_SZ / F_SETPIPE_SZ
     {
         int fds[2];
         if (sys_pipe(fds) < 0) {
-            sys_write(1, "[init] pipe for pipesz failed\n", (uint32_t)(sizeof("[init] pipe for pipesz failed\n") - 1));
+            sys_write(1, "[test] pipe for pipesz failed\n", (uint32_t)(sizeof("[test] pipe for pipesz failed\n") - 1));
             sys_exit(1);
         }
         int sz = sys_fcntl(fds[0], F_GETPIPE_SZ, 0);
         if (sz <= 0) {
-            sys_write(1, "[init] F_GETPIPE_SZ failed\n", (uint32_t)(sizeof("[init] F_GETPIPE_SZ failed\n") - 1));
+            sys_write(1, "[test] F_GETPIPE_SZ failed\n", (uint32_t)(sizeof("[test] F_GETPIPE_SZ failed\n") - 1));
             sys_exit(1);
         }
         int nsz = sys_fcntl(fds[0], F_SETPIPE_SZ, 8192);
         if (nsz < 0) {
-            sys_write(1, "[init] F_SETPIPE_SZ failed\n", (uint32_t)(sizeof("[init] F_SETPIPE_SZ failed\n") - 1));
+            sys_write(1, "[test] F_SETPIPE_SZ failed\n", (uint32_t)(sizeof("[test] F_SETPIPE_SZ failed\n") - 1));
             sys_exit(1);
         }
         int sz2 = sys_fcntl(fds[0], F_GETPIPE_SZ, 0);
         if (sz2 < 8192) {
-            sys_write(1, "[init] F_GETPIPE_SZ after set bad\n", (uint32_t)(sizeof("[init] F_GETPIPE_SZ after set bad\n") - 1));
+            sys_write(1, "[test] F_GETPIPE_SZ after set bad\n", (uint32_t)(sizeof("[test] F_GETPIPE_SZ after set bad\n") - 1));
             sys_exit(1);
         }
         (void)sys_close(fds[0]);
         (void)sys_close(fds[1]);
-        sys_write(1, "[init] pipe capacity OK\n", (uint32_t)(sizeof("[init] pipe capacity OK\n") - 1));
+        sys_write(1, "[test] pipe capacity OK\n", (uint32_t)(sizeof("[test] pipe capacity OK\n") - 1));
     }
 
     // C17: waitid (P_PID, WEXITED)
@@ -3229,17 +3229,17 @@ void _start(void) {
             sys_exit(99);
         }
         if (pid < 0) {
-            sys_write(1, "[init] waitid fork failed\n", (uint32_t)(sizeof("[init] waitid fork failed\n") - 1));
+            sys_write(1, "[test] waitid fork failed\n", (uint32_t)(sizeof("[test] waitid fork failed\n") - 1));
             sys_exit(1);
         }
         uint8_t infobuf[128];
         for (uint32_t i = 0; i < 128; i++) infobuf[i] = 0;
         int r = sys_waitid(P_PID, (uint32_t)pid, infobuf, WEXITED);
         if (r < 0) {
-            sys_write(1, "[init] waitid failed\n", (uint32_t)(sizeof("[init] waitid failed\n") - 1));
+            sys_write(1, "[test] waitid failed\n", (uint32_t)(sizeof("[test] waitid failed\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] waitid OK\n", (uint32_t)(sizeof("[init] waitid OK\n") - 1));
+        sys_write(1, "[test] waitid OK\n", (uint32_t)(sizeof("[test] waitid OK\n") - 1));
     }
 
     // C18: setitimer/getitimer (ITIMER_REAL)
@@ -3251,12 +3251,12 @@ void _start(void) {
         itv.it_interval.tv_usec = 0;
         struct itimerval old;
         if (sys_setitimer(ITIMER_REAL, &itv, &old) < 0) {
-            sys_write(1, "[init] setitimer failed\n", (uint32_t)(sizeof("[init] setitimer failed\n") - 1));
+            sys_write(1, "[test] setitimer failed\n", (uint32_t)(sizeof("[test] setitimer failed\n") - 1));
             sys_exit(1);
         }
         struct itimerval cur;
         if (sys_getitimer(ITIMER_REAL, &cur) < 0) {
-            sys_write(1, "[init] getitimer failed\n", (uint32_t)(sizeof("[init] getitimer failed\n") - 1));
+            sys_write(1, "[test] getitimer failed\n", (uint32_t)(sizeof("[test] getitimer failed\n") - 1));
             sys_exit(1);
         }
         itv.it_value.tv_sec = 0;
@@ -3264,31 +3264,31 @@ void _start(void) {
         itv.it_interval.tv_sec = 0;
         itv.it_interval.tv_usec = 0;
         (void)sys_setitimer(ITIMER_REAL, &itv, 0);
-        sys_write(1, "[init] setitimer/getitimer OK\n", (uint32_t)(sizeof("[init] setitimer/getitimer OK\n") - 1));
+        sys_write(1, "[test] setitimer/getitimer OK\n", (uint32_t)(sizeof("[test] setitimer/getitimer OK\n") - 1));
     }
 
     // C19: select on regular file (should return immediately readable)
     {
         int fd = sys_open("/sbin/fulltest", 0);
         if (fd < 0) {
-            sys_write(1, "[init] select regfile open failed\n", (uint32_t)(sizeof("[init] select regfile open failed\n") - 1));
+            sys_write(1, "[test] select regfile open failed\n", (uint32_t)(sizeof("[test] select regfile open failed\n") - 1));
             sys_exit(1);
         }
         uint64_t readfds = (1ULL << (uint32_t)fd);
         int r = sys_select((uint32_t)(fd + 1), &readfds, 0, 0, 0);
         (void)sys_close(fd);
         if (r < 0) {
-            sys_write(1, "[init] select regfile failed\n", (uint32_t)(sizeof("[init] select regfile failed\n") - 1));
+            sys_write(1, "[test] select regfile failed\n", (uint32_t)(sizeof("[test] select regfile failed\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] select regfile OK\n", (uint32_t)(sizeof("[init] select regfile OK\n") - 1));
+        sys_write(1, "[test] select regfile OK\n", (uint32_t)(sizeof("[test] select regfile OK\n") - 1));
     }
 
     // C20: poll on regular file
     {
         int fd = sys_open("/sbin/fulltest", 0);
         if (fd < 0) {
-            sys_write(1, "[init] poll regfile open failed\n", (uint32_t)(sizeof("[init] poll regfile open failed\n") - 1));
+            sys_write(1, "[test] poll regfile open failed\n", (uint32_t)(sizeof("[test] poll regfile open failed\n") - 1));
             sys_exit(1);
         }
         struct pollfd pfd;
@@ -3298,14 +3298,14 @@ void _start(void) {
         int r = sys_poll(&pfd, 1, 0);
         (void)sys_close(fd);
         if (r < 0) {
-            sys_write(1, "[init] poll regfile failed\n", (uint32_t)(sizeof("[init] poll regfile failed\n") - 1));
+            sys_write(1, "[test] poll regfile failed\n", (uint32_t)(sizeof("[test] poll regfile failed\n") - 1));
             sys_exit(1);
         }
         if (!(pfd.revents & POLLIN)) {
-            sys_write(1, "[init] poll regfile no POLLIN\n", (uint32_t)(sizeof("[init] poll regfile no POLLIN\n") - 1));
+            sys_write(1, "[test] poll regfile no POLLIN\n", (uint32_t)(sizeof("[test] poll regfile no POLLIN\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] poll regfile OK\n", (uint32_t)(sizeof("[init] poll regfile OK\n") - 1));
+        sys_write(1, "[test] poll regfile OK\n", (uint32_t)(sizeof("[test] poll regfile OK\n") - 1));
     }
 
     // C21: hard link (skip gracefully if FS doesn't support it)
@@ -3322,20 +3322,20 @@ void _start(void) {
                     int r = sys_read(fd, lbuf2, 3);
                     (void)sys_close(fd);
                     if (r == 3 && lbuf2[0] == 'L' && lbuf2[1] == 'N' && lbuf2[2] == 'K') {
-                        sys_write(1, "[init] hard link OK\n", (uint32_t)(sizeof("[init] hard link OK\n") - 1));
+                        sys_write(1, "[test] hard link OK\n", (uint32_t)(sizeof("[test] hard link OK\n") - 1));
                     } else {
-                        sys_write(1, "[init] hard link OK\n", (uint32_t)(sizeof("[init] hard link OK\n") - 1));
+                        sys_write(1, "[test] hard link OK\n", (uint32_t)(sizeof("[test] hard link OK\n") - 1));
                     }
                 } else {
-                    sys_write(1, "[init] hard link OK\n", (uint32_t)(sizeof("[init] hard link OK\n") - 1));
+                    sys_write(1, "[test] hard link OK\n", (uint32_t)(sizeof("[test] hard link OK\n") - 1));
                 }
                 (void)sys_unlink("/disk/linkhard");
             } else {
-                sys_write(1, "[init] hard link OK\n", (uint32_t)(sizeof("[init] hard link OK\n") - 1));
+                sys_write(1, "[test] hard link OK\n", (uint32_t)(sizeof("[test] hard link OK\n") - 1));
             }
             (void)sys_unlink("/disk/linkoriginal");
         } else {
-            sys_write(1, "[init] hard link OK\n", (uint32_t)(sizeof("[init] hard link OK\n") - 1));
+            sys_write(1, "[test] hard link OK\n", (uint32_t)(sizeof("[test] hard link OK\n") - 1));
         }
     }
 
@@ -3343,13 +3343,13 @@ void _start(void) {
     {
         int epfd = sys_epoll_create(1);
         if (epfd < 0) {
-            sys_write(1, "[init] epoll_create failed\n", (uint32_t)(sizeof("[init] epoll_create failed\n") - 1));
+            sys_write(1, "[test] epoll_create failed\n", (uint32_t)(sizeof("[test] epoll_create failed\n") - 1));
             sys_exit(1);
         }
 
         int fds[2];
         if (sys_pipe(fds) < 0) {
-            sys_write(1, "[init] epoll pipe failed\n", (uint32_t)(sizeof("[init] epoll pipe failed\n") - 1));
+            sys_write(1, "[test] epoll pipe failed\n", (uint32_t)(sizeof("[test] epoll pipe failed\n") - 1));
             sys_exit(1);
         }
 
@@ -3357,14 +3357,14 @@ void _start(void) {
         ev.events = POLLIN;
         ev.data = (uint32_t)fds[0];
         if (sys_epoll_ctl(epfd, 1, fds[0], &ev) < 0) {
-            sys_write(1, "[init] epoll_ctl ADD failed\n", (uint32_t)(sizeof("[init] epoll_ctl ADD failed\n") - 1));
+            sys_write(1, "[test] epoll_ctl ADD failed\n", (uint32_t)(sizeof("[test] epoll_ctl ADD failed\n") - 1));
             sys_exit(1);
         }
 
         struct { uint32_t events; uint32_t data; } out;
         int n = sys_epoll_wait(epfd, &out, 1, 0);
         if (n != 0) {
-            sys_write(1, "[init] epoll_wait expected 0\n", (uint32_t)(sizeof("[init] epoll_wait expected 0\n") - 1));
+            sys_write(1, "[test] epoll_wait expected 0\n", (uint32_t)(sizeof("[test] epoll_wait expected 0\n") - 1));
             sys_exit(1);
         }
 
@@ -3372,27 +3372,27 @@ void _start(void) {
 
         n = sys_epoll_wait(epfd, &out, 1, 0);
         if (n != 1 || !(out.events & POLLIN)) {
-            sys_write(1, "[init] epoll_wait expected POLLIN\n", (uint32_t)(sizeof("[init] epoll_wait expected POLLIN\n") - 1));
+            sys_write(1, "[test] epoll_wait expected POLLIN\n", (uint32_t)(sizeof("[test] epoll_wait expected POLLIN\n") - 1));
             sys_exit(1);
         }
 
         (void)sys_close(fds[0]);
         (void)sys_close(fds[1]);
         (void)sys_close(epfd);
-        sys_write(1, "[init] epoll OK\n", (uint32_t)(sizeof("[init] epoll OK\n") - 1));
+        sys_write(1, "[test] epoll OK\n", (uint32_t)(sizeof("[test] epoll OK\n") - 1));
     }
 
     // C22b: EPOLLET edge-triggered mode
     {
         int epfd = sys_epoll_create(1);
         if (epfd < 0) {
-            sys_write(1, "[init] epollet create failed\n", (uint32_t)(sizeof("[init] epollet create failed\n") - 1));
+            sys_write(1, "[test] epollet create failed\n", (uint32_t)(sizeof("[test] epollet create failed\n") - 1));
             sys_exit(1);
         }
 
         int fds[2];
         if (sys_pipe(fds) < 0) {
-            sys_write(1, "[init] epollet pipe failed\n", (uint32_t)(sizeof("[init] epollet pipe failed\n") - 1));
+            sys_write(1, "[test] epollet pipe failed\n", (uint32_t)(sizeof("[test] epollet pipe failed\n") - 1));
             sys_exit(1);
         }
 
@@ -3400,7 +3400,7 @@ void _start(void) {
         ev.events = POLLIN | EPOLLET;
         ev.data = 42;
         if (sys_epoll_ctl(epfd, 1, fds[0], &ev) < 0) {
-            sys_write(1, "[init] epollet ctl failed\n", (uint32_t)(sizeof("[init] epollet ctl failed\n") - 1));
+            sys_write(1, "[test] epollet ctl failed\n", (uint32_t)(sizeof("[test] epollet ctl failed\n") - 1));
             sys_exit(1);
         }
 
@@ -3409,13 +3409,13 @@ void _start(void) {
         struct { uint32_t events; uint32_t data; } out;
         int n = sys_epoll_wait(epfd, &out, 1, 0);
         if (n != 1 || !(out.events & POLLIN)) {
-            sys_write(1, "[init] epollet first wait failed\n", (uint32_t)(sizeof("[init] epollet first wait failed\n") - 1));
+            sys_write(1, "[test] epollet first wait failed\n", (uint32_t)(sizeof("[test] epollet first wait failed\n") - 1));
             sys_exit(1);
         }
 
         n = sys_epoll_wait(epfd, &out, 1, 0);
         if (n != 0) {
-            sys_write(1, "[init] epollet second wait should be 0\n", (uint32_t)(sizeof("[init] epollet second wait should be 0\n") - 1));
+            sys_write(1, "[test] epollet second wait should be 0\n", (uint32_t)(sizeof("[test] epollet second wait should be 0\n") - 1));
             sys_exit(1);
         }
 
@@ -3424,7 +3424,7 @@ void _start(void) {
 
         n = sys_epoll_wait(epfd, &out, 1, 0);
         if (n != 0) {
-            sys_write(1, "[init] epollet post-drain should be 0\n", (uint32_t)(sizeof("[init] epollet post-drain should be 0\n") - 1));
+            sys_write(1, "[test] epollet post-drain should be 0\n", (uint32_t)(sizeof("[test] epollet post-drain should be 0\n") - 1));
             sys_exit(1);
         }
 
@@ -3432,44 +3432,44 @@ void _start(void) {
 
         n = sys_epoll_wait(epfd, &out, 1, 0);
         if (n != 1 || !(out.events & POLLIN)) {
-            sys_write(1, "[init] epollet re-arm failed\n", (uint32_t)(sizeof("[init] epollet re-arm failed\n") - 1));
+            sys_write(1, "[test] epollet re-arm failed\n", (uint32_t)(sizeof("[test] epollet re-arm failed\n") - 1));
             sys_exit(1);
         }
 
         (void)sys_close(fds[0]);
         (void)sys_close(fds[1]);
         (void)sys_close(epfd);
-        sys_write(1, "[init] epollet OK\n", (uint32_t)(sizeof("[init] epollet OK\n") - 1));
+        sys_write(1, "[test] epollet OK\n", (uint32_t)(sizeof("[test] epollet OK\n") - 1));
     }
 
     // C23: inotify_init/add_watch/rm_watch smoke
     {
         int ifd = sys_inotify_init();
         if (ifd < 0) {
-            sys_write(1, "[init] inotify_init failed\n", (uint32_t)(sizeof("[init] inotify_init failed\n") - 1));
+            sys_write(1, "[test] inotify_init failed\n", (uint32_t)(sizeof("[test] inotify_init failed\n") - 1));
             sys_exit(1);
         }
 
         int wd = sys_inotify_add_watch(ifd, "/tmp", 0x100);
         if (wd < 0) {
-            sys_write(1, "[init] inotify_add_watch failed\n", (uint32_t)(sizeof("[init] inotify_add_watch failed\n") - 1));
+            sys_write(1, "[test] inotify_add_watch failed\n", (uint32_t)(sizeof("[test] inotify_add_watch failed\n") - 1));
             sys_exit(1);
         }
 
         if (sys_inotify_rm_watch(ifd, wd) < 0) {
-            sys_write(1, "[init] inotify_rm_watch failed\n", (uint32_t)(sizeof("[init] inotify_rm_watch failed\n") - 1));
+            sys_write(1, "[test] inotify_rm_watch failed\n", (uint32_t)(sizeof("[test] inotify_rm_watch failed\n") - 1));
             sys_exit(1);
         }
 
         (void)sys_close(ifd);
-        sys_write(1, "[init] inotify OK\n", (uint32_t)(sizeof("[init] inotify OK\n") - 1));
+        sys_write(1, "[test] inotify OK\n", (uint32_t)(sizeof("[test] inotify OK\n") - 1));
     }
 
     // C24: aio_read/aio_write smoke
     {
         int fd = sys_open("/disk/aiotest", O_CREAT | O_TRUNC);
         if (fd < 0) {
-            sys_write(1, "[init] aio open failed\n", (uint32_t)(sizeof("[init] aio open failed\n") - 1));
+            sys_write(1, "[test] aio open failed\n", (uint32_t)(sizeof("[test] aio open failed\n") - 1));
             sys_exit(1);
         }
 
@@ -3482,15 +3482,15 @@ void _start(void) {
         wcb.aio_error = -1;
         wcb.aio_return = -1;
         if (sys_aio_write(&wcb) < 0) {
-            sys_write(1, "[init] aio_write failed\n", (uint32_t)(sizeof("[init] aio_write failed\n") - 1));
+            sys_write(1, "[test] aio_write failed\n", (uint32_t)(sizeof("[test] aio_write failed\n") - 1));
             sys_exit(1);
         }
         if (sys_aio_error(&wcb) != 0) {
-            sys_write(1, "[init] aio_error after write bad\n", (uint32_t)(sizeof("[init] aio_error after write bad\n") - 1));
+            sys_write(1, "[test] aio_error after write bad\n", (uint32_t)(sizeof("[test] aio_error after write bad\n") - 1));
             sys_exit(1);
         }
         if (sys_aio_return(&wcb) != 4) {
-            sys_write(1, "[init] aio_return after write bad\n", (uint32_t)(sizeof("[init] aio_return after write bad\n") - 1));
+            sys_write(1, "[test] aio_return after write bad\n", (uint32_t)(sizeof("[test] aio_return after write bad\n") - 1));
             sys_exit(1);
         }
 
@@ -3503,21 +3503,21 @@ void _start(void) {
         rcb.aio_error = -1;
         rcb.aio_return = -1;
         if (sys_aio_read(&rcb) < 0) {
-            sys_write(1, "[init] aio_read failed\n", (uint32_t)(sizeof("[init] aio_read failed\n") - 1));
+            sys_write(1, "[test] aio_read failed\n", (uint32_t)(sizeof("[test] aio_read failed\n") - 1));
             sys_exit(1);
         }
         if (sys_aio_error(&rcb) != 0 || sys_aio_return(&rcb) != 4) {
-            sys_write(1, "[init] aio_read result bad\n", (uint32_t)(sizeof("[init] aio_read result bad\n") - 1));
+            sys_write(1, "[test] aio_read result bad\n", (uint32_t)(sizeof("[test] aio_read result bad\n") - 1));
             sys_exit(1);
         }
         if (rbuf[0] != 'A' || rbuf[1] != 'I' || rbuf[2] != 'O' || rbuf[3] != '!') {
-            sys_write(1, "[init] aio_read data bad\n", (uint32_t)(sizeof("[init] aio_read data bad\n") - 1));
+            sys_write(1, "[test] aio_read data bad\n", (uint32_t)(sizeof("[test] aio_read data bad\n") - 1));
             sys_exit(1);
         }
 
         (void)sys_close(fd);
         (void)sys_unlink("/disk/aiotest");
-        sys_write(1, "[init] aio OK\n", (uint32_t)(sizeof("[init] aio OK\n") - 1));
+        sys_write(1, "[test] aio OK\n", (uint32_t)(sizeof("[test] aio OK\n") - 1));
     }
 
     // D1: nanosleep
@@ -3530,64 +3530,64 @@ void _start(void) {
         int r = sys_nanosleep(&req, 0);
         (void)sys_clock_gettime(CLOCK_MONOTONIC, &ts2);
         if (r < 0) {
-            sys_write(1, "[init] nanosleep failed\n", (uint32_t)(sizeof("[init] nanosleep failed\n") - 1));
+            sys_write(1, "[test] nanosleep failed\n", (uint32_t)(sizeof("[test] nanosleep failed\n") - 1));
             sys_exit(1);
         }
         uint32_t elapsed_ms = (ts2.tv_sec - ts1.tv_sec) * 1000 +
                                (ts2.tv_nsec / 1000000) - (ts1.tv_nsec / 1000000);
         if (elapsed_ms < 10) {
-            sys_write(1, "[init] nanosleep too short\n", (uint32_t)(sizeof("[init] nanosleep too short\n") - 1));
+            sys_write(1, "[test] nanosleep too short\n", (uint32_t)(sizeof("[test] nanosleep too short\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] nanosleep OK\n", (uint32_t)(sizeof("[init] nanosleep OK\n") - 1));
+        sys_write(1, "[test] nanosleep OK\n", (uint32_t)(sizeof("[test] nanosleep OK\n") - 1));
     }
 
     // D2: CLOCK_REALTIME (should return nonzero epoch timestamp)
     {
         struct timespec rt;
         if (sys_clock_gettime(CLOCK_REALTIME, &rt) < 0) {
-            sys_write(1, "[init] CLOCK_REALTIME failed\n", (uint32_t)(sizeof("[init] CLOCK_REALTIME failed\n") - 1));
+            sys_write(1, "[test] CLOCK_REALTIME failed\n", (uint32_t)(sizeof("[test] CLOCK_REALTIME failed\n") - 1));
             sys_exit(1);
         }
         if (rt.tv_sec == 0) {
-            sys_write(1, "[init] CLOCK_REALTIME sec=0\n", (uint32_t)(sizeof("[init] CLOCK_REALTIME sec=0\n") - 1));
+            sys_write(1, "[test] CLOCK_REALTIME sec=0\n", (uint32_t)(sizeof("[test] CLOCK_REALTIME sec=0\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] CLOCK_REALTIME OK\n", (uint32_t)(sizeof("[init] CLOCK_REALTIME OK\n") - 1));
+        sys_write(1, "[test] CLOCK_REALTIME OK\n", (uint32_t)(sizeof("[test] CLOCK_REALTIME OK\n") - 1));
     }
 
     // D3: /dev/urandom read
     {
         int fd = sys_open("/dev/urandom", 0);
         if (fd < 0) {
-            sys_write(1, "[init] /dev/urandom open failed\n", (uint32_t)(sizeof("[init] /dev/urandom open failed\n") - 1));
+            sys_write(1, "[test] /dev/urandom open failed\n", (uint32_t)(sizeof("[test] /dev/urandom open failed\n") - 1));
             sys_exit(1);
         }
         uint8_t ubuf[4];
         int r = sys_read(fd, ubuf, 4);
         (void)sys_close(fd);
         if (r != 4) {
-            sys_write(1, "[init] /dev/urandom read failed\n", (uint32_t)(sizeof("[init] /dev/urandom read failed\n") - 1));
+            sys_write(1, "[test] /dev/urandom read failed\n", (uint32_t)(sizeof("[test] /dev/urandom read failed\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] /dev/urandom OK\n", (uint32_t)(sizeof("[init] /dev/urandom OK\n") - 1));
+        sys_write(1, "[test] /dev/urandom OK\n", (uint32_t)(sizeof("[test] /dev/urandom OK\n") - 1));
     }
 
     // D4: /proc/cmdline read
     {
         int fd = sys_open("/proc/cmdline", 0);
         if (fd < 0) {
-            sys_write(1, "[init] /proc/cmdline open failed\n", (uint32_t)(sizeof("[init] /proc/cmdline open failed\n") - 1));
+            sys_write(1, "[test] /proc/cmdline open failed\n", (uint32_t)(sizeof("[test] /proc/cmdline open failed\n") - 1));
             sys_exit(1);
         }
         char cbuf[64];
         int r = sys_read(fd, cbuf, 63);
         (void)sys_close(fd);
         if (r <= 0) {
-            sys_write(1, "[init] /proc/cmdline read failed\n", (uint32_t)(sizeof("[init] /proc/cmdline read failed\n") - 1));
+            sys_write(1, "[test] /proc/cmdline read failed\n", (uint32_t)(sizeof("[test] /proc/cmdline read failed\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] /proc/cmdline OK\n", (uint32_t)(sizeof("[init] /proc/cmdline OK\n") - 1));
+        sys_write(1, "[test] /proc/cmdline OK\n", (uint32_t)(sizeof("[test] /proc/cmdline OK\n") - 1));
     }
 
     // D5: CoW fork (child writes to page, parent sees original)
@@ -3595,7 +3595,7 @@ void _start(void) {
         volatile uint32_t cow_val = 0xAAAAAAAAU;
         int pid = sys_fork();
         if (pid < 0) {
-            sys_write(1, "[init] CoW fork failed\n", (uint32_t)(sizeof("[init] CoW fork failed\n") - 1));
+            sys_write(1, "[test] CoW fork failed\n", (uint32_t)(sizeof("[test] CoW fork failed\n") - 1));
             sys_exit(1);
         }
         if (pid == 0) {
@@ -3606,17 +3606,17 @@ void _start(void) {
         int st = 0;
         (void)sys_waitpid(pid, &st, 0);
         if (st != 0 || cow_val != 0xAAAAAAAAU) {
-            sys_write(1, "[init] CoW fork data corrupted\n", (uint32_t)(sizeof("[init] CoW fork data corrupted\n") - 1));
+            sys_write(1, "[test] CoW fork data corrupted\n", (uint32_t)(sizeof("[test] CoW fork data corrupted\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] CoW fork OK\n", (uint32_t)(sizeof("[init] CoW fork OK\n") - 1));
+        sys_write(1, "[test] CoW fork OK\n", (uint32_t)(sizeof("[test] CoW fork OK\n") - 1));
     }
 
     // D6: readv/writev
     {
         int fds[2];
         if (sys_pipe(fds) < 0) {
-            sys_write(1, "[init] readv/writev pipe failed\n", (uint32_t)(sizeof("[init] readv/writev pipe failed\n") - 1));
+            sys_write(1, "[test] readv/writev pipe failed\n", (uint32_t)(sizeof("[test] readv/writev pipe failed\n") - 1));
             sys_exit(1);
         }
         char a[] = "HE";
@@ -3628,7 +3628,7 @@ void _start(void) {
         wv[1].iov_len = 3;
         int w = sys_writev(fds[1], wv, 2);
         if (w != 5) {
-            sys_write(1, "[init] writev failed\n", (uint32_t)(sizeof("[init] writev failed\n") - 1));
+            sys_write(1, "[test] writev failed\n", (uint32_t)(sizeof("[test] writev failed\n") - 1));
             sys_exit(1);
         }
         char r1[3], r2[2];
@@ -3641,34 +3641,34 @@ void _start(void) {
         (void)sys_close(fds[0]);
         (void)sys_close(fds[1]);
         if (r != 5 || r1[0] != 'H' || r1[1] != 'E' || r1[2] != 'L' || r2[0] != 'L' || r2[1] != 'O') {
-            sys_write(1, "[init] readv data bad\n", (uint32_t)(sizeof("[init] readv data bad\n") - 1));
+            sys_write(1, "[test] readv data bad\n", (uint32_t)(sizeof("[test] readv data bad\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] readv/writev OK\n", (uint32_t)(sizeof("[init] readv/writev OK\n") - 1));
+        sys_write(1, "[test] readv/writev OK\n", (uint32_t)(sizeof("[test] readv/writev OK\n") - 1));
     }
 
     // D7: fsync
     {
         int fd = sys_open("/disk/fsynctest", O_CREAT | O_TRUNC);
         if (fd < 0) {
-            sys_write(1, "[init] fsync open failed\n", (uint32_t)(sizeof("[init] fsync open failed\n") - 1));
+            sys_write(1, "[test] fsync open failed\n", (uint32_t)(sizeof("[test] fsync open failed\n") - 1));
             sys_exit(1);
         }
         (void)sys_write(fd, "FS", 2);
         if (sys_fsync(fd) < 0) {
-            sys_write(1, "[init] fsync failed\n", (uint32_t)(sizeof("[init] fsync failed\n") - 1));
+            sys_write(1, "[test] fsync failed\n", (uint32_t)(sizeof("[test] fsync failed\n") - 1));
             sys_exit(1);
         }
         (void)sys_close(fd);
         (void)sys_unlink("/disk/fsynctest");
-        sys_write(1, "[init] fsync OK\n", (uint32_t)(sizeof("[init] fsync OK\n") - 1));
+        sys_write(1, "[test] fsync OK\n", (uint32_t)(sizeof("[test] fsync OK\n") - 1));
     }
 
     // D8: truncate (path-based)
     {
         int fd = sys_open("/disk/truncpath", O_CREAT | O_TRUNC);
         if (fd < 0) {
-            sys_write(1, "[init] truncate open failed\n", (uint32_t)(sizeof("[init] truncate open failed\n") - 1));
+            sys_write(1, "[test] truncate open failed\n", (uint32_t)(sizeof("[test] truncate open failed\n") - 1));
             sys_exit(1);
         }
         (void)sys_write(fd, "1234567890", 10);
@@ -3676,10 +3676,10 @@ void _start(void) {
         int r = sys_truncate("/disk/truncpath", 3);
         (void)sys_unlink("/disk/truncpath");
         if (r < 0) {
-            sys_write(1, "[init] truncate failed\n", (uint32_t)(sizeof("[init] truncate failed\n") - 1));
+            sys_write(1, "[test] truncate failed\n", (uint32_t)(sizeof("[test] truncate failed\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] truncate OK\n", (uint32_t)(sizeof("[init] truncate OK\n") - 1));
+        sys_write(1, "[test] truncate OK\n", (uint32_t)(sizeof("[test] truncate OK\n") - 1));
     }
 
     // D9: getuid/getgid/geteuid/getegid
@@ -3689,10 +3689,10 @@ void _start(void) {
         uint32_t euid = sys_geteuid();
         uint32_t egid = sys_getegid();
         if (uid != euid || gid != egid) {
-            sys_write(1, "[init] uid/euid mismatch\n", (uint32_t)(sizeof("[init] uid/euid mismatch\n") - 1));
+            sys_write(1, "[test] uid/euid mismatch\n", (uint32_t)(sizeof("[test] uid/euid mismatch\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] getuid/getgid OK\n", (uint32_t)(sizeof("[init] getuid/getgid OK\n") - 1));
+        sys_write(1, "[test] getuid/getgid OK\n", (uint32_t)(sizeof("[test] getuid/getgid OK\n") - 1));
     }
 
     // D10: chmod
@@ -3703,31 +3703,31 @@ void _start(void) {
             int r = sys_chmod("/disk/chmodtest", 0755);
             (void)sys_unlink("/disk/chmodtest");
             if (r < 0) {
-                sys_write(1, "[init] chmod failed\n", (uint32_t)(sizeof("[init] chmod failed\n") - 1));
+                sys_write(1, "[test] chmod failed\n", (uint32_t)(sizeof("[test] chmod failed\n") - 1));
                 sys_exit(1);
             }
         }
-        sys_write(1, "[init] chmod OK\n", (uint32_t)(sizeof("[init] chmod OK\n") - 1));
+        sys_write(1, "[test] chmod OK\n", (uint32_t)(sizeof("[test] chmod OK\n") - 1));
     }
 
     // D11: flock (LOCK_EX=2, LOCK_UN=8)
     {
         int fd = sys_open("/disk/flocktest", O_CREAT | O_TRUNC);
         if (fd < 0) {
-            sys_write(1, "[init] flock open failed\n", (uint32_t)(sizeof("[init] flock open failed\n") - 1));
+            sys_write(1, "[test] flock open failed\n", (uint32_t)(sizeof("[test] flock open failed\n") - 1));
             sys_exit(1);
         }
         if (sys_flock(fd, 2) < 0) {
-            sys_write(1, "[init] flock LOCK_EX failed\n", (uint32_t)(sizeof("[init] flock LOCK_EX failed\n") - 1));
+            sys_write(1, "[test] flock LOCK_EX failed\n", (uint32_t)(sizeof("[test] flock LOCK_EX failed\n") - 1));
             sys_exit(1);
         }
         if (sys_flock(fd, 8) < 0) {
-            sys_write(1, "[init] flock LOCK_UN failed\n", (uint32_t)(sizeof("[init] flock LOCK_UN failed\n") - 1));
+            sys_write(1, "[test] flock LOCK_UN failed\n", (uint32_t)(sizeof("[test] flock LOCK_UN failed\n") - 1));
             sys_exit(1);
         }
         (void)sys_close(fd);
         (void)sys_unlink("/disk/flocktest");
-        sys_write(1, "[init] flock OK\n", (uint32_t)(sizeof("[init] flock OK\n") - 1));
+        sys_write(1, "[test] flock OK\n", (uint32_t)(sizeof("[test] flock OK\n") - 1));
     }
 
     // D12: times
@@ -3735,10 +3735,10 @@ void _start(void) {
         struct { uint32_t utime; uint32_t stime; uint32_t cutime; uint32_t cstime; } tms;
         uint32_t clk = sys_times(&tms);
         if (clk == 0) {
-            sys_write(1, "[init] times returned 0\n", (uint32_t)(sizeof("[init] times returned 0\n") - 1));
+            sys_write(1, "[test] times returned 0\n", (uint32_t)(sizeof("[test] times returned 0\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] times OK\n", (uint32_t)(sizeof("[init] times OK\n") - 1));
+        sys_write(1, "[test] times OK\n", (uint32_t)(sizeof("[test] times OK\n") - 1));
     }
 
     // D13: gettid (should equal getpid for main thread)
@@ -3746,10 +3746,10 @@ void _start(void) {
         int pid = sys_getpid();
         int tid = sys_gettid();
         if (tid != pid) {
-            sys_write(1, "[init] gettid != getpid\n", (uint32_t)(sizeof("[init] gettid != getpid\n") - 1));
+            sys_write(1, "[test] gettid != getpid\n", (uint32_t)(sizeof("[test] gettid != getpid\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] gettid OK\n", (uint32_t)(sizeof("[init] gettid OK\n") - 1));
+        sys_write(1, "[test] gettid OK\n", (uint32_t)(sizeof("[test] gettid OK\n") - 1));
     }
 
     // D14: posix_spawn (spawn echo.elf and wait for it)
@@ -3766,11 +3766,11 @@ void _start(void) {
             sys_exit(0); /* we are the un-exec'd child, exit silently */
         }
         if (r < 0 || child_pid == 0) {
-            sys_write(1, "[init] posix_spawn OK\n", (uint32_t)(sizeof("[init] posix_spawn OK\n") - 1));
+            sys_write(1, "[test] posix_spawn OK\n", (uint32_t)(sizeof("[test] posix_spawn OK\n") - 1));
         } else {
             int st = 0;
             (void)sys_waitpid((int)child_pid, &st, 0);
-            sys_write(1, "[init] posix_spawn OK\n", (uint32_t)(sizeof("[init] posix_spawn OK\n") - 1));
+            sys_write(1, "[test] posix_spawn OK\n", (uint32_t)(sizeof("[test] posix_spawn OK\n") - 1));
         }
     }
 
@@ -3787,9 +3787,9 @@ void _start(void) {
             dns = (1000000000U - ta.tv_nsec) + tb.tv_nsec;
         }
         if (dns > 0 && dns < 10000000) {
-            sys_write(1, "[init] clock_ns precision OK\n", (uint32_t)(sizeof("[init] clock_ns precision OK\n") - 1));
+            sys_write(1, "[test] clock_ns precision OK\n", (uint32_t)(sizeof("[test] clock_ns precision OK\n") - 1));
         } else {
-            sys_write(1, "[init] clock_ns precision OK\n", (uint32_t)(sizeof("[init] clock_ns precision OK\n") - 1));
+            sys_write(1, "[test] clock_ns precision OK\n", (uint32_t)(sizeof("[test] clock_ns precision OK\n") - 1));
         }
     }
 
@@ -3817,17 +3817,17 @@ void _start(void) {
                 int st = 0;
                 (void)sys_waitpid(pid, &st, 0);
                 if (st == 0) {
-                    static const char m[] = "[init] setuid/setgid OK\n";
+                    static const char m[] = "[test] setuid/setgid OK\n";
                     (void)sys_write(1, m, (uint32_t)(sizeof(m) - 1));
                 } else {
-                    sys_write(1, "[init] setuid/setgid failed st=", (uint32_t)(sizeof("[init] setuid/setgid failed st=") - 1));
+                    sys_write(1, "[test] setuid/setgid failed st=", (uint32_t)(sizeof("[test] setuid/setgid failed st=") - 1));
                     write_int_dec(st);
                     sys_write(1, "\n", 1);
                     sys_exit(1);
                 }
             }
         } else {
-            static const char m[] = "[init] setuid/setgid OK\n";
+            static const char m[] = "[test] setuid/setgid OK\n";
             (void)sys_write(1, m, (uint32_t)(sizeof(m) - 1));
         }
         (void)orig_gid;
@@ -3837,27 +3837,27 @@ void _start(void) {
     {
         int pfds[2];
         if (sys_pipe(pfds) < 0) {
-            sys_write(1, "[init] fcntl pipe failed\n", (uint32_t)(sizeof("[init] fcntl pipe failed\n") - 1));
+            sys_write(1, "[test] fcntl pipe failed\n", (uint32_t)(sizeof("[test] fcntl pipe failed\n") - 1));
             sys_exit(1);
         }
         int fl = sys_fcntl(pfds[0], F_GETFL, 0);
         if (fl < 0) {
-            sys_write(1, "[init] fcntl F_GETFL failed\n", (uint32_t)(sizeof("[init] fcntl F_GETFL failed\n") - 1));
+            sys_write(1, "[test] fcntl F_GETFL failed\n", (uint32_t)(sizeof("[test] fcntl F_GETFL failed\n") - 1));
             sys_exit(1);
         }
         // Set O_NONBLOCK
         if (sys_fcntl(pfds[0], F_SETFL, (uint32_t)fl | O_NONBLOCK) < 0) {
-            sys_write(1, "[init] fcntl F_SETFL failed\n", (uint32_t)(sizeof("[init] fcntl F_SETFL failed\n") - 1));
+            sys_write(1, "[test] fcntl F_SETFL failed\n", (uint32_t)(sizeof("[test] fcntl F_SETFL failed\n") - 1));
             sys_exit(1);
         }
         int fl2 = sys_fcntl(pfds[0], F_GETFL, 0);
         if (!(fl2 & (int)O_NONBLOCK)) {
-            sys_write(1, "[init] fcntl NONBLOCK not set\n", (uint32_t)(sizeof("[init] fcntl NONBLOCK not set\n") - 1));
+            sys_write(1, "[test] fcntl NONBLOCK not set\n", (uint32_t)(sizeof("[test] fcntl NONBLOCK not set\n") - 1));
             sys_exit(1);
         }
         (void)sys_close(pfds[0]);
         (void)sys_close(pfds[1]);
-        static const char m[] = "[init] fcntl F_GETFL/F_SETFL OK\n";
+        static const char m[] = "[test] fcntl F_GETFL/F_SETFL OK\n";
         (void)sys_write(1, m, (uint32_t)(sizeof(m) - 1));
     }
 
@@ -3865,25 +3865,25 @@ void _start(void) {
     {
         int fd = sys_open("/sbin/fulltest", 0);
         if (fd < 0) {
-            sys_write(1, "[init] fcntl cloexec open failed\n", (uint32_t)(sizeof("[init] fcntl cloexec open failed\n") - 1));
+            sys_write(1, "[test] fcntl cloexec open failed\n", (uint32_t)(sizeof("[test] fcntl cloexec open failed\n") - 1));
             sys_exit(1);
         }
         int cloexec = sys_fcntl(fd, F_GETFD, 0);
         if (cloexec < 0) {
-            sys_write(1, "[init] fcntl F_GETFD failed\n", (uint32_t)(sizeof("[init] fcntl F_GETFD failed\n") - 1));
+            sys_write(1, "[test] fcntl F_GETFD failed\n", (uint32_t)(sizeof("[test] fcntl F_GETFD failed\n") - 1));
             sys_exit(1);
         }
         if (sys_fcntl(fd, F_SETFD, FD_CLOEXEC) < 0) {
-            sys_write(1, "[init] fcntl F_SETFD failed\n", (uint32_t)(sizeof("[init] fcntl F_SETFD failed\n") - 1));
+            sys_write(1, "[test] fcntl F_SETFD failed\n", (uint32_t)(sizeof("[test] fcntl F_SETFD failed\n") - 1));
             sys_exit(1);
         }
         int cloexec2 = sys_fcntl(fd, F_GETFD, 0);
         if (!(cloexec2 & FD_CLOEXEC)) {
-            sys_write(1, "[init] fcntl CLOEXEC not set\n", (uint32_t)(sizeof("[init] fcntl CLOEXEC not set\n") - 1));
+            sys_write(1, "[test] fcntl CLOEXEC not set\n", (uint32_t)(sizeof("[test] fcntl CLOEXEC not set\n") - 1));
             sys_exit(1);
         }
         (void)sys_close(fd);
-        static const char m[] = "[init] fcntl FD_CLOEXEC OK\n";
+        static const char m[] = "[test] fcntl FD_CLOEXEC OK\n";
         (void)sys_write(1, m, (uint32_t)(sizeof(m) - 1));
     }
 
@@ -3918,10 +3918,10 @@ void _start(void) {
             int st = 0;
             (void)sys_waitpid(pid, &st, 0);
             if (st == 0) {
-                static const char m[] = "[init] sigsuspend OK\n";
+                static const char m[] = "[test] sigsuspend OK\n";
                 (void)sys_write(1, m, (uint32_t)(sizeof(m) - 1));
             } else {
-                sys_write(1, "[init] sigsuspend failed\n", (uint32_t)(sizeof("[init] sigsuspend failed\n") - 1));
+                sys_write(1, "[test] sigsuspend failed\n", (uint32_t)(sizeof("[test] sigsuspend failed\n") - 1));
                 sys_exit(1);
             }
         }
@@ -3961,11 +3961,11 @@ void _start(void) {
             (void)sys_nanosleep(&ts, 0);
         }
         if (found) {
-            static const char m[] = "[init] orphan reparent OK\n";
+            static const char m[] = "[test] orphan reparent OK\n";
             (void)sys_write(1, m, (uint32_t)(sizeof(m) - 1));
         } else {
-            sys_write(1, "[init] orphan reparent failed\n",
-                      (uint32_t)(sizeof("[init] orphan reparent failed\n") - 1));
+            sys_write(1, "[test] orphan reparent failed\n",
+                      (uint32_t)(sizeof("[test] orphan reparent failed\n") - 1));
         }
     }
 
@@ -3994,20 +3994,20 @@ void _start(void) {
 
         int fd = sys_open(ppath, 0);
         if (fd < 0) {
-            sys_write(1, "[init] /proc/PID/cmdline open failed\n",
-                      (uint32_t)(sizeof("[init] /proc/PID/cmdline open failed\n") - 1));
+            sys_write(1, "[test] /proc/PID/cmdline open failed\n",
+                      (uint32_t)(sizeof("[test] /proc/PID/cmdline open failed\n") - 1));
             sys_exit(1);
         }
         char clbuf[64];
         int r = sys_read(fd, clbuf, 63);
         (void)sys_close(fd);
         if (r <= 0) {
-            sys_write(1, "[init] /proc/PID/cmdline read failed\n",
-                      (uint32_t)(sizeof("[init] /proc/PID/cmdline read failed\n") - 1));
+            sys_write(1, "[test] /proc/PID/cmdline read failed\n",
+                      (uint32_t)(sizeof("[test] /proc/PID/cmdline read failed\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] /proc/PID/cmdline OK\n",
-                  (uint32_t)(sizeof("[init] /proc/PID/cmdline OK\n") - 1));
+        sys_write(1, "[test] /proc/PID/cmdline OK\n",
+                  (uint32_t)(sizeof("[test] /proc/PID/cmdline OK\n") - 1));
     }
 
     // F2: /proc/self/status (verify PID-specific procfs status)
@@ -4032,40 +4032,40 @@ void _start(void) {
 
         int fd = sys_open(ppath, 0);
         if (fd < 0) {
-            sys_write(1, "[init] /proc/PID/status open failed\n",
-                      (uint32_t)(sizeof("[init] /proc/PID/status open failed\n") - 1));
+            sys_write(1, "[test] /proc/PID/status open failed\n",
+                      (uint32_t)(sizeof("[test] /proc/PID/status open failed\n") - 1));
             sys_exit(1);
         }
         char sbuf[128];
         int r = sys_read(fd, sbuf, 127);
         (void)sys_close(fd);
         if (r <= 0) {
-            sys_write(1, "[init] /proc/PID/status read failed\n",
-                      (uint32_t)(sizeof("[init] /proc/PID/status read failed\n") - 1));
+            sys_write(1, "[test] /proc/PID/status read failed\n",
+                      (uint32_t)(sizeof("[test] /proc/PID/status read failed\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] /proc/PID/status OK\n",
-                  (uint32_t)(sizeof("[init] /proc/PID/status OK\n") - 1));
+        sys_write(1, "[test] /proc/PID/status OK\n",
+                  (uint32_t)(sizeof("[test] /proc/PID/status OK\n") - 1));
     }
 
     // F3: /dev/console write test
     {
         int fd = sys_open("/dev/console", O_RDWR);
         if (fd >= 0) {
-            static const char cm[] = "[init] console test\n";
+            static const char cm[] = "[test] console test\n";
             int w = sys_write(fd, cm, (uint32_t)(sizeof(cm) - 1));
             (void)sys_close(fd);
             if (w > 0) {
-                sys_write(1, "[init] /dev/console OK\n",
-                          (uint32_t)(sizeof("[init] /dev/console OK\n") - 1));
+                sys_write(1, "[test] /dev/console OK\n",
+                          (uint32_t)(sizeof("[test] /dev/console OK\n") - 1));
             } else {
-                sys_write(1, "[init] /dev/console OK\n",
-                          (uint32_t)(sizeof("[init] /dev/console OK\n") - 1));
+                sys_write(1, "[test] /dev/console OK\n",
+                          (uint32_t)(sizeof("[test] /dev/console OK\n") - 1));
             }
         } else {
             /* /dev/console may not exist on serial-only boot — skip gracefully */
-            sys_write(1, "[init] /dev/console OK\n",
-                      (uint32_t)(sizeof("[init] /dev/console OK\n") - 1));
+            sys_write(1, "[test] /dev/console OK\n",
+                      (uint32_t)(sizeof("[test] /dev/console OK\n") - 1));
         }
     }
 
@@ -4081,8 +4081,8 @@ void _start(void) {
             if (s1 >= 0) (void)sys_close(s1);
             if (m2 >= 0) (void)sys_close(m2);
             if (s2 >= 0) (void)sys_close(s2);
-            sys_write(1, "[init] multi-pty OK\n",
-                      (uint32_t)(sizeof("[init] multi-pty OK\n") - 1));
+            sys_write(1, "[test] multi-pty OK\n",
+                      (uint32_t)(sizeof("[test] multi-pty OK\n") - 1));
         } else {
             /* Write through pair 1 */
             (void)sys_write(m1, "P1", 2);
@@ -4100,11 +4100,11 @@ void _start(void) {
             (void)sys_close(s2);
 
             if (r1 == 2 && r2 == 2 && b1[0] == 'P' && b1[1] == '1' && b2[0] == 'P' && b2[1] == '2') {
-                sys_write(1, "[init] multi-pty OK\n",
-                          (uint32_t)(sizeof("[init] multi-pty OK\n") - 1));
+                sys_write(1, "[test] multi-pty OK\n",
+                          (uint32_t)(sizeof("[test] multi-pty OK\n") - 1));
             } else {
-                sys_write(1, "[init] multi-pty data mismatch\n",
-                          (uint32_t)(sizeof("[init] multi-pty data mismatch\n") - 1));
+                sys_write(1, "[test] multi-pty data mismatch\n",
+                          (uint32_t)(sizeof("[test] multi-pty data mismatch\n") - 1));
                 sys_exit(1);
             }
         }
@@ -4114,14 +4114,14 @@ void _start(void) {
     {
         int fds[2];
         if (sys_pipe(fds) < 0) {
-            sys_write(1, "[init] dup pipe failed\n",
-                      (uint32_t)(sizeof("[init] dup pipe failed\n") - 1));
+            sys_write(1, "[test] dup pipe failed\n",
+                      (uint32_t)(sizeof("[test] dup pipe failed\n") - 1));
             sys_exit(1);
         }
         int d = sys_dup(fds[1]);
         if (d < 0) {
-            sys_write(1, "[init] dup failed\n",
-                      (uint32_t)(sizeof("[init] dup failed\n") - 1));
+            sys_write(1, "[test] dup failed\n",
+                      (uint32_t)(sizeof("[test] dup failed\n") - 1));
             sys_exit(1);
         }
         /* Write through dup'd fd, read from original */
@@ -4132,20 +4132,20 @@ void _start(void) {
         (void)sys_close(fds[0]);
         (void)sys_close(fds[1]);
         if (r != 1 || db != 'D') {
-            sys_write(1, "[init] dup data bad\n",
-                      (uint32_t)(sizeof("[init] dup data bad\n") - 1));
+            sys_write(1, "[test] dup data bad\n",
+                      (uint32_t)(sizeof("[test] dup data bad\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] dup OK\n",
-                  (uint32_t)(sizeof("[init] dup OK\n") - 1));
+        sys_write(1, "[test] dup OK\n",
+                  (uint32_t)(sizeof("[test] dup OK\n") - 1));
     }
 
     // F6: pipe EOF — close write end, read should return 0
     {
         int fds[2];
         if (sys_pipe(fds) < 0) {
-            sys_write(1, "[init] pipe-eof pipe failed\n",
-                      (uint32_t)(sizeof("[init] pipe-eof pipe failed\n") - 1));
+            sys_write(1, "[test] pipe-eof pipe failed\n",
+                      (uint32_t)(sizeof("[test] pipe-eof pipe failed\n") - 1));
             sys_exit(1);
         }
         (void)sys_close(fds[1]); /* close write end */
@@ -4153,52 +4153,52 @@ void _start(void) {
         int r = sys_read(fds[0], &eb, 1);
         (void)sys_close(fds[0]);
         if (r != 0) {
-            sys_write(1, "[init] pipe EOF expected 0\n",
-                      (uint32_t)(sizeof("[init] pipe EOF expected 0\n") - 1));
+            sys_write(1, "[test] pipe EOF expected 0\n",
+                      (uint32_t)(sizeof("[test] pipe EOF expected 0\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] pipe EOF OK\n",
-                  (uint32_t)(sizeof("[init] pipe EOF OK\n") - 1));
+        sys_write(1, "[test] pipe EOF OK\n",
+                  (uint32_t)(sizeof("[test] pipe EOF OK\n") - 1));
     }
 
     // F7: getdents /proc (readdir on procfs root)
     {
         int fd = sys_open("/proc", 0);
         if (fd < 0) {
-            sys_write(1, "[init] readdir /proc open failed\n",
-                      (uint32_t)(sizeof("[init] readdir /proc open failed\n") - 1));
+            sys_write(1, "[test] readdir /proc open failed\n",
+                      (uint32_t)(sizeof("[test] readdir /proc open failed\n") - 1));
             sys_exit(1);
         }
         char dbuf[512];
         int r = sys_getdents(fd, dbuf, 512);
         (void)sys_close(fd);
         if (r <= 0) {
-            sys_write(1, "[init] readdir /proc empty\n",
-                      (uint32_t)(sizeof("[init] readdir /proc empty\n") - 1));
+            sys_write(1, "[test] readdir /proc empty\n",
+                      (uint32_t)(sizeof("[test] readdir /proc empty\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] readdir /proc OK\n",
-                  (uint32_t)(sizeof("[init] readdir /proc OK\n") - 1));
+        sys_write(1, "[test] readdir /proc OK\n",
+                  (uint32_t)(sizeof("[test] readdir /proc OK\n") - 1));
     }
 
     // F8: getdents /bin (readdir on initrd — tests initrd_readdir fix)
     {
         int fd = sys_open("/bin", 0);
         if (fd < 0) {
-            sys_write(1, "[init] readdir /bin open failed\n",
-                      (uint32_t)(sizeof("[init] readdir /bin open failed\n") - 1));
+            sys_write(1, "[test] readdir /bin open failed\n",
+                      (uint32_t)(sizeof("[test] readdir /bin open failed\n") - 1));
             sys_exit(1);
         }
         char dbuf[1024];
         int r = sys_getdents(fd, dbuf, 1024);
         (void)sys_close(fd);
         if (r <= 0) {
-            sys_write(1, "[init] readdir /bin empty\n",
-                      (uint32_t)(sizeof("[init] readdir /bin empty\n") - 1));
+            sys_write(1, "[test] readdir /bin empty\n",
+                      (uint32_t)(sizeof("[test] readdir /bin empty\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] readdir /bin OK\n",
-                  (uint32_t)(sizeof("[init] readdir /bin OK\n") - 1));
+        sys_write(1, "[test] readdir /bin OK\n",
+                  (uint32_t)(sizeof("[test] readdir /bin OK\n") - 1));
     }
 
     enum { NCHILD = 100 };
@@ -4206,7 +4206,7 @@ void _start(void) {
     for (int i = 0; i < NCHILD; i++) {
         int pid = sys_fork();
         if (pid < 0) {
-            static const char smsg[] = "[init] fork failed\n";
+            static const char smsg[] = "[test] fork failed\n";
             (void)sys_write(1, smsg, (uint32_t)(sizeof(smsg) - 1));
             sys_exit(2);
         }
@@ -4222,11 +4222,11 @@ void _start(void) {
         if (pid == 0) {
             int ppid = sys_getppid();
             if (ppid == parent_pid) {
-                static const char msg[] = "[init] getppid OK\n";
+                static const char msg[] = "[test] getppid OK\n";
                 (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
                 sys_exit(0);
             }
-            static const char msg[] = "[init] getppid failed\n";
+            static const char msg[] = "[test] getppid failed\n";
             (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
             sys_exit(1);
         }
@@ -4244,10 +4244,10 @@ void _start(void) {
         int st = 0;
         int wp = sys_waitpid(pid, &st, WNOHANG);
         if (wp == 0 || wp == pid) {
-            static const char msg[] = "[init] waitpid WNOHANG OK\n";
+            static const char msg[] = "[test] waitpid WNOHANG OK\n";
             (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
         } else {
-            static const char msg[] = "[init] waitpid WNOHANG failed\n";
+            static const char msg[] = "[test] waitpid WNOHANG failed\n";
             (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
         }
         if (wp == 0) {
@@ -4261,10 +4261,10 @@ void _start(void) {
         tv.tv_sec = 0; tv.tv_usec = 0;
         int r = sys_gettimeofday(&tv);
         if (r == 0 && tv.tv_sec > 1000000000U) {
-            static const char msg[] = "[init] gettimeofday OK\n";
+            static const char msg[] = "[test] gettimeofday OK\n";
             (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
         } else {
-            static const char msg[] = "[init] gettimeofday failed\n";
+            static const char msg[] = "[test] gettimeofday failed\n";
             (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
         }
     }
@@ -4280,14 +4280,14 @@ void _start(void) {
             *(volatile uint32_t*)page = 0xDEADBEEF;
             int r = sys_mprotect(page, 4096, PROT_READ | PROT_WRITE);
             if (r == 0) {
-                static const char msg[] = "[init] mprotect OK\n";
+                static const char msg[] = "[test] mprotect OK\n";
                 (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
             } else {
-                static const char msg[] = "[init] mprotect call failed\n";
+                static const char msg[] = "[test] mprotect call failed\n";
                 (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
             }
         } else {
-            static const char msg[] = "[init] mprotect brk failed\n";
+            static const char msg[] = "[test] mprotect brk failed\n";
             (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
         }
     }
@@ -4296,10 +4296,10 @@ void _start(void) {
     {
         int r = sys_madvise(0, 4096, 0 /* MADV_NORMAL */);
         if (r == 0) {
-            static const char msg[] = "[init] madvise OK\n";
+            static const char msg[] = "[test] madvise OK\n";
             (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
         } else {
-            static const char msg[] = "[init] madvise failed\n";
+            static const char msg[] = "[test] madvise failed\n";
             (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
         }
     }
@@ -4318,16 +4318,16 @@ void _start(void) {
             struct rlimit check;
             int r3 = sys_getrlimit(RLIMIT_NOFILE, &check);
             if (r2 == 0 && r3 == 0 && check.rlim_cur == new_rl.rlim_cur) {
-                static const char msg[] = "[init] getrlimit/setrlimit OK\n";
+                static const char msg[] = "[test] getrlimit/setrlimit OK\n";
                 (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
             } else {
-                static const char msg[] = "[init] setrlimit failed\n";
+                static const char msg[] = "[test] setrlimit failed\n";
                 (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
             }
             /* Restore */
             (void)sys_setrlimit(RLIMIT_NOFILE, &rl);
         } else {
-            static const char msg[] = "[init] getrlimit failed\n";
+            static const char msg[] = "[test] getrlimit failed\n";
             (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
         }
     }
@@ -4350,7 +4350,7 @@ void _start(void) {
     {
         int pid = sys_fork();
         if (pid < 0) {
-            static const char msg[] = "[init] sigsegv test fork failed\n";
+            static const char msg[] = "[test] sigsegv test fork failed\n";
             (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
             goto sigsegv_done;
         }
@@ -4363,7 +4363,7 @@ void _start(void) {
             act.sa_flags = SA_SIGINFO;
 
             if (sys_sigaction2(SIGSEGV, &act, 0) < 0) {
-                static const char msg[] = "[init] sigaction(SIGSEGV) failed\n";
+                static const char msg[] = "[test] sigaction(SIGSEGV) failed\n";
                 (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
                 sys_exit(1);
             }
@@ -4375,10 +4375,10 @@ void _start(void) {
         int st = 0;
         int wp = sys_waitpid(pid, &st, 0);
         if (wp == pid && st == 0) {
-            static const char msg[] = "[init] SIGSEGV OK\n";
+            static const char msg[] = "[test] SIGSEGV OK\n";
             (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
         } else {
-            static const char msg[] = "[init] SIGSEGV failed\n";
+            static const char msg[] = "[test] SIGSEGV failed\n";
             (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
         }
     sigsegv_done:;
@@ -4395,10 +4395,10 @@ void _start(void) {
     }
 
     if (ok) {
-        static const char wmsg[] = "[init] waitpid OK (100 children, explicit)\n";
+        static const char wmsg[] = "[test] waitpid OK (100 children, explicit)\n";
         (void)sys_write(1, wmsg, (uint32_t)(sizeof(wmsg) - 1));
     } else {
-        static const char wbad[] = "[init] waitpid failed (100 children, explicit)\n";
+        static const char wbad[] = "[test] waitpid failed (100 children, explicit)\n";
         (void)sys_write(1, wbad, (uint32_t)(sizeof(wbad) - 1));
     }
 
@@ -4408,21 +4408,21 @@ void _start(void) {
         for (uint32_t i = 0; i < sizeof(uts); i++) ((char*)&uts)[i] = 0;
         int r = sys_uname(&uts);
         if (r < 0) {
-            sys_write(1, "[init] uname failed\n", (uint32_t)(sizeof("[init] uname failed\n") - 1));
+            sys_write(1, "[test] uname failed\n", (uint32_t)(sizeof("[test] uname failed\n") - 1));
             sys_exit(1);
         }
         /* Verify sysname == "AdrOS" */
         if (uts.sysname[0] != 'A' || uts.sysname[1] != 'd' || uts.sysname[2] != 'r' ||
             uts.sysname[3] != 'O' || uts.sysname[4] != 'S' || uts.sysname[5] != 0) {
-            sys_write(1, "[init] uname sysname bad\n", (uint32_t)(sizeof("[init] uname sysname bad\n") - 1));
+            sys_write(1, "[test] uname sysname bad\n", (uint32_t)(sizeof("[test] uname sysname bad\n") - 1));
             sys_exit(1);
         }
         /* Verify machine == "i686" */
         if (uts.machine[0] != 'i' || uts.machine[1] != '6' || uts.machine[2] != '8' || uts.machine[3] != '6') {
-            sys_write(1, "[init] uname machine bad\n", (uint32_t)(sizeof("[init] uname machine bad\n") - 1));
+            sys_write(1, "[test] uname machine bad\n", (uint32_t)(sizeof("[test] uname machine bad\n") - 1));
             sys_exit(1);
         }
-        sys_write(1, "[init] uname OK\n", (uint32_t)(sizeof("[init] uname OK\n") - 1));
+        sys_write(1, "[test] uname OK\n", (uint32_t)(sizeof("[test] uname OK\n") - 1));
     }
 
     // H1: SMP parallel fork test — exercises multi-CPU scheduling + load balancing
@@ -4453,22 +4453,22 @@ void _start(void) {
         }
 
         if (smp_ok) {
-            static const char msg[] = "[init] SMP parallel fork OK\n";
+            static const char msg[] = "[test] SMP parallel fork OK\n";
             (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
         } else {
-            static const char msg[] = "[init] SMP parallel fork FAIL\n";
+            static const char msg[] = "[test] SMP parallel fork FAIL\n";
             (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
         }
         #undef SMP_NCHILD
     }
 
-    (void)sys_write(1, "[init] execve(/bin/echo)\n",
-                    (uint32_t)(sizeof("[init] execve(/bin/echo)\n") - 1));
+    (void)sys_write(1, "[test] execve(/bin/echo)\n",
+                    (uint32_t)(sizeof("[test] execve(/bin/echo)\n") - 1));
     static const char* const argv[] = {"echo", "[echo]", "hello", "from", "echo", 0};
     static const char* const envp[] = {"FOO=bar", "HELLO=world", 0};
     (void)sys_execve("/bin/echo", argv, envp);
-    (void)sys_write(1, "[init] execve returned (unexpected)\n",
-                    (uint32_t)(sizeof("[init] execve returned (unexpected)\n") - 1));
+    (void)sys_write(1, "[test] execve returned (unexpected)\n",
+                    (uint32_t)(sizeof("[test] execve returned (unexpected)\n") - 1));
     sys_exit(1);
     sys_exit(0);
 }
