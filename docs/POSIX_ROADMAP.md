@@ -88,6 +88,15 @@ Notes:
 | `alarm` | [x] | Per-process alarm timer; delivers `SIGALRM` on expiry |
 | `times` | [x] | Returns `struct tms` with per-process `utime`/`stime` accounting |
 | `futex` | [x] | `FUTEX_WAIT`/`FUTEX_WAKE` with global waiter table |
+| `waitid` | [x] | Extended wait with `P_PID`/`P_ALL`/`P_PGID` |
+| `posix_spawn` | [x] | Efficient fork+exec in single syscall with file actions and attributes |
+| `setitimer`/`getitimer` | [x] | `ITIMER_REAL`, `ITIMER_VIRTUAL`, `ITIMER_PROF` |
+| `gettimeofday` | [x] | Returns wall-clock time (backed by RTC) |
+| `mprotect` | [x] | Change memory protection flags on existing mappings |
+| `getrlimit`/`setrlimit` | [x] | Get/set resource limits (`RLIMIT_NOFILE`, etc.) |
+| `uname` | [x] | Returns system identification (sysname, nodename, release, version, machine) |
+| `getrusage` | [x] | Returns resource usage statistics |
+| `mount` | [x] | Runtime filesystem mounting (tmpfs, disk-based via `init_mount_fs`) |
 
 ## 4. Syscalls — Signals
 
@@ -111,6 +120,7 @@ Notes:
 | `epoll_create` | [x] | Creates epoll instance; returns fd |
 | `epoll_ctl` | [x] | Add/modify/delete fd interest; `EPOLL_CTL_ADD`/`MOD`/`DEL` |
 | `epoll_wait` | [x] | Wait for events on epoll fd; timeout support |
+| `EPOLLET` (edge-triggered) | [x] | Edge-triggered epoll mode with level-to-edge semantics |
 | `inotify_init` | [x] | Creates inotify instance; returns fd |
 | `inotify_add_watch` | [x] | Add watch on path with event mask |
 | `inotify_rm_watch` | [x] | Remove watch by descriptor |
@@ -228,6 +238,10 @@ Notes:
 | DNS resolver | [x] | lwIP DNS enabled; kernel `dns_resolve()` wrapper with async callback + timeout |
 | `/etc/hosts` | [x] | Kernel-level hosts file parsing and lookup |
 | `getaddrinfo` | [x] | Kernel-level hostname resolution with hosts file + DNS fallback |
+| `setsockopt`/`getsockopt` | [x] | Set/get socket options |
+| `shutdown` | [x] | Shutdown socket send/receive |
+| `getpeername` | [x] | Get remote address of connected socket |
+| `getsockname` | [x] | Get local address of socket |
 
 ## 11. Threads & Synchronization
 
@@ -259,6 +273,7 @@ Notes:
 | Feature | Status | Notes |
 |---------|--------|-------|
 | `pivot_root` | [x] | Swap root filesystem; mounts old root at specified path |
+| LZ4 initrd decompression | [x] | LZ4 frame decompression for compressed initrd images (`src/kernel/lz4.c`) |
 
 ## 12. Dynamic Linking
 
@@ -279,13 +294,31 @@ Notes:
 | Feature | Status | Notes |
 |---------|--------|-------|
 | ELF32 loader | [x] | Secure with W^X + ASLR; supports `ET_EXEC` + `ET_DYN` + `PT_INTERP` |
-| `/bin/init.elf` (smoke tests) | [x] | Comprehensive test suite (80 checks: file I/O, signals, memory, IPC, devices, procfs, networking, epoll, inotify, aio, nanosleep, CoW fork, readv/writev, fsync, flock, posix_spawn, TSC precision, execve) |
+| `/sbin/fulltest` (smoke tests) | [x] | Comprehensive test suite (102 checks: file I/O, signals, memory, IPC, devices, procfs, networking, epoll, epollet, inotify, aio, nanosleep, CoW fork, readv/writev, fsync, flock, posix_spawn, TSC precision, gettimeofday, mprotect, getrlimit/setrlimit, uname, LZ4, lazy PLT, execve) |
 | `/bin/echo` | [x] | argv/envp test |
 | `/bin/sh` | [x] | POSIX sh-compatible shell; builtins, pipes, redirects, `$PATH` search |
 | `/bin/cat` | [x] | |
 | `/bin/ls` | [x] | Uses `getdents` |
 | `/bin/mkdir` | [x] | |
 | `/bin/rm` | [x] | |
+| `/bin/cp`, `/bin/mv` | [x] | File copy and move |
+| `/bin/touch`, `/bin/ln` | [x] | Create files, hard/symbolic links |
+| `/bin/head`, `/bin/tail` | [x] | Display first/last lines |
+| `/bin/wc`, `/bin/sort`, `/bin/uniq`, `/bin/cut` | [x] | Text processing utilities |
+| `/bin/grep` | [x] | Pattern matching with `-v`/`-c`/`-n` flags |
+| `/bin/sed`, `/bin/awk` | [x] | Stream editor and pattern processing |
+| `/bin/find`, `/bin/which` | [x] | File search and command lookup |
+| `/bin/chmod`, `/bin/chown`, `/bin/chgrp` | [x] | Permission management |
+| `/bin/mount`, `/bin/umount` | [x] | Filesystem mount/unmount |
+| `/bin/ps`, `/bin/top`, `/bin/kill` | [x] | Process management |
+| `/bin/df`, `/bin/du`, `/bin/free` | [x] | Disk and memory usage |
+| `/bin/date`, `/bin/hostname`, `/bin/uptime`, `/bin/uname` | [x] | System information |
+| `/bin/env`, `/bin/printenv`, `/bin/id` | [x] | Environment and identity |
+| `/bin/tee`, `/bin/dd`, `/bin/tr` | [x] | I/O utilities |
+| `/bin/basename`, `/bin/dirname`, `/bin/pwd`, `/bin/stat` | [x] | Path and file info |
+| `/bin/sleep`, `/bin/clear`, `/bin/rmdir`, `/bin/dmesg`, `/bin/who` | [x] | Misc utilities |
+| `/sbin/init` | [x] | SysV-like init process (inittab, runlevels, respawn) |
+| `/bin/pie_test` | [x] | PIE/shared library test binary |
 | `/bin/doom.elf` | [x] | DOOM (doomgeneric port) running on `/dev/fb0` + `/dev/kbd` |
 | `/lib/ld.so` | [x] | Dynamic linker with auxv parsing, PLT/GOT eager relocation, `dlopen`/`dlsym`/`dlclose` |
 | Minimal libc (ulibc) | [x] | `printf`, `malloc`, `string.h`, `unistd.h`, `errno.h`, `pthread.h`, `signal.h`, `stdio.h`, `stdlib.h`, `ctype.h`, `sys/mman.h`, `sys/ioctl.h`, `time.h`, `math.h`, `assert.h`, `fcntl.h`, `strings.h`, `inttypes.h`, `sys/types.h`, `sys/stat.h`, `sys/times.h`, `sys/uio.h`, `linux/futex.h` |
@@ -312,7 +345,7 @@ Notes:
 
 ## Implementation Progress
 
-### All 31 planned tasks completed ✅ + 44 additional features (75 total)
+### All 31 planned tasks completed ✅ + 59 additional features (90 total)
 
 **High Priority (8/8):**
 1. ~~`raise()` em ulibc~~ ✅
@@ -396,6 +429,21 @@ Notes:
 73. ~~`pivot_root` — root filesystem swap syscall~~ ✅
 74. ~~Shared library lazy binding — functional ld.so with auxv, PLT/GOT~~ ✅
 75. ~~`aio_*` — POSIX asynchronous I/O~~ ✅
+76. ~~`gettimeofday` syscall~~ ✅
+77. ~~`mprotect` memory protection syscall~~ ✅
+78. ~~`getrlimit`/`setrlimit` resource limits~~ ✅
+79. ~~`uname` system info syscall~~ ✅
+80. ~~`setsockopt`/`getsockopt`/`shutdown`/`getpeername`/`getsockname` socket ops~~ ✅
+81. ~~`getrusage` resource usage~~ ✅
+82. ~~LZ4 initrd decompression~~ ✅
+83. ~~`EPOLLET` edge-triggered epoll~~ ✅
+84. ~~PLT/GOT lazy binding in userspace ld.so~~ ✅
+85. ~~MIPS32 bring-up (QEMU Malta boot + UART)~~ ✅
+86. ~~SysV `/sbin/init` (inittab, runlevels, respawn)~~ ✅
+87. ~~50+ userland POSIX utilities (cp, mv, sed, awk, grep, find, etc.)~~ ✅
+88. ~~Host utility test harness (68 cross-platform tests)~~ ✅
+89. ~~Native toolchain (GCC 13.2 + Binutils 2.42, Canadian cross for i686-adros)~~ ✅
+90. ~~`mount` syscall — runtime filesystem mounting~~ ✅
 
 ---
 
@@ -409,9 +457,7 @@ Potential future enhancements:
 |------|-------------|
 | **Rump Kernel Phase 2** | Thread/sync hypercalls (`rumpuser_thread_create`, `rumpuser_mutex_*`, `rumpuser_cv_*`) |
 | **Rump Kernel Phase 4** | File/block I/O hypercalls for rump filesystem drivers |
-| **Full SMP scheduling** | Move processes to AP runqueues (infrastructure in place) |
+| **Full SMP scheduling** | Move processes to AP runqueues; per-CPU dispatching (infrastructure in place) |
 | **ARM64/RISC-V/MIPS subsystems** | PMM, VMM, scheduler, syscalls for non-x86 |
 | **Intel HDA audio** | DMA ring buffer audio driver |
-| **USTAR+LZ4 InitRD** | Alternative initrd format (current: custom binary) |
-| **PLT/GOT lazy binding** | Userspace resolver trampoline in ld.so (currently eager) |
-| **epoll edge-triggered** | `EPOLLET` full implementation with level-to-edge semantics |
+| **USTAR initrd format** | Alternative to custom binary format (LZ4 decompression already implemented) |

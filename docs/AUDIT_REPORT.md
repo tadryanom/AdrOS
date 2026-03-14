@@ -296,15 +296,15 @@ If `name` exceeds 128 bytes (the size of `fs_node.name`), this overflows.
 | 3.2 | CRITICAL | Security | syscall.c | sigreturn allows IOPL escalation | **FIXED** |
 | 2.1 | CRITICAL | Race | pmm.c | No locking on PMM bitmap | **FIXED** |
 | 2.2 | CRITICAL | Race | syscall.c | file refcount not atomic | **FIXED** |
-| 1.1 | CRITICAL | Layer | syscall.c | x86 registers in generic code | Open |
+| 1.1 | CRITICAL | Layer | syscall.c | x86 registers in generic code | **FIXED** (sc_* macros) |
 | 2.3 | HIGH | Memory | slab.c | phys_to_virt can hit heap VA | **FIXED** |
 | 3.3 | HIGH | Security | syscall.c | execve bypasses copy_to_user | **FIXED** |
-| 3.4 | HIGH | Security | - | No SMEP/SMAP | **SMEP FIXED** |
+| 3.4 | HIGH | Security | - | No SMEP/SMAP | **FIXED** (SMEP+SMAP) |
 | 4.1 | HIGH | Memory | heap.c | Heap never grows | **FIXED** |
 | 2.4 | HIGH | Logic | scheduler.c | waitpid NULL deref risk | **FIXED** |
 | 1.2 | MODERATE | Layer | heap.c | Hardcoded heap VA | Open |
 | 1.3 | MODERATE | Layer | interrupts.h | x86 registers leak | Open |
-| 2.5 | MODERATE | Race | scheduler.c | Unlock before context_switch | Open |
+| 2.5 | MODERATE | Race | scheduler.c | Unlock before context_switch | **FIXED** |
 | 2.6 | MODERATE | Logic | utils.c | itoa no buffer size | Open |
 | 2.7 | MODERATE | Logic | utils.c | itoa UB for INT_MIN | Open |
 | 3.5 | MODERATE | Security | syscall.c | fd bounds not always checked | Open |
@@ -321,5 +321,10 @@ SMEP enabled via CR4, heap grows dynamically to 64MB, waitpid NULL guard.
 
 **2 MODERATE fixed**: User stack guard pages (unmapped page below 32KB stack) and kernel stack guard pages (`kstack_alloc()` at `0xC8000000` with unmapped guard page per stack).
 
-**Remaining**: 1 CRITICAL (layer violation — arch refactor), 6 MODERATE (open).
-SMAP not yet enabled (SMEP is active).
+**1 additional CRITICAL fixed**: syscall.c arch refactor — all x86 register accesses replaced with `sc_*` macros (`sc_num`, `sc_arg0`–`sc_arg4`, `sc_ret`, `sc_ip`, `sc_usp`). To port to ARM: only need `arch/arm/arch_syscall.h`.
+
+**1 additional HIGH fixed**: SMAP enabled in CR4 bit 21 (in addition to SMEP).
+
+**1 additional MODERATE fixed**: `schedule()` now calls `context_switch` BEFORE `spin_unlock_irqrestore`, preventing the timer-fired race window.
+
+**Remaining**: 4 MODERATE (open): hardcoded heap VA (1.2), x86 registers leak in interrupts.h (1.3), itoa no buffer size (2.6), itoa UB for INT_MIN (2.7), fd bounds (3.5), kfree doesn't zero (4.2).

@@ -70,14 +70,14 @@ Unix-like, POSIX-compatible operating system.
 | O(1) scheduler (bitmap + active/expired) | ✅ Full implementation | ✅ Bitmap + active/expired swap, 32 priority levels | None |
 | Priority queues (MLFQ) | ✅ 32 priority levels | ✅ 32 priority levels via `SCHED_NUM_PRIOS` | None |
 | Unix decay-based priority | ✅ `p_cpu` decay + `nice` | ✅ Priority decay on time slice exhaustion; boost on sleep wake | None |
-| Per-CPU runqueues | ✅ `cpu_runqueue_t` per CPU | ❌ Single global queue | Needed for SMP |
+| Per-CPU runqueues | ✅ `cpu_runqueue_t` per CPU | ✅ Per-CPU load counters with atomics, least-loaded CPU query | Infrastructure in place; full dispatch pending |
 | Sleep/wakeup (wait queues) | ✅ `sleep(chan, lock)` / `wakeup(chan)` | ✅ Generic `waitqueue_t` abstraction + `nanosleep` syscall | None |
 | Context switch (assembly) | ✅ Save/restore callee-saved + CR3 | ✅ `context_switch.S` saves/restores regs + CR3 | None |
 | `fork()` | ✅ Slab + CoW + enqueue | ✅ `vmm_as_clone_user_cow()` + page fault handler | None |
 | `execve()` | ✅ Load ELF, reset stack | ✅ `syscall_execve_impl()` — loads ELF, handles argv/envp, `O_CLOEXEC` | None |
 | Spinlock protection | ✅ `sched_lock` | ✅ `sched_lock` present | None |
 
-**Summary:** AdrOS scheduler is O(1) with bitmap + active/expired arrays, 32 priority levels, and decay-based priority adjustment. Only missing per-CPU runqueues for SMP.
+**Summary:** AdrOS scheduler is O(1) with bitmap + active/expired arrays, 32 priority levels, and decay-based priority adjustment. Per-CPU runqueue infrastructure is in place (load counters with atomics); full per-CPU dispatch is pending.
 
 ---
 
@@ -106,7 +106,7 @@ Unix-like, POSIX-compatible operating system.
 | File descriptor table | ✅ Per-process `fd_table[16]` | ✅ Per-process `files[PROCESS_MAX_FILES]` with refcount | None |
 | File cursor (offset) | ✅ `cursor` field | ✅ `offset` in `struct file` | None |
 | USTAR InitRD parser | ✅ Full implementation | ❌ Custom binary format (`mkinitrd`) | Different approach, both work |
-| LZ4 decompression | ✅ Decompress initrd.tar.lz4 | ❌ Not implemented | Enhancement |
+| LZ4 decompression | ✅ Decompress initrd.tar.lz4 | ✅ LZ4 frame decompression (`src/kernel/lz4.c`) | None |
 | `pivot_root` | ✅ `sys_pivot_root()` | ✅ Swaps root filesystem, mounts old root at specified path | None |
 | Multiple FS types | ✅ USTAR + FAT | ✅ tmpfs + devfs + overlayfs + diskfs + persistfs + procfs + FAT12/16/32 + ext2 + initrd | **AdrOS is ahead** |
 | `readdir` generic | Mentioned | ✅ All FS types implement `readdir` callback | None |
@@ -231,7 +231,7 @@ for the full list. All previously identified Tier 1/2/3 gaps have been resolved.
 8. **Hardware** — PCI, ATA PIO+DMA (bounce + zero-copy), Virtio-blk, LAPIC/IOAPIC, SMP (4 CPUs), ACPI, VBE framebuffer, SYSENTER, CPUID, RTC, MTRR write-combining
 9. **Networking** — E1000 NIC, lwIP TCP/IP (IPv4+IPv6 dual-stack), socket API (TCP+UDP), DNS resolver, DHCP client
 10. **Userland** — ulibc (full libc), ELF loader with W^X + ASLR, functional `ld.so` (auxv + PLT/GOT + `dlopen`/`dlsym`/`dlclose`), POSIX shell, core utilities, DOOM port
-11. **Testing** — 44 smoke tests, 16 battery checks, 19 host unit tests, cppcheck, sparse, gcc -fanalyzer, GDB scripted checks
+11. **Testing** — 102 smoke tests, 16 battery checks, 115 host tests (28 unit + 19 security + 68 utility), cppcheck, sparse, gcc -fanalyzer, GDB scripted checks
 12. **Security** — SMEP, PAE+NX, ASLR, guard pages (user + kernel), user_range_ok hardened, sigreturn eflags sanitized, atomic file refcounts, VFS permission enforcement (uid/gid/euid/egid vs file mode)
 13. **Scheduler** — O(1) with bitmap + active/expired, 32 priority levels, decay-based priority, CPU time accounting
 14. **Threads** — `clone`, `gettid`, TLS via GDT, pthread in ulibc, futex synchronization
@@ -348,16 +348,15 @@ It is approximately **98% of the way** to a practical POSIX-compatible system.
 
 The supplementary material's architectural blueprints have been **fully realized and
 exceeded**: CoW memory, O(1) scheduling, slab allocator, PCI enumeration, CPUID detection,
-zero-copy DMA, vDSO, E1000 networking, and PAE+NX are all implemented. AdrOS is
-**significantly ahead** of the supplementary material in VFS diversity, signal handling,
-TTY/PTY, driver support, networking, userland tooling, and security hardening (ASLR,
-guard pages, SMEP/SMAP).
+zero-copy DMA, vDSO, E1000 networking, PAE+NX, and LZ4 decompression are all implemented.
+AdrOS is **significantly ahead** of the supplementary material in VFS diversity, signal
+handling, TTY/PTY, driver support, networking, userland tooling (52 POSIX utilities),
+and security hardening (ASLR, guard pages, SMEP/SMAP).
 
 The remaining enhancements are: **Rump Kernel integration** (Phase 2 thread/sync
 hypercalls and Phase 4 file/block I/O — prerequisites including condition variables,
 TSC nanosecond clock, and IRQ chaining are already implemented), **full SMP scheduling**
-(moving processes to AP runqueues), **non-x86 subsystems** (PMM/VMM/scheduler for
-ARM64/RISC-V/MIPS), Intel HDA audio, USTAR+LZ4 initrd, PLT/GOT lazy binding
-(currently eager), and `EPOLLET` edge-triggered mode.
+(moving processes to AP runqueues — per-CPU infrastructure in place), **non-x86 subsystems**
+(PMM/VMM/scheduler for ARM64/RISC-V/MIPS), and Intel HDA audio.
 
-80 QEMU smoke tests, 16 battery checks, and 47 host unit tests pass clean.
+102 QEMU smoke tests, 16 battery checks, and 115 host tests pass clean.
