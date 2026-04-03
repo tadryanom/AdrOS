@@ -226,7 +226,12 @@ i[34567]86-*-adros*)\
 #define LIB_SPEC "--start-group -lc -ladros --end-group -lgcc"
 
 #undef  LINK_SPEC
-#define LINK_SPEC "-m elf_i386 %{shared:-shared} %{static:-static} %{!static: %{rdynamic:-export-dynamic}}"
+#define LINK_SPEC \
+  "-m elf_i386 -z noexecstack " \
+  "%{shared:-shared} " \
+  "%{!shared:-Ttext-segment=0x00400000} " \
+  "%{static:-static} " \
+  "%{rdynamic:-export-dynamic}"
 
 #undef  SIZE_TYPE
 #define SIZE_TYPE "unsigned int"
@@ -247,7 +252,7 @@ ADROS_H
     if ! grep -q 'adros' "$d/libgcc/config.host"; then
         sed -i '/^x86_64-\*-elf\* | x86_64-\*-rtems\*)/i\
 i[34567]86-*-adros*)\
-\ttmake_file="$tmake_file i386/t-crtstuff t-crtstuff-pic t-libgcc-pic"\
+\ttmake_file="$tmake_file i386/t-crtstuff i386/t-adros t-crtstuff-pic t-libgcc-pic"\
 \textra_parts="$extra_parts crti.o crtn.o crtbegin.o crtend.o"\
 \t;;' "$d/libgcc/config.host"
         step "Patched libgcc/config.host"
@@ -313,6 +318,19 @@ EOF
 	.section .note.GNU-stack,"",@progbits
 EOF
         step "Created crti-adros.S / crtn-adros.S"
+    fi
+
+    # t-adros — override CRT build rules to use AdrOS-specific sources
+    if [[ ! -f "$d/libgcc/config/i386/t-adros" ]]; then
+        cat > "$d/libgcc/config/i386/t-adros" <<'EOF'
+# Build AdrOS CRT files from custom sources (with .note.GNU-stack)
+crti.o: $(srcdir)/config/i386/crti-adros.S
+	$(gcc_compile) -c $<
+
+crtn.o: $(srcdir)/config/i386/crtn-adros.S
+	$(gcc_compile) -c $<
+EOF
+        step "Created libgcc/config/i386/t-adros"
     fi
 
     touch "$marker"
@@ -536,7 +554,7 @@ msg "Building Newlib ${NEWLIB_VER}"
 mkdir -p "$BUILD_DIR/newlib"
 cd "$BUILD_DIR/newlib"
 
-if [[ ! -f "${SYSROOT}/lib/libc.a" ]]; then
+if [[ ! -f "$BUILD_DIR/newlib/.built" ]]; then
     "$SRC_DIR/newlib-${NEWLIB_VER}/configure" \
         --target="$TARGET" \
         --prefix="$PREFIX" \
@@ -549,6 +567,7 @@ if [[ ! -f "${SYSROOT}/lib/libc.a" ]]; then
 
     make -j"$JOBS" 2>&1 | tee "$LOG_DIR/newlib-build.log"
     make install   2>&1 | tee "$LOG_DIR/newlib-install.log"
+    touch "$BUILD_DIR/newlib/.built"
     step "Newlib installed to sysroot"
 else
     step "Newlib already installed"
@@ -674,17 +693,115 @@ else
 fi
 
 # ==================================================================
-# STEP 4b: Create GCC specs file (fix LIB_SPEC link order)
+# STEP 4b: Create GCC specs file (Newlib-safe defaults)
 # ==================================================================
 # Must run AFTER step 4 — make install-gcc overwrites the GCC lib directory.
+# Generates a specs file matching adros.h (Newlib-compatible):
+#   LIB_SPEC:  --start-group -lc -ladros --end-group -lgcc
+#   LINK_SPEC: noexecstack, base 0x00400000, static-friendly (no dynamic-linker)
+#
+# If ulibc is available (step 4c), the specs will be re-patched for ulibc.
 SPECS_FILE="$PREFIX/lib/gcc/${TARGET}/${GCC_VER}/specs"
-if [[ ! -f "$SPECS_FILE" ]]; then
-    ${TARGET}-gcc -dumpspecs > "$SPECS_FILE"
-    sed -i 's/-lc -ladros -lgcc/--start-group -lc -ladros --end-group -lgcc/' "$SPECS_FILE"
-    step "Created specs file with corrected LIB_SPEC"
-else
-    step "Specs file already exists"
+${TARGET}-gcc -dumpspecs > "$SPECS_FILE"
+# Ensure LINK_SPEC has noexecstack and AdrOS base address
+if ! grep -q 'noexecstack' "$SPECS_FILE"; then
+    sed -i '/^\*link:/{n;s|.*|-m elf_i386 -z noexecstack %{shared:-shared} %{!shared:-Ttext-segment=0x00400000} %{static:-static} %{rdynamic:-export-dynamic}|}' "$SPECS_FILE"
 fi
+step "Created specs file (Newlib defaults)"
+
+# ==================================================================
+# STEP 4c: Install ulibc runtime to sysroot
+# ==================================================================
+# The toolchain uses ulibc as its C library (replacing Newlib for
+# user-facing builds).  ulibc provides both static (libc.a) and
+# shared (libc.so) libraries plus the dynamic linker (ld.so).
+#
+# ulibc is built by 'make iso' via i686-elf-gcc.  We copy the
+# pre-built artifacts into the sysroot.  If they don't exist yet,
+# the user must run 'make ARCH=x86 iso' first.
+msg "Installing ulibc runtime to sysroot"
+ULIBC_BUILDDIR="${ADROS_ROOT}/build/x86/user/ulibc"
+LDSO_BUILDDIR="${ADROS_ROOT}/build/x86/user/cmds/ldso"
+ULIBC_INCDIR="${ADROS_ROOT}/user/ulibc/include"
+mkdir -p "${SYSROOT}/lib"
+
+_ulibc_ok=1
+for _f in "$ULIBC_BUILDDIR/crt0.o" "$ULIBC_BUILDDIR/libulibc.a" \
+          "$ULIBC_BUILDDIR/libc.so" "$LDSO_BUILDDIR/ld.so"; do
+    if [[ ! -f "$_f" ]]; then
+        step "WARNING: $_f not found — run 'make ARCH=x86 iso' first"
+        _ulibc_ok=0
+    fi
+done
+
+# Always back up Newlib headers so newlib.specs can find them
+if [[ ! -d "${SYSROOT}/include/newlib" ]]; then
+    msg "Backing up Newlib headers to include/newlib/"
+    mkdir -p "${SYSROOT}/include/newlib"
+    cp -r "${SYSROOT}/include"/* "${SYSROOT}/include/newlib/" 2>/dev/null || true
+    rm -rf "${SYSROOT}/include/newlib/newlib"  # no recursion
+fi
+
+# Always back up Newlib libs so newlib.specs can find them
+[[ -f "${SYSROOT}/lib/libc.a" && ! -f "${SYSROOT}/lib/libnewlib.a" ]] && \
+    cp "${SYSROOT}/lib/libc.a" "${SYSROOT}/lib/libnewlib.a"
+[[ -f "${SYSROOT}/lib/crt0.o" && ! -f "${SYSROOT}/lib/crt0-newlib.o" ]] && \
+    cp "${SYSROOT}/lib/crt0.o" "${SYSROOT}/lib/crt0-newlib.o"
+
+if [[ $_ulibc_ok -eq 1 ]]; then
+    # Replace Newlib with ulibc as the default libc
+    cp "$ULIBC_BUILDDIR/crt0.o"     "${SYSROOT}/lib/crt0.o"
+    cp "$ULIBC_BUILDDIR/libulibc.a" "${SYSROOT}/lib/libc.a"
+    cp "$ULIBC_BUILDDIR/libc.so"    "${SYSROOT}/lib/libc.so"
+    cp "$LDSO_BUILDDIR/ld.so"       "${SYSROOT}/lib/ld.so"
+
+    # Install ulibc headers (overwrite Newlib headers for standard names)
+    cp -r "$ULIBC_INCDIR"/* "${SYSROOT}/include/"
+
+    # Re-patch specs file for ulibc: remove -ladros, add dynamic-linker
+    sed -i 's/--start-group -lc -ladros --end-group -lgcc/-lc -lgcc/' "$SPECS_FILE"
+    sed -i 's/-lc -ladros -lgcc/-lc -lgcc/' "$SPECS_FILE"
+    sed -i '/^\*link:/{n;s|.*|-m elf_i386 -z noexecstack %{shared:-shared} %{!shared:-Ttext-segment=0x00400000} %{static:-static} %{!static:%{!shared:-dynamic-linker /lib/ld.so}} %{rdynamic:-export-dynamic}|}' "$SPECS_FILE"
+
+    step "ulibc installed — dynamic linking by default, static with -static"
+else
+    step "ulibc NOT installed — toolchain will use Newlib (static only)"
+fi
+
+# ==================================================================
+# STEP 4d: Create newlib.specs for optional Newlib builds
+# ==================================================================
+# Users can compile with Newlib instead of ulibc:
+#   i686-adros-gcc -specs=<path>/newlib.specs -o out in.c
+#   i686-adros-gcc-newlib -o out in.c   (wrapper script)
+#
+# Newlib mode is always static (Newlib has no shared library).
+NEWLIB_SPECS="$PREFIX/lib/gcc/${TARGET}/${GCC_VER}/newlib.specs"
+cat > "$NEWLIB_SPECS" <<EOFSPECS
+%rename cpp old_cpp
+%rename link old_link
+
+*cpp:
+-nostdinc -isystem ${SYSROOT}/include/newlib -isystem $PREFIX/lib/gcc/${TARGET}/${GCC_VER}/include %(old_cpp)
+
+*startfile:
+crt0-newlib.o%s crti.o%s crtbegin.o%s
+
+*lib:
+--start-group -lnewlib -ladros --end-group -lgcc
+
+*link:
+-m elf_i386 -z noexecstack %{shared:-shared} %{!shared:-Ttext-segment=0x00400000} -static %{rdynamic:-export-dynamic}
+EOFSPECS
+
+# Create convenience wrapper script
+cat > "$PREFIX/bin/${TARGET}-gcc-newlib" <<EOFWRAP
+#!/bin/sh
+# Wrapper: compile with Newlib instead of ulibc (static only)
+exec i686-adros-gcc -specs="${PREFIX}/lib/gcc/${TARGET}/${GCC_VER}/newlib.specs" "\$@"
+EOFWRAP
+chmod +x "$PREFIX/bin/${TARGET}-gcc-newlib"
+step "Created newlib.specs + i686-adros-gcc-newlib wrapper"
 
 # ==================================================================
 # STEP 5: Cross-compile Bash (optional)
@@ -892,11 +1009,11 @@ CACHE_EOF
             --without-bash-malloc \
             --disable-nls \
             --cache-file=config.cache \
-            CC="${TARGET}-gcc" \
+            CC="${TARGET}-gcc -specs=$NEWLIB_SPECS" \
             AR="${TARGET}-ar" \
             RANLIB="${TARGET}-ranlib" \
-            CFLAGS="-Os -static -D_POSIX_VERSION=200112L" \
-            LDFLAGS="-static -Wl,--allow-multiple-definition" \
+            CFLAGS="-Os -D_POSIX_VERSION=200112L" \
+            LDFLAGS="-Wl,--allow-multiple-definition" \
             2>&1 | tee "$LOG_DIR/bash-configure.log"
 
         make -j"$JOBS" 2>&1 | tee "$LOG_DIR/bash-build.log"
@@ -923,16 +1040,19 @@ echo "  Target:    $TARGET"
 echo "  Sysroot:   $SYSROOT"
 echo ""
 echo "  Tools:"
-echo "    ${TARGET}-gcc    — C compiler"
-echo "    ${TARGET}-g++    — C++ compiler"
-echo "    ${TARGET}-ld     — Linker"
-echo "    ${TARGET}-as     — Assembler"
-echo "    ${TARGET}-ar     — Archiver"
-echo "    ${TARGET}-objdump — Disassembler"
+echo "    ${TARGET}-gcc        — C compiler (ulibc, dynamic by default)"
+echo "    ${TARGET}-gcc-newlib — C compiler (Newlib, static only)"
+echo "    ${TARGET}-g++        — C++ compiler"
+echo "    ${TARGET}-ld         — Linker"
+echo "    ${TARGET}-as         — Assembler"
+echo "    ${TARGET}-ar         — Archiver"
+echo "    ${TARGET}-objdump    — Disassembler"
 echo ""
 echo "  Usage:"
 echo "    export PATH=${PREFIX}/bin:\$PATH"
-echo "    ${TARGET}-gcc -o hello hello.c"
+echo "    ${TARGET}-gcc -o hello hello.c          # dynamic (ulibc)"
+echo "    ${TARGET}-gcc -static -o hello hello.c  # static  (ulibc)"
+echo "    ${TARGET}-gcc-newlib -o hello hello.c   # static  (Newlib)"
 echo ""
 if [[ $SKIP_BASH -eq 0 ]]; then
     echo "  Bash: $BUILD_DIR/bash/bash"
