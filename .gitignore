@@ -45,6 +45,5 @@ toolchain/logs/
 # third_party/lwip -> git submodule
 # user/doom/doomgeneric -> git submodule
 
-# Others
-hello
-hello.c
+# Build markers
+.lwip_patched
