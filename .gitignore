@@ -44,3 +44,7 @@ toolchain/logs/
 # Third-party dependencies are git submodules — do NOT ignore them
 # third_party/lwip -> git submodule
 # user/doom/doomgeneric -> git submodule
+
+# Others
+hello
+hello.c
