@@ -66,9 +66,9 @@ ALL_OBJ := $(DG_OBJ) $(ADAPTER_OBJ)
 all: check-doomgeneric doom.elf
 
 check-doomgeneric:
-	@if [ ! -d doomgeneric ]; then \
-		echo "ERROR: doomgeneric/ directory not found."; \
-		echo "Run: git clone https://github.com/ozkl/doomgeneric.git"; \
+	@if [ ! -f doomgeneric/doomgeneric/doomgeneric.h ]; then \
+		echo "ERROR: doomgeneric/ submodule not initialized."; \
+		echo "Run from repo root: git submodule update --init --recursive"; \
 		exit 1; \
 	fi
 

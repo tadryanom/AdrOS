@@ -18,6 +18,21 @@ KERNEL_NAME := adros-$(ARCH).bin
 SRC_DIR := src
 BUILD_DIR := build/$(ARCH)
 
+# --- Submodule auto-init ---
+# If lwIP source is missing, the submodules haven't been initialized.
+LWIP_SENTINEL := third_party/lwip/src/core/init.c
+$(LWIP_SENTINEL):
+	@echo "  GIT     Initializing submodules..."
+	@git submodule update --init --recursive
+
+# Apply lwIP patches (once, after submodule init)
+.lwip_patched: $(LWIP_SENTINEL)
+	@if git apply --check patches/lwip-tcpip-volatile.patch 2>/dev/null; then \
+		git apply patches/lwip-tcpip-volatile.patch; \
+		echo "  PATCH   lwip-tcpip-volatile"; \
+	fi
+	@touch $@
+
 # Minimal kernel sources shared across all architectures
 KERNEL_COMMON := main.c console.c utils.c cmdline.c driver.c cpu_features.c
 C_SOURCES := $(addprefix $(SRC_DIR)/kernel/,$(KERNEL_COMMON))
@@ -185,7 +200,7 @@ KERNEL_OBJ := $(filter-out $(BOOT_OBJ), $(OBJ))
 
 all: $(KERNEL_NAME)
 
-$(KERNEL_NAME): $(OBJ)
+$(KERNEL_NAME): .lwip_patched $(OBJ)
 	@echo "  LD      $@"
 	@$(LD) $(LDFLAGS) -n -o $@ $(BOOT_OBJ) $(KERNEL_OBJ) $(shell $(CC) $(ARCH_CFLAGS) -print-libgcc-file-name)
 
@@ -398,7 +413,7 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.S
 	@$(AS) $(ASFLAGS) $< -o $@
 
 clean:
-	rm -rf build $(KERNEL_NAME) $(INITRD_IMG) adros-*.iso
+	rm -rf build $(KERNEL_NAME) $(INITRD_IMG) adros-*.iso .lwip_patched
 	@$(MAKE) -C user/ulibc clean --no-print-directory 2>/dev/null || true
 	@if [ -f user/doom/Makefile ]; then $(MAKE) -C user/doom clean --no-print-directory 2>/dev/null || true; fi
 
