@@ -25,7 +25,22 @@ sudo apt install build-essential bison flex libgmp3-dev libmpc-dev libmpfr-dev t
     gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu
 ```
 
-## 2. Building & Running (x86)
+## 2. Getting the Source
+
+```bash
+git clone --recursive https://github.com/tadryanom/AdrOS.git
+cd AdrOS
+```
+
+If you already cloned without `--recursive`, initialize the submodules:
+```bash
+git submodule update --init --recursive
+```
+
+The build system will auto-initialize submodules and apply required patches
+if they haven't been set up yet.
+
+## 3. Building & Running (x86)
 
 This is the primary target (standard PC).
 
@@ -182,18 +197,18 @@ Notes:
 - `QEMU_DEBUG=1` enables QEMU logging to `qemu.log` using `-d guest_errors,cpu_reset -D qemu.log`.
 - `QEMU_INT=1` appends `-d int` to QEMU debug flags.
 
-## 3. Building DOOM
+## 4. Building DOOM
 
-The DOOM port uses the [doomgeneric](https://github.com/ozkl/doomgeneric) engine with an AdrOS-specific platform adapter.
+The DOOM port uses the [doomgeneric](https://github.com/ozkl/doomgeneric) engine (included as a git submodule) with an AdrOS-specific platform adapter.
 
 ### Setup
 ```bash
-cd user/doom
-git clone https://github.com/ozkl/doomgeneric.git
-make
+# Submodules should already be initialized (see section 2).
+# If not: git submodule update --init --recursive
+make doom
 ```
 
-This produces `user/doom/doom.elf` (\~450KB). The main `Makefile` will **automatically include** `doom.elf` in the initrd if it exists.
+This produces `user/doom/doom.elf` (~450KB). The main `Makefile` will **automatically include** `doom.elf` in the initrd if it exists.
 
 ### Running DOOM
 ```bash
@@ -212,7 +227,7 @@ DOOM requires:
 - `doom1.wad` (shareware) accessible from the filesystem
 - Kernel support: `/dev/fb0` (mmap framebuffer), `/dev/kbd` (raw PS/2 scancodes), `nanosleep`, `clock_gettime`
 
-## 4. Building & Running (ARM64)
+## 5. Building & Running (ARM64)
 
 ### Build
 ```bash
@@ -240,7 +255,7 @@ Welcome to AdrOS (x86/ARM/RISC-V/MIPS)!
 - To quit QEMU when using `-nographic`: press `Ctrl+A`, release, then `x`.
 - ARM64 boots with PL011 UART at 0x09000000, EL2→EL1 transition, FP/SIMD enabled.
 
-## 5. Building & Running (RISC-V 64)
+## 6. Building & Running (RISC-V 64)
 
 ### Build
 ```bash
@@ -266,7 +281,7 @@ Welcome to AdrOS (x86/ARM/RISC-V/MIPS)!
 - To quit: `Ctrl+A`, then `x`.
 - RISC-V boots with NS16550 UART at 0x10000000, M-mode, `-bios none`.
 
-## 6. Building & Running (MIPS32)
+## 7. Building & Running (MIPS32)
 
 ### Build
 ```bash
@@ -292,7 +307,7 @@ Welcome to AdrOS (x86/ARM/RISC-V/MIPS)!
 - To quit: `Ctrl+A`, then `x`.
 - MIPS32 boots with 16550 UART at ISA I/O 0x3F8 (KSEG1 0xB80003F8), `-march=mips32r2`.
 
-## 7. Common Troubleshooting
+## 8. Common Troubleshooting
 
 - **"Multiboot header not found"**: Check whether `grub-file --is-x86-multiboot2 adros-x86.bin` returns success (0). If it fails, the section order in `linker.ld` may be wrong.
 - **"Triple Fault (infinite reset)"**: Usually caused by paging (VMM) issues or a misconfigured IDT. Run `make ARCH=x86 run QEMU_DEBUG=1` and inspect `qemu.log`.

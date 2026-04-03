@@ -18,10 +18,13 @@ KERNEL_NAME := adros-$(ARCH).bin
 SRC_DIR := src
 BUILD_DIR := build/$(ARCH)
 
+.DEFAULT_GOAL := all
+
 # --- Submodule auto-init ---
-# If lwIP source is missing, the submodules haven't been initialized.
+# If any submodule source is missing, run git submodule update.
 LWIP_SENTINEL := third_party/lwip/src/core/init.c
-$(LWIP_SENTINEL):
+DOOM_SENTINEL := user/doom/doomgeneric/doomgeneric/doomgeneric.h
+$(LWIP_SENTINEL) $(DOOM_SENTINEL):
 	@echo "  GIT     Initializing submodules..."
 	@git submodule update --init --recursive
 
@@ -263,7 +266,7 @@ INITRD_FILES := $(FULLTEST_ELF):sbin/fulltest \
 INITRD_DEPS := $(MKINITRD) $(FULLTEST_ELF) $(USER_CMD_ELFS) $(LDSO_ELF) $(ULIBC_SO) $(PIE_SO) $(PIE_ELF) $(FSTAB)
 
 # doom (build via 'make doom', included in initrd if present)
-doom: $(ULIBC_LIB) $(ULIBC_SO)
+doom: $(DOOM_SENTINEL) $(ULIBC_LIB) $(ULIBC_SO)
 	@$(MAKE) --no-print-directory -C user/doom TOPDIR=$(CURDIR) ULIBC_BUILDDIR="$(ULIBC_BUILDDIR)"
 
 # Include doom.elf if it has been built
