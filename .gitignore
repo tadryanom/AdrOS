@@ -33,6 +33,8 @@ isodir/
 
 supplementary-material
 toolchain/src/
+toolchain/build/
+toolchain/logs/
 
 # Editor/OS clutter
 .DS_Store

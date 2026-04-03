@@ -276,11 +276,9 @@ i[34567]86-*-adros*)\
         done
     done
 
-    # Remove libcody from host_libs (requires C++ host compiler, breaks Canadian cross)
-    if grep -q 'libcody' "$d/configure" 2>/dev/null; then
-        sed -i 's/ libcody / /' "$d/configure"
-        step "Removed libcody from GCC host_libs"
-    fi
+    # NOTE: libcody is kept in host_libs — it is required by cc1plus (C++
+    # frontend) which is built in step 4.  Only a Canadian cross (host!=build)
+    # would have trouble, but our normal cross build has host==build.
 
     # crti.S and crtn.S for AdrOS
     if [[ ! -f "$d/libgcc/config/i386/crti-adros.S" ]]; then
@@ -299,6 +297,8 @@ _init:
 _fini:
 	push %ebp
 	mov  %esp, %ebp
+
+	.section .note.GNU-stack,"",@progbits
 EOF
         cat > "$d/libgcc/config/i386/crtn-adros.S" <<'EOF'
 /* crtn.S for AdrOS — .init/.fini epilogue */
@@ -375,7 +375,7 @@ EOF
 
     # Copy/sync our libgloss/adros stubs into the Newlib source tree
     mkdir -p "$d/libgloss/adros"
-    cp -u "$ADROS_ROOT/newlib/libgloss/adros/"*.{c,S,h} "$d/libgloss/adros/" 2>/dev/null || true
+    cp -u "$ADROS_ROOT/newlib/libgloss/adros/"*.c "$ADROS_ROOT/newlib/libgloss/adros/"*.S "$d/libgloss/adros/" 2>/dev/null || true
     step "Synced libgloss/adros/ stubs"
 
     # Create libgloss/adros autoconf files if not present
@@ -473,67 +473,6 @@ patch_gcc
 patch_newlib
 patch_bash
 
-# ---- Install AdrOS-specific sysroot headers ----
-# NOTE: We do NOT copy the full ulibc headers here because they conflict
-# with Newlib's POSIX-compliant headers (signal.h, errno.h, stdio.h, etc.).
-# ulibc headers are for AdrOS userland built with -nostdlib; the cross-
-# toolchain uses Newlib headers instead.  Only truly AdrOS-specific headers
-# (syscall numbers, ioctl defs) are installed.
-msg "Installing AdrOS-specific sysroot headers"
-mkdir -p "${SYSROOT}/include/sys"
-for h in syscall.h; do
-    if [[ -f "$ADROS_ROOT/user/ulibc/include/$h" ]]; then
-        cp "$ADROS_ROOT/user/ulibc/include/$h" "${SYSROOT}/include/$h"
-        step "Installed $h"
-    fi
-done
-
-# Install Linux/POSIX compatibility headers from newlib/sysroot_headers/.
-# These provide stubs for headers that newlib doesn't supply but that
-# ported software (Bash, Busybox) expects: asm/*, linux/*, net/*,
-# netinet/*, sys/socket.h, poll.h, mntent.h, etc.
-COMPAT_HEADERS="$ADROS_ROOT/newlib/sysroot_headers"
-if [[ -d "$COMPAT_HEADERS" ]]; then
-    cp -r "$COMPAT_HEADERS"/* "${SYSROOT}/include/"
-    step "Installed $(find "$COMPAT_HEADERS" -type f | wc -l) sysroot compat headers"
-fi
-
-# Patch newlib headers that need small AdrOS-specific additions.
-# sys/stat.h — expose lstat()/mknod() for __adros__ (newlib guards them)
-if ! grep -q '__adros__' "${SYSROOT}/include/sys/stat.h" 2>/dev/null; then
-    sed -i 's/defined(__SPU__) || defined(__rtems__) || defined(__CYGWIN__)/defined(__SPU__) || defined(__rtems__) || defined(__CYGWIN__) || defined(__adros__)/' \
-        "${SYSROOT}/include/sys/stat.h"
-    step "Patched sys/stat.h (lstat/mknod for __adros__)"
-fi
-
-# sys/signal.h — add SA_RESTART and friends to the non-rtems block
-if ! grep -q 'SA_RESTART' "${SYSROOT}/include/sys/signal.h" 2>/dev/null; then
-    sed -i '/^#define SA_NOCLDSTOP 1/a\
-#define SA_RESTART   0x10000000\
-#define SA_NODEFER   0x40000000\
-#define SA_RESETHAND 0x80000000\
-#define SA_NOCLDWAIT 0x20000000\
-#define SA_SIGINFO   0x2' \
-        "${SYSROOT}/include/sys/signal.h"
-    step "Patched sys/signal.h (SA_RESTART etc.)"
-fi
-
-# sys/wait.h — add WCOREDUMP macro
-if ! grep -q 'WCOREDUMP' "${SYSROOT}/include/sys/wait.h" 2>/dev/null; then
-    sed -i '/#define WTERMSIG/a\
-#define WCOREDUMP(w) ((w) \& 0x80)' \
-        "${SYSROOT}/include/sys/wait.h"
-    step "Patched sys/wait.h (WCOREDUMP)"
-fi
-
-# glob.h — add GLOB_NOMATCH
-if ! grep -q 'GLOB_NOMATCH' "${SYSROOT}/include/glob.h" 2>/dev/null; then
-    sed -i '/#define.*GLOB_ABEND/a\
-#define GLOB_NOMATCH    (-3)    /* No match found. */' \
-        "${SYSROOT}/include/glob.h"
-    step "Patched glob.h (GLOB_NOMATCH)"
-fi
-
 # ==================================================================
 # STEP 1: Build Binutils
 # ==================================================================
@@ -615,6 +554,75 @@ else
     step "Newlib already installed"
 fi
 
+# ---- Install AdrOS-specific sysroot headers ----
+# NOTE: These MUST be installed AFTER Newlib's make install, because Newlib
+# overwrites headers (e.g. sys/dirent.h) that we need to replace with
+# AdrOS-specific versions.  On the first build the overwrite matters;
+# on subsequent builds Newlib install is skipped but we re-install anyway.
+#
+# We do NOT copy the full ulibc headers here because they conflict with
+# Newlib's POSIX-compliant headers (signal.h, errno.h, stdio.h, etc.).
+# ulibc headers are for AdrOS userland built with -nostdlib; the cross-
+# toolchain uses Newlib headers instead.  Only truly AdrOS-specific headers
+# (syscall numbers, ioctl defs) are installed.
+msg "Installing AdrOS-specific sysroot headers"
+mkdir -p "${SYSROOT}/include/sys"
+for h in syscall.h; do
+    if [[ -f "$ADROS_ROOT/user/ulibc/include/$h" ]]; then
+        cp "$ADROS_ROOT/user/ulibc/include/$h" "${SYSROOT}/include/$h"
+        step "Installed $h"
+    fi
+done
+
+# Install Linux/POSIX compatibility headers from newlib/sysroot_headers/.
+# These provide stubs for headers that newlib doesn't supply but that
+# ported software (Bash, Busybox) expects: asm/*, linux/*, net/*,
+# netinet/*, sys/socket.h, poll.h, mntent.h, etc.
+COMPAT_HEADERS="$ADROS_ROOT/newlib/sysroot_headers"
+if [[ -d "$COMPAT_HEADERS" ]]; then
+    cp -r "$COMPAT_HEADERS"/* "${SYSROOT}/include/"
+    step "Installed $(find "$COMPAT_HEADERS" -type f | wc -l) sysroot compat headers"
+fi
+
+# ---- Patch Newlib headers that need small AdrOS-specific additions ----
+# These must run AFTER Newlib install populates ${SYSROOT}/include/.
+msg "Patching Newlib sysroot headers for AdrOS"
+
+# sys/stat.h — expose lstat()/mknod() for __adros__ (newlib guards them)
+if ! grep -q '__adros__' "${SYSROOT}/include/sys/stat.h" 2>/dev/null; then
+    sed -i 's/defined(__SPU__) || defined(__rtems__) || defined(__CYGWIN__)/defined(__SPU__) || defined(__rtems__) || defined(__CYGWIN__) || defined(__adros__)/' \
+        "${SYSROOT}/include/sys/stat.h"
+    step "Patched sys/stat.h (lstat/mknod for __adros__)"
+fi
+
+# sys/signal.h — add SA_RESTART and friends to the non-rtems block
+if ! grep -q 'SA_RESTART' "${SYSROOT}/include/sys/signal.h" 2>/dev/null; then
+    sed -i '/^#define SA_NOCLDSTOP 1/a\
+#define SA_RESTART   0x10000000\
+#define SA_NODEFER   0x40000000\
+#define SA_RESETHAND 0x80000000\
+#define SA_NOCLDWAIT 0x20000000\
+#define SA_SIGINFO   0x2' \
+        "${SYSROOT}/include/sys/signal.h"
+    step "Patched sys/signal.h (SA_RESTART etc.)"
+fi
+
+# sys/wait.h — add WCOREDUMP macro
+if ! grep -q 'WCOREDUMP' "${SYSROOT}/include/sys/wait.h" 2>/dev/null; then
+    sed -i '/#define WTERMSIG/a\
+#define WCOREDUMP(w) ((w) \& 0x80)' \
+        "${SYSROOT}/include/sys/wait.h"
+    step "Patched sys/wait.h (WCOREDUMP)"
+fi
+
+# glob.h — add GLOB_NOMATCH
+if ! grep -q 'GLOB_NOMATCH' "${SYSROOT}/include/glob.h" 2>/dev/null; then
+    sed -i '/#define.*GLOB_ABEND/a\
+#define GLOB_NOMATCH    (-3)    /* No match found. */' \
+        "${SYSROOT}/include/glob.h"
+    step "Patched glob.h (GLOB_NOMATCH)"
+fi
+
 # ==================================================================
 # STEP 3b: Build libgloss/adros (crt0.o + libadros.a)
 # ==================================================================
@@ -632,18 +640,6 @@ if [[ ! -f "${SYSROOT}/lib/libadros.a" ]]; then
     step "crt0.o + libadros.a installed to sysroot"
 else
     step "libadros.a already installed"
-fi
-
-# ==================================================================
-# STEP 3c: Create GCC specs file (fix LIB_SPEC link order)
-# ==================================================================
-SPECS_FILE="$PREFIX/lib/gcc/${TARGET}/${GCC_VER}/specs"
-if [[ ! -f "$SPECS_FILE" ]]; then
-    ${TARGET}-gcc -dumpspecs > "$SPECS_FILE"
-    sed -i 's/-lc -ladros -lgcc/--start-group -lc -ladros --end-group -lgcc/' "$SPECS_FILE"
-    step "Created specs file with corrected LIB_SPEC"
-else
-    step "Specs file already exists"
 fi
 
 # ==================================================================
@@ -667,7 +663,7 @@ if [[ ! -f "$BUILD_DIR/gcc-full/.built" ]]; then
         --disable-libquadmath \
         2>&1 | tee "$LOG_DIR/gcc-full-configure.log"
 
-    make -j"$JOBS" all-gcc all-target-libgcc \
+    make -j"$JOBS" all-libcody all-gcc all-target-libgcc \
         2>&1 | tee "$LOG_DIR/gcc-full-build.log"
     make install-gcc install-target-libgcc \
         2>&1 | tee "$LOG_DIR/gcc-full-install.log"
@@ -675,6 +671,19 @@ if [[ ! -f "$BUILD_DIR/gcc-full/.built" ]]; then
     step "Full GCC installed: ${PREFIX}/bin/${TARGET}-g++"
 else
     step "Full GCC already installed"
+fi
+
+# ==================================================================
+# STEP 4b: Create GCC specs file (fix LIB_SPEC link order)
+# ==================================================================
+# Must run AFTER step 4 — make install-gcc overwrites the GCC lib directory.
+SPECS_FILE="$PREFIX/lib/gcc/${TARGET}/${GCC_VER}/specs"
+if [[ ! -f "$SPECS_FILE" ]]; then
+    ${TARGET}-gcc -dumpspecs > "$SPECS_FILE"
+    sed -i 's/-lc -ladros -lgcc/--start-group -lc -ladros --end-group -lgcc/' "$SPECS_FILE"
+    step "Created specs file with corrected LIB_SPEC"
+else
+    step "Specs file already exists"
 fi
 
 # ==================================================================
