@@ -75,12 +75,14 @@ i686-adros-gcc -static -o myapp myapp.c
 
 ## AdrOS Target Patches
 
-The `patches/` directory contains diffs that add `i686-adros` as a recognized
-target in each component's build system:
+The `patches/` directory contains **reference diffs** documenting the changes
+that `build.sh` applies inline via `sed`.  They are not applied with `patch`;
+they exist for review and auditing:
 
 - **`binutils-adros.patch`**: `config.sub`, `bfd/config.bfd`, `gas/configure.tgt`, `ld/configure.tgt`
 - **`gcc-adros.patch`**: `config.sub`, `gcc/config.gcc`, `gcc/config/i386/adros.h`, `libgcc/config.host`, `crti.S`/`crtn.S`
 - **`newlib-adros.patch`**: `config.sub`, `newlib/configure.host`, `newlib/libc/include/sys/config.h`, `libgloss/configure.in`, autoconf files
+- **`native-toolchain.patch`**: GMP/MPFR/MPC/ISL `config.sub` patches for native (Canadian cross) builds
 
 ### Key GCC Target Header (`adros.h`)
 
