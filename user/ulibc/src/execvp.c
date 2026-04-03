@@ -14,14 +14,14 @@
 #include "errno.h"
 #include <stddef.h>
 
-extern char** __environ;
+extern char** environ;
 
 int execvp(const char* file, char* const argv[]) {
     if (!file || !*file) { errno = ENOENT; return -1; }
 
     /* If file contains '/', use it directly */
     if (strchr(file, '/'))
-        return execve(file, argv, __environ);
+        return execve(file, argv, environ);
 
     /* Search PATH */
     const char* path = getenv("PATH");
@@ -45,7 +45,7 @@ int execvp(const char* file, char* const argv[]) {
         buf[dlen] = '/';
         memcpy(buf + dlen + 1, file, flen + 1);
 
-        execve(buf, argv, __environ);
+        execve(buf, argv, environ);
         /* If ENOENT, try next; otherwise fail */
         if (errno != ENOENT) return -1;
 
@@ -80,5 +80,5 @@ int execl(const char* path, const char* arg, ...) {
         p++;
     }
     args[i] = (const char*)0;
-    return execve(path, (char* const*)args, __environ);
+    return execve(path, (char* const*)args, environ);
 }

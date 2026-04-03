@@ -13,19 +13,19 @@
 #include <string.h>
 #include <unistd.h>
 
-extern char** __environ;
+extern char** environ;
 
 int main(int argc, char** argv) {
     if (argc <= 1) {
         /* Print all environment variables */
-        if (__environ) {
-            for (int i = 0; __environ[i]; i++)
-                printf("%s\n", __environ[i]);
+        if (environ) {
+            for (int i = 0; environ[i]; i++)
+                printf("%s\n", environ[i]);
         }
         return 0;
     }
     /* env COMMAND ARGS... — run command with current environment */
-    execve(argv[1], &argv[1], __environ);
+    execve(argv[1], &argv[1], environ);
     fprintf(stderr, "env: %s: not found\n", argv[1]);
     return 127;
 }

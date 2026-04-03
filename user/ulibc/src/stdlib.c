@@ -12,8 +12,9 @@
 #include "unistd.h"
 #include "string.h"
 
-/* Global environment pointer — set by crt0 from execve stack layout */
-char** __environ = 0;
+/* Global environment pointer — set by crt0 from execve stack layout.
+ * POSIX name is 'environ'. */
+char** environ = 0;
 
 /*
  * Free-list allocator using brk() syscall.
@@ -254,10 +255,10 @@ long strtol(const char* nptr, char** endptr, int base) {
 }
 
 char* getenv(const char* name) {
-    extern char** __environ;
-    if (!name || !__environ) return (char*)0;
+    extern char** environ;
+    if (!name || !environ) return (char*)0;
     size_t len = strlen(name);
-    for (char** e = __environ; *e; e++) {
+    for (char** e = environ; *e; e++) {
         if (strncmp(*e, name, len) == 0 && (*e)[len] == '=')
             return *e + len + 1;
     }

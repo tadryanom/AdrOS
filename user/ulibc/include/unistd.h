@@ -122,7 +122,7 @@ int     tcsetpgrp(int fd, int pgrp);
 long    confstr(int name, char* buf, size_t len);
 void*   sbrk(int increment);
 
-/* Environment pointer (set by crt0) */
-extern char** __environ;
+/* Environment pointer (set by crt0) — POSIX standard name */
+extern char** environ;
 
 #endif
