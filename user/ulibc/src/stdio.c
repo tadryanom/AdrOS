@@ -519,6 +519,25 @@ ssize_t getline(char** lineptr, size_t* n, FILE* stream) {
     return getdelim(lineptr, n, '\n', stream);
 }
 
+FILE* fdopen(int fd, const char* mode) {
+    if (fd < 0 || !mode) return (FILE*)0;
+    FILE* fp = (FILE*)malloc(sizeof(FILE));
+    if (!fp) return (FILE*)0;
+    fp->fd = fd;
+    fp->flags = 0;
+    fp->buf_pos = 0;
+    fp->buf_len = 0;
+    if (mode[0] == 'r') fp->flags |= _STDIO_READ;
+    if (mode[0] == 'w' || mode[0] == 'a') fp->flags |= _STDIO_WRITE;
+    if (mode[1] == '+') fp->flags |= _STDIO_READ | _STDIO_WRITE;
+    return fp;
+}
+
+int fileno(FILE* fp) {
+    if (!fp) return -1;
+    return fp->fd;
+}
+
 FILE* popen(const char* command, const char* type) {
     int fds[2];
     extern int pipe(int[2]);
