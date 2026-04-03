@@ -22,7 +22,9 @@
 .global _start
 .extern main
 .extern exit
-.extern __environ
+.extern environ
+.extern __libc_init_array
+.extern __libc_fini_array
 
 _start:
     /* Set up user data segments */
@@ -42,15 +44,32 @@ _start:
     shl $2, %edx
     add %ecx, %edx          /* edx = envp */
 
-    /* Store envp in __environ global (weak, may not exist) */
-    mov %edx, __environ
+    /* Store envp in environ global */
+    mov %edx, environ
 
-    /* Call main(argc, argv, envp) */
+    /* Save argc/argv/envp across init_array call */
+    push %edx               /* envp */
+    push %ecx               /* argv */
+    push %eax               /* argc */
+
+    /* Run global constructors / init_array */
+    call __libc_init_array
+
+    /* Restore argc/argv/envp and call main */
+    pop %eax                /* argc */
+    pop %ecx                /* argv */
+    pop %edx                /* envp */
+
     push %edx               /* envp */
     push %ecx               /* argv */
     push %eax               /* argc */
     call main
     add $12, %esp
+
+    /* Run global destructors / fini_array */
+    push %eax               /* save main return value */
+    call __libc_fini_array
+    pop %eax
 
     /* exit(main return value) */
     push %eax
