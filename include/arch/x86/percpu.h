@@ -20,13 +20,16 @@ struct runqueue;
 /* Per-CPU data block — one per CPU, accessed via GS segment.
  * The GS base for each CPU points to its own percpu_data instance. */
 struct percpu_data {
-    uint32_t         cpu_index;       /* 0 = BSP */
-    uint32_t         lapic_id;
-    struct process*  current_process; /* Currently running process on this CPU */
-    uintptr_t        kernel_stack;    /* Top of this CPU's kernel stack */
-    uint32_t         nested_irq;      /* IRQ nesting depth */
-    uint32_t         rq_load;         /* Number of READY processes on this CPU */
-    uint32_t         reserved[2];     /* Padding to 32 bytes */
+    struct percpu_data* self;         /* offset 0 — self-pointer for percpu_get() */
+    uint32_t         cpu_index;       /* offset 4, 0 = BSP */
+    uint32_t         lapic_id;        /* offset 8 */
+    struct process*  current_process; /* offset 12 */
+    uintptr_t        kernel_stack;    /* offset 16 */
+    uint32_t         nested_irq;      /* offset 20 */
+    uint32_t         rq_load;         /* offset 24 */
+    int              uaccess_active;  /* offset 28 */
+    int              uaccess_faulted; /* offset 32 */
+    uintptr_t        uaccess_recover; /* offset 36 */
 };
 
 /* Initialize per-CPU data for all CPUs. Called once from BSP after SMP init. */
@@ -45,20 +48,20 @@ static inline struct percpu_data* percpu_get(void) {
 /* Get current CPU index (fast path via GS). */
 static inline uint32_t percpu_cpu_index(void) {
     uint32_t idx;
-    __asm__ volatile("mov %%gs:0, %0" : "=r"(idx));
+    __asm__ volatile("mov %%gs:4, %0" : "=r"(idx));
     return idx;
 }
 
 /* Get current process on this CPU (fast path via GS). */
 static inline struct process* percpu_current(void) {
     struct process* p;
-    __asm__ volatile("mov %%gs:8, %0" : "=r"(p));
+    __asm__ volatile("mov %%gs:12, %0" : "=r"(p));
     return p;
 }
 
 /* Set current process on this CPU. */
 static inline void percpu_set_current(struct process* proc) {
-    __asm__ volatile("mov %0, %%gs:8" : : "r"(proc) : "memory");
+    __asm__ volatile("mov %0, %%gs:12" : : "r"(proc) : "memory");
 }
 
 #endif

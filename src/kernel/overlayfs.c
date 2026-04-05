@@ -128,7 +128,8 @@ static fs_node_t* overlay_wrap_child(struct overlay_node* parent, const char* na
     if (!c) return NULL;
     memset(c, 0, sizeof(*c));
 
-    strcpy(c->vfs.name, name);
+    strncpy(c->vfs.name, name, sizeof(c->vfs.name) - 1);
+    c->vfs.name[sizeof(c->vfs.name) - 1] = '\0';
     c->ofs = parent->ofs;
     c->lower = lower_child;
     c->upper = upper_child;

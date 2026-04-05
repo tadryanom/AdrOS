@@ -247,7 +247,8 @@ static int initrd_readdir(struct fs_node* node, uint32_t* inout_index, void* buf
             if (c == -1) break;
             e.d_ino = (uint32_t)c;
             e.d_type = (uint8_t)entries[c].flags;
-            strcpy(e.d_name, entries[c].name);
+            strncpy(e.d_name, entries[c].name, sizeof(e.d_name) - 1);
+            e.d_name[sizeof(e.d_name) - 1] = '\0';
         }
 
         e.d_reclen = (uint16_t)sizeof(e);

@@ -212,6 +212,14 @@ void pmm_free_page(void* ptr) {
     uintptr_t flags = spin_lock_irqsave(&pmm_lock);
 
     uint16_t rc = frame_refcount[frame];
+
+    if (rc == 0 || !bitmap_test(frame)) {
+        spin_unlock_irqrestore(&pmm_lock, flags);
+        kprintf("[PMM] BUG: double free of frame %u (rc=%u)\n",
+                (unsigned)frame, (unsigned)rc);
+        return;
+    }
+
     if (rc > 1) {
         frame_refcount[frame]--;
         spin_unlock_irqrestore(&pmm_lock, flags);

@@ -54,12 +54,20 @@ static uint8_t e1000_bus, e1000_slot, e1000_func;
 /* MMIO helpers                                                       */
 /* ------------------------------------------------------------------ */
 
+/* Compiler barrier — prevents reordering across MMIO accesses.
+ * On x86 with UC-mapped MMIO, CPU ordering is already strict;
+ * the barrier ensures the compiler respects that ordering too. */
+#define mmio_barrier() __asm__ volatile("" ::: "memory")
+
 static inline uint32_t e1000_read(uint32_t reg) {
-    return e1000_mmio[reg / 4];
+    uint32_t val = e1000_mmio[reg / 4];
+    mmio_barrier();
+    return val;
 }
 
 static inline void e1000_write(uint32_t reg, uint32_t val) {
     e1000_mmio[reg / 4] = val;
+    mmio_barrier();
 }
 
 /* ------------------------------------------------------------------ */

@@ -50,6 +50,7 @@ void percpu_init(void) {
 
     for (uint32_t i = 0; i < ncpus; i++) {
         const struct cpu_info* ci = smp_get_cpu(i);
+        g_percpu[i].self = &g_percpu[i];
         g_percpu[i].cpu_index = i;
         g_percpu[i].lapic_id = ci ? ci->lapic_id : 0;
         g_percpu[i].current_process = NULL;

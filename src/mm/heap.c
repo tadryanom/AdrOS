@@ -84,10 +84,15 @@ static inline free_node_t* fl_pop(free_node_t* s) {
     return n;
 }
 
-/* Buddy address via XOR on the offset from heap start */
+/* Buddy address via XOR on the offset from heap start.
+ * Returns NULL if the result falls outside the heap — defence-in-depth
+ * against corrupted order fields. */
 static inline block_hdr_t* buddy_of(block_hdr_t* b, int order) {
     uintptr_t off = (uintptr_t)b - KHEAP_START;
-    return (block_hdr_t*)(KHEAP_START + (off ^ (1U << order)));
+    uintptr_t buddy_off = off ^ (1U << order);
+    if (buddy_off >= BUDDY_HEAP_SIZE)
+        return NULL;
+    return (block_hdr_t*)(KHEAP_START + buddy_off);
 }
 
 /* Minimum order that can hold `size` user bytes (+ header) */
@@ -214,6 +219,7 @@ void kfree(void* ptr) {
     /* Coalesce with buddy while possible */
     while (order < BUDDY_MAX_ORDER) {
         block_hdr_t* buddy = buddy_of(blk, order);
+        if (!buddy) break;
 
         /* Buddy must be valid, free, and at the same order */
         if (buddy->magic != BUDDY_MAGIC || !buddy->is_free ||

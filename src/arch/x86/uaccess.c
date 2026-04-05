@@ -13,6 +13,7 @@
 #include "errno.h"
 #include "interrupts.h"
 #include "hal/mm.h"
+#include "arch/x86/percpu.h"
 
 #include <stdint.h>
 
@@ -41,20 +42,18 @@ static int x86_user_range_basic_ok(uintptr_t uaddr, size_t len) {
     return 1;
 }
 
-static volatile int g_uaccess_active = 0;
-static volatile int g_uaccess_faulted = 0;
-static volatile uintptr_t g_uaccess_recover_eip = 0;
-
 int uaccess_try_recover(uintptr_t fault_addr, struct registers* regs) {
     if (!regs) return 0;
-    if (g_uaccess_active == 0) return 0;
-    if (g_uaccess_recover_eip == 0) return 0;
+
+    struct percpu_data* pc = percpu_get();
+    if (!pc->uaccess_active) return 0;
+    if (!pc->uaccess_recover) return 0;
 
     // Only recover faults on user addresses; kernel faults should still panic.
     if (fault_addr >= hal_mm_kernel_virt_base()) return 0;
 
-    g_uaccess_faulted = 1;
-    regs->eip = (uint32_t)g_uaccess_recover_eip;
+    pc->uaccess_faulted = 1;
+    regs->eip = (uint32_t)pc->uaccess_recover;
     return 1;
 }
 
@@ -129,9 +128,10 @@ int copy_from_user(void* dst, const void* src_user, size_t len) {
     if (len == 0) return 0;
     if (!user_range_ok(src_user, len)) return -EFAULT;
 
-    g_uaccess_faulted = 0;
-    g_uaccess_recover_eip = (uintptr_t)&&uaccess_fault;
-    g_uaccess_active = 1;
+    struct percpu_data* pc = percpu_get();
+    pc->uaccess_faulted = 0;
+    pc->uaccess_recover = (uintptr_t)&&uaccess_fault;
+    pc->uaccess_active = 1;
 
     stac();
     uintptr_t up = (uintptr_t)src_user;
@@ -140,16 +140,16 @@ int copy_from_user(void* dst, const void* src_user, size_t len) {
     }
     clac();
 
-    g_uaccess_active = 0;
-    g_uaccess_recover_eip = 0;
-    if (g_uaccess_faulted) return -EFAULT;
+    pc->uaccess_active = 0;
+    pc->uaccess_recover = 0;
+    if (pc->uaccess_faulted) return -EFAULT;
     return 0;
 
 uaccess_fault:
     clac();
-    g_uaccess_active = 0;
-    g_uaccess_faulted = 0;
-    g_uaccess_recover_eip = 0;
+    pc->uaccess_active = 0;
+    pc->uaccess_faulted = 0;
+    pc->uaccess_recover = 0;
     return -EFAULT;
 }
 
@@ -158,9 +158,10 @@ int copy_to_user(void* dst_user, const void* src, size_t len) {
 
     if (!x86_user_range_writable_user((uintptr_t)dst_user, len)) return -EFAULT;
 
-    g_uaccess_faulted = 0;
-    g_uaccess_recover_eip = (uintptr_t)&&uaccess_fault2;
-    g_uaccess_active = 1;
+    struct percpu_data* pc = percpu_get();
+    pc->uaccess_faulted = 0;
+    pc->uaccess_recover = (uintptr_t)&&uaccess_fault2;
+    pc->uaccess_active = 1;
 
     stac();
     uintptr_t up = (uintptr_t)dst_user;
@@ -169,15 +170,15 @@ int copy_to_user(void* dst_user, const void* src, size_t len) {
     }
     clac();
 
-    g_uaccess_active = 0;
-    g_uaccess_recover_eip = 0;
-    if (g_uaccess_faulted) return -EFAULT;
+    pc->uaccess_active = 0;
+    pc->uaccess_recover = 0;
+    if (pc->uaccess_faulted) return -EFAULT;
     return 0;
 
 uaccess_fault2:
     clac();
-    g_uaccess_active = 0;
-    g_uaccess_faulted = 0;
-    g_uaccess_recover_eip = 0;
+    pc->uaccess_active = 0;
+    pc->uaccess_faulted = 0;
+    pc->uaccess_recover = 0;
     return -EFAULT;
 }

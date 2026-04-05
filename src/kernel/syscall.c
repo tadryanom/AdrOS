@@ -146,19 +146,20 @@ static int syscall_mq_send_impl(int mqd, const void* user_buf, uint32_t len, uin
     if (mqd < 0 || mqd >= MQ_MAX_QUEUES) return -EBADF;
     if (len > MQ_MSG_SIZE) return -EMSGSIZE;
 
+    /* Copy user data into a kernel-side buffer before taking the lock
+     * to avoid TOCTOU: another thread could race on the same slot. */
+    uint8_t kbuf[MQ_MSG_SIZE];
+    if (copy_from_user(kbuf, user_buf, len) < 0) return -EFAULT;
+
     uintptr_t fl = spin_lock_irqsave(&mq_lock);
     struct mq_queue* q = &mq_table[mqd];
     if (!q->active) { spin_unlock_irqrestore(&mq_lock, fl); return -EBADF; }
     if (q->count >= q->maxmsg) { spin_unlock_irqrestore(&mq_lock, fl); return -EAGAIN; }
 
     struct mq_msg* m = &q->msgs[q->tail];
-    spin_unlock_irqrestore(&mq_lock, fl);
-
-    if (copy_from_user(m->data, user_buf, len) < 0) return -EFAULT;
+    memcpy(m->data, kbuf, len);
     m->len = len;
     m->prio = prio;
-
-    fl = spin_lock_irqsave(&mq_lock);
     q->tail = (q->tail + 1) % q->maxmsg;
     q->count++;
     spin_unlock_irqrestore(&mq_lock, fl);
@@ -412,8 +413,13 @@ static int syscall_dlopen_impl(const char* user_path) {
         if (p_type != 1) continue; /* PT_LOAD = 1 */
         if (p_memsz == 0) continue;
 
+        /* Detect 32-bit overflow in p_vaddr + base */
+        if (p_vaddr > (UINT32_MAX - base)) continue;
         uint32_t vaddr = p_vaddr + base;
         if (vaddr >= 0xC0000000U) continue;
+
+        /* Detect 32-bit overflow in vaddr + p_memsz */
+        if (p_memsz > (UINT32_MAX - vaddr)) continue;
 
         /* Map pages */
         uint32_t start_page = vaddr & ~0xFFFU;

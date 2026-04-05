@@ -207,12 +207,14 @@ static int devfs_readdir_impl(struct fs_node* node, uint32_t* inout_index, void*
             if (di < NBUILTINS) {
                 e.d_ino = builtins[di].ino;
                 e.d_type = builtins[di].type;
-                strcpy(e.d_name, builtins[di].name);
+                strncpy(e.d_name, builtins[di].name, sizeof(e.d_name) - 1);
+                e.d_name[sizeof(e.d_name) - 1] = '\0';
             } else {
                 fs_node_t* rn = g_registered[di - NBUILTINS];
                 e.d_ino = rn->inode;
                 e.d_type = (uint8_t)rn->flags;
-                strcpy(e.d_name, rn->name);
+                strncpy(e.d_name, rn->name, sizeof(e.d_name) - 1);
+                e.d_name[sizeof(e.d_name) - 1] = '\0';
             }
         }
 

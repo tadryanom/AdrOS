@@ -57,7 +57,8 @@ static struct tmpfs_node* tmpfs_node_alloc(const char* name, uint32_t flags) {
     memset(n, 0, sizeof(*n));
 
     if (name) {
-        strcpy(n->vfs.name, name);
+        strncpy(n->vfs.name, name, sizeof(n->vfs.name) - 1);
+        n->vfs.name[sizeof(n->vfs.name) - 1] = '\0';
     } else {
         n->vfs.name[0] = 0;
     }
@@ -207,7 +208,8 @@ static int tmpfs_readdir_impl(struct fs_node* node, uint32_t* inout_index, void*
             if (!c) break;
             e.d_ino = c->vfs.inode;
             e.d_type = (uint8_t)c->vfs.flags;
-            strcpy(e.d_name, c->vfs.name);
+            strncpy(e.d_name, c->vfs.name, sizeof(e.d_name) - 1);
+            e.d_name[sizeof(e.d_name) - 1] = '\0';
         }
 
         e.d_reclen = (uint16_t)sizeof(e);
@@ -422,7 +424,8 @@ int tmpfs_create_symlink(fs_node_t* root_dir, const char* link_path, const char*
     struct tmpfs_node* ln = tmpfs_node_alloc(leaf, FS_SYMLINK);
     if (!ln) return -ENOMEM;
 
-    strcpy(ln->vfs.symlink_target, target);
+    strncpy(ln->vfs.symlink_target, target, sizeof(ln->vfs.symlink_target) - 1);
+    ln->vfs.symlink_target[sizeof(ln->vfs.symlink_target) - 1] = '\0';
     ln->vfs.length = (uint32_t)strlen(target);
     /* symlinks have no f_ops */
 

@@ -128,8 +128,16 @@ static int elf32_load_segments(const uint8_t* file, uint32_t file_len,
         if (ph[i].p_type != PT_LOAD) continue;
         if (ph[i].p_memsz == 0) continue;
 
+        /* Detect 32-bit overflow in p_vaddr + base_offset */
+        if (base_offset != 0 && (uintptr_t)ph[i].p_vaddr > (UINT32_MAX - base_offset))
+            return -EINVAL;
+
         uintptr_t vaddr = (uintptr_t)ph[i].p_vaddr + base_offset;
         if (vaddr == 0 || vaddr >= hal_mm_kernel_virt_base()) return -EINVAL;
+
+        /* Detect 32-bit overflow in vaddr + p_memsz */
+        if (ph[i].p_memsz > (UINT32_MAX - (uint32_t)vaddr))
+            return -EINVAL;
 
         uint32_t seg_end = (uint32_t)vaddr + ph[i].p_memsz;
         if (seg_end < vaddr || seg_end >= hal_mm_kernel_virt_base()) return -EINVAL;

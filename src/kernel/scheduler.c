@@ -49,13 +49,26 @@ static uintptr_t kernel_as = 0;
 static uint32_t kstack_next_slot = 0;
 static spinlock_t kstack_lock = {0};
 
+/* Free-slot recycling stack: freed slot indices are pushed here and
+ * reused before bumping kstack_next_slot. */
+#define KSTACK_FREE_MAX 256
+static uint32_t kstack_free_stack[KSTACK_FREE_MAX];
+static uint32_t kstack_free_top = 0;
+
 static void* kstack_alloc(void) {
     uintptr_t flags = spin_lock_irqsave(&kstack_lock);
-    if (kstack_next_slot >= KSTACK_MAX) {
+
+    uint32_t slot;
+    if (kstack_free_top > 0) {
+        slot = kstack_free_stack[--kstack_free_top];
+    } else if (kstack_next_slot < KSTACK_MAX) {
+        slot = kstack_next_slot++;
+    } else {
         spin_unlock_irqrestore(&kstack_lock, flags);
+        kprintf("[SCHED] BUG: kernel stack slots exhausted!\n");
         return NULL;
     }
-    uint32_t slot = kstack_next_slot++;
+
     spin_unlock_irqrestore(&kstack_lock, flags);
 
     uintptr_t base = KSTACK_REGION + slot * KSTACK_SLOT;
@@ -79,7 +92,14 @@ static void kstack_free(void* stack) {
         return;
     for (uint32_t i = 0; i < KSTACK_PAGES; i++)
         vmm_unmap_page((uint64_t)(addr + i * 0x1000U));
-    /* Note: slot is not recycled — acceptable for now */
+
+    /* Recycle the slot index */
+    uint32_t slot = (uint32_t)((addr - 0x1000U - KSTACK_REGION) / KSTACK_SLOT);
+    uintptr_t flags = spin_lock_irqsave(&kstack_lock);
+    if (kstack_free_top < KSTACK_FREE_MAX) {
+        kstack_free_stack[kstack_free_top++] = slot;
+    }
+    spin_unlock_irqrestore(&kstack_lock, flags);
 }
 
 /* ---------- O(1) runqueue ---------- */
@@ -1107,8 +1127,9 @@ void schedule(void) {
     } else {
         // Nothing in runqueues.
         if (prev->state == PROCESS_READY) {
-            // prev was just enqueued to expired — pull it back.
-            rq_dequeue(crq->expired, prev);
+            // prev was just enqueued before rq_pick_next swapped active/expired.
+            // After the swap, prev is in crq->active (the old expired).
+            rq_dequeue(crq->active, prev);
             next = prev;
         } else {
             // Fall back to this CPU's idle process.

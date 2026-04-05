@@ -32,7 +32,10 @@ void ksem_init(ksem_t* s, int32_t initial_count) {
 }
 
 void ksem_wait(ksem_t* s) {
-    (void)ksem_wait_timeout(s, 0);
+    while (ksem_wait_timeout(s, 0) != 0) {
+        /* Waiters array full — yield and retry */
+        schedule();
+    }
 }
 
 int ksem_wait_timeout(ksem_t* s, uint32_t timeout_ms) {
