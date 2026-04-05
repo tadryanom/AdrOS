@@ -169,21 +169,28 @@ static int syscall_mq_send_impl(int mqd, const void* user_buf, uint32_t len, uin
 static int syscall_mq_receive_impl(int mqd, void* user_buf, uint32_t len, uint32_t* user_prio) {
     if (mqd < 0 || mqd >= MQ_MAX_QUEUES) return -EBADF;
 
+    uint8_t kbuf[MQ_MSG_SIZE];
+    uint32_t mlen, mprio;
+
     uintptr_t fl = spin_lock_irqsave(&mq_lock);
     struct mq_queue* q = &mq_table[mqd];
     if (!q->active) { spin_unlock_irqrestore(&mq_lock, fl); return -EBADF; }
     if (q->count == 0) { spin_unlock_irqrestore(&mq_lock, fl); return -EAGAIN; }
 
     struct mq_msg* m = &q->msgs[q->head];
-    uint32_t mlen = m->len;
-    uint32_t mprio = m->prio;
+    mlen = m->len;
+    mprio = m->prio;
     if (mlen > len) mlen = len;
+
+    /* Copy message data to kernel buffer while holding the lock
+     * to avoid TOCTOU: another thread could overwrite the slot. */
+    memcpy(kbuf, m->data, mlen);
 
     q->head = (q->head + 1) % q->maxmsg;
     q->count--;
     spin_unlock_irqrestore(&mq_lock, fl);
 
-    if (copy_to_user(user_buf, m->data, mlen) < 0) return -EFAULT;
+    if (copy_to_user(user_buf, kbuf, mlen) < 0) return -EFAULT;
     if (user_prio) {
         if (user_range_ok(user_prio, 4))
             (void)copy_to_user(user_prio, &mprio, 4);
