@@ -10,6 +10,10 @@
 
 #include "utils.h"
 
+/* Forward declarations for compiler ABI symbols (not in any header) */
+void* __memcpy_chk(void* dst, const void* src, size_t n, size_t dst_len);
+const unsigned short** __ctype_b_loc(void);
+
 size_t strlen(const char* str) {
     size_t len = 0;
     while (str[len])

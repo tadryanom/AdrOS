@@ -30,7 +30,7 @@
 #define E1000_TX_BUF_VA    KVA_E1000_TX_BUF
 #define E1000_RX_BUF_VA    KVA_E1000_RX_BUF
 
-static volatile uint32_t* e1000_mmio = 0;
+static volatile uint32_t* e1000_mmio = NULL;
 static uint8_t e1000_mac[6];
 static int e1000_ready = 0;
 

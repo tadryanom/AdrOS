@@ -507,23 +507,23 @@ static const struct inode_operations diskfs_dir_iops = {
 
 static struct fs_node* diskfs_root_finddir(struct fs_node* node, const char* name) {
     struct diskfs_node* parent = (struct diskfs_node*)node;
-    if (!g_ready) return 0;
-    if (!name || name[0] == 0) return 0;
-    if (!diskfs_segment_valid(name)) return 0;
+    if (!g_ready) return NULL;
+    if (!name || name[0] == 0) return NULL;
+    if (!diskfs_segment_valid(name)) return NULL;
 
     uint16_t parent_ino = parent ? parent->ino : 0;
 
     struct diskfs_super sb;
-    if (diskfs_super_load(&sb) < 0) return 0;
-    if (parent_ino >= DISKFS_MAX_INODES) return 0;
-    if (sb.inodes[parent_ino].type != DISKFS_INODE_DIR) return 0;
+    if (diskfs_super_load(&sb) < 0) return NULL;
+    if (parent_ino >= DISKFS_MAX_INODES) return NULL;
+    if (sb.inodes[parent_ino].type != DISKFS_INODE_DIR) return NULL;
 
     int child = diskfs_find_child(&sb, parent_ino, name);
-    if (child < 0) return 0;
+    if (child < 0) return NULL;
     uint16_t cino = (uint16_t)child;
 
     struct diskfs_node* dn = (struct diskfs_node*)kmalloc(sizeof(*dn));
-    if (!dn) return 0;
+    if (!dn) return NULL;
     memset(dn, 0, sizeof(*dn));
 
     strcpy(dn->vfs.name, name);
@@ -547,7 +547,7 @@ static struct fs_node* diskfs_root_finddir(struct fs_node* node, const char* nam
 
 int diskfs_open_file(const char* rel_path, uint32_t flags, fs_node_t** out_node) {
     if (!out_node) return -EINVAL;
-    *out_node = 0;
+    *out_node = NULL;
     if (!g_ready) return -ENODEV;
     if (!rel_path || rel_path[0] == 0) return -EINVAL;
 
@@ -645,7 +645,7 @@ int diskfs_unlink(const char* rel_path) {
     if (diskfs_super_load(&sb) < 0) return -EIO;
 
     uint16_t ino = 0;
-    int rc = diskfs_lookup_path(&sb, rel_path, &ino, 0, 0, 0);
+    int rc = diskfs_lookup_path(&sb, rel_path, &ino, NULL, NULL, 0);
     if (rc < 0) return rc;
     if (ino == 0) return -EPERM;
     if (ino >= DISKFS_MAX_INODES) return -EIO;
@@ -681,7 +681,7 @@ int diskfs_link(const char* old_rel, const char* new_rel) {
     if (diskfs_super_load(&sb) < 0) return -EIO;
 
     uint16_t old_ino = 0;
-    int rc = diskfs_lookup_path(&sb, old_rel, &old_ino, 0, 0, 0);
+    int rc = diskfs_lookup_path(&sb, old_rel, &old_ino, NULL, NULL, 0);
     if (rc < 0) return rc;
     if (old_ino >= DISKFS_MAX_INODES) return -EIO;
     if (sb.inodes[old_ino].type != DISKFS_INODE_FILE) return -EPERM;
@@ -696,7 +696,7 @@ int diskfs_link(const char* old_rel, const char* new_rel) {
 
     /* Check new name doesn't already exist */
     uint16_t dummy = 0;
-    if (diskfs_lookup_path(&sb, new_rel, &dummy, 0, 0, 0) == 0) return -EEXIST;
+    if (diskfs_lookup_path(&sb, new_rel, &dummy, NULL, NULL, 0) == 0) return -EEXIST;
 
     /* Find a free inode slot */
     uint16_t new_ino = 0;
@@ -729,7 +729,7 @@ int diskfs_rmdir(const char* rel_path) {
     if (diskfs_super_load(&sb) < 0) return -EIO;
 
     uint16_t ino = 0;
-    int rc = diskfs_lookup_path(&sb, rel_path, &ino, 0, 0, 0);
+    int rc = diskfs_lookup_path(&sb, rel_path, &ino, NULL, NULL, 0);
     if (rc < 0) return rc;
     if (ino == 0) return -EPERM;
     if (ino >= DISKFS_MAX_INODES) return -EIO;
@@ -754,7 +754,7 @@ int diskfs_rename(const char* old_rel, const char* new_rel) {
     if (diskfs_super_load(&sb) < 0) return -EIO;
 
     uint16_t src_ino = 0;
-    int rc = diskfs_lookup_path(&sb, old_rel, &src_ino, 0, 0, 0);
+    int rc = diskfs_lookup_path(&sb, old_rel, &src_ino, NULL, NULL, 0);
     if (rc < 0) return rc;
     if (src_ino == 0) return -EPERM;
     if (src_ino >= DISKFS_MAX_INODES) return -EIO;
@@ -850,7 +850,7 @@ int diskfs_getdents(uint16_t dir_ino, uint32_t* inout_index, void* out, uint32_t
 
 static int diskfs_vfs_create(struct fs_node* dir, const char* name, uint32_t flags, struct fs_node** out) {
     if (!dir || !name || !out) return -EINVAL;
-    *out = 0;
+    *out = NULL;
     if (!g_ready) return -ENODEV;
 
     struct diskfs_node* parent = (struct diskfs_node*)dir;
@@ -1099,5 +1099,5 @@ fs_node_t* diskfs_create_root(int drive) {
         }
     }
 
-    return g_ready ? &g_root.vfs : 0;
+    return g_ready ? &g_root.vfs : NULL;
 }

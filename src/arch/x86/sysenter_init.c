@@ -12,6 +12,7 @@
 #include "interrupts.h"
 #include "console.h"
 #include "arch/x86/smp.h"
+#include "arch_syscall.h"
 
 #include <stdint.h>
 

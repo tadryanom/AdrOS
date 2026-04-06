@@ -14,7 +14,7 @@
 
 #include "spinlock.h"
 
-static volatile uint16_t* VGA_BUFFER = 0;
+static volatile uint16_t* VGA_BUFFER = NULL;
 #define VGA_WIDTH  80
 #define VGA_HEIGHT 25
 #define VGA_CELLS  (VGA_WIDTH * VGA_HEIGHT)

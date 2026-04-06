@@ -44,4 +44,7 @@ int ata_name_to_drive(const char* name);
 /* Map drive ID to device name. Returns NULL if invalid. */
 const char* ata_drive_to_name(int drive);
 
+/* Register detected ATA drives in devfs (/dev/hdX). */
+void ata_register_devfs(void);
+
 #endif

@@ -13,7 +13,9 @@
 
 #include <stdint.h>
 
+struct registers;
 void syscall_init(void);
+void syscall_handler(struct registers* regs);
 
 enum {
     SYSCALL_WRITE = 1,

@@ -57,7 +57,7 @@ static void hist_add(const char* line) {
 
 static const char* hist_get(int idx) {
     /* idx 0 = most recent, 1 = second most recent, etc. */
-    if (idx < 0 || idx >= hist_count) return 0;
+    if (idx < 0 || idx >= hist_count) return NULL;
     int slot = (hist_head - 1 - idx + HIST_MAX) % HIST_MAX;
     return hist_buf[slot];
 }
@@ -447,7 +447,7 @@ static void kconsole_exec(const char* cmd) {
 /* ---- Main entry ---- */
 
 void kconsole_enter(void) {
-    keyboard_set_callback(0);
+    keyboard_set_callback(NULL);
 
     kc_puts("\n[PANIC] Userspace init failed -- dropping to kconsole.\n");
     kc_puts("        Type 'help' for commands, 'reboot' to restart.\n\n");

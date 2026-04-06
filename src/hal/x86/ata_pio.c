@@ -356,6 +356,6 @@ int ata_name_to_drive(const char* name) {
 }
 
 const char* ata_drive_to_name(int drive) {
-    if (drive < 0 || drive >= ATA_MAX_DRIVES) return 0;
+    if (drive < 0 || drive >= ATA_MAX_DRIVES) return NULL;
     return drive_names[drive];
 }

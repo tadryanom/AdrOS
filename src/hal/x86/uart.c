@@ -13,11 +13,12 @@
 #include "arch/x86/idt.h"
 
 #include <stdint.h>
+#include <stddef.h>
 
 #define UART_BASE 0x3F8
 
 static int uart_present = 0;
-static void (*uart_rx_cb)(char) = 0;
+static void (*uart_rx_cb)(char) = NULL;
 
 static void uart_irq_handler(struct registers* regs) {
     (void)regs;

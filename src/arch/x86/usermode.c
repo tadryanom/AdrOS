@@ -17,6 +17,7 @@
 #include "process.h"
 #include "utils.h"
 #include "arch/x86/usermode.h"
+#include "hal/usermode.h"
 #include "arch/x86/idt.h"
 
 #if defined(__i386__)

@@ -16,6 +16,7 @@
 #include "arch_fpu.h"
 #include "fs.h"
 #include "signal.h"
+#include "spinlock.h"
 
 /* clone() flags (Linux-compatible subset) */
 #define CLONE_VM        0x00000100  /* Share address space */
@@ -233,5 +234,14 @@ void sched_ap_tick(void);
 
 // Periodic load balancing: migrate one process from busiest to idlest CPU.
 void sched_load_balance(void);
+
+// Scheduler globals (used by procfs)
+extern struct process* ready_queue_head;
+extern spinlock_t sched_lock;
+
+// Scheduler init helpers (called from arch platform code)
+void sched_set_init_pid(uint32_t pid);
+void sched_assign_pid1(struct process* p);
+void sched_ap_init(uint32_t cpu);
 
 #endif

@@ -310,7 +310,7 @@ cppcheck:
 		-I include $(SRC_DIR)
 
 # Sparse: kernel-oriented semantic checker (type safety, NULL, bitwise vs logical)
-SPARSE_FLAGS := -m32 -D__i386__ -D__linux__ -Iinclude
+SPARSE_FLAGS := -m32 -D__i386__ -D__linux__ -Iinclude -Iinclude/net -Ithird_party/lwip/src/include
 SPARSE_SRCS := $(filter-out $(wildcard $(SRC_DIR)/arch/arm/*.c) \
                              $(wildcard $(SRC_DIR)/arch/riscv/*.c) \
                              $(wildcard $(SRC_DIR)/arch/mips/*.c) \

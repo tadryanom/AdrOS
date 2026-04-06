@@ -48,4 +48,7 @@ typedef void (*isr_handler_t)(struct registers*);
 void register_interrupt_handler(uint8_t n, isr_handler_t handler);
 void unregister_interrupt_handler(uint8_t n, isr_handler_t handler);
 
+// Main ISR dispatch — called from assembly (interrupts.S)
+void isr_handler(struct registers* regs);
+
 #endif

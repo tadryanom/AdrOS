@@ -16,7 +16,7 @@
 #include "console.h"
 
 static uintptr_t vdso_phys = 0;
-static volatile struct vdso_data* vdso_kptr = 0;
+static volatile struct vdso_data* vdso_kptr = NULL;
 
 void vdso_init(void) {
     void* page = pmm_alloc_page();

@@ -34,8 +34,8 @@ static fs_node_t g_counter;
 static uint32_t g_ready = 0;
 
 static fs_node_t* persistfs_backing_open(uint32_t flags) {
-    fs_node_t* n = 0;
-    if (diskfs_open_file(PERSISTFS_BACKING_NAME, flags, &n) < 0) return 0;
+    fs_node_t* n = NULL;
+    if (diskfs_open_file(PERSISTFS_BACKING_NAME, flags, &n) < 0) return NULL;
     return n;
 }
 
@@ -76,9 +76,9 @@ static uint32_t persist_counter_write(fs_node_t* node, uint32_t offset, uint32_t
 
 static struct fs_node* persist_root_finddir(struct fs_node* node, const char* name) {
     (void)node;
-    if (!name || name[0] == 0) return 0;
+    if (!name || name[0] == 0) return NULL;
     if (strcmp(name, "counter") == 0) return &g_counter;
-    return 0;
+    return NULL;
 }
 
 static const struct file_operations persistfs_root_fops = {0};
@@ -135,5 +135,5 @@ fs_node_t* persistfs_create_root(int drive) {
         g_counter.f_ops = &persistfs_counter_fops;
     }
 
-    return g_ready ? &g_root : 0;
+    return g_ready ? &g_root : NULL;
 }

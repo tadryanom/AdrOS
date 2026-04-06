@@ -248,8 +248,8 @@ static int overlay_readdir_impl(struct fs_node* node, uint32_t* inout_index, voi
 }
 
 static struct fs_node* overlay_finddir_impl(struct fs_node* node, const char* name) {
-    if (!node || !name) return 0;
-    if (node->flags != FS_DIRECTORY) return 0;
+    if (!node || !name) return NULL;
+    if (node->flags != FS_DIRECTORY) return NULL;
 
     struct overlay_node* dir = (struct overlay_node*)node;
 
@@ -261,7 +261,7 @@ static struct fs_node* overlay_finddir_impl(struct fs_node* node, const char* na
     if (dir->lower && dir->lower->i_ops && dir->lower->i_ops->lookup)
         lower_child = dir->lower->i_ops->lookup(dir->lower, name);
 
-    if (!upper_child && !lower_child) return 0;
+    if (!upper_child && !lower_child) return NULL;
     return overlay_wrap_child(dir, name, lower_child, upper_child);
 }
 

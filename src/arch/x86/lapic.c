@@ -24,7 +24,7 @@
 #define IA32_APIC_BASE_ENABLE  (1U << 11)
 #define IA32_APIC_BASE_ADDR    0xFFFFF000U
 
-static volatile uint32_t* lapic_base = 0;
+static volatile uint32_t* lapic_base = NULL;
 static int lapic_active = 0;
 static uint32_t lapic_timer_ticks_saved = 0; /* BSP-calibrated ticks for AP reuse */
 

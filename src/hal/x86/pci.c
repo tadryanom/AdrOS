@@ -125,7 +125,7 @@ int pci_get_device_count(void) {
 }
 
 const struct pci_device* pci_get_device(int index) {
-    if (index < 0 || index >= pci_device_count) return 0;
+    if (index < 0 || index >= pci_device_count) return NULL;
     return &pci_devices[index];
 }
 
@@ -134,7 +134,7 @@ const struct pci_device* pci_find_device(uint16_t vendor, uint16_t device) {
         if (pci_devices[i].vendor_id == vendor && pci_devices[i].device_id == device)
             return &pci_devices[i];
     }
-    return 0;
+    return NULL;
 }
 
 const struct pci_device* pci_find_class(uint8_t class_code, uint8_t subclass) {
@@ -142,7 +142,7 @@ const struct pci_device* pci_find_class(uint8_t class_code, uint8_t subclass) {
         if (pci_devices[i].class_code == class_code && pci_devices[i].subclass == subclass)
             return &pci_devices[i];
     }
-    return 0;
+    return NULL;
 }
 
 /* HAL driver registration */

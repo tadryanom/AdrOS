@@ -9,6 +9,7 @@
  */
 
 #include "hal/cpu_features.h"
+#include "hal/cpu.h"
 #include "arch/x86/cpuid.h"
 #include "console.h"
 

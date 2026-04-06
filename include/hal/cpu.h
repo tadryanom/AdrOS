@@ -27,4 +27,7 @@ uint64_t hal_cpu_read_timestamp(void);
 
 void hal_cpu_set_tls(uintptr_t base);
 
+/* SMAP (Supervisor Mode Access Prevention) status — set by cpu_features init */
+extern int g_smap_enabled;
+
 #endif

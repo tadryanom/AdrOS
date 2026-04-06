@@ -28,7 +28,7 @@ void ksem_init(ksem_t* s, int32_t initial_count) {
     s->count = initial_count;
     s->nwaiters = 0;
     for (uint32_t i = 0; i < KSEM_MAX_WAITERS; i++)
-        s->waiters[i] = 0;
+        s->waiters[i] = NULL;
 }
 
 void ksem_wait(ksem_t* s) {
@@ -79,7 +79,7 @@ int ksem_wait_timeout(ksem_t* s, uint32_t timeout_ms) {
             /* We timed out — remove from list */
             for (uint32_t j = i; j + 1 < s->nwaiters; j++)
                 s->waiters[j] = s->waiters[j + 1];
-            s->waiters[--s->nwaiters] = 0;
+            s->waiters[--s->nwaiters] = NULL;
             found = 1;
             break;
         }
@@ -104,7 +104,7 @@ void ksem_signal(ksem_t* s) {
             /* Remove from waiters list */
             for (uint32_t j = i; j + 1 < s->nwaiters; j++)
                 s->waiters[j] = s->waiters[j + 1];
-            s->waiters[--s->nwaiters] = 0;
+            s->waiters[--s->nwaiters] = NULL;
 
             p->state = PROCESS_READY;
             p->wake_at_tick = 0;
@@ -159,7 +159,7 @@ int kmbox_init(kmbox_t* mb, uint32_t size) {
     mb->count = 0;
     mb->capacity = size;
     for (uint32_t i = 0; i < KMBOX_MAX_MSGS; i++)
-        mb->msgs[i] = 0;
+        mb->msgs[i] = NULL;
 
     ksem_init(&mb->not_empty, 0);
     ksem_init(&mb->not_full, (int32_t)size);
@@ -249,7 +249,7 @@ void kcond_init(kcond_t* cv) {
     spinlock_init(&cv->lock);
     cv->nwaiters = 0;
     for (uint32_t i = 0; i < KCOND_MAX_WAITERS; i++)
-        cv->waiters[i] = 0;
+        cv->waiters[i] = NULL;
 }
 
 int kcond_wait(kcond_t* cv, kmutex_t* mtx, uint32_t timeout_ms) {
@@ -288,7 +288,7 @@ int kcond_wait(kcond_t* cv, kmutex_t* mtx, uint32_t timeout_ms) {
         if (cv->waiters[i] == current_process) {
             for (uint32_t j = i; j + 1 < cv->nwaiters; j++)
                 cv->waiters[j] = cv->waiters[j + 1];
-            cv->waiters[--cv->nwaiters] = 0;
+            cv->waiters[--cv->nwaiters] = NULL;
             found = 1;
             break;
         }
@@ -309,7 +309,7 @@ void kcond_signal(kcond_t* cv) {
         if (p && (p->state == PROCESS_BLOCKED || p->state == PROCESS_SLEEPING)) {
             for (uint32_t j = i; j + 1 < cv->nwaiters; j++)
                 cv->waiters[j] = cv->waiters[j + 1];
-            cv->waiters[--cv->nwaiters] = 0;
+            cv->waiters[--cv->nwaiters] = NULL;
 
             p->state = PROCESS_READY;
             p->wake_at_tick = 0;
@@ -339,7 +339,7 @@ void kcond_broadcast(kcond_t* cv) {
             p->state = PROCESS_READY;
             p->wake_at_tick = 0;
             wake_list[wake_count++] = p;
-            cv->waiters[i] = 0;
+            cv->waiters[i] = NULL;
         }
     }
     cv->nwaiters = 0;

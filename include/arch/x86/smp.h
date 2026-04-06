@@ -43,4 +43,10 @@ const struct cpu_info* smp_get_cpu(uint32_t index);
 /* Get the current CPU's index (based on LAPIC ID). */
 uint32_t smp_current_cpu(void);
 
+/* Flag set by BSP to signal APs that scheduling is ready. */
+extern volatile uint32_t ap_sched_go;
+
+/* AP C entry point (called from SMP trampoline assembly). */
+void ap_entry(void);
+
 #endif

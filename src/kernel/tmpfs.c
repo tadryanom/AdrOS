@@ -169,12 +169,12 @@ static uint32_t tmpfs_write_impl(fs_node_t* node, uint32_t offset, uint32_t size
 }
 
 static struct fs_node* tmpfs_finddir_impl(struct fs_node* node, const char* name) {
-    if (!node || !name) return 0;
-    if (node->flags != FS_DIRECTORY) return 0;
+    if (!node || !name) return NULL;
+    if (node->flags != FS_DIRECTORY) return NULL;
 
     struct tmpfs_node* dir = (struct tmpfs_node*)node;
     struct tmpfs_node* child = tmpfs_child_find(dir, name);
-    if (!child) return 0;
+    if (!child) return NULL;
     return &child->vfs;
 }
 

@@ -190,9 +190,9 @@ static uint32_t initrd_read_impl(fs_node_t* node, uint32_t offset, uint32_t size
 }
 
 static struct fs_node* initrd_finddir(struct fs_node* node, const char* name) {
-    if (!node || !name) return 0;
+    if (!node || !name) return NULL;
     int parent = (int)node->inode;
-    if (parent < 0 || parent >= entry_count) return 0;
+    if (parent < 0 || parent >= entry_count) return NULL;
 
     int c = entries[parent].first_child;
     while (c != -1) {
@@ -201,7 +201,7 @@ static struct fs_node* initrd_finddir(struct fs_node* node, const char* name) {
         }
         c = entries[c].next_sibling;
     }
-    return 0;
+    return NULL;
 }
 
 static const struct file_operations initrd_file_ops = {
@@ -306,14 +306,14 @@ fs_node_t* initrd_init(uint32_t location, uint32_t size) {
         decomp_buf = (uint8_t*)kmalloc(orig_sz);
         if (!decomp_buf) {
             kprintf("[INITRD] OOM decompressing LZ4 (%u bytes)\n", orig_sz);
-            return 0;
+            return NULL;
         }
 
         int ret = lz4_decompress_frame(raw, size, decomp_buf, orig_sz);
         if (ret < 0) {
             kprintf("[INITRD] LZ4 Frame decompress failed (ret=%d)\n", ret);
             kfree(decomp_buf);
-            return 0;
+            return NULL;
         }
 
         kprintf("[INITRD] LZ4: %u -> %d bytes\n", size, ret);
@@ -328,7 +328,7 @@ fs_node_t* initrd_init(uint32_t location, uint32_t size) {
         decomp_buf = (uint8_t*)kmalloc(orig_sz);
         if (!decomp_buf) {
             kprintf("[INITRD] OOM decompressing LZ4 (%u bytes)\n", orig_sz);
-            return 0;
+            return NULL;
         }
 
         int ret = lz4_decompress_block(raw + LZ4B_HDR_SIZE, comp_sz,
@@ -337,7 +337,7 @@ fs_node_t* initrd_init(uint32_t location, uint32_t size) {
             kprintf("[INITRD] LZ4 decompress failed (ret=%d, expected=%u)\n",
                     ret, orig_sz);
             kfree(decomp_buf);
-            return 0;
+            return NULL;
         }
 
         kprintf("[INITRD] LZ4: %u -> %u bytes\n", comp_sz, orig_sz);
@@ -350,7 +350,7 @@ fs_node_t* initrd_init(uint32_t location, uint32_t size) {
     entry_count = 0;
 
     int root = entry_alloc();
-    if (root < 0) { kfree(decomp_buf); return 0; }
+    if (root < 0) { kfree(decomp_buf); return NULL; }
     strcpy(entries[root].name, "");
     entries[root].flags = FS_DIRECTORY;
     entries[root].data_offset = 0;

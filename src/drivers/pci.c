@@ -31,10 +31,10 @@ __attribute__((weak))
 int pci_get_device_count(void) { return 0; }
 
 __attribute__((weak))
-const struct pci_device* pci_get_device(int index) { (void)index; return 0; }
+const struct pci_device* pci_get_device(int index) { (void)index; return NULL; }
 
 __attribute__((weak))
-const struct pci_device* pci_find_device(uint16_t vendor, uint16_t device) { (void)vendor; (void)device; return 0; }
+const struct pci_device* pci_find_device(uint16_t vendor, uint16_t device) { (void)vendor; (void)device; return NULL; }
 
 __attribute__((weak))
-const struct pci_device* pci_find_class(uint8_t class_code, uint8_t subclass) { (void)class_code; (void)subclass; return 0; }
+const struct pci_device* pci_find_class(uint8_t class_code, uint8_t subclass) { (void)class_code; (void)subclass; return NULL; }

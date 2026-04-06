@@ -28,7 +28,7 @@
 struct process* current_process = NULL;
 #endif
 struct process* ready_queue_head = NULL;
-struct process* ready_queue_tail = NULL;
+static struct process* ready_queue_tail = NULL;
 static uint32_t next_pid = 2;  /* PID 1 reserved for init */
 static uint32_t init_pid = 0;  /* PID of the first userspace process ("init") */
 

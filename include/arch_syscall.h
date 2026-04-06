@@ -59,4 +59,10 @@ extern uint32_t __arch_syscall_stub_sink;
  */
 void arch_syscall_init(void);
 
+#if defined(__i386__)
+/* x86 SYSENTER helpers */
+void x86_sysenter_set_kernel_stack(uintptr_t esp0);
+void sysenter_init_ap(uint32_t cpu_index);
+#endif
+
 #endif /* ARCH_SYSCALL_H */

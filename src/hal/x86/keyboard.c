@@ -14,9 +14,10 @@
 #include "arch/x86/idt.h"
 #include "io.h"
 #include "vga_console.h"
+#include <stddef.h>
 
-static hal_keyboard_char_cb_t g_cb = 0;
-static hal_keyboard_scan_cb_t g_scan_cb = 0;
+static hal_keyboard_char_cb_t g_cb = NULL;
+static hal_keyboard_scan_cb_t g_scan_cb = NULL;
 
 /* Modifier state */
 static volatile int shift_held = 0;

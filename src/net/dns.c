@@ -47,7 +47,7 @@ int dns_resolve(const char* hostname, uint32_t* out_ip) {
     dns_done = 0;
     dns_result_ip = 0;
 
-    err_t err = dns_gethostbyname(hostname, &resolved, dns_found_cb, 0);
+    err_t err = dns_gethostbyname(hostname, &resolved, dns_found_cb, NULL);
     if (err == ERR_OK) {
         /* Already cached */
         *out_ip = ip4_addr_get_u32(ip_2_ip4(&resolved));

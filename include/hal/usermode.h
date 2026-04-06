@@ -17,4 +17,8 @@ int hal_usermode_enter(uintptr_t user_eip, uintptr_t user_esp);
 
 void hal_usermode_enter_regs(const void* regs);
 
+#if defined(__i386__)
+void x86_usermode_test_start(void);
+#endif
+
 #endif

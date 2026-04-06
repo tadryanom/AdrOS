@@ -15,6 +15,7 @@
  * RX path:  interrupt → e1000_rx_sem → rx_thread → e1000_recv → tcpip_input
  * TX path:  lwIP core → e1000_netif_output → e1000_send (non-blocking)
  */
+#include "net.h"
 #include "lwip/opt.h"
 #include "lwip/netif.h"
 #include "lwip/pbuf.h"

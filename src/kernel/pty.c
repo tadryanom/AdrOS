@@ -189,7 +189,7 @@ static uint32_t pty_ptmx_write_fn(fs_node_t* node, uint32_t offset, uint32_t siz
 
 static struct fs_node* pty_pts_finddir(struct fs_node* node, const char* name) {
     (void)node;
-    if (!name || name[0] == 0) return 0;
+    if (!name || name[0] == 0) return NULL;
     int count = pty_pair_count();
     for (int i = 0; i < count; i++) {
         char num[4];
@@ -199,7 +199,7 @@ static struct fs_node* pty_pts_finddir(struct fs_node* node, const char* name) {
             return pty_get_slave_node(i);
         }
     }
-    return 0;
+    return NULL;
 }
 
 static int pty_pts_readdir(struct fs_node* node, uint32_t* inout_index, void* buf, uint32_t buf_len) {

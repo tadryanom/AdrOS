@@ -17,7 +17,7 @@
 #include "io.h"
 #include "console.h"
 
-static hal_timer_tick_cb_t g_tick_cb = 0;
+static hal_timer_tick_cb_t g_tick_cb = NULL;
 
 static void timer_irq(struct registers* regs) {
     (void)regs;

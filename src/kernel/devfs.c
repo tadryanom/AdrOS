@@ -159,7 +159,7 @@ static int dev_always_ready_poll(fs_node_t* node, int events) {
 
 static struct fs_node* devfs_finddir_impl(struct fs_node* node, const char* name) {
     (void)node;
-    if (!name || name[0] == 0) return 0;
+    if (!name || name[0] == 0) return NULL;
 
     if (strcmp(name, "null") == 0) return &g_dev_null;
     if (strcmp(name, "zero") == 0) return &g_dev_zero;
@@ -170,7 +170,7 @@ static struct fs_node* devfs_finddir_impl(struct fs_node* node, const char* name
         if (strcmp(g_registered[i]->name, name) == 0)
             return g_registered[i];
     }
-    return 0;
+    return NULL;
 }
 
 static int devfs_readdir_impl(struct fs_node* node, uint32_t* inout_index, void* buf, uint32_t buf_len) {

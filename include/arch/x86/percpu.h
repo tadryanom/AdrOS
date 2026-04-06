@@ -64,4 +64,10 @@ static inline void percpu_set_current(struct process* proc) {
     __asm__ volatile("mov %0, %%gs:12" : : "r"(proc) : "memory");
 }
 
+/* GS selector lookup table indexed by LAPIC ID (used by interrupts.S). */
+extern uint16_t _percpu_gs_lut[256];
+
+/* Get percpu_data pointer for a specific CPU by index. */
+struct percpu_data* percpu_get_ptr(uint32_t cpu_index);
+
 #endif

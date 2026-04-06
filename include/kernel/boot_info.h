@@ -31,4 +31,7 @@ struct boot_info {
     uint8_t   fb_type;      /* 0=indexed, 1=direct RGB (linear), 2=EGA text */
 };
 
+/* Kernel entry point (called from arch-specific boot code). */
+void kernel_main(const struct boot_info* bi);
+
 #endif

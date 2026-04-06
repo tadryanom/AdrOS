@@ -25,8 +25,8 @@
 #define IDT_ENTRIES 256
 #define IRQ_CHAIN_POOL_SIZE 32
 
-struct idt_entry idt[IDT_ENTRIES];
-struct idt_ptr idtp;
+static struct idt_entry idt[IDT_ENTRIES];
+static struct idt_ptr idtp;
 
 struct irq_chain_node {
     isr_handler_t handler;
@@ -38,17 +38,17 @@ static struct irq_chain_node* irq_chain_heads[IDT_ENTRIES];
 
 /* Legacy single-handler array kept for backward compatibility.
  * New registrations via register_interrupt_handler go through the chain. */
-isr_handler_t interrupt_handlers[IDT_ENTRIES];
+static isr_handler_t interrupt_handlers[IDT_ENTRIES];
 
 static spinlock_t idt_handlers_lock = {0};
 
 static struct irq_chain_node* irq_chain_alloc(void) {
     for (int i = 0; i < IRQ_CHAIN_POOL_SIZE; i++) {
-        if (irq_chain_pool[i].handler == 0) {
+        if (irq_chain_pool[i].handler == NULL) {
             return &irq_chain_pool[i];
         }
     }
-    return 0;
+    return NULL;
 }
 
 // Extern prototypes for Assembly stubs
@@ -69,7 +69,7 @@ extern void irq12(); extern void irq13(); extern void irq14(); extern void irq15
 extern void isr128();
 extern void isr255();
 
-void idt_set_gate(uint8_t num, uint32_t base, uint16_t sel, uint8_t flags) {
+static void idt_set_gate(uint8_t num, uint32_t base, uint16_t sel, uint8_t flags) {
     idt[num].base_lo = base & 0xFFFF;
     idt[num].base_hi = (base >> 16) & 0xFFFF;
     idt[num].sel     = sel;
@@ -216,7 +216,7 @@ static void deliver_signals_to_usermode(struct registers* regs) {
 }
 
 /* Reconfigure the PIC to remap IRQs from 0-15 to 32-47 */
-void pic_remap(void) {
+static void pic_remap(void) {
     uint8_t a1, a2;
 
     a1 = inb(0x21); // Save masks
@@ -345,10 +345,10 @@ void register_interrupt_handler(uint8_t n, isr_handler_t handler) {
         struct irq_chain_node* first = irq_chain_alloc();
         if (first) {
             first->handler = interrupt_handlers[n];
-            first->next = 0;
+            first->next = NULL;
             irq_chain_heads[n] = first;
         }
-        interrupt_handlers[n] = 0;
+        interrupt_handlers[n] = NULL;
     }
 
     /* Add new handler to chain */
@@ -367,7 +367,7 @@ void unregister_interrupt_handler(uint8_t n, isr_handler_t handler) {
 
     /* Check legacy slot */
     if (interrupt_handlers[n] == handler) {
-        interrupt_handlers[n] = 0;
+        interrupt_handlers[n] = NULL;
         spin_unlock_irqrestore(&idt_handlers_lock, flags);
         return;
     }
@@ -378,8 +378,8 @@ void unregister_interrupt_handler(uint8_t n, isr_handler_t handler) {
         if ((*pp)->handler == handler) {
             struct irq_chain_node* victim = *pp;
             *pp = victim->next;
-            victim->handler = 0;
-            victim->next = 0;
+            victim->handler = NULL;
+            victim->next = NULL;
             break;
         }
         pp = &(*pp)->next;
@@ -388,8 +388,8 @@ void unregister_interrupt_handler(uint8_t n, isr_handler_t handler) {
     /* If only one handler left in chain, migrate back to legacy slot */
     if (irq_chain_heads[n] && !irq_chain_heads[n]->next) {
         interrupt_handlers[n] = irq_chain_heads[n]->handler;
-        irq_chain_heads[n]->handler = 0;
-        irq_chain_heads[n] = 0;
+        irq_chain_heads[n]->handler = NULL;
+        irq_chain_heads[n] = NULL;
     }
 
     spin_unlock_irqrestore(&idt_handlers_lock, flags);
@@ -399,7 +399,7 @@ void unregister_interrupt_handler(uint8_t n, isr_handler_t handler) {
 
 // ... imports ...
 
-void print_reg(const char* name, uint32_t val) {
+static void print_reg(const char* name, uint32_t val) {
     kprintf("%s: %x  ", name, val);
 }
 
@@ -441,7 +441,7 @@ void isr_handler(struct registers* regs) {
             if (node->handler) node->handler(regs);
             node = node->next;
         }
-    } else if (interrupt_handlers[regs->int_no] != 0) {
+    } else if (interrupt_handlers[regs->int_no] != NULL) {
         isr_handler_t handler = interrupt_handlers[regs->int_no];
         handler(regs);
     } else {

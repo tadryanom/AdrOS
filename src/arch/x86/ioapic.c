@@ -17,7 +17,7 @@
 
 #include <stdint.h>
 
-static volatile uint32_t* ioapic_base = 0;
+static volatile uint32_t* ioapic_base = NULL;
 static int ioapic_active = 0;
 static uint8_t ioapic_max_irqs = 0;
 
@@ -108,7 +108,7 @@ void ioapic_route_irq_level(uint8_t irq, uint8_t vector, uint8_t lapic_id) {
 }
 
 void ioapic_mask_irq(uint8_t irq) {
-    if (!ioapic_active && ioapic_base == 0) return;
+    if (!ioapic_active && ioapic_base == NULL) return;
     if (irq >= IOAPIC_MAX_IRQS) return;
 
     uint32_t reg_lo = IOAPIC_REG_REDTBL + (uint32_t)irq * 2;
