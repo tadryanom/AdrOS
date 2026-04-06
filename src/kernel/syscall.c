@@ -4228,7 +4228,7 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
             current_process->state = PROCESS_SLEEPING;
             current_process->wake_at_tick = get_tick_count() + 5000; /* 100s timeout */
             schedule();
-            futex_waiters[slot].proc = 0;
+            futex_waiters[slot].proc = NULL;
             futex_waiters[slot].addr = 0;
             sc_ret(regs) = 0;
             return;
@@ -4241,7 +4241,7 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
             for (int i = 0; i < FUTEX_MAX_WAITERS && woken < max_wake; i++) {
                 if (futex_waiters[i].proc && futex_waiters[i].addr == (uintptr_t)uaddr) {
                     futex_waiters[i].proc->state = PROCESS_READY;
-                    futex_waiters[i].proc = 0;
+                    futex_waiters[i].proc = NULL;
                     futex_waiters[i].addr = 0;
                     woken++;
                 }
