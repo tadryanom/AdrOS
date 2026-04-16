@@ -244,6 +244,19 @@ static void find_shlib_info(void) {
     }
 }
 
+/* ---- Minimal debug write (no libc) ---- */
+static void dbg_write(const char* s) {
+    uint32_t len = 0;
+    while (s[len]) len++;
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret) : "a"(1), "b"(1), "c"(s), "d"(len)
+        : "memory", "cc"
+    );
+    (void)ret;
+}
+
 /* ---- Entry point ---- */
 static void _start_c(uint32_t* initial_sp) __attribute__((noreturn, used));
 
@@ -286,6 +299,7 @@ static void _start_c(uint32_t* initial_sp) {
     }
 
     if (!at_entry) {
+        dbg_write("[ld.so] ERROR: no AT_ENTRY\n");
         __asm__ volatile("mov $2, %%eax\n mov $127, %%ebx\n int $0x80" ::: "eax", "ebx");
         __builtin_unreachable();
     }
@@ -294,10 +308,12 @@ static void _start_c(uint32_t* initial_sp) {
     g_map.l_addr = 0;
 
     if (at_phdr && at_phnum && at_phent) {
+        int found_dynamic = 0;
         for (uint32_t i = 0; i < at_phnum; i++) {
             const struct elf32_phdr* ph =
                 (const struct elf32_phdr*)(at_phdr + i * at_phent);
             if (ph->p_type == PT_DYNAMIC) {
+                found_dynamic = 1;
                 uint32_t dyn_va = ph->p_vaddr + g_map.l_addr;
                 const struct elf32_dyn* d = (const struct elf32_dyn*)dyn_va;
                 uint32_t pltgot = 0;
