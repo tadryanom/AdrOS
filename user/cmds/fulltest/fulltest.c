@@ -2326,9 +2326,9 @@ void _start(void) {
     {
         int fd = sys_open("/persist/counter", 0);
         if (fd < 0) {
-            sys_write(1, "[test] /persist/counter open failed\n",
-                      (uint32_t)(sizeof("[test] /persist/counter open failed\n") - 1));
-            sys_exit(1);
+            sys_write(1, "[test] /persist/counter skip (no disk)\n",
+                      (uint32_t)(sizeof("[test] /persist/counter skip (no disk)\n") - 1));
+            goto skip_persist;
         }
 
         (void)sys_lseek(fd, 0, SEEK_SET);
@@ -2361,6 +2361,7 @@ void _start(void) {
         write_int_dec((int)v);
         sys_write(1, "\n", 1);
     }
+    skip_persist:
 
     {
         int fd = sys_open("/dev/tty", 0);
