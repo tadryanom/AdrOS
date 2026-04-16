@@ -146,7 +146,7 @@ void net_ping_test(void) {
     }
 
     /* Wait for the E1000 link to stabilize in QEMU */
-    process_sleep(2 * TIMER_HZ); /* ~2 seconds */
+    process_sleep(TIMER_HZ / 2); /* ~500ms — plenty for QEMU virtual NIC */
 
     ip_addr_t target;
     ip_addr_set_zero_ip4(&target);
@@ -191,7 +191,7 @@ void net_ping_test(void) {
         }
 
         if (i + 1 < PING_COUNT)
-            process_sleep(TIMER_HZ); /* ~1 second between pings */
+            process_sleep(TIMER_HZ / 4); /* ~250ms between pings */
     }
 
     /* Cleanup in tcpip thread */
