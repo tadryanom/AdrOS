@@ -14,6 +14,7 @@
 #include "process.h"
 #include "spinlock.h"
 #include "uaccess.h"
+
 #include "console.h"
 #include "utils.h"
 
@@ -2053,6 +2054,16 @@ static int syscall_execve_impl(struct registers* regs, const char* user_path, co
             (void)fd_close(i);
             current_process->fd_flags[i] = 0;
         }
+    }
+
+    /* POSIX: execve resets signal handlers to default (except SIG_IGN)
+     * and clears pending signals.  Handlers pointing into the old
+     * address space would crash after the old AS is destroyed. */
+    current_process->sig_pending_mask = 0;
+    for (int si = 1; si < PROCESS_MAX_SIG; si++) {
+        uintptr_t h = (uintptr_t)current_process->sigactions[si].sa_handler;
+        if (h != (uintptr_t)1)  /* SIG_IGN stays ignored */
+            current_process->sigactions[si].sa_handler = 0;  /* SIG_DFL */
     }
 
     if (old_as && old_as != new_as) {
