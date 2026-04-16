@@ -217,7 +217,11 @@ static void elf32_process_relocations(const uint8_t* file, uint32_t file_len,
                 if (symtab_addr && sym_idx) { \
                     const elf32_sym_t* sym = &((const elf32_sym_t*) \
                         (symtab_addr + base_offset))[sym_idx]; \
-                    *target = sym->st_value + (uint32_t)base_offset; \
+                    if (sym->st_shndx != 0) { \
+                        *target = sym->st_value + (uint32_t)base_offset; \
+                    } else { \
+                        *target = 0; /* SHN_UNDEF: leave for ld.so */ \
+                    } \
                 } \
                 break; \
             } \
@@ -226,7 +230,9 @@ static void elf32_process_relocations(const uint8_t* file, uint32_t file_len,
                 if (symtab_addr && sym_idx) { \
                     const elf32_sym_t* sym = &((const elf32_sym_t*) \
                         (symtab_addr + base_offset))[sym_idx]; \
-                    *target += sym->st_value + (uint32_t)base_offset; \
+                    if (sym->st_shndx != 0) { \
+                        *target += sym->st_value + (uint32_t)base_offset; \
+                    } \
                 } \
                 break; \
             } \
@@ -332,7 +338,6 @@ static int elf32_load_needed_libs(const uint8_t* file, uint32_t file_len,
         uintptr_t seg_end = 0;
         int rc = elf32_load_shared_lib_at(path, as, lib_base, &seg_end);
         if (rc == 0) {
-            /* shared lib loaded silently */
             lib_base = (seg_end + 0xFFFU) & ~(uintptr_t)0xFFFU;
             loaded++;
         } else {
@@ -531,11 +536,14 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
         g_pending_auxv_count = 7;
     }
 
-    /* Map vDSO shared page read-only into user address space */
+    /* Map vDSO shared page read-only into user address space.
+     * Bump refcount so vmm_as_destroy properly decrements instead of
+     * freeing the shared kernel page. */
     {
         extern uintptr_t vdso_get_phys(void);
         uintptr_t vp = vdso_get_phys();
         if (vp) {
+            pmm_incref(vp);
             vmm_map_page((uint64_t)vp, (uint64_t)0x007FE000U,
                          VMM_FLAG_PRESENT | VMM_FLAG_USER);
         }
