@@ -10,6 +10,7 @@
 
 #include "arch/x86/idt.h"
 #include "arch/x86/lapic.h"
+#include "hal/cpu.h"
 #include "io.h"
 #include "console.h"
 #include "process.h"
@@ -106,6 +107,10 @@ static void deliver_signals_to_usermode(struct registers* regs) {
 
     if (h == 0) {
         if (sig == 11) {
+            kprintf("[SIGSEGV] pid=%d fault_addr=0x%x eip=0x%x\n",
+                    current_process ? (int)current_process->pid : -1,
+                    (unsigned)current_process->last_fault_addr,
+                    (unsigned)regs->eip);
             process_exit_notify(128 + sig);
             __asm__ volatile("sti");
             schedule();
