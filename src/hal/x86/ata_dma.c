@@ -297,10 +297,10 @@ int ata_dma_read28(int channel, int slave, uint32_t lba, uint8_t* buf512) {
     struct dma_ch_state* s = &dma_ch[channel];
     if (!s->available) return -ENOSYS;
 
-    spin_lock(&s->lock);
+    uintptr_t irq_flags = spin_lock_irqsave(&s->lock);
     int ret = ata_dma_transfer(channel, slave, lba, 0);
     if (ret == 0) memcpy(buf512, s->dma_buf, 512);
-    spin_unlock(&s->lock);
+    spin_unlock_irqrestore(&s->lock, irq_flags);
     return ret;
 }
 
@@ -310,14 +310,14 @@ int ata_dma_write28(int channel, int slave, uint32_t lba, const uint8_t* buf512)
     struct dma_ch_state* s = &dma_ch[channel];
     if (!s->available) return -ENOSYS;
 
-    spin_lock(&s->lock);
+    uintptr_t irq_flags = spin_lock_irqsave(&s->lock);
     memcpy(s->dma_buf, buf512, 512);
     int ret = ata_dma_transfer(channel, slave, lba, 1);
     if (ret == 0) {
         outb((uint16_t)(ch_io[channel] + ATA_REG_COMMAND), ATA_CMD_CACHE_FLUSH);
         (void)ata_wait_not_busy_ch(channel);
     }
-    spin_unlock(&s->lock);
+    spin_unlock_irqrestore(&s->lock, irq_flags);
     return ret;
 }
 
@@ -329,7 +329,7 @@ int ata_dma_read_direct(int channel, int slave, uint32_t lba,
     if (phys_buf == 0 || (phys_buf & 1)) return -EINVAL;
     if (byte_count == 0) byte_count = 512;
 
-    spin_lock(&s->lock);
+    uintptr_t irq_flags = spin_lock_irqsave(&s->lock);
 
     uint32_t saved_addr  = s->prdt[0].phys_addr;
     uint16_t saved_count = s->prdt[0].byte_count;
@@ -341,7 +341,7 @@ int ata_dma_read_direct(int channel, int slave, uint32_t lba,
     s->prdt[0].phys_addr  = saved_addr;
     s->prdt[0].byte_count = saved_count;
 
-    spin_unlock(&s->lock);
+    spin_unlock_irqrestore(&s->lock, irq_flags);
     return ret;
 }
 
@@ -353,7 +353,7 @@ int ata_dma_write_direct(int channel, int slave, uint32_t lba,
     if (phys_buf == 0 || (phys_buf & 1)) return -EINVAL;
     if (byte_count == 0) byte_count = 512;
 
-    spin_lock(&s->lock);
+    uintptr_t irq_flags = spin_lock_irqsave(&s->lock);
 
     uint32_t saved_addr  = s->prdt[0].phys_addr;
     uint16_t saved_count = s->prdt[0].byte_count;
@@ -370,6 +370,6 @@ int ata_dma_write_direct(int channel, int slave, uint32_t lba,
     s->prdt[0].phys_addr  = saved_addr;
     s->prdt[0].byte_count = saved_count;
 
-    spin_unlock(&s->lock);
+    spin_unlock_irqrestore(&s->lock, irq_flags);
     return ret;
 }

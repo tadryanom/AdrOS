@@ -11,14 +11,17 @@
 #include "diskfs.h"
 
 #include "ata_pio.h"
+#include "console.h"
 #include "errno.h"
 #include "heap.h"
+#include "spinlock.h"
 #include "utils.h"
 
 #include <stddef.h>
 #include <stdint.h>
 
 static int g_diskfs_drive = 0;
+static spinlock_t g_diskfs_lock = {0};
 
 // Very small on-disk FS stored starting at LBA2.
 // - LBA0 reserved
@@ -332,14 +335,21 @@ static uint32_t diskfs_read_impl(fs_node_t* node, uint32_t offset, uint32_t size
     if (!g_ready) return 0;
 
     struct diskfs_node* dn = (struct diskfs_node*)node;
-    struct diskfs_super sb;
-    if (diskfs_super_load(&sb) < 0) return 0;
-    if (dn->ino >= DISKFS_MAX_INODES) return 0;
-    if (sb.inodes[dn->ino].type != DISKFS_INODE_FILE) return 0;
 
-    struct diskfs_inode* de = &sb.inodes[dn->ino];
-    if (offset >= de->size_bytes) return 0;
-    if (offset + size > de->size_bytes) size = de->size_bytes - offset;
+    /* Cache inode metadata under lock, then release before I/O */
+    uintptr_t irq_flags = spin_lock_irqsave(&g_diskfs_lock);
+    struct diskfs_super sb;
+    if (diskfs_super_load(&sb) < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return 0; }
+    if (dn->ino >= DISKFS_MAX_INODES) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return 0; }
+    if (sb.inodes[dn->ino].type != DISKFS_INODE_FILE) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return 0; }
+
+    uint32_t start_lba   = sb.inodes[dn->ino].start_lba;
+    uint32_t cap_sectors = sb.inodes[dn->ino].cap_sectors;
+    uint32_t size_bytes  = sb.inodes[dn->ino].size_bytes;
+    spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
+
+    if (offset >= size_bytes) return 0;
+    if (offset + size > size_bytes) size = size_bytes - offset;
     if (size == 0) return 0;
 
     uint32_t total = 0;
@@ -349,10 +359,10 @@ static uint32_t diskfs_read_impl(fs_node_t* node, uint32_t offset, uint32_t size
         uint32_t sec_off = pos % DISKFS_SECTOR;
         uint32_t chunk = size - total;
         if (chunk > (DISKFS_SECTOR - sec_off)) chunk = DISKFS_SECTOR - sec_off;
-        if (lba_off >= de->cap_sectors) break;
+        if (lba_off >= cap_sectors) break;
 
         uint8_t sec[DISKFS_SECTOR];
-        if (ata_pio_read28(g_diskfs_drive, de->start_lba + lba_off, sec) < 0) break;
+        if (ata_pio_read28(g_diskfs_drive, start_lba + lba_off, sec) < 0) break;
         memcpy(buffer + total, sec + sec_off, chunk);
         total += chunk;
     }
@@ -366,12 +376,6 @@ static uint32_t diskfs_write_impl(fs_node_t* node, uint32_t offset, uint32_t siz
     if (!g_ready) return 0;
 
     struct diskfs_node* dn = (struct diskfs_node*)node;
-    struct diskfs_super sb;
-    if (diskfs_super_load(&sb) < 0) return 0;
-    if (dn->ino >= DISKFS_MAX_INODES) return 0;
-    if (sb.inodes[dn->ino].type != DISKFS_INODE_FILE) return 0;
-
-    struct diskfs_inode* de = &sb.inodes[dn->ino];
 
     uint64_t end = (uint64_t)offset + (uint64_t)size;
     if (end > 0xFFFFFFFFULL) return 0;
@@ -379,32 +383,57 @@ static uint32_t diskfs_write_impl(fs_node_t* node, uint32_t offset, uint32_t siz
     uint32_t need_bytes = (uint32_t)end;
     uint32_t need_sectors = (need_bytes + DISKFS_SECTOR - 1U) / DISKFS_SECTOR;
 
-    if (need_sectors > de->cap_sectors) {
+    /* Phase 1: Lock, load superblock, grow if needed, store, unlock */
+    uint32_t start_lba;
+    uint32_t cap_sectors;
+
+    uintptr_t irq_flags = spin_lock_irqsave(&g_diskfs_lock);
+    struct diskfs_super sb;
+    if (diskfs_super_load(&sb) < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return 0; }
+    if (dn->ino >= DISKFS_MAX_INODES) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return 0; }
+    if (sb.inodes[dn->ino].type != DISKFS_INODE_FILE) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return 0; }
+
+    if (need_sectors > sb.inodes[dn->ino].cap_sectors) {
         // Grow by allocating a new extent at end, copy old contents.
-        uint32_t new_cap = de->cap_sectors;
+        uint32_t old_start = sb.inodes[dn->ino].start_lba;
+        uint32_t old_cap   = sb.inodes[dn->ino].cap_sectors;
+        uint32_t new_cap = old_cap;
         while (new_cap < need_sectors) {
             new_cap *= 2U;
-            if (new_cap == 0) return 0;
+            if (new_cap == 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return 0; }
         }
 
         uint32_t new_start = sb.next_free_lba;
         sb.next_free_lba += new_cap;
+        sb.inodes[dn->ino].start_lba = new_start;
+        sb.inodes[dn->ino].cap_sectors = new_cap;
+        if (diskfs_super_store(&sb) < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return 0; }
+
+        /* Release lock for the data copy I/O */
+        spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
 
         uint8_t sec[DISKFS_SECTOR];
         for (uint32_t s = 0; s < new_cap; s++) {
             memset(sec, 0, sizeof(sec));
-            if (s < de->cap_sectors) {
-                if (ata_pio_read28(g_diskfs_drive, de->start_lba + s, sec) < 0) {
+            if (s < old_cap) {
+                if (ata_pio_read28(g_diskfs_drive, old_start + s, sec) < 0) {
                     return 0;
                 }
             }
             (void)ata_pio_write28(g_diskfs_drive, new_start + s, sec);
         }
 
-        de->start_lba = new_start;
-        de->cap_sectors = new_cap;
+        /* Re-acquire lock to refresh cached metadata */
+        irq_flags = spin_lock_irqsave(&g_diskfs_lock);
+        if (diskfs_super_load(&sb) < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return 0; }
     }
 
+    start_lba   = sb.inodes[dn->ino].start_lba;
+    cap_sectors = sb.inodes[dn->ino].cap_sectors;
+
+    spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
+
+    /* Phase 2: Data I/O without lock (using cached start_lba/cap_sectors) */
     uint32_t total = 0;
     while (total < size) {
         uint32_t pos = offset + total;
@@ -412,27 +441,32 @@ static uint32_t diskfs_write_impl(fs_node_t* node, uint32_t offset, uint32_t siz
         uint32_t sec_off = pos % DISKFS_SECTOR;
         uint32_t chunk = size - total;
         if (chunk > (DISKFS_SECTOR - sec_off)) chunk = DISKFS_SECTOR - sec_off;
-        if (lba_off >= de->cap_sectors) break;
+        if (lba_off >= cap_sectors) break;
 
         uint8_t sec[DISKFS_SECTOR];
         if (sec_off != 0 || chunk != DISKFS_SECTOR) {
-            if (ata_pio_read28(g_diskfs_drive, de->start_lba + lba_off, sec) < 0) break;
+            int rr = ata_pio_read28(g_diskfs_drive, start_lba + lba_off, sec);
+            if (rr < 0) break;
         } else {
             memset(sec, 0, sizeof(sec));
         }
 
         memcpy(sec + sec_off, buffer + total, chunk);
-        if (ata_pio_write28(g_diskfs_drive, de->start_lba + lba_off, sec) < 0) break;
+        int wr = ata_pio_write28(g_diskfs_drive, start_lba + lba_off, sec);
+        if (wr < 0) break;
 
         total += chunk;
     }
 
-    if (offset + total > de->size_bytes) {
-        de->size_bytes = offset + total;
+    /* Phase 3: Lock, update size, store, unlock */
+    irq_flags = spin_lock_irqsave(&g_diskfs_lock);
+    if (diskfs_super_load(&sb) < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return total; }
+    if (offset + total > sb.inodes[dn->ino].size_bytes) {
+        sb.inodes[dn->ino].size_bytes = offset + total;
     }
-
-    if (diskfs_super_store(&sb) < 0) return total;
-    node->length = de->size_bytes;
+    node->length = sb.inodes[dn->ino].size_bytes;
+    (void)diskfs_super_store(&sb);
+    spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
     return total;
 }
 
@@ -444,6 +478,8 @@ static int diskfs_readdir_impl(struct fs_node* node, uint32_t* inout_index, void
     struct diskfs_node* dn = (struct diskfs_node*)node;
     uint16_t dir_ino = dn->ino;
 
+    uintptr_t irq_flags = spin_lock_irqsave(&g_diskfs_lock);
+
     // Use diskfs_getdents which fills diskfs_kdirent; convert to vfs_dirent.
     struct diskfs_kdirent kbuf[8];
     uint32_t klen = sizeof(kbuf);
@@ -451,7 +487,7 @@ static int diskfs_readdir_impl(struct fs_node* node, uint32_t* inout_index, void
 
     uint32_t idx = *inout_index;
     int rc = diskfs_getdents(dir_ino, &idx, kbuf, klen);
-    if (rc <= 0) return rc;
+    if (rc <= 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return rc; }
 
     uint32_t nents = (uint32_t)rc / (uint32_t)sizeof(struct diskfs_kdirent);
     uint32_t cap = buf_len / (uint32_t)sizeof(struct vfs_dirent);
@@ -467,10 +503,12 @@ static int diskfs_readdir_impl(struct fs_node* node, uint32_t* inout_index, void
     }
 
     *inout_index = idx;
+    spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
     return (int)(nents * (uint32_t)sizeof(struct vfs_dirent));
 }
 
 static int diskfs_vfs_truncate(struct fs_node* node, uint32_t length);
+static void diskfs_reclaim_space(struct diskfs_super* sb);
 static struct fs_node* diskfs_root_finddir(struct fs_node* node, const char* name);
 static int diskfs_vfs_create(struct fs_node* dir, const char* name, uint32_t flags, struct fs_node** out);
 static int diskfs_vfs_mkdir(struct fs_node* dir, const char* name);
@@ -513,17 +551,18 @@ static struct fs_node* diskfs_root_finddir(struct fs_node* node, const char* nam
 
     uint16_t parent_ino = parent ? parent->ino : 0;
 
+    uintptr_t irq_flags = spin_lock_irqsave(&g_diskfs_lock);
     struct diskfs_super sb;
-    if (diskfs_super_load(&sb) < 0) return NULL;
-    if (parent_ino >= DISKFS_MAX_INODES) return NULL;
-    if (sb.inodes[parent_ino].type != DISKFS_INODE_DIR) return NULL;
+    if (diskfs_super_load(&sb) < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return NULL; }
+    if (parent_ino >= DISKFS_MAX_INODES) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return NULL; }
+    if (sb.inodes[parent_ino].type != DISKFS_INODE_DIR) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return NULL; }
 
     int child = diskfs_find_child(&sb, parent_ino, name);
-    if (child < 0) return NULL;
+    if (child < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return NULL; }
     uint16_t cino = (uint16_t)child;
 
     struct diskfs_node* dn = (struct diskfs_node*)kmalloc(sizeof(*dn));
-    if (!dn) return NULL;
+    if (!dn) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return NULL; }
     memset(dn, 0, sizeof(*dn));
 
     strcpy(dn->vfs.name, name);
@@ -542,6 +581,7 @@ static struct fs_node* diskfs_root_finddir(struct fs_node* node, const char* nam
         dn->vfs.i_ops = &diskfs_file_iops;
     }
 
+    spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
     return &dn->vfs;
 }
 
@@ -551,8 +591,9 @@ int diskfs_open_file(const char* rel_path, uint32_t flags, fs_node_t** out_node)
     if (!g_ready) return -ENODEV;
     if (!rel_path || rel_path[0] == 0) return -EINVAL;
 
+    uintptr_t irq_flags = spin_lock_irqsave(&g_diskfs_lock);
     struct diskfs_super sb;
-    if (diskfs_super_load(&sb) < 0) return -EIO;
+    if (diskfs_super_load(&sb) < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
 
     uint16_t ino = 0;
     uint16_t parent = 0;
@@ -560,34 +601,35 @@ int diskfs_open_file(const char* rel_path, uint32_t flags, fs_node_t** out_node)
     last[0] = 0;
     int rc = diskfs_lookup_path(&sb, rel_path, &ino, &parent, last, sizeof(last));
     if (rc == -ENOENT) {
-        if ((flags & 0x40U) == 0U) return -ENOENT; // O_CREAT
-        if (last[0] == 0) return -EINVAL;
+        if ((flags & 0x40U) == 0U) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -ENOENT; } // O_CREAT
+        if (last[0] == 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EINVAL; }
 
         // Ensure intermediate dirs exist: lookup again but stop before last segment.
         // We already have parent inode from lookup_path failure.
-        if (parent >= DISKFS_MAX_INODES) return -EIO;
-        if (sb.inodes[parent].type != DISKFS_INODE_DIR) return -ENOTDIR;
+        if (parent >= DISKFS_MAX_INODES) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
+        if (sb.inodes[parent].type != DISKFS_INODE_DIR) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -ENOTDIR; }
 
         uint16_t new_ino = 0;
         rc = diskfs_alloc_inode_file(&sb, parent, last, DISKFS_DEFAULT_CAP_SECTORS, &new_ino);
-        if (rc < 0) return rc;
-        if (diskfs_super_store(&sb) < 0) return -EIO;
+        if (rc < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return rc; }
+        if (diskfs_super_store(&sb) < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
         ino = new_ino;
     } else if (rc < 0) {
+        spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
         return rc;
     }
 
-    if (ino >= DISKFS_MAX_INODES) return -EIO;
-    if (sb.inodes[ino].type != DISKFS_INODE_FILE) return -EISDIR;
+    if (ino >= DISKFS_MAX_INODES) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
+    if (sb.inodes[ino].type != DISKFS_INODE_FILE) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EISDIR; }
 
     if ((flags & 0x200U) != 0U) { // O_TRUNC
         sb.inodes[ino].size_bytes = 0;
-        if (diskfs_super_store(&sb) < 0) return -EIO;
+        if (diskfs_super_store(&sb) < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
     }
 
     // Build a transient vfs node for this inode.
     struct diskfs_node* dn = (struct diskfs_node*)kmalloc(sizeof(*dn));
-    if (!dn) return -ENOMEM;
+    if (!dn) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -ENOMEM; }
     memset(dn, 0, sizeof(*dn));
     diskfs_strlcpy(dn->vfs.name, last, sizeof(dn->vfs.name));
     dn->vfs.flags = FS_FILE;
@@ -598,6 +640,7 @@ int diskfs_open_file(const char* rel_path, uint32_t flags, fs_node_t** out_node)
     dn->ino = ino;
 
     *out_node = &dn->vfs;
+    spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
     return 0;
 }
 
@@ -605,8 +648,9 @@ int diskfs_mkdir(const char* rel_path) {
     if (!g_ready) return -ENODEV;
     if (!rel_path || rel_path[0] == 0) return -EINVAL;
 
+    uintptr_t irq_flags = spin_lock_irqsave(&g_diskfs_lock);
     struct diskfs_super sb;
-    if (diskfs_super_load(&sb) < 0) return -EIO;
+    if (diskfs_super_load(&sb) < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
 
     uint16_t ino = 0;
     uint16_t parent = 0;
@@ -614,13 +658,14 @@ int diskfs_mkdir(const char* rel_path) {
     last[0] = 0;
     int rc = diskfs_lookup_path(&sb, rel_path, &ino, &parent, last, sizeof(last));
     if (rc == 0) {
+        spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
         return -EEXIST;
     }
-    if (rc != -ENOENT) return rc;
-    if (last[0] == 0) return -EINVAL;
+    if (rc != -ENOENT) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return rc; }
+    if (last[0] == 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EINVAL; }
 
-    if (parent >= DISKFS_MAX_INODES) return -EIO;
-    if (sb.inodes[parent].type != DISKFS_INODE_DIR) return -ENOTDIR;
+    if (parent >= DISKFS_MAX_INODES) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
+    if (sb.inodes[parent].type != DISKFS_INODE_DIR) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -ENOTDIR; }
 
     for (uint16_t i = 1; i < DISKFS_MAX_INODES; i++) {
         if (sb.inodes[i].type != DISKFS_INODE_FREE) continue;
@@ -631,9 +676,12 @@ int diskfs_mkdir(const char* rel_path) {
         sb.inodes[i].start_lba = 0;
         sb.inodes[i].size_bytes = 0;
         sb.inodes[i].cap_sectors = 0;
-        return diskfs_super_store(&sb);
+        int ret = diskfs_super_store(&sb);
+        spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
+        return ret;
     }
 
+    spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
     return -ENOSPC;
 }
 
@@ -641,35 +689,39 @@ int diskfs_unlink(const char* rel_path) {
     if (!g_ready) return -ENODEV;
     if (!rel_path || rel_path[0] == 0) return -EINVAL;
 
+    uintptr_t irq_flags = spin_lock_irqsave(&g_diskfs_lock);
     struct diskfs_super sb;
-    if (diskfs_super_load(&sb) < 0) return -EIO;
+    if (diskfs_super_load(&sb) < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
 
     uint16_t ino = 0;
     int rc = diskfs_lookup_path(&sb, rel_path, &ino, NULL, NULL, 0);
-    if (rc < 0) return rc;
-    if (ino == 0) return -EPERM;
-    if (ino >= DISKFS_MAX_INODES) return -EIO;
+    if (rc < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return rc; }
+    if (ino == 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EPERM; }
+    if (ino >= DISKFS_MAX_INODES) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
 
-    if (sb.inodes[ino].type == DISKFS_INODE_DIR) return -EISDIR;
-    if (sb.inodes[ino].type != DISKFS_INODE_FILE) return -ENOENT;
+    if (sb.inodes[ino].type == DISKFS_INODE_DIR) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EISDIR; }
+    if (sb.inodes[ino].type != DISKFS_INODE_FILE) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -ENOENT; }
 
-    uint32_t shared_lba = sb.inodes[ino].start_lba;
     memset(&sb.inodes[ino], 0, sizeof(sb.inodes[ino]));
 
-    /* Check if any other inode still references the same data blocks */
-    int still_referenced = 0;
-    if (shared_lba != 0) {
-        for (uint16_t i = 0; i < DISKFS_MAX_INODES; i++) {
-            if (sb.inodes[i].type == DISKFS_INODE_FILE &&
-                sb.inodes[i].start_lba == shared_lba) {
-                still_referenced = 1;
-                break;
-            }
-        }
-    }
-    (void)still_referenced; /* data blocks are never reclaimed in current impl */
+    /* Reclaim LBA space */
+    diskfs_reclaim_space(&sb);
 
-    return diskfs_super_store(&sb);
+    int ret = diskfs_super_store(&sb);
+    spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
+    return ret;
+}
+
+static void diskfs_reclaim_space(struct diskfs_super* sb) {
+    /* Recalculate next_free_lba by finding the highest used LBA extent */
+    uint32_t highest_end = DISKFS_LBA_DATA_START;
+    for (uint16_t i = 0; i < DISKFS_MAX_INODES; i++) {
+        if (sb->inodes[i].type == DISKFS_INODE_FREE) continue;
+        if (sb->inodes[i].cap_sectors == 0) continue;
+        uint32_t end = sb->inodes[i].start_lba + sb->inodes[i].cap_sectors;
+        if (end > highest_end) highest_end = end;
+    }
+    sb->next_free_lba = highest_end;
 }
 
 int diskfs_link(const char* old_rel, const char* new_rel) {
@@ -677,14 +729,15 @@ int diskfs_link(const char* old_rel, const char* new_rel) {
     if (!old_rel || old_rel[0] == 0) return -EINVAL;
     if (!new_rel || new_rel[0] == 0) return -EINVAL;
 
+    uintptr_t irq_flags = spin_lock_irqsave(&g_diskfs_lock);
     struct diskfs_super sb;
-    if (diskfs_super_load(&sb) < 0) return -EIO;
+    if (diskfs_super_load(&sb) < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
 
     uint16_t old_ino = 0;
     int rc = diskfs_lookup_path(&sb, old_rel, &old_ino, NULL, NULL, 0);
-    if (rc < 0) return rc;
-    if (old_ino >= DISKFS_MAX_INODES) return -EIO;
-    if (sb.inodes[old_ino].type != DISKFS_INODE_FILE) return -EPERM;
+    if (rc < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return rc; }
+    if (old_ino >= DISKFS_MAX_INODES) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
+    if (sb.inodes[old_ino].type != DISKFS_INODE_FILE) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EPERM; }
 
     /* Find the new name's parent directory and base name */
     const char* new_base = new_rel;
@@ -696,14 +749,14 @@ int diskfs_link(const char* old_rel, const char* new_rel) {
 
     /* Check new name doesn't already exist */
     uint16_t dummy = 0;
-    if (diskfs_lookup_path(&sb, new_rel, &dummy, NULL, NULL, 0) == 0) return -EEXIST;
+    if (diskfs_lookup_path(&sb, new_rel, &dummy, NULL, NULL, 0) == 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EEXIST; }
 
     /* Find a free inode slot */
     uint16_t new_ino = 0;
     for (uint16_t i = 1; i < DISKFS_MAX_INODES; i++) {
         if (sb.inodes[i].type == DISKFS_INODE_FREE) { new_ino = i; break; }
     }
-    if (new_ino == 0) return -ENOSPC;
+    if (new_ino == 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -ENOSPC; }
 
     /* Create new inode sharing same data blocks */
     sb.inodes[new_ino].type = DISKFS_INODE_FILE;
@@ -718,31 +771,40 @@ int diskfs_link(const char* old_rel, const char* new_rel) {
     if (sb.inodes[old_ino].nlink < 2) sb.inodes[old_ino].nlink = 2;
     else sb.inodes[old_ino].nlink++;
 
-    return diskfs_super_store(&sb);
+    int ret = diskfs_super_store(&sb);
+    spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
+    return ret;
 }
 
 int diskfs_rmdir(const char* rel_path) {
     if (!g_ready) return -ENODEV;
     if (!rel_path || rel_path[0] == 0) return -EINVAL;
 
+    uintptr_t irq_flags = spin_lock_irqsave(&g_diskfs_lock);
     struct diskfs_super sb;
-    if (diskfs_super_load(&sb) < 0) return -EIO;
+    if (diskfs_super_load(&sb) < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
 
     uint16_t ino = 0;
     int rc = diskfs_lookup_path(&sb, rel_path, &ino, NULL, NULL, 0);
-    if (rc < 0) return rc;
-    if (ino == 0) return -EPERM;
-    if (ino >= DISKFS_MAX_INODES) return -EIO;
-    if (sb.inodes[ino].type != DISKFS_INODE_DIR) return -ENOTDIR;
+    if (rc < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return rc; }
+    if (ino == 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EPERM; }
+    if (ino >= DISKFS_MAX_INODES) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
+    if (sb.inodes[ino].type != DISKFS_INODE_DIR) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -ENOTDIR; }
 
     // Check directory is empty (no children).
     for (uint16_t i = 0; i < DISKFS_MAX_INODES; i++) {
         if (sb.inodes[i].type == DISKFS_INODE_FREE) continue;
-        if (sb.inodes[i].parent == ino && i != ino) return -ENOTEMPTY;
+        if (sb.inodes[i].parent == ino && i != ino) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -ENOTEMPTY; }
     }
 
     memset(&sb.inodes[ino], 0, sizeof(sb.inodes[ino]));
-    return diskfs_super_store(&sb);
+
+    /* Reclaim LBA space */
+    diskfs_reclaim_space(&sb);
+
+    int ret = diskfs_super_store(&sb);
+    spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
+    return ret;
 }
 
 int diskfs_rename(const char* old_rel, const char* new_rel) {
@@ -750,14 +812,15 @@ int diskfs_rename(const char* old_rel, const char* new_rel) {
     if (!old_rel || old_rel[0] == 0) return -EINVAL;
     if (!new_rel || new_rel[0] == 0) return -EINVAL;
 
+    uintptr_t irq_flags = spin_lock_irqsave(&g_diskfs_lock);
     struct diskfs_super sb;
-    if (diskfs_super_load(&sb) < 0) return -EIO;
+    if (diskfs_super_load(&sb) < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
 
     uint16_t src_ino = 0;
     int rc = diskfs_lookup_path(&sb, old_rel, &src_ino, NULL, NULL, 0);
-    if (rc < 0) return rc;
-    if (src_ino == 0) return -EPERM;
-    if (src_ino >= DISKFS_MAX_INODES) return -EIO;
+    if (rc < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return rc; }
+    if (src_ino == 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EPERM; }
+    if (src_ino >= DISKFS_MAX_INODES) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
 
     // Resolve destination: if it exists, it must be same type or we fail.
     uint16_t dst_ino = 0;
@@ -767,15 +830,16 @@ int diskfs_rename(const char* old_rel, const char* new_rel) {
     rc = diskfs_lookup_path(&sb, new_rel, &dst_ino, &dst_parent, dst_last, sizeof(dst_last));
     if (rc == 0) {
         // Destination exists: if it's a dir and source is file (or vice-versa), error.
-        if (sb.inodes[dst_ino].type != sb.inodes[src_ino].type) return -EINVAL;
-        if (dst_ino == src_ino) return 0; // same inode
+        if (sb.inodes[dst_ino].type != sb.inodes[src_ino].type) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EINVAL; }
+        if (dst_ino == src_ino) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return 0; } // same inode
         // Remove destination.
         memset(&sb.inodes[dst_ino], 0, sizeof(sb.inodes[dst_ino]));
     } else if (rc == -ENOENT) {
         // Parent must exist and be a dir.
-        if (dst_parent >= DISKFS_MAX_INODES) return -EIO;
-        if (sb.inodes[dst_parent].type != DISKFS_INODE_DIR) return -ENOTDIR;
+        if (dst_parent >= DISKFS_MAX_INODES) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
+        if (sb.inodes[dst_parent].type != DISKFS_INODE_DIR) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -ENOTDIR; }
     } else {
+        spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
         return rc;
     }
 
@@ -784,7 +848,9 @@ int diskfs_rename(const char* old_rel, const char* new_rel) {
     memset(sb.inodes[src_ino].name, 0, sizeof(sb.inodes[src_ino].name));
     diskfs_strlcpy(sb.inodes[src_ino].name, dst_last, sizeof(sb.inodes[src_ino].name));
 
-    return diskfs_super_store(&sb);
+    int ret = diskfs_super_store(&sb);
+    spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
+    return ret;
 }
 
 int diskfs_getdents(uint16_t dir_ino, uint32_t* inout_index, void* out, uint32_t out_len) {
@@ -856,24 +922,25 @@ static int diskfs_vfs_create(struct fs_node* dir, const char* name, uint32_t fla
     struct diskfs_node* parent = (struct diskfs_node*)dir;
     uint16_t parent_ino = parent->ino;
 
+    uintptr_t irq_flags = spin_lock_irqsave(&g_diskfs_lock);
     struct diskfs_super sb;
-    if (diskfs_super_load(&sb) < 0) return -EIO;
-    if (parent_ino >= DISKFS_MAX_INODES) return -EIO;
-    if (sb.inodes[parent_ino].type != DISKFS_INODE_DIR) return -ENOTDIR;
+    if (diskfs_super_load(&sb) < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
+    if (parent_ino >= DISKFS_MAX_INODES) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
+    if (sb.inodes[parent_ino].type != DISKFS_INODE_DIR) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -ENOTDIR; }
 
     /* Check if it already exists */
     int existing = diskfs_find_child(&sb, parent_ino, name);
     if (existing >= 0) {
         uint16_t ino = (uint16_t)existing;
-        if (sb.inodes[ino].type != DISKFS_INODE_FILE) return -EISDIR;
+        if (sb.inodes[ino].type != DISKFS_INODE_FILE) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EISDIR; }
 
         if ((flags & 0x200U) != 0U) { /* O_TRUNC */
             sb.inodes[ino].size_bytes = 0;
-            if (diskfs_super_store(&sb) < 0) return -EIO;
+            if (diskfs_super_store(&sb) < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
         }
 
         struct diskfs_node* dn = (struct diskfs_node*)kmalloc(sizeof(*dn));
-        if (!dn) return -ENOMEM;
+        if (!dn) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -ENOMEM; }
         memset(dn, 0, sizeof(*dn));
         diskfs_strlcpy(dn->vfs.name, name, sizeof(dn->vfs.name));
         dn->vfs.flags = FS_FILE;
@@ -883,19 +950,20 @@ static int diskfs_vfs_create(struct fs_node* dir, const char* name, uint32_t fla
         dn->vfs.i_ops = &diskfs_file_iops;
         dn->ino = ino;
         *out = &dn->vfs;
+        spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
         return 0;
     }
 
     /* Create new file */
-    if ((flags & 0x40U) == 0U) return -ENOENT; /* O_CREAT not set */
+    if ((flags & 0x40U) == 0U) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -ENOENT; } /* O_CREAT not set */
 
     uint16_t new_ino = 0;
     int rc = diskfs_alloc_inode_file(&sb, parent_ino, name, DISKFS_DEFAULT_CAP_SECTORS, &new_ino);
-    if (rc < 0) return rc;
-    if (diskfs_super_store(&sb) < 0) return -EIO;
+    if (rc < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return rc; }
+    if (diskfs_super_store(&sb) < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
 
     struct diskfs_node* dn = (struct diskfs_node*)kmalloc(sizeof(*dn));
-    if (!dn) return -ENOMEM;
+    if (!dn) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -ENOMEM; }
     memset(dn, 0, sizeof(*dn));
     diskfs_strlcpy(dn->vfs.name, name, sizeof(dn->vfs.name));
     dn->vfs.flags = FS_FILE;
@@ -905,6 +973,7 @@ static int diskfs_vfs_create(struct fs_node* dir, const char* name, uint32_t fla
     dn->vfs.i_ops = &diskfs_file_iops;
     dn->ino = new_ino;
     *out = &dn->vfs;
+    spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
     return 0;
 }
 
@@ -915,12 +984,13 @@ static int diskfs_vfs_mkdir(struct fs_node* dir, const char* name) {
     struct diskfs_node* parent = (struct diskfs_node*)dir;
     uint16_t parent_ino = parent->ino;
 
+    uintptr_t irq_flags = spin_lock_irqsave(&g_diskfs_lock);
     struct diskfs_super sb;
-    if (diskfs_super_load(&sb) < 0) return -EIO;
-    if (parent_ino >= DISKFS_MAX_INODES) return -EIO;
-    if (sb.inodes[parent_ino].type != DISKFS_INODE_DIR) return -ENOTDIR;
+    if (diskfs_super_load(&sb) < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
+    if (parent_ino >= DISKFS_MAX_INODES) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
+    if (sb.inodes[parent_ino].type != DISKFS_INODE_DIR) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -ENOTDIR; }
 
-    if (diskfs_find_child(&sb, parent_ino, name) >= 0) return -EEXIST;
+    if (diskfs_find_child(&sb, parent_ino, name) >= 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EEXIST; }
 
     for (uint16_t i = 1; i < DISKFS_MAX_INODES; i++) {
         if (sb.inodes[i].type != DISKFS_INODE_FREE) continue;
@@ -931,9 +1001,12 @@ static int diskfs_vfs_mkdir(struct fs_node* dir, const char* name) {
         sb.inodes[i].start_lba = 0;
         sb.inodes[i].size_bytes = 0;
         sb.inodes[i].cap_sectors = 0;
-        return diskfs_super_store(&sb);
+        int ret = diskfs_super_store(&sb);
+        spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
+        return ret;
     }
 
+    spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
     return -ENOSPC;
 }
 
@@ -944,19 +1017,22 @@ static int diskfs_vfs_unlink(struct fs_node* dir, const char* name) {
     struct diskfs_node* parent = (struct diskfs_node*)dir;
     uint16_t parent_ino = parent->ino;
 
+    uintptr_t irq_flags = spin_lock_irqsave(&g_diskfs_lock);
     struct diskfs_super sb;
-    if (diskfs_super_load(&sb) < 0) return -EIO;
+    if (diskfs_super_load(&sb) < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
 
     int child = diskfs_find_child(&sb, parent_ino, name);
-    if (child < 0) return -ENOENT;
+    if (child < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -ENOENT; }
     uint16_t ino = (uint16_t)child;
-    if (ino == 0) return -EPERM;
+    if (ino == 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EPERM; }
 
-    if (sb.inodes[ino].type == DISKFS_INODE_DIR) return -EISDIR;
-    if (sb.inodes[ino].type != DISKFS_INODE_FILE) return -ENOENT;
+    if (sb.inodes[ino].type == DISKFS_INODE_DIR) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EISDIR; }
+    if (sb.inodes[ino].type != DISKFS_INODE_FILE) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -ENOENT; }
 
     memset(&sb.inodes[ino], 0, sizeof(sb.inodes[ino]));
-    return diskfs_super_store(&sb);
+    int ret = diskfs_super_store(&sb);
+    spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
+    return ret;
 }
 
 static int diskfs_vfs_rmdir(struct fs_node* dir, const char* name) {
@@ -966,23 +1042,26 @@ static int diskfs_vfs_rmdir(struct fs_node* dir, const char* name) {
     struct diskfs_node* parent = (struct diskfs_node*)dir;
     uint16_t parent_ino = parent->ino;
 
+    uintptr_t irq_flags = spin_lock_irqsave(&g_diskfs_lock);
     struct diskfs_super sb;
-    if (diskfs_super_load(&sb) < 0) return -EIO;
+    if (diskfs_super_load(&sb) < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
 
     int child = diskfs_find_child(&sb, parent_ino, name);
-    if (child < 0) return -ENOENT;
+    if (child < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -ENOENT; }
     uint16_t ino = (uint16_t)child;
-    if (ino == 0) return -EPERM;
-    if (sb.inodes[ino].type != DISKFS_INODE_DIR) return -ENOTDIR;
+    if (ino == 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EPERM; }
+    if (sb.inodes[ino].type != DISKFS_INODE_DIR) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -ENOTDIR; }
 
     /* Check directory is empty */
     for (uint16_t i = 0; i < DISKFS_MAX_INODES; i++) {
         if (sb.inodes[i].type == DISKFS_INODE_FREE) continue;
-        if (sb.inodes[i].parent == ino && i != ino) return -ENOTEMPTY;
+        if (sb.inodes[i].parent == ino && i != ino) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -ENOTEMPTY; }
     }
 
     memset(&sb.inodes[ino], 0, sizeof(sb.inodes[ino]));
-    return diskfs_super_store(&sb);
+    int ret = diskfs_super_store(&sb);
+    spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
+    return ret;
 }
 
 static int diskfs_vfs_rename(struct fs_node* old_dir, const char* old_name,
@@ -993,20 +1072,21 @@ static int diskfs_vfs_rename(struct fs_node* old_dir, const char* old_name,
     struct diskfs_node* odir = (struct diskfs_node*)old_dir;
     struct diskfs_node* ndir = (struct diskfs_node*)new_dir;
 
+    uintptr_t irq_flags = spin_lock_irqsave(&g_diskfs_lock);
     struct diskfs_super sb;
-    if (diskfs_super_load(&sb) < 0) return -EIO;
+    if (diskfs_super_load(&sb) < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
 
     int src = diskfs_find_child(&sb, odir->ino, old_name);
-    if (src < 0) return -ENOENT;
+    if (src < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -ENOENT; }
     uint16_t src_ino = (uint16_t)src;
-    if (src_ino == 0) return -EPERM;
+    if (src_ino == 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EPERM; }
 
     /* Check if destination exists */
     int dst = diskfs_find_child(&sb, ndir->ino, new_name);
     if (dst >= 0) {
         uint16_t dst_ino = (uint16_t)dst;
-        if (sb.inodes[dst_ino].type != sb.inodes[src_ino].type) return -EINVAL;
-        if (dst_ino == src_ino) return 0;
+        if (sb.inodes[dst_ino].type != sb.inodes[src_ino].type) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EINVAL; }
+        if (dst_ino == src_ino) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return 0; }
         memset(&sb.inodes[dst_ino], 0, sizeof(sb.inodes[dst_ino]));
     }
 
@@ -1014,7 +1094,9 @@ static int diskfs_vfs_rename(struct fs_node* old_dir, const char* old_name,
     memset(sb.inodes[src_ino].name, 0, sizeof(sb.inodes[src_ino].name));
     diskfs_strlcpy(sb.inodes[src_ino].name, new_name, sizeof(sb.inodes[src_ino].name));
 
-    return diskfs_super_store(&sb);
+    int ret = diskfs_super_store(&sb);
+    spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
+    return ret;
 }
 
 static int diskfs_vfs_truncate(struct fs_node* node, uint32_t length) {
@@ -1022,16 +1104,20 @@ static int diskfs_vfs_truncate(struct fs_node* node, uint32_t length) {
     if (!g_ready) return -ENODEV;
 
     struct diskfs_node* dn = (struct diskfs_node*)node;
+
+    uintptr_t irq_flags = spin_lock_irqsave(&g_diskfs_lock);
     struct diskfs_super sb;
-    if (diskfs_super_load(&sb) < 0) return -EIO;
-    if (dn->ino >= DISKFS_MAX_INODES) return -EIO;
-    if (sb.inodes[dn->ino].type != DISKFS_INODE_FILE) return -EISDIR;
+    if (diskfs_super_load(&sb) < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
+    if (dn->ino >= DISKFS_MAX_INODES) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
+    if (sb.inodes[dn->ino].type != DISKFS_INODE_FILE) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EISDIR; }
 
     if (length < sb.inodes[dn->ino].size_bytes) {
         sb.inodes[dn->ino].size_bytes = length;
     }
     node->length = sb.inodes[dn->ino].size_bytes;
-    return diskfs_super_store(&sb);
+    int ret = diskfs_super_store(&sb);
+    spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
+    return ret;
 }
 
 static int diskfs_vfs_link(struct fs_node* dir, const char* name, struct fs_node* target) {
@@ -1041,22 +1127,23 @@ static int diskfs_vfs_link(struct fs_node* dir, const char* name, struct fs_node
     struct diskfs_node* parent = (struct diskfs_node*)dir;
     struct diskfs_node* src = (struct diskfs_node*)target;
 
+    uintptr_t irq_flags = spin_lock_irqsave(&g_diskfs_lock);
     struct diskfs_super sb;
-    if (diskfs_super_load(&sb) < 0) return -EIO;
+    if (diskfs_super_load(&sb) < 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
 
     uint16_t src_ino = src->ino;
-    if (src_ino >= DISKFS_MAX_INODES) return -EIO;
-    if (sb.inodes[src_ino].type != DISKFS_INODE_FILE) return -EPERM;
+    if (src_ino >= DISKFS_MAX_INODES) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EIO; }
+    if (sb.inodes[src_ino].type != DISKFS_INODE_FILE) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EPERM; }
 
     /* Check new name doesn't already exist */
-    if (diskfs_find_child(&sb, parent->ino, name) >= 0) return -EEXIST;
+    if (diskfs_find_child(&sb, parent->ino, name) >= 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -EEXIST; }
 
     /* Find a free inode slot */
     uint16_t new_ino = 0;
     for (uint16_t i = 1; i < DISKFS_MAX_INODES; i++) {
         if (sb.inodes[i].type == DISKFS_INODE_FREE) { new_ino = i; break; }
     }
-    if (new_ino == 0) return -ENOSPC;
+    if (new_ino == 0) { spin_unlock_irqrestore(&g_diskfs_lock, irq_flags); return -ENOSPC; }
 
     /* Create new inode sharing same data blocks */
     sb.inodes[new_ino].type = DISKFS_INODE_FILE;
@@ -1072,7 +1159,9 @@ static int diskfs_vfs_link(struct fs_node* dir, const char* name, struct fs_node
     if (sb.inodes[src_ino].nlink < 2) sb.inodes[src_ino].nlink = 2;
     else sb.inodes[src_ino].nlink++;
 
-    return diskfs_super_store(&sb);
+    int ret = diskfs_super_store(&sb);
+    spin_unlock_irqrestore(&g_diskfs_lock, irq_flags);
+    return ret;
 }
 
 fs_node_t* diskfs_create_root(int drive) {
