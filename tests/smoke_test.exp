@@ -49,7 +49,7 @@ set tests {
     {"ATA DMA mode"         "\\[ATA\\] Channel 0: DMA mode."}
     {"SMP CPUs active"      "CPU\\(s\\) active."}
     {"User ring3 entry"     "\\[USER\\] enter ring3"}
-    {"init.elf hello"       "\\[test\\] hello from init.elf"}
+    {"fulltest.elf hello"   "\\[test\\] hello from fulltest.elf"}
     {"open/read/close"      "\\[test\\] open/read/close OK"}
     {"overlay copy-up"      "\\[test\\] overlay copy-up OK"}
     {"lseek/stat/fstat"     "\\[test\\] lseek/stat/fstat OK"}
