@@ -409,6 +409,10 @@ static int syscall_dlopen_impl(const char* user_path) {
         return -EINVAL;
     }
 
+    /* Track mapped pages for rollback on allocation failure */
+    uint32_t mapped_va[1024];
+    uint32_t mapped_count = 0;
+
     for (uint16_t i = 0; i < e_phnum; i++) {
         uint8_t* ph = fbuf + e_phoff + (uint32_t)i * e_phentsize;
         uint32_t p_type   = *(uint32_t*)(ph + 0);
@@ -434,9 +438,20 @@ static int syscall_dlopen_impl(const char* user_path) {
         for (uint32_t va = start_page; va <= end_page; va += 0x1000) {
             extern void* pmm_alloc_page(void);
             void* frame = pmm_alloc_page();
-            if (!frame) { kfree(fbuf); return -ENOMEM; }
+            if (!frame) {
+                /* Rollback: unmap and free all pages mapped so far */
+                for (uint32_t j = 0; j < mapped_count; j++) {
+                    uintptr_t phys = vmm_virt_to_phys((uint64_t)mapped_va[j]);
+                    vmm_unmap_page((uint64_t)mapped_va[j]);
+                    if (phys) pmm_free_page((void*)phys);
+                }
+                kfree(fbuf);
+                return -ENOMEM;
+            }
             vmm_map_page((uint64_t)(uintptr_t)frame, (uint64_t)va,
                          VMM_FLAG_PRESENT | VMM_FLAG_RW | VMM_FLAG_USER);
+            if (mapped_count < 1024)
+                mapped_va[mapped_count++] = va;
         }
 
         if (p_filesz && p_offset + p_filesz <= flen)
@@ -966,6 +981,10 @@ static int syscall_clone_impl(struct registers* regs) {
                                   CLONE_CHILD_CLEARTID)
     if (clone_flags & ~CLONE_SUPPORTED_MASK) return -EINVAL;
 
+    /* CLONE_THREAD requires CLONE_VM — threads must share address space */
+    if ((clone_flags & CLONE_THREAD) && !(clone_flags & CLONE_VM))
+        return -EINVAL;
+
     struct process* child = process_clone_create(clone_flags, child_stack, regs, tls_base);
     if (!child) return -ENOMEM;
 
@@ -984,6 +1003,7 @@ static int syscall_clone_impl(struct registers* regs) {
 }
 
 struct pipe_state {
+    spinlock_t lock;
     uint8_t* buf;
     uint32_t cap;
     uint32_t rpos;
@@ -1687,18 +1707,29 @@ static void pipe_close(fs_node_t* n) {
         return;
     }
 
-    if (pn->is_read_end) {
-        if (pn->ps->readers) pn->ps->readers--;
-    } else {
-        if (pn->ps->writers) pn->ps->writers--;
-    }
-
     struct pipe_state* ps = pn->ps;
+    uint32_t is_read_end = pn->is_read_end;
     kfree(pn);
 
+    uintptr_t irqf = spin_lock_irqsave(&ps->lock);
     if (ps->readers == 0 && ps->writers == 0) {
+        /* Already freed by the other end's close */
+        spin_unlock_irqrestore(&ps->lock, irqf);
+        return;
+    }
+
+    if (is_read_end) {
+        if (ps->readers) ps->readers--;
+    } else {
+        if (ps->writers) ps->writers--;
+    }
+
+    if (ps->readers == 0 && ps->writers == 0) {
+        spin_unlock_irqrestore(&ps->lock, irqf);
         if (ps->buf) kfree(ps->buf);
         kfree(ps);
+    } else {
+        spin_unlock_irqrestore(&ps->lock, irqf);
     }
 }
 
@@ -1778,6 +1809,7 @@ static int pipe_create_kfds(int kfds[2]) {
     struct pipe_state* ps = (struct pipe_state*)kmalloc(sizeof(*ps));
     if (!ps) return -ENOMEM;
     memset(ps, 0, sizeof(*ps));
+    spinlock_init(&ps->lock);
     ps->cap = 512;
     ps->buf = (uint8_t*)kmalloc(ps->cap);
     if (!ps->buf) {
