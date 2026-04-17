@@ -74,6 +74,11 @@ void vmm_protect_range(uint64_t vaddr, uint64_t len, uint32_t flags);
 void vmm_unmap_page(uint64_t virt);
 
 /*
+ * Return the physical address mapped at 'virt', or 0 if not present.
+ */
+uintptr_t vmm_virt_to_phys(uint64_t virt);
+
+/*
  * Find a contiguous free (unmapped) virtual address region.
  * Scans page tables from 'start' up to 'end' for 'length' bytes of
  * contiguous unmapped pages.  Returns the base VA, or 0 on failure.

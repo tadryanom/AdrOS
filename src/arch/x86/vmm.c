@@ -204,6 +204,25 @@ void vmm_unmap_page(uint64_t virt) {
     spin_unlock_irqrestore(&vmm_lock, irqf);
 }
 
+uintptr_t vmm_virt_to_phys(uint64_t virt) {
+    uint32_t pi = pae_pdpt_index(virt);
+    uint32_t di = pae_pd_index(virt);
+    uint32_t ti = pae_pt_index(virt);
+
+    uintptr_t irqf = spin_lock_irqsave(&vmm_lock);
+    volatile uint64_t* pd = pae_pd_recursive(pi);
+    if ((pd[di] & X86_PTE_PRESENT) == 0) {
+        spin_unlock_irqrestore(&vmm_lock, irqf);
+        return 0;
+    }
+    volatile uint64_t* pt = pae_pt_recursive(pi, di);
+    uint64_t pte = pt[ti];
+    spin_unlock_irqrestore(&vmm_lock, irqf);
+
+    if (!(pte & X86_PTE_PRESENT)) return 0;
+    return (uintptr_t)(pte & ~0xFFFULL);
+}
+
 void vmm_set_page_flags(uint64_t virt, uint32_t flags) {
     uintptr_t irqf = spin_lock_irqsave(&vmm_lock);
     vmm_set_page_flags_nolock(virt, flags);
