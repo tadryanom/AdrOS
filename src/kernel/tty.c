@@ -277,7 +277,19 @@ int tty_ioctl(uint32_t cmd, void* user_arg) {
             return 0;
         }
 
-        if (current_process->session_id != tty_session_id) return -EPERM;
+        if (current_process->session_id != tty_session_id) {
+            /* Allow a session leader to claim the TTY as its controlling
+             * terminal by setting its own process group as foreground.
+             * POSIX: a session leader may take control of a terminal
+             * when explicitly establishing a new controlling terminal. */
+            if (current_process->session_id == current_process->pid &&
+                (uint32_t)fg == current_process->pgrp_id) {
+                tty_session_id = current_process->session_id;
+                tty_fg_pgrp = (uint32_t)fg;
+                return 0;
+            }
+            return -EPERM;
+        }
         if (fg < 0) return -EINVAL;
         tty_fg_pgrp = (uint32_t)fg;
         return 0;

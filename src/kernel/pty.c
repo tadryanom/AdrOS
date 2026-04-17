@@ -529,7 +529,17 @@ int pty_slave_ioctl_idx(int idx, uint32_t cmd, void* user_arg) {
             return 0;
         }
 
-        if (current_process->session_id != p->session_id) return -EPERM;
+        if (current_process->session_id != p->session_id) {
+            /* Allow a session leader to claim the PTY as its controlling
+             * terminal by setting its own process group as foreground. */
+            if (current_process->session_id == current_process->pid &&
+                (uint32_t)fg == current_process->pgrp_id) {
+                p->session_id = current_process->session_id;
+                p->fg_pgrp = (uint32_t)fg;
+                return 0;
+            }
+            return -EPERM;
+        }
         if (fg < 0) return -EINVAL;
         p->fg_pgrp = (uint32_t)fg;
         return 0;
