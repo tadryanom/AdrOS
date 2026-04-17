@@ -799,6 +799,26 @@ static struct file* fd_get(int fd);
 static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no);
 static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_no);
 
+/* ------------------------------------------------------------------ */
+/* Futex waiter table (file-scope for cleanup on process exit)         */
+/* ------------------------------------------------------------------ */
+
+#define FUTEX_WAIT 0
+#define FUTEX_WAKE 1
+#define FUTEX_MAX_WAITERS 32
+
+static struct { uintptr_t addr; struct process* proc; } futex_waiters[FUTEX_MAX_WAITERS];
+
+static void futex_cleanup_process(struct process* p) {
+    if (!p) return;
+    for (int i = 0; i < FUTEX_MAX_WAITERS; i++) {
+        if (futex_waiters[i].proc == p) {
+            futex_waiters[i].proc = NULL;
+            futex_waiters[i].addr = 0;
+        }
+    }
+}
+
 struct pollfd {
     int fd;
     int16_t events;
@@ -939,6 +959,13 @@ static int syscall_clone_impl(struct registers* regs) {
     uint32_t clone_flags = sc_arg0(regs);
     uintptr_t child_stack = (uintptr_t)sc_arg1(regs);
     uintptr_t tls_base = (uintptr_t)sc_arg3(regs);
+
+    /* Reject unsupported clone flags — prevents silent misbehavior */
+    #define CLONE_SUPPORTED_MASK (CLONE_VM | CLONE_FS | CLONE_FILES | \
+                                  CLONE_SIGHAND | CLONE_THREAD |      \
+                                  CLONE_SETTLS | CLONE_PARENT_SETTID |\
+                                  CLONE_CHILD_CLEARTID)
+    if (clone_flags & ~CLONE_SUPPORTED_MASK) return -EINVAL;
 
     struct process* child = process_clone_create(clone_flags, child_stack, regs, tls_base);
     if (!child) return -ENOMEM;
@@ -1082,6 +1109,31 @@ struct epoll_instance {
     int count;
 };
 
+static void epoll_close(fs_node_t* node);
+
+static void epoll_instance_remove_fd(struct epoll_instance* ep, int fd) {
+    if (!ep) return;
+    for (int i = 0; i < ep->count; i++) {
+        if (ep->items[i].fd == fd) {
+            ep->items[i] = ep->items[ep->count - 1];
+            ep->count--;
+            return;
+        }
+    }
+}
+
+static void epoll_cleanup_fd(int fd) {
+    if (!current_process) return;
+    for (int i = 0; i < PROCESS_MAX_FILES; i++) {
+        struct file* f = current_process->files[i];
+        if (!f || !f->node || !f->node->f_ops || f->node->f_ops->close != epoll_close)
+            continue;
+        if (i == fd) continue; /* don't touch the epoll fd itself */
+        struct epoll_instance* ep = (struct epoll_instance*)(uintptr_t)f->node->inode;
+        epoll_instance_remove_fd(ep, fd);
+    }
+}
+
 static void epoll_close(fs_node_t* node) {
     if (node && node->inode) {
         kfree((void*)(uintptr_t)node->inode);
@@ -1208,9 +1260,13 @@ static int syscall_epoll_wait_impl(int epfd, struct epoll_event* user_events,
             int fd = ep->items[i].fd;
             struct file* f = fd_get(fd);
             if (!f || !f->node) {
+                /* Stale fd — report EPOLLERR once and remove the item */
                 out[ready].events = EPOLLERR;
                 out[ready].data = ep->items[i].data;
                 ready++;
+                ep->items[i] = ep->items[ep->count - 1];
+                ep->count--;
+                i--; /* re-check the swapped-in item */
                 continue;
             }
 
@@ -1882,6 +1938,11 @@ static int fd_close(int fd) {
 
     struct file* f = current_process->files[fd];
     if (!f) return -EBADF;
+
+    /* Remove this fd from any epoll instances before clearing the slot,
+     * so epoll_cleanup_fd can still walk current_process->files. */
+    epoll_cleanup_fd(fd);
+
     current_process->files[fd] = NULL;
 
     if (__sync_sub_and_fetch(&f->refcount, 1) == 0) {
@@ -3188,6 +3249,7 @@ void syscall_handler(struct registers* regs) {
         if (current_process) {
             flock_release_pid(current_process->pid);
             rlock_release_pid(current_process->pid);
+            futex_cleanup_process(current_process);
         }
 
         for (int fd = 0; fd < PROCESS_MAX_FILES; fd++) {
@@ -4211,11 +4273,6 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
     }
 
     if (syscall_no == SYSCALL_FUTEX) {
-        #define FUTEX_WAIT 0
-        #define FUTEX_WAKE 1
-        #define FUTEX_MAX_WAITERS 32
-        static struct { uintptr_t addr; struct process* proc; } futex_waiters[FUTEX_MAX_WAITERS];
-        
         uint32_t* uaddr = (uint32_t*)sc_arg0(regs);
         int op = (int)sc_arg1(regs);
         uint32_t val = sc_arg2(regs);

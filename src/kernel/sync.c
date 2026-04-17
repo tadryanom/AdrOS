@@ -33,8 +33,8 @@ void ksem_init(ksem_t* s, int32_t initial_count) {
 
 void ksem_wait(ksem_t* s) {
     while (ksem_wait_timeout(s, 0) != 0) {
-        /* Waiters array full — yield and retry */
-        schedule();
+        /* Waiters array full — sleep 1 tick instead of spin-yielding */
+        process_sleep(1);
     }
 }
 

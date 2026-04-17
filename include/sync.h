@@ -18,7 +18,7 @@
 /* Kernel counting semaphore (blocking, sleep/wake — NOT spin-wait)   */
 /* ------------------------------------------------------------------ */
 
-#define KSEM_MAX_WAITERS 16
+#define KSEM_MAX_WAITERS 64
 
 struct process; /* forward */
 
@@ -81,7 +81,7 @@ int  kmbox_tryfetch(kmbox_t* mb, void** msg);
 /* Kernel condition variable (paired with kmutex_t)                    */
 /* ------------------------------------------------------------------ */
 
-#define KCOND_MAX_WAITERS 16
+#define KCOND_MAX_WAITERS 64
 
 typedef struct kcond {
     spinlock_t      lock;

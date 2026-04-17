@@ -92,9 +92,9 @@ ifeq ($(ARCH),x86)
 
     # Default User Flags (Allow override via make CFLAGS=...)
     CFLAGS ?= -O2 -Wall -Wextra -Werror -Wno-error=cpp
-    
+
     # Merge Flags
-    CFLAGS := $(ARCH_CFLAGS) $(CFLAGS)
+    CFLAGS := $(ARCH_CFLAGS) $(CFLAGS) -MMD -MP
     LDFLAGS := $(ARCH_LDFLAGS) $(LDFLAGS)
     ASFLAGS := $(ARCH_ASFLAGS) $(ASFLAGS)
 
@@ -403,6 +403,8 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(dir $@)
 	@echo "  CC      $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
+
+-include $(wildcard $(BUILD_DIR)/**/*.d)
 
 # lwIP sources (compiled with relaxed warnings)
 $(BUILD_DIR)/lwip/%.o: %.c
