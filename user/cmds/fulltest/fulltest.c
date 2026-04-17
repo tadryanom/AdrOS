@@ -1464,7 +1464,7 @@ void _start(void) {
         "mov %ax, %gs\n"
     );
 
-    static const char msg[] = "[test] hello from init.elf\n";
+    static const char msg[] = "[test] hello from fulltest.elf\n";
     (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
 
     static const char path[] = "/sbin/fulltest";
@@ -1821,21 +1821,23 @@ void _start(void) {
             sys_exit(1);
         }
 
+        int my_pgrp = sys_getpgrp();
+
         int fg = -1;
-        if (sys_ioctl(fd, TIOCGPGRP, &fg) < 0 || fg != 0) {
+        if (sys_ioctl(fd, TIOCGPGRP, &fg) < 0 || fg != my_pgrp) {
             sys_write(1, "[test] ioctl TIOCGPGRP failed\n",
                       (uint32_t)(sizeof("[test] ioctl TIOCGPGRP failed\n") - 1));
             sys_exit(1);
         }
 
-        fg = 0;
+        fg = my_pgrp;
         if (sys_ioctl(fd, TIOCSPGRP, &fg) < 0) {
             sys_write(1, "[test] ioctl TIOCSPGRP failed\n",
                       (uint32_t)(sizeof("[test] ioctl TIOCSPGRP failed\n") - 1));
             sys_exit(1);
         }
 
-        fg = 1;
+        fg = -1;
         if (sys_ioctl(fd, TIOCSPGRP, &fg) >= 0) {
             sys_write(1, "[test] ioctl TIOCSPGRP expected fail\n",
                       (uint32_t)(sizeof("[test] ioctl TIOCSPGRP expected fail\n") - 1));
