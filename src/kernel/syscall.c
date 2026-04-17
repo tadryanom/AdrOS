@@ -3003,11 +3003,22 @@ static uintptr_t syscall_mmap_impl(uintptr_t addr, uint32_t length, uint32_t pro
         uint32_t vmm_flags = VMM_FLAG_PRESENT | VMM_FLAG_USER;
         if (prot & PROT_WRITE) vmm_flags |= VMM_FLAG_RW;
 
+        uintptr_t mapped_va[1024];
+        int mapped_count = 0;
         for (uintptr_t va = base; va < base + aligned_len; va += 0x1000U) {
             void* frame = pmm_alloc_page();
-            if (!frame) return (uintptr_t)-ENOMEM;
+            if (!frame) {
+                /* Rollback: unmap and free pages already mapped in this call */
+                for (int j = 0; j < mapped_count; j++) {
+                    uintptr_t phys = vmm_virt_to_phys((uint64_t)mapped_va[j]);
+                    vmm_unmap_page((uint64_t)mapped_va[j]);
+                    if (phys) pmm_free_page((void*)phys);
+                }
+                return (uintptr_t)-ENOMEM;
+            }
             vmm_map_page((uint64_t)(uintptr_t)frame, (uint64_t)va, vmm_flags);
             memset((void*)va, 0, 0x1000U);
+            if (mapped_count < 1024) mapped_va[mapped_count++] = va;
         }
     }
 
@@ -3035,8 +3046,17 @@ static int syscall_munmap_impl(uintptr_t addr, uint32_t length) {
     }
     if (found < 0) return -EINVAL;
 
+    /* Free physical frames for anonymous mappings before unmapping.
+     * Device-backed or shared-memory mappings manage their own frames. */
+    int is_anon = (current_process->mmaps[found].shmid == -1);
     for (uintptr_t va = addr; va < addr + aligned_len; va += 0x1000U) {
-        vmm_unmap_page((uint64_t)va);
+        if (is_anon) {
+            uintptr_t phys = vmm_virt_to_phys((uint64_t)va);
+            vmm_unmap_page((uint64_t)va);
+            if (phys) pmm_free_page((void*)phys);
+        } else {
+            vmm_unmap_page((uint64_t)va);
+        }
     }
 
     current_process->mmaps[found].base = 0;
@@ -3064,19 +3084,30 @@ static uintptr_t syscall_brk_impl(uintptr_t addr) {
     uintptr_t old_brk_page = (old_brk + 0xFFFU) & ~(uintptr_t)0xFFFU;
 
     if (new_brk > old_brk_page) {
+        uintptr_t mapped_va[1024];
+        int mapped_count = 0;
         for (uintptr_t va = old_brk_page; va < new_brk; va += 0x1000U) {
             void* frame = pmm_alloc_page();
             if (!frame) {
+                /* Rollback: unmap and free pages already mapped in this call */
+                for (int j = 0; j < mapped_count; j++) {
+                    uintptr_t phys = vmm_virt_to_phys((uint64_t)mapped_va[j]);
+                    vmm_unmap_page((uint64_t)mapped_va[j]);
+                    if (phys) pmm_free_page((void*)phys);
+                }
                 return current_process->heap_break;
             }
             vmm_as_map_page(current_process->addr_space,
                             (uint64_t)(uintptr_t)frame, (uint64_t)va,
                             VMM_FLAG_PRESENT | VMM_FLAG_RW | VMM_FLAG_USER);
             memset((void*)va, 0, 0x1000U);
+            if (mapped_count < 1024) mapped_va[mapped_count++] = va;
         }
     } else if (new_brk < old_brk_page) {
         for (uintptr_t va = new_brk; va < old_brk_page; va += 0x1000U) {
+            uintptr_t phys = vmm_virt_to_phys((uint64_t)va);
             vmm_unmap_page((uint64_t)va);
+            if (phys) pmm_free_page((void*)phys);
         }
     }
 
