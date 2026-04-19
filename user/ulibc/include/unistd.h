@@ -13,7 +13,11 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <sys/types.h>
 #include <signal.h>
+
+struct stat;
+struct rusage;
 
 #define SEEK_SET 0
 #define SEEK_CUR 1
@@ -27,7 +31,7 @@ int     read(int fd, void* buf, size_t count);
 int     write(int fd, const void* buf, size_t count);
 int     open(const char* path, int flags, ...);
 int     close(int fd);
-int     lseek(int fd, int offset, int whence);
+off_t   lseek(int fd, off_t offset, int whence);
 int     dup(int oldfd);
 int     dup2(int oldfd, int newfd);
 int     pipe(int fds[2]);
@@ -37,7 +41,7 @@ int     getpid(void);
 int     getppid(void);
 int     chdir(const char* path);
 char*   getcwd(char* buf, size_t size);
-int     mkdir(const char* path, ...);  /* mode_t optional in AdrOS */
+int     mkdir(const char* path, mode_t mode);
 int     unlink(const char* path);
 int     rmdir(const char* path);
 int     setsid(void);
@@ -46,8 +50,8 @@ int     getpgrp(void);
 int     gettid(void);
 int     fsync(int fd);
 int     fdatasync(int fd);
-int     pread(int fd, void* buf, size_t count, int offset);
-int     pwrite(int fd, const void* buf, size_t count, int offset);
+ssize_t pread(int fd, void* buf, size_t count, off_t offset);
+ssize_t pwrite(int fd, const void* buf, size_t count, off_t offset);
 int     access(const char* path, int mode);
 int     getuid(void);
 int     getgid(void);
@@ -57,8 +61,8 @@ int     setuid(int uid);
 int     setgid(int gid);
 int     seteuid(int euid);
 int     setegid(int egid);
-int     truncate(const char* path, int length);
-int     ftruncate(int fd, int length);
+int     truncate(const char* path, off_t length);
+int     ftruncate(int fd, off_t length);
 unsigned int alarm(unsigned int seconds);
 #define LOCK_SH 1
 #define LOCK_EX 2
@@ -71,7 +75,7 @@ void*   brk(void* addr);
 
 int     waitpid(int pid, int* status, int options);
 int     getdents(int fd, void* buf, size_t count);
-int     chmod(const char* path, int mode);
+int     chmod(const char* path, mode_t mode);
 int     chown(const char* path, int owner, int group);
 int     link(const char* oldpath, const char* newpath);
 int     symlink(const char* target, const char* linkpath);
@@ -117,16 +121,17 @@ int     execle(const char* path, const char* arg, ...);
 int     execveat(int dirfd, const char* path, char* const argv[], char* const envp[], int flags);
 int     dup3(int oldfd, int newfd, int flags);
 int     openat(int dirfd, const char* path, int flags, ...);
-int     fstatat(int dirfd, const char* path, void* buf, int flags);
+int     fstatat(int dirfd, const char* path, struct stat* buf, int flags);
 int     unlinkat(int dirfd, const char* path, int flags);
 int     mount(const char* source, const char* target, const char* fs_type, unsigned long flags, const void* data);
 int     umount2(const char* target, int flags);
 int     umount(const char* target);
-int     wait4(int pid, int* status, int options, void* rusage);
-int     waitid(int idtype, int id, void* info, int options);
+pid_t   wait4(pid_t pid, int* status, int options, struct rusage* rusage);
+int     waitid(int idtype, int id, siginfo_t* info, int options);
 int     sigreturn(void);
 int     sigqueue(int pid, int sig, const union sigval value);
 int     set_thread_area(void* desc);
+int     pivot_root(const char* new_root, const char* put_old);
 char*   getlogin(void);
 int     getlogin_r(char* buf, size_t bufsize);
 int     tcgetpgrp(int fd);

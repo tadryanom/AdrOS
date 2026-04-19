@@ -17,9 +17,13 @@
 #define O_WRONLY    0x0001
 #define O_RDWR      0x0002
 #define O_CREAT     0x0040
+#define O_EXCL      0x0080
+#define O_NOCTTY    0x0100
 #define O_TRUNC     0x0200
 #define O_APPEND    0x0400
 #define O_NONBLOCK  0x0800
+#define O_DIRECTORY 0x10000
+#define O_NOFOLLOW  0x20000
 #define O_CLOEXEC   0x80000
 
 #define F_DUPFD     0
@@ -35,6 +39,13 @@
 #define F_SETPIPE_SZ    1033
 
 #define FD_CLOEXEC  1
+
+/* AT_* constants for *at() syscalls */
+#define AT_FDCWD         -100
+#define AT_SYMLINK_NOFOLLOW 0x100
+#define AT_REMOVEDIR     0x200
+#define AT_SYMLINK_FOLLOW  0x400
+#define AT_EACCESS       0x0400
 
 /* Record lock types */
 #define F_RDLCK     0

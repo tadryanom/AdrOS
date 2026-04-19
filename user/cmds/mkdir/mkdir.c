@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 static int pflag = 0;   /* -p: create parent directories */
 
@@ -24,11 +25,11 @@ static int mkdir_p(const char* path) {
     for (char* p = tmp + 1; *p; p++) {
         if (*p == '/') {
             *p = '\0';
-            mkdir(tmp);   /* ignore errors — parent may already exist */
+            mkdir(tmp, 0755);   /* ignore errors — parent may already exist */
             *p = '/';
         }
     }
-    return mkdir(tmp);
+    return mkdir(tmp, 0755);
 }
 
 int main(int argc, char** argv) {
@@ -60,7 +61,7 @@ int main(int argc, char** argv) {
         if (pflag) {
             r = mkdir_p(argv[i]);
         } else {
-            r = mkdir(argv[i]);
+            r = mkdir(argv[i], 0755);
         }
         if (r < 0) {
             fprintf(stderr, "mkdir: cannot create directory '%s'\n", argv[i]);

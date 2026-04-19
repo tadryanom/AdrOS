@@ -10,11 +10,20 @@
 
 /* AdrOS df utility — display filesystem disk space usage */
 #include <stdio.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 int main(void) {
+    int fd = open("/proc/mounts", O_RDONLY);
+    if (fd < 0) {
+        fprintf(stderr, "df: cannot open /proc/mounts\n");
+        return 1;
+    }
     printf("Filesystem     Size  Used  Avail  Use%%  Mounted on\n");
-    printf("overlayfs         -     -      -     -  /\n");
-    printf("devfs             -     -      -     -  /dev\n");
-    printf("procfs            -     -      -     -  /proc\n");
+    char buf[1024];
+    int n;
+    while ((n = read(fd, buf, sizeof(buf))) > 0)
+        write(STDOUT_FILENO, buf, (size_t)n);
+    close(fd);
     return 0;
 }

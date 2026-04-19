@@ -15,6 +15,8 @@
 #include "stdlib.h"
 #include "sys/select.h"
 #include "sys/time.h"
+#include "sys/stat.h"
+#include "sys/resource.h"
 #include "signal.h"
 
 int read(int fd, void* buf, size_t count) {
@@ -26,7 +28,11 @@ int write(int fd, const void* buf, size_t count) {
 }
 
 int open(const char* path, int flags, ...) {
-    (void)flags; /* mode arg unused by kernel currently */
+    __builtin_va_list ap;
+    __builtin_va_start(ap, flags);
+    int mode = __builtin_va_arg(ap, int);
+    __builtin_va_end(ap);
+    (void)mode; /* kernel ignores mode currently */
     return __syscall_ret(_syscall2(SYS_OPEN, (int)path, flags));
 }
 
@@ -34,8 +40,8 @@ int close(int fd) {
     return __syscall_ret(_syscall1(SYS_CLOSE, fd));
 }
 
-int lseek(int fd, int offset, int whence) {
-    return __syscall_ret(_syscall3(SYS_LSEEK, fd, offset, whence));
+off_t lseek(int fd, off_t offset, int whence) {
+    return __syscall_ret(_syscall3(SYS_LSEEK, fd, (int)offset, whence));
 }
 
 int dup(int oldfd) {
@@ -91,7 +97,8 @@ char* getcwd(char* buf, size_t size) {
     return buf;
 }
 
-int mkdir(const char* path, ...) {
+int mkdir(const char* path, mode_t mode) {
+    (void)mode; /* kernel ignores mode currently */
     return __syscall_ret(_syscall1(SYS_MKDIR, (int)path));
 }
 
@@ -127,12 +134,12 @@ int fdatasync(int fd) {
     return __syscall_ret(_syscall1(SYS_FDATASYNC, fd));
 }
 
-int pread(int fd, void* buf, size_t count, int offset) {
-    return __syscall_ret(_syscall4(SYS_PREAD, fd, (int)buf, (int)count, offset));
+ssize_t pread(int fd, void* buf, size_t count, off_t offset) {
+    return __syscall_ret(_syscall4(SYS_PREAD, fd, (int)buf, (int)count, (int)offset));
 }
 
-int pwrite(int fd, const void* buf, size_t count, int offset) {
-    return __syscall_ret(_syscall4(SYS_PWRITE, fd, (int)buf, (int)count, offset));
+ssize_t pwrite(int fd, const void* buf, size_t count, off_t offset) {
+    return __syscall_ret(_syscall4(SYS_PWRITE, fd, (int)buf, (int)count, (int)offset));
 }
 
 int access(const char* path, int mode) {
@@ -171,12 +178,12 @@ int setegid(int egid) {
     return __syscall_ret(_syscall1(SYS_SETEGID, egid));
 }
 
-int truncate(const char* path, int length) {
-    return __syscall_ret(_syscall2(SYS_TRUNCATE, (int)path, length));
+int truncate(const char* path, off_t length) {
+    return __syscall_ret(_syscall2(SYS_TRUNCATE, (int)path, (int)length));
 }
 
-int ftruncate(int fd, int length) {
-    return __syscall_ret(_syscall2(SYS_FTRUNCATE, fd, length));
+int ftruncate(int fd, off_t length) {
+    return __syscall_ret(_syscall2(SYS_FTRUNCATE, fd, (int)length));
 }
 
 unsigned int alarm(unsigned int seconds) {
@@ -215,16 +222,26 @@ int getdents(int fd, void* buf, size_t count) {
     return __syscall_ret(_syscall3(SYS_GETDENTS, fd, (int)buf, (int)count));
 }
 
-int stat(const char* path, void* buf) {
+int stat(const char* path, struct stat* buf) {
     return __syscall_ret(_syscall2(SYS_STAT, (int)path, (int)buf));
 }
 
-int fstat(int fd, void* buf) {
+int fstat(int fd, struct stat* buf) {
     return __syscall_ret(_syscall2(SYS_FSTAT, fd, (int)buf));
 }
 
-int chmod(const char* path, int mode) {
-    return __syscall_ret(_syscall2(SYS_CHMOD, (int)path, mode));
+int lstat(const char* path, struct stat* buf) {
+    return stat(path, buf);  /* no symlinks in AdrOS, same as stat */
+}
+
+int chmod(const char* path, mode_t mode) {
+    return __syscall_ret(_syscall2(SYS_CHMOD, (int)path, (int)mode));
+}
+
+int fchmod(int fd, mode_t mode) {
+    (void)fd; (void)mode;
+    errno = ENOSYS;
+    return -1;
 }
 
 int chown(const char* path, int owner, int group) {
@@ -344,10 +361,14 @@ int dup3(int oldfd, int newfd, int flags) {
 }
 
 int openat(int dirfd, const char* path, int flags, ...) {
-    return __syscall_ret(_syscall3(SYS_OPENAT, dirfd, (int)path, flags));
+    __builtin_va_list ap;
+    __builtin_va_start(ap, flags);
+    int mode = __builtin_va_arg(ap, int);
+    __builtin_va_end(ap);
+    return __syscall_ret(_syscall4(SYS_OPENAT, dirfd, (int)path, flags, mode));
 }
 
-int fstatat(int dirfd, const char* path, void* buf, int flags) {
+int fstatat(int dirfd, const char* path, struct stat* buf, int flags) {
     return __syscall_ret(_syscall4(SYS_FSTATAT, dirfd, (int)path, (int)buf, flags));
 }
 
@@ -367,11 +388,11 @@ int umount(const char* target) {
     return umount2(target, 0);
 }
 
-int wait4(int pid, int* status, int options, void* rusage) {
-    return __syscall_ret(_syscall4(SYS_WAIT4, pid, (int)status, options, (int)rusage));
+pid_t wait4(pid_t pid, int* status, int options, struct rusage* rusage) {
+    return __syscall_ret(_syscall4(SYS_WAIT4, (int)pid, (int)status, options, (int)rusage));
 }
 
-int waitid(int idtype, int id, void* info, int options) {
+int waitid(int idtype, int id, siginfo_t* info, int options) {
     return __syscall_ret(_syscall4(SYS_WAITID, idtype, id, (int)info, options));
 }
 
@@ -385,4 +406,8 @@ int sigqueue(int pid, int sig, const union sigval value) {
 
 int set_thread_area(void* desc) {
     return __syscall_ret(_syscall1(SYS_SET_THREAD_AREA, (int)desc));
+}
+
+int pivot_root(const char* new_root, const char* put_old) {
+    return __syscall_ret(_syscall2(SYS_PIVOT_ROOT, (int)new_root, (int)put_old));
 }

@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
     int rc = 0;
     for (int i = 1; i < argc; i++) {
         struct stat st;
-        if (stat(argv[i], (void*)&st) < 0) {
+        if (stat(argv[i], &st) < 0) {
             fprintf(stderr, "stat: cannot stat '%s'\n", argv[i]);
             rc = 1;
             continue;

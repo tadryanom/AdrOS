@@ -568,7 +568,11 @@ int dup3(int oldfd, int newfd, int flags) {
 }
 
 int openat(int dirfd, const char *path, int flags, ...) {
-    return _check(_sc3(SYS_OPENAT, dirfd, (int)path, flags));
+    va_list ap;
+    va_start(ap, flags);
+    int mode = va_arg(ap, int);
+    va_end(ap);
+    return _check(_sc4(SYS_OPENAT, dirfd, (int)path, flags, mode));
 }
 
 int fstatat(int dirfd, const char *path, struct stat *buf, int flags) {
@@ -739,6 +743,10 @@ void *sbrk(intptr_t increment) {
     void *result = brk(new_end);
     if ((uintptr_t)result < (uintptr_t)new_end) return (void *)-1;
     return cur;
+}
+
+int pivot_root(const char *new_root, const char *put_old) {
+    return _check(_sc2(SYS_PIVOT_ROOT, (int)new_root, (int)put_old));
 }
 
 int mkfifo(const char *path, mode_t mode) {
