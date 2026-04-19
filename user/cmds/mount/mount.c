@@ -12,7 +12,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <syscall.h>
+#include <sys/mount.h>
 #include <errno.h>
 
 static void show_mounts(void) {
@@ -57,9 +57,9 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    int rc = __syscall_ret(_syscall3(SYS_MOUNT, (int)device, (int)mountpoint, (int)fstype));
+    int rc = mount(device, mountpoint, fstype, 0, NULL);
     if (rc < 0) {
-        fprintf(stderr, "mount: mounting %s on %s failed: %d\n", device, mountpoint, rc);
+        fprintf(stderr, "mount: mounting %s on %s failed: %s\n", device, mountpoint, strerror(errno));
         return 1;
     }
     return 0;
