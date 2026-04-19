@@ -146,6 +146,17 @@ set tests {
     {"uname"               "\\[test\\] uname OK"}
     {"SMP parallel fork"   "\\[test\\] SMP parallel fork OK"}
     {"LZ4 Frame decomp"    "\\[INITRD\\] LZ4"}
+    {"geteuid/getegid"     "\\[test\\] geteuid/getegid OK"}
+    {"seteuid/setegid"     "\\[test\\] seteuid/setegid OK"}
+    {"CLOCK_MONOTONIC"     "\\[test\\] CLOCK_MONOTONIC OK"}
+    {"chown"               "\\[test\\] chown OK"}
+    {"futex"               "\\[test\\] futex OK"}
+    {"sigaltstack"         "\\[test\\] sigaltstack OK"}
+    {"socket API"          "\\[test\\] socket API OK"}
+    {"mqueue"              "\\[test\\] mqueue OK"}
+    {"named semaphore"     "\\[test\\] named semaphore OK"}
+    {"getrusage"           "\\[test\\] getrusage OK"}
+    {"mount/umount2"       "\\[test\\] mount/umount2 OK"}
 }
 
 # ---- Poll serial.log for results ----

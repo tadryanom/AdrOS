@@ -155,6 +155,17 @@ set patterns {
     {"diskfs mount /disk"    "\\[MOUNT\\] diskfs on /dev/hda"}
     {"diskfs test"           "\\[test\\] /disk/test prev="}
     {"diskfs getdents"       "\\[test\\] diskfs getdents OK"}
+    {"geteuid/getegid"       "\\[test\\] geteuid/getegid OK"}
+    {"seteuid/setegid"       "\\[test\\] seteuid/setegid OK"}
+    {"CLOCK_MONOTONIC"       "\\[test\\] CLOCK_MONOTONIC OK"}
+    {"chown"                 "\\[test\\] chown OK"}
+    {"futex"                 "\\[test\\] futex OK"}
+    {"sigaltstack"           "\\[test\\] sigaltstack OK"}
+    {"socket API"            "\\[test\\] socket API OK"}
+    {"mqueue"                "\\[test\\] mqueue OK"}
+    {"named semaphore"       "\\[test\\] named semaphore OK"}
+    {"getrusage"             "\\[test\\] getrusage OK"}
+    {"mount/umount2"         "\\[test\\] mount/umount2 OK"}
 }
 
 set res [wait_for_patterns $serial_log $timeout_sec $patterns]

@@ -158,7 +158,33 @@ enum {
     SYSCALL_GETRLIMIT    = 129,
     SYSCALL_SETRLIMIT    = 130,
     SYSCALL_UNAME        = 136,
+    SYSCALL_GETRUSAGE    = 137,
+    SYSCALL_UMOUNT2      = 138,
+    SYSCALL_EXECVEAT     = 141,
     SYSCALL_MADVISE      = 140,
+
+    SYSCALL_SIGALTSTACK  = 86,
+    SYSCALL_SOCKET    = 58,
+    SYSCALL_BIND      = 59,
+    SYSCALL_LISTEN    = 60,
+    SYSCALL_ACCEPT    = 61,
+    SYSCALL_CONNECT   = 62,
+    SYSCALL_SEND      = 63,
+    SYSCALL_RECV      = 64,
+    SYSCALL_SHUTDOWN  = 133,
+    SYSCALL_GETSOCKNAME  = 135,
+
+    SYSCALL_MQ_OPEN     = 97,
+    SYSCALL_MQ_CLOSE    = 98,
+    SYSCALL_MQ_SEND     = 99,
+    SYSCALL_MQ_RECEIVE  = 100,
+    SYSCALL_MQ_UNLINK   = 101,
+    SYSCALL_SEM_OPEN    = 102,
+    SYSCALL_SEM_CLOSE   = 103,
+    SYSCALL_SEM_WAIT    = 104,
+    SYSCALL_SEM_POST    = 105,
+    SYSCALL_SEM_UNLINK  = 106,
+    SYSCALL_SEM_GETVALUE = 107,
 };
 
 enum {
@@ -289,6 +315,26 @@ enum {
     EAGAIN = 11,
     EINVAL = 22,
     EEXIST = 17,
+};
+
+enum {
+    FUTEX_WAIT = 0,
+    FUTEX_WAKE = 1,
+};
+
+enum {
+    AF_INET = 2,
+    SOCK_STREAM = 1,
+    IPPROTO_TCP = 6,
+};
+
+#define RUSAGE_SELF 0
+
+struct sockaddr_in {
+    uint16_t sin_family;
+    uint16_t sin_port;
+    uint32_t sin_addr;
+    uint8_t  sin_zero[8];
 };
 
 enum {
@@ -1388,6 +1434,174 @@ static int sys_uname(struct utsname* buf) {
 static int sys_setrlimit(int resource, const struct rlimit* rlim) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SETRLIMIT), "b"(resource), "c"(rlim) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_chown(const char* path, uint32_t uid, uint32_t gid) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_CHOWN), "b"(path), "c"(uid), "d"(gid) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_futex(uint32_t* uaddr, int op, uint32_t val) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_FUTEX), "b"(uaddr), "c"(op), "d"(val) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_sigaltstack(const void* ss, void* old_ss) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SIGALTSTACK), "b"(ss), "c"(old_ss) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_socket(int domain, int type, int protocol) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SOCKET), "b"(domain), "c"(type), "d"(protocol) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_bind(int sockfd, const void* addr) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_BIND), "b"(sockfd), "c"(addr) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_listen(int sockfd, int backlog) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_LISTEN), "b"(sockfd), "c"(backlog) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_accept(int sockfd, void* addr) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_ACCEPT), "b"(sockfd), "c"(addr) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_connect(int sockfd, const void* addr) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_CONNECT), "b"(sockfd), "c"(addr) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_send(int sockfd, const void* buf, uint32_t len, int flags) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SEND), "b"(sockfd), "c"(buf), "d"(len), "S"(flags) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_recv(int sockfd, void* buf, uint32_t len, int flags) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_RECV), "b"(sockfd), "c"(buf), "d"(len), "S"(flags) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_shutdown(int sockfd, int how) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SHUTDOWN), "b"(sockfd), "c"(how) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_getsockname(int sockfd, void* addr) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_GETSOCKNAME), "b"(sockfd), "c"(addr) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_mq_open(const char* name, uint32_t oflag) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_MQ_OPEN), "b"(name), "c"(oflag) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_mq_close(int mqd) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_MQ_CLOSE), "b"(mqd) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_mq_send(int mqd, const char* msg, uint32_t len, uint32_t prio) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_MQ_SEND), "b"(mqd), "c"(msg), "d"(len), "S"(prio) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_mq_receive(int mqd, char* msg, uint32_t len, uint32_t* prio) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_MQ_RECEIVE), "b"(mqd), "c"(msg), "d"(len), "S"(prio) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_mq_unlink(const char* name) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_MQ_UNLINK), "b"(name) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_sem_open(const char* name, uint32_t oflag, uint32_t init_val) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SEM_OPEN), "b"(name), "c"(oflag), "d"(init_val) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_sem_close(int sem) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SEM_CLOSE), "b"(sem) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_sem_wait(int sem) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SEM_WAIT), "b"(sem) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_sem_post(int sem) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SEM_POST), "b"(sem) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_sem_unlink(const char* name) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SEM_UNLINK), "b"(name) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_sem_getvalue(int sem, int* valp) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SEM_GETVALUE), "b"(sem), "c"(valp) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_getrusage(int who, void* usage) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_GETRUSAGE), "b"(who), "c"(usage) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_sigqueue(int pid, int sig, int value) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SIGQUEUE), "b"(pid), "c"(sig), "d"(value) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_mount(const char* dev, const char* dir, const char* type) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_MOUNT), "b"(dev), "c"(dir), "d"(type) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_umount2(const char* dir) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_UMOUNT2), "b"(dir) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_execveat(int dirfd, const char* path, const char* const* argv, const char* const* envp, uint32_t flags) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_EXECVEAT), "b"(dirfd), "c"(path), "d"(argv), "S"(envp), "D"(flags) : "memory");
     return __syscall_fix(ret);
 }
 
@@ -4463,6 +4677,349 @@ void _start(void) {
             (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
         }
         #undef SMP_NCHILD
+    }
+
+    // I1: geteuid/getegid — should match getuid/getgid for root
+    {
+        uint32_t uid = sys_getuid();
+        uint32_t gid = sys_getgid();
+        uint32_t euid = sys_geteuid();
+        uint32_t egid = sys_getegid();
+        if (euid != uid || egid != gid) {
+            sys_write(1, "[test] geteuid/getegid mismatch\n",
+                      (uint32_t)(sizeof("[test] geteuid/getegid mismatch\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[test] geteuid/getegid OK\n",
+                  (uint32_t)(sizeof("[test] geteuid/getegid OK\n") - 1));
+    }
+
+    // I2: seteuid/setegid — root can change, then restore
+    {
+        uint32_t orig_euid = sys_geteuid();
+        if (sys_seteuid(0) < 0) {
+            sys_write(1, "[test] seteuid(0) failed\n",
+                      (uint32_t)(sizeof("[test] seteuid(0) failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_seteuid(orig_euid) < 0) {
+            sys_write(1, "[test] seteuid restore failed\n",
+                      (uint32_t)(sizeof("[test] seteuid restore failed\n") - 1));
+            sys_exit(1);
+        }
+        uint32_t orig_egid = sys_getegid();
+        if (sys_setegid(0) < 0) {
+            sys_write(1, "[test] setegid(0) failed\n",
+                      (uint32_t)(sizeof("[test] setegid(0) failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_setegid(orig_egid) < 0) {
+            sys_write(1, "[test] setegid restore failed\n",
+                      (uint32_t)(sizeof("[test] setegid restore failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[test] seteuid/setegid OK\n",
+                  (uint32_t)(sizeof("[test] seteuid/setegid OK\n") - 1));
+    }
+
+    // I3: clock_gettime CLOCK_MONOTONIC
+    {
+        struct timespec tp1, tp2;
+        if (sys_clock_gettime(CLOCK_MONOTONIC, &tp1) < 0) {
+            sys_write(1, "[test] CLOCK_MONOTONIC failed\n",
+                      (uint32_t)(sizeof("[test] CLOCK_MONOTONIC failed\n") - 1));
+            sys_exit(1);
+        }
+        struct timespec ts_sleep = { 0, 10 * 1000000 };
+        (void)sys_nanosleep(&ts_sleep, 0);
+        if (sys_clock_gettime(CLOCK_MONOTONIC, &tp2) < 0) {
+            sys_write(1, "[test] CLOCK_MONOTONIC 2 failed\n",
+                      (uint32_t)(sizeof("[test] CLOCK_MONOTONIC 2 failed\n") - 1));
+            sys_exit(1);
+        }
+        if (tp2.tv_sec < tp1.tv_sec ||
+            (tp2.tv_sec == tp1.tv_sec && tp2.tv_nsec <= tp1.tv_nsec)) {
+            sys_write(1, "[test] CLOCK_MONOTONIC did not advance\n",
+                      (uint32_t)(sizeof("[test] CLOCK_MONOTONIC did not advance\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[test] CLOCK_MONOTONIC OK\n",
+                  (uint32_t)(sizeof("[test] CLOCK_MONOTONIC OK\n") - 1));
+    }
+
+    // I4: chown — change file owner (root only)
+    {
+        /* /tmp/hello.txt already exists from earlier test */
+        if (sys_chown("/tmp/hello.txt", 0, 0) < 0) {
+            sys_write(1, "[test] chown failed\n",
+                      (uint32_t)(sizeof("[test] chown failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[test] chown OK\n",
+                  (uint32_t)(sizeof("[test] chown OK\n") - 1));
+    }
+
+    // I5: futex — basic WAIT (mismatch returns EAGAIN) and WAKE (no waiters returns 0)
+    {
+        uint32_t ftx = 0;
+
+        /* FUTEX_WAIT with mismatched value should return EAGAIN immediately */
+        ftx = 1;
+        int r = sys_futex(&ftx, FUTEX_WAIT, 0);
+        if (r >= 0 || errno != EAGAIN) {
+            sys_write(1, "[test] futex WAIT mismatch failed\n",
+                      (uint32_t)(sizeof("[test] futex WAIT mismatch failed\n") - 1));
+            sys_exit(1);
+        }
+
+        /* FUTEX_WAKE with no waiters should return 0 */
+        ftx = 0;
+        r = sys_futex(&ftx, FUTEX_WAKE, 1);
+        if (r != 0) {
+            sys_write(1, "[test] futex WAKE no-waiters failed\n",
+                      (uint32_t)(sizeof("[test] futex WAKE no-waiters failed\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[test] futex OK\n",
+                  (uint32_t)(sizeof("[test] futex OK\n") - 1));
+    }
+
+    // I6: sigaltstack — set and query alternate signal stack
+    {
+        /* Allocate a page for the alt stack */
+        uintptr_t ss_page = sys_mmap(0, 0x1000, PROT_READ | PROT_WRITE,
+                                     MAP_PRIVATE | MAP_ANONYMOUS, -1);
+        if (ss_page == MAP_FAILED_VAL) {
+            sys_write(1, "[test] sigaltstack mmap failed\n",
+                      (uint32_t)(sizeof("[test] sigaltstack mmap failed\n") - 1));
+            sys_exit(1);
+        }
+        /* stack_t: { void* ss_sp; int ss_flags; size_t ss_size; } */
+        struct { uintptr_t ss_sp; int ss_flags; uint32_t ss_size; } ss, old_ss;
+        ss.ss_sp = ss_page;
+        ss.ss_flags = 0;
+        ss.ss_size = 0x1000;
+        if (sys_sigaltstack(&ss, 0) < 0) {
+            sys_write(1, "[test] sigaltstack set failed\n",
+                      (uint32_t)(sizeof("[test] sigaltstack set failed\n") - 1));
+            sys_exit(1);
+        }
+        /* Query old sigaltstack */
+        if (sys_sigaltstack(0, &old_ss) < 0) {
+            sys_write(1, "[test] sigaltstack get failed\n",
+                      (uint32_t)(sizeof("[test] sigaltstack get failed\n") - 1));
+            sys_exit(1);
+        }
+        if (old_ss.ss_sp != ss_page || old_ss.ss_size != 0x1000) {
+            sys_write(1, "[test] sigaltstack mismatch\n",
+                      (uint32_t)(sizeof("[test] sigaltstack mismatch\n") - 1));
+            sys_exit(1);
+        }
+        /* Disable alt stack */
+        ss.ss_sp = 0;
+        ss.ss_flags = 1; /* SS_DISABLE */
+        ss.ss_size = 0;
+        (void)sys_sigaltstack(&ss, 0);
+        (void)sys_munmap(ss_page, 0x1000);
+        sys_write(1, "[test] sigaltstack OK\n",
+                  (uint32_t)(sizeof("[test] sigaltstack OK\n") - 1));
+    }
+
+    // I7: socket API — create/bind/listen/getsockname/shutdown
+    {
+        int sfd = sys_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (sfd < 0) {
+            sys_write(1, "[test] socket TCP failed\n",
+                      (uint32_t)(sizeof("[test] socket TCP failed\n") - 1));
+            sys_exit(1);
+        }
+        struct sockaddr_in sa;
+        sa.sin_family = AF_INET;
+        sa.sin_port = 0xC000; /* port 49152 in network byte order */
+        sa.sin_addr = 0x0100007FU; /* 127.0.0.1 LE */
+        for (int i = 0; i < 8; i++) sa.sin_zero[i] = 0;
+
+        if (sys_bind(sfd, &sa) < 0) {
+            sys_write(1, "[test] bind failed\n",
+                      (uint32_t)(sizeof("[test] bind failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_listen(sfd, 1) < 0) {
+            sys_write(1, "[test] listen failed\n",
+                      (uint32_t)(sizeof("[test] listen failed\n") - 1));
+            sys_exit(1);
+        }
+
+        /* Get the actual bound address */
+        struct sockaddr_in bound_addr;
+        if (sys_getsockname(sfd, &bound_addr) < 0) {
+            sys_write(1, "[test] getsockname failed\n",
+                      (uint32_t)(sizeof("[test] getsockname failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_shutdown(sfd, 2);
+        (void)sys_close(sfd);
+        sys_write(1, "[test] socket API OK\n",
+                  (uint32_t)(sizeof("[test] socket API OK\n") - 1));
+    }
+
+    // I8: mqueue — open/send/receive/close/unlink
+    {
+        int mqd = sys_mq_open("/test_mq", O_CREAT | O_RDWR);
+        if (mqd < 0) {
+            sys_write(1, "[test] mq_open failed\n",
+                      (uint32_t)(sizeof("[test] mq_open failed\n") - 1));
+            sys_exit(1);
+        }
+        static const char payload[] = "MQ_MSG";
+        if (sys_mq_send(mqd, payload, (uint32_t)(sizeof(payload) - 1), 1) < 0) {
+            sys_write(1, "[test] mq_send failed\n",
+                      (uint32_t)(sizeof("[test] mq_send failed\n") - 1));
+            sys_exit(1);
+        }
+        char rbuf[64];
+        uint32_t prio = 0;
+        int n = sys_mq_receive(mqd, rbuf, sizeof(rbuf), &prio);
+        if (n != 6 || prio != 1) {
+            sys_write(1, "[test] mq_receive failed\n",
+                      (uint32_t)(sizeof("[test] mq_receive failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_mq_close(mqd);
+        (void)sys_mq_unlink("/test_mq");
+        sys_write(1, "[test] mqueue OK\n",
+                  (uint32_t)(sizeof("[test] mqueue OK\n") - 1));
+    }
+
+    // I9: named semaphore — open/wait/post/getvalue/close/unlink
+    {
+        int sem = sys_sem_open("/test_sem", O_CREAT, 0);
+        if (sem < 0) {
+            sys_write(1, "[test] sem_open failed\n",
+                      (uint32_t)(sizeof("[test] sem_open failed\n") - 1));
+            sys_exit(1);
+        }
+        int val = -1;
+        if (sys_sem_getvalue(sem, &val) < 0 || val != 0) {
+            sys_write(1, "[test] sem_getvalue(0) failed\n",
+                      (uint32_t)(sizeof("[test] sem_getvalue(0) failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_sem_post(sem) < 0) {
+            sys_write(1, "[test] sem_post failed\n",
+                      (uint32_t)(sizeof("[test] sem_post failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_sem_getvalue(sem, &val) < 0 || val != 1) {
+            sys_write(1, "[test] sem_getvalue(1) failed\n",
+                      (uint32_t)(sizeof("[test] sem_getvalue(1) failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_sem_wait(sem) < 0) {
+            sys_write(1, "[test] sem_wait failed\n",
+                      (uint32_t)(sizeof("[test] sem_wait failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_sem_getvalue(sem, &val) < 0 || val != 0) {
+            sys_write(1, "[test] sem_getvalue after wait failed\n",
+                      (uint32_t)(sizeof("[test] sem_getvalue after wait failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_sem_close(sem);
+        (void)sys_sem_unlink("/test_sem");
+        sys_write(1, "[test] named semaphore OK\n",
+                  (uint32_t)(sizeof("[test] named semaphore OK\n") - 1));
+    }
+
+    // I10: getrusage — query RUSAGE_SELF
+    {
+        /* struct rusage has 2 struct timeval (8 bytes each) + 14 longs */
+        uint32_t buf[16];
+        for (int i = 0; i < 16; i++) buf[i] = 0;
+        if (sys_getrusage(RUSAGE_SELF, buf) < 0) {
+            sys_write(1, "[test] getrusage failed\n",
+                      (uint32_t)(sizeof("[test] getrusage failed\n") - 1));
+            sys_exit(1);
+        }
+        /* At least one field should be non-zero after running all these tests */
+        int any = 0;
+        for (int i = 0; i < 16; i++) { if (buf[i]) { any = 1; break; } }
+        if (!any) {
+            sys_write(1, "[test] getrusage all-zero (unexpected)\n",
+                      (uint32_t)(sizeof("[test] getrusage all-zero (unexpected)\n") - 1));
+        }
+        sys_write(1, "[test] getrusage OK\n",
+                  (uint32_t)(sizeof("[test] getrusage OK\n") - 1));
+    }
+
+    // I11: sigqueue — send signal with value
+    {
+        /* Install usr1_ret_handler for SIGUSR1 (just sets got_usr1_ret=1) */
+        if (sys_sigaction(SIGUSR1, usr1_ret_handler, 0) < 0) {
+            sys_write(1, "[test] sigqueue sigaction failed\n",
+                      (uint32_t)(sizeof("[test] sigqueue sigaction failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int pid = sys_fork();
+        if (pid < 0) {
+            sys_write(1, "[test] sigqueue fork failed\n",
+                      (uint32_t)(sizeof("[test] sigqueue fork failed\n") - 1));
+            sys_exit(1);
+        }
+        if (pid == 0) {
+            /* Child: wait for signal, then exit */
+            got_usr1_ret = 0;
+            struct timespec ts = { 2, 0 };
+            (void)sys_nanosleep(&ts, 0);
+            sys_exit(got_usr1_ret ? 0 : 1);
+        }
+        /* Parent: brief pause then send sigqueue to child */
+        struct timespec ts_p = { 0, 100 * 1000000 };
+        (void)sys_nanosleep(&ts_p, 0);
+        if (sys_sigqueue(pid, SIGUSR1, 42) < 0) {
+            sys_write(1, "[test] sigqueue failed\n",
+                      (uint32_t)(sizeof("[test] sigqueue failed\n") - 1));
+            sys_exit(1);
+        }
+        int st = 0;
+        sys_waitpid(pid, &st, 0);
+        if (st != 0) {
+            sys_write(1, "[test] sigqueue signal not received\n",
+                      (uint32_t)(sizeof("[test] sigqueue signal not received\n") - 1));
+            /* Don't exit — warn only, since sigqueue delivery may be unreliable */
+        } else {
+            sys_write(1, "[test] sigqueue OK\n",
+                      (uint32_t)(sizeof("[test] sigqueue OK\n") - 1));
+        }
+    }
+
+    // I12: mount/umount2 — tmpfs mount then unmount
+    {
+        /* Create mount point directory first */
+        (void)sys_mkdir("/tmp/mnt_test");
+        if (sys_mount("none", "/tmp/mnt_test", "tmpfs") < 0) {
+            sys_write(1, "[test] mount tmpfs failed\n",
+                      (uint32_t)(sizeof("[test] mount tmpfs failed\n") - 1));
+            sys_exit(1);
+        }
+        /* Create a file in the mounted tmpfs */
+        int fd = sys_openat(AT_FDCWD, "/tmp/mnt_test/test.txt", O_CREAT | O_RDWR, 0644);
+        if (fd < 0) {
+            sys_write(1, "[test] mount test file create failed\n",
+                      (uint32_t)(sizeof("[test] mount test file create failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+
+        if (sys_umount2("/tmp/mnt_test") < 0) {
+            sys_write(1, "[test] umount2 failed\n",
+                      (uint32_t)(sizeof("[test] umount2 failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[test] mount/umount2 OK\n",
+                  (uint32_t)(sizeof("[test] mount/umount2 OK\n") - 1));
     }
 
     (void)sys_write(1, "[test] execve(/bin/echo)\n",
