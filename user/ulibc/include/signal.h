@@ -66,6 +66,11 @@ struct siginfo {
 
 typedef struct siginfo siginfo_t;
 
+union sigval {
+    int   sival_int;
+    void* sival_ptr;
+};
+
 int kill(int pid, int sig);
 int raise(int sig);
 int sigaction(int signum, const struct sigaction* act,
@@ -106,5 +111,7 @@ typedef struct {
 } stack_t;
 
 int sigaltstack(const stack_t* ss, stack_t* old_ss);
+int sigqueue(int pid, int sig, const union sigval value);
+int sigreturn(void);
 
 #endif
