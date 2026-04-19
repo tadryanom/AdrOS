@@ -391,12 +391,8 @@ EOF
         step "Patched libgloss/configure.ac"
     fi
 
-    # Copy/sync our libgloss/adros stubs into the Newlib source tree
+    # Create libgloss/adros directory and autoconf files if not present
     mkdir -p "$d/libgloss/adros"
-    cp -u "$ADROS_ROOT/newlib/libgloss/adros/"*.c "$ADROS_ROOT/newlib/libgloss/adros/"*.S "$d/libgloss/adros/" 2>/dev/null || true
-    step "Synced libgloss/adros/ stubs"
-
-    # Create libgloss/adros autoconf files if not present
     if [[ ! -f "$d/libgloss/adros/configure.in" ]]; then
         cat > "$d/libgloss/adros/configure.in" <<'EOF'
 dnl AdrOS libgloss configure
@@ -490,6 +486,13 @@ patch_binutils
 patch_gcc
 patch_newlib
 patch_bash
+
+# Always sync libgloss/adros source files (even if patches are already applied)
+# so that edits to our stubs are picked up on rebuild.
+_gloss_dir="$SRC_DIR/newlib-${NEWLIB_VER}/libgloss/adros"
+mkdir -p "$_gloss_dir"
+cp -f "$ADROS_ROOT/newlib/libgloss/adros/"*.c "$ADROS_ROOT/newlib/libgloss/adros/"*.S "$_gloss_dir/" 2>/dev/null || true
+step "Synced libgloss/adros/ stubs (forced)"
 
 # ==================================================================
 # STEP 1: Build Binutils

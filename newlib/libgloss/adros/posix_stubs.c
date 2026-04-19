@@ -538,14 +538,6 @@ int gethostname(char *name, size_t len) {
  * Additional POSIX wrappers (previously missing)
  * ================================================================ */
 
-int fcntl(int fd, int cmd, ...) {
-    va_list ap;
-    va_start(ap, cmd);
-    int arg = va_arg(ap, int);
-    va_end(ap);
-    return _check(_sc3(SYS_FCNTL, fd, cmd, arg));
-}
-
 int rename(const char *oldpath, const char *newpath) {
     return _check(_sc2(SYS_RENAME, (int)oldpath, (int)newpath));
 }
