@@ -8,14 +8,20 @@
  * Mirror: https://github.com/tadryanom/AdrOS
  */
 
-/* AdrOS umount utility — stub (no SYS_UMOUNT syscall yet) */
+/* AdrOS umount utility — unmount filesystems */
 #include <stdio.h>
+#include <string.h>
+#include <sys/mount.h>
+#include <errno.h>
 
 int main(int argc, char** argv) {
     if (argc <= 1) {
         fprintf(stderr, "umount: missing operand\n");
         return 1;
     }
-    fprintf(stderr, "umount: %s: operation not supported\n", argv[1]);
-    return 1;
+    if (umount(argv[1]) < 0) {
+        fprintf(stderr, "umount: %s: %s\n", argv[1], strerror(errno));
+        return 1;
+    }
+    return 0;
 }
