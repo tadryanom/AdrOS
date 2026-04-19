@@ -14,6 +14,8 @@
 #include "console.h"
 #include "errno.h"
 #include "lz4.h"
+#include "pmm.h"
+#include "vmm.h"
 
 #define TAR_BLOCK 512
 
@@ -47,7 +49,39 @@ typedef struct {
     int next_sibling;
 } initrd_entry_t;
 
+/* Virtual address base for initrd decompression buffer.
+ * Placed above the kernel heap (0xD0000000 + 8MB = 0xD0800000)
+ * to avoid collisions. Pages are allocated via pmm_alloc_page()
+ * and mapped one-by-one, bypassing the buddy heap allocator. */
+#define INITRD_DECOMP_BASE 0xD0800000U
+
 static uint32_t initrd_location_base = 0;
+
+/* Allocate a contiguous virtual region of `size` bytes backed by
+ * individual physical pages.  Returns the virtual address, or NULL
+ * on OOM.  Pages are zeroed. */
+static uint8_t* initrd_alloc_pages(uint32_t size) {
+    uint32_t npages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+    uintptr_t va = INITRD_DECOMP_BASE;
+    for (uint32_t i = 0; i < npages; i++) {
+        void* phys = pmm_alloc_page();
+        if (!phys) {
+            /* Rollback: unmap + free pages already mapped */
+            for (uint32_t j = 0; j < i; j++) {
+                uintptr_t page_va = INITRD_DECOMP_BASE + (uintptr_t)j * PAGE_SIZE;
+                uintptr_t p = vmm_virt_to_phys(page_va);
+                vmm_unmap_page(page_va);
+                if (p) pmm_free_blocks((void*)p, 1);
+            }
+            return NULL;
+        }
+        memset(phys, 0, PAGE_SIZE);
+        vmm_map_page((uint64_t)(uintptr_t)phys, (uint64_t)va,
+                     VMM_FLAG_PRESENT | VMM_FLAG_RW);
+        va += PAGE_SIZE;
+    }
+    return (uint8_t*)INITRD_DECOMP_BASE;
+}
 
 static initrd_entry_t* entries = NULL;
 static fs_node_t* nodes = NULL;
@@ -303,7 +337,7 @@ fs_node_t* initrd_init(uint32_t location, uint32_t size) {
             orig_sz = 4U * 1024U * 1024U;
         }
 
-        decomp_buf = (uint8_t*)kmalloc(orig_sz);
+        decomp_buf = initrd_alloc_pages(orig_sz);
         if (!decomp_buf) {
             kprintf("[INITRD] OOM decompressing LZ4 (%u bytes)\n", orig_sz);
             return NULL;
@@ -312,7 +346,6 @@ fs_node_t* initrd_init(uint32_t location, uint32_t size) {
         int ret = lz4_decompress_frame(raw, size, decomp_buf, orig_sz);
         if (ret < 0) {
             kprintf("[INITRD] LZ4 Frame decompress failed (ret=%d)\n", ret);
-            kfree(decomp_buf);
             return NULL;
         }
 
@@ -325,7 +358,7 @@ fs_node_t* initrd_init(uint32_t location, uint32_t size) {
         uint32_t comp_sz = (uint32_t)raw[8]  | ((uint32_t)raw[9]  << 8) |
                            ((uint32_t)raw[10] << 16) | ((uint32_t)raw[11] << 24);
 
-        decomp_buf = (uint8_t*)kmalloc(orig_sz);
+        decomp_buf = initrd_alloc_pages(orig_sz);
         if (!decomp_buf) {
             kprintf("[INITRD] OOM decompressing LZ4 (%u bytes)\n", orig_sz);
             return NULL;
@@ -336,7 +369,6 @@ fs_node_t* initrd_init(uint32_t location, uint32_t size) {
         if (ret < 0 || (uint32_t)ret != orig_sz) {
             kprintf("[INITRD] LZ4 decompress failed (ret=%d, expected=%u)\n",
                     ret, orig_sz);
-            kfree(decomp_buf);
             return NULL;
         }
 
@@ -350,7 +382,7 @@ fs_node_t* initrd_init(uint32_t location, uint32_t size) {
     entry_count = 0;
 
     int root = entry_alloc();
-    if (root < 0) { kfree(decomp_buf); return NULL; }
+    if (root < 0) return NULL;
     strcpy(entries[root].name, "");
     entries[root].flags = FS_DIRECTORY;
     entries[root].data_offset = 0;
