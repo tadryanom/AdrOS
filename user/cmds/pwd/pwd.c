@@ -13,7 +13,7 @@
 
 int main(void) {
     char buf[256];
-    if (getcwd(buf, sizeof(buf)) >= 0)
+    if (getcwd(buf, sizeof(buf)))
         printf("%s\n", buf);
     else {
         fprintf(stderr, "pwd: error\n");
