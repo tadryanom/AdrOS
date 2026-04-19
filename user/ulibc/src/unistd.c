@@ -13,6 +13,9 @@
 #include "errno.h"
 #include "termios.h"
 #include "stdlib.h"
+#include "sys/select.h"
+#include "sys/time.h"
+#include "signal.h"
 
 int read(int fd, void* buf, size_t count) {
     return __syscall_ret(_syscall3(SYS_READ, fd, (int)buf, (int)count));
@@ -180,11 +183,11 @@ unsigned int alarm(unsigned int seconds) {
     return (unsigned int)_syscall1(SYS_ALARM, (int)seconds);
 }
 
-int setitimer(int which, const void* new_value, void* old_value) {
+int setitimer(int which, const struct itimerval* new_value, struct itimerval* old_value) {
     return __syscall_ret(_syscall3(SYS_SETITIMER, which, (int)new_value, (int)old_value));
 }
 
-int getitimer(int which, void* curr_value) {
+int getitimer(int which, struct itimerval* curr_value) {
     return __syscall_ret(_syscall2(SYS_GETITIMER, which, (int)curr_value));
 }
 
@@ -312,4 +315,74 @@ void* sbrk(int increment) {
     void* result = brk(new_end);
     if ((unsigned int)result < (unsigned int)new_end) return (void*)-1;
     return cur;
+}
+
+int select(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds,
+           struct timeval* timeout) {
+    return __syscall_ret(_syscall5(SYS_SELECT, nfds, (int)readfds, (int)writefds,
+                                   (int)exceptfds, (int)timeout));
+}
+
+int fcntl(int fd, int cmd, ...) {
+    __builtin_va_list ap;
+    __builtin_va_start(ap, cmd);
+    int arg = __builtin_va_arg(ap, int);
+    __builtin_va_end(ap);
+    return __syscall_ret(_syscall3(SYS_FCNTL, fd, cmd, arg));
+}
+
+int rename(const char* oldpath, const char* newpath) {
+    return __syscall_ret(_syscall2(SYS_RENAME, (int)oldpath, (int)newpath));
+}
+
+int umask(int mask) {
+    return _syscall1(SYS_UMASK, mask);
+}
+
+int dup3(int oldfd, int newfd, int flags) {
+    return __syscall_ret(_syscall3(SYS_DUP3, oldfd, newfd, flags));
+}
+
+int openat(int dirfd, const char* path, int flags, ...) {
+    return __syscall_ret(_syscall3(SYS_OPENAT, dirfd, (int)path, flags));
+}
+
+int fstatat(int dirfd, const char* path, void* buf, int flags) {
+    return __syscall_ret(_syscall4(SYS_FSTATAT, dirfd, (int)path, (int)buf, flags));
+}
+
+int unlinkat(int dirfd, const char* path, int flags) {
+    return __syscall_ret(_syscall3(SYS_UNLINKAT, dirfd, (int)path, flags));
+}
+
+int mount(const char* source, const char* target, const char* fs_type, unsigned long flags, const void* data) {
+    return __syscall_ret(_syscall5(SYS_MOUNT, (int)source, (int)target, (int)fs_type, (int)flags, (int)data));
+}
+
+int umount2(const char* target, int flags) {
+    return __syscall_ret(_syscall2(SYS_UMOUNT2, (int)target, flags));
+}
+
+int umount(const char* target) {
+    return umount2(target, 0);
+}
+
+int wait4(int pid, int* status, int options, void* rusage) {
+    return __syscall_ret(_syscall4(SYS_WAIT4, pid, (int)status, options, (int)rusage));
+}
+
+int waitid(int idtype, int id, void* info, int options) {
+    return __syscall_ret(_syscall4(SYS_WAITID, idtype, id, (int)info, options));
+}
+
+int sigreturn(void) {
+    return _syscall0(SYS_SIGRETURN);
+}
+
+int sigqueue(int pid, int sig, const union sigval value) {
+    return __syscall_ret(_syscall3(SYS_SIGQUEUE, pid, sig, (int)value.sival_int));
+}
+
+int set_thread_area(void* desc) {
+    return __syscall_ret(_syscall1(SYS_SET_THREAD_AREA, (int)desc));
 }

@@ -13,6 +13,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <signal.h>
 
 #define SEEK_SET 0
 #define SEEK_CUR 1
@@ -64,6 +65,7 @@ unsigned int alarm(unsigned int seconds);
 #define LOCK_UN 8
 #define LOCK_NB 4
 int     flock(int fd, int operation);
+int     umask(int mask);
 int     isatty(int fd);
 void*   brk(void* addr);
 
@@ -113,6 +115,18 @@ char*   ttyname(int fd);
 int     pipe2(int fds[2], int flags);
 int     execle(const char* path, const char* arg, ...);
 int     execveat(int dirfd, const char* path, char* const argv[], char* const envp[], int flags);
+int     dup3(int oldfd, int newfd, int flags);
+int     openat(int dirfd, const char* path, int flags, ...);
+int     fstatat(int dirfd, const char* path, void* buf, int flags);
+int     unlinkat(int dirfd, const char* path, int flags);
+int     mount(const char* source, const char* target, const char* fs_type, unsigned long flags, const void* data);
+int     umount2(const char* target, int flags);
+int     umount(const char* target);
+int     wait4(int pid, int* status, int options, void* rusage);
+int     waitid(int idtype, int id, void* info, int options);
+int     sigreturn(void);
+int     sigqueue(int pid, int sig, const union sigval value);
+int     set_thread_area(void* desc);
 char*   getlogin(void);
 int     getlogin_r(char* buf, size_t bufsize);
 int     tcgetpgrp(int fd);

@@ -197,11 +197,6 @@ int remove(const char* path) {
     return unlink(path);
 }
 
-int rename(const char* oldpath, const char* newpath) {
-    (void)oldpath; (void)newpath;
-    return -1;
-}
-
 int setvbuf(FILE* fp, char* buf, int mode, size_t size) {
     (void)buf; (void)size; /* we use internal buffer only */
     if (!fp) return -1;
