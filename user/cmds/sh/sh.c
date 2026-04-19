@@ -657,7 +657,7 @@ static void run_simple(char* cmd) {
             fprintf(stderr, "cd: %s: No such file or directory\n", dir);
         else {
             char cwd[256];
-            if (getcwd(cwd, sizeof(cwd)) >= 0)
+            if (getcwd(cwd, sizeof(cwd)))
                 var_set("PWD", cwd, 1);
         }
         goto restore_redir;
@@ -665,7 +665,7 @@ static void run_simple(char* cmd) {
 
     if (strcmp(argv[0], "pwd") == 0) {
         char cwd[256];
-        if (getcwd(cwd, sizeof(cwd)) >= 0)
+        if (getcwd(cwd, sizeof(cwd)))
             printf("%s\n", cwd);
         else
             fprintf(stderr, "pwd: error\n");
@@ -980,7 +980,7 @@ static void print_prompt(void) {
     if (!user) user = "root";
     if (!host) host = "adros";
 
-    if (getcwd(cwd, sizeof(cwd)) < 0) strcpy(cwd, "?");
+    if (!getcwd(cwd, sizeof(cwd))) strcpy(cwd, "?");
 
     printf("%s@%s:%s$ ", user, host, cwd);
     fflush(stdout);

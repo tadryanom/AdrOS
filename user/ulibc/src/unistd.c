@@ -70,8 +70,10 @@ int chdir(const char* path) {
     return __syscall_ret(_syscall1(SYS_CHDIR, (int)path));
 }
 
-int getcwd(char* buf, size_t size) {
-    return __syscall_ret(_syscall2(SYS_GETCWD, (int)buf, (int)size));
+char* getcwd(char* buf, size_t size) {
+    int r = _syscall2(SYS_GETCWD, (int)buf, (int)size);
+    if (r < 0) { errno = -r; return NULL; }
+    return buf;
 }
 
 int mkdir(const char* path, ...) {

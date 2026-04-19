@@ -35,7 +35,7 @@ int     execve(const char* path, char* const argv[], char* const envp[]);
 int     getpid(void);
 int     getppid(void);
 int     chdir(const char* path);
-int     getcwd(char* buf, size_t size);
+char*   getcwd(char* buf, size_t size);
 int     mkdir(const char* path, ...);  /* mode_t optional in AdrOS */
 int     unlink(const char* path);
 int     rmdir(const char* path);

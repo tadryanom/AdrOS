@@ -177,7 +177,7 @@ char* realpath(const char* path, char* resolved) {
     int tpos = 0;
 
     if (path[0] != '/') {
-        if (getcwd(tmp, sizeof(tmp)) < 0) return (void*)0;
+        if (!getcwd(tmp, sizeof(tmp))) return (void*)0;
         tpos = (int)strlen(tmp);
         if (tpos > 0 && tmp[tpos - 1] != '/') tmp[tpos++] = '/';
     }
