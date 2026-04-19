@@ -163,8 +163,12 @@ int mkdir(const char *path, mode_t mode) {
 }
 
 int isatty(int fd) {
-    /* Use ioctl TIOCGPGRP (0x540F) — if it succeeds, fd is a tty */
-    int r = _sc3(SYS_IOCTL, fd, 0x540F, 0);
+    /* Use ioctl TCGETS (0x5401) — if it succeeds, fd is a tty.
+     * TCGETS is the standard test: it succeeds on any terminal device
+     * regardless of process group state. TIOCGPGRP was unreliable because
+     * it requires a valid output pointer and a foreground pgrp to be set. */
+    struct { uint32_t a, b, c, d; uint8_t e[8]; } t;
+    int r = _sc3(SYS_IOCTL, fd, 0x5401, (int)&t);
     if (r < 0) {
         errno = ENOTTY;
         return 0;

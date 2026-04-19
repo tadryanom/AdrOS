@@ -432,7 +432,8 @@ int cfsetospeed(struct termios *t, speed_t speed) { (void)t; (void)speed; return
 
 char *ttyname(int fd) {
     /* Minimal: check if fd is a tty, return generic name */
-    int r = _sc3(SYS_IOCTL, fd, TTY_TIOCGPGRP, 0);
+    struct { uint32_t a, b, c, d; uint8_t e[8]; } t;
+    int r = _sc3(SYS_IOCTL, fd, TTY_TCGETS, (int)&t);
     if (r < 0) { errno = ENOTTY; return 0; }
     return "/dev/tty";
 }
