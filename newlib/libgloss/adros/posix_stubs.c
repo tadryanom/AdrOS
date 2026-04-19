@@ -177,8 +177,19 @@ int chdir(const char *path) {
 }
 
 char *getcwd(char *buf, size_t size) {
+    int allocated = 0;
+    if (!buf) {
+        if (size == 0) size = 4096;
+        buf = (char *)malloc(size);
+        if (!buf) { errno = ENOMEM; return 0; }
+        allocated = 1;
+    }
     int r = _sc2(SYS_GETCWD, (int)buf, (int)size);
-    if (r < 0) { errno = -r; return 0; }
+    if (r < 0) {
+        errno = -r;
+        if (allocated) free(buf);
+        return 0;
+    }
     return buf;
 }
 

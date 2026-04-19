@@ -12,6 +12,7 @@
 #include "syscall.h"
 #include "errno.h"
 #include "termios.h"
+#include "stdlib.h"
 
 int read(int fd, void* buf, size_t count) {
     return __syscall_ret(_syscall3(SYS_READ, fd, (int)buf, (int)count));
@@ -71,8 +72,19 @@ int chdir(const char* path) {
 }
 
 char* getcwd(char* buf, size_t size) {
+    int allocated = 0;
+    if (!buf) {
+        if (size == 0) size = 4096;
+        buf = (char*)malloc(size);
+        if (!buf) { errno = ENOMEM; return NULL; }
+        allocated = 1;
+    }
     int r = _syscall2(SYS_GETCWD, (int)buf, (int)size);
-    if (r < 0) { errno = -r; return NULL; }
+    if (r < 0) {
+        errno = -r;
+        if (allocated) free(buf);
+        return NULL;
+    }
     return buf;
 }
 
