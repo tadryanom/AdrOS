@@ -520,6 +520,7 @@ static const struct inode_operations fat_dir_iops = {
 static void fat_close_impl(fs_node_t* node) {
     if (!node) return;
     struct fat_node* fn = (struct fat_node*)node;
+    if (fn == &g_fat_root) return;
     kfree(fn);
 }
 

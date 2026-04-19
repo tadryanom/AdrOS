@@ -570,6 +570,7 @@ static const struct inode_operations ext2_dir_iops = {
 static void ext2_close_impl(fs_node_t* node) {
     if (!node) return;
     struct ext2_node* en = (struct ext2_node*)node;
+    if (en == &g_ext2_root) return;
     kfree(en);
 }
 
