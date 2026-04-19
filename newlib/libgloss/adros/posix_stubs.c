@@ -452,8 +452,21 @@ int ioctl(int fd, unsigned long request, ...) {
 
 int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
            struct timeval *timeout) {
+    /* Kernel expects int32_t timeout: -1 = infinite, 0 = poll, >0 = ticks.
+     * TIMER_HZ = 100, so 1 tick = 10 ms. */
+    int32_t tmo = -1;  /* default: infinite wait */
+    if (timeout) {
+        if (timeout->tv_sec == 0 && timeout->tv_usec == 0) {
+            tmo = 0;  /* poll only */
+        } else {
+            uint32_t ms = (uint32_t)timeout->tv_sec * 1000
+                        + (uint32_t)timeout->tv_usec / 1000;
+            tmo = (int32_t)(ms / 10);  /* ms → ticks (10 ms/tick) */
+            if (tmo < 1) tmo = 1;
+        }
+    }
     return _check(_sc5(SYS_SELECT, nfds, (int)readfds, (int)writefds,
-                       (int)exceptfds, (int)timeout));
+                       (int)exceptfds, (int)tmo));
 }
 
 int pselect(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
