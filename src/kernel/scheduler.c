@@ -655,6 +655,16 @@ struct process* process_fork_create(uintptr_t child_as, const void* child_regs) 
         arch_fpu_init_state(proc->fpu_state);
     }
 
+    /* POSIX: fork inherits signal handlers and blocked/pending masks.
+     * Pending signals are cleared in the child (POSIX spec). */
+    if (current_process) {
+        for (int i = 0; i < PROCESS_MAX_SIG; i++) {
+            proc->sigactions[i] = current_process->sigactions[i];
+        }
+        proc->sig_blocked_mask = current_process->sig_blocked_mask;
+        /* sig_pending_mask stays 0 (memset) — POSIX: pending signals are not inherited */
+    }
+
     /* Copy parent's file descriptors under sched_lock so the child
      * cannot be scheduled before its FD table is fully populated.
      * Refcounts are bumped atomically for each shared struct file. */

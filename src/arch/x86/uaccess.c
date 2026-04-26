@@ -10,6 +10,7 @@
 
 #include "uaccess.h"
 
+#include "console.h"
 #include "errno.h"
 #include "interrupts.h"
 #include "hal/mm.h"
@@ -71,8 +72,13 @@ static int x86_user_page_writable_user(uintptr_t vaddr) {
     uint64_t pte = pt[ti];
     if (!(pte & 0x1)) return 0;
     if (!(pte & 0x4)) return 0;
-    if (!(pte & 0x2)) return 0;
-    return 1;
+    /* Page is writable if RW bit is set, OR if it's a COW page
+     * (present + user + COW flag but not RW).  COW pages are
+     * logically writable — a write will trigger a page fault that
+     * resolves the copy-on-write, after which the page is RW. */
+    if ((pte & 0x2)) return 1;
+    if ((pte & 0x200)) return 1;  /* X86_PTE_COW */
+    return 0;
 }
 
 static int x86_user_page_present_and_user(uintptr_t vaddr) {

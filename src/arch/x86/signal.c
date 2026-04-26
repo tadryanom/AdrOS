@@ -30,8 +30,9 @@ int arch_sigreturn(void* opaque, const void* user_frame)
     struct sigframe f;
     if (copy_from_user(&f, user_frame, sizeof(f)) < 0)
         return -EFAULT;
-    if (f.magic != SIGFRAME_MAGIC)
+    if (f.magic != SIGFRAME_MAGIC) {
         return -EINVAL;
+    }
 
     if ((f.saved.cs & 3U) != 3U) return -EPERM;
     if ((f.saved.ss & 3U) != 3U) return -EPERM;

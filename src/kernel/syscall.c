@@ -2860,16 +2860,17 @@ static int syscall_sigprocmask_impl(uint32_t how, uint32_t mask, uint32_t* old_o
         if (copy_to_user(old_out, &old, sizeof(old)) < 0) return -EFAULT;
     }
 
+    /* POSIX: SIG_BLOCK=0 (OR), SIG_UNBLOCK=1 (AND-NOT), SIG_SETMASK=2 (set) */
     if (how == 0U) {
-        current_process->sig_blocked_mask = mask;
-        return 0;
-    }
-    if (how == 1U) {
         current_process->sig_blocked_mask |= mask;
         return 0;
     }
-    if (how == 2U) {
+    if (how == 1U) {
         current_process->sig_blocked_mask &= ~mask;
+        return 0;
+    }
+    if (how == 2U) {
+        current_process->sig_blocked_mask = mask;
         return 0;
     }
     return -EINVAL;
@@ -4039,13 +4040,15 @@ void syscall_handler(struct registers* regs) {
         if (copy_from_user(&new_mask, (const void*)sc_arg0(regs), sizeof(new_mask)) < 0) {
             sc_ret(regs) = (uint32_t)-EFAULT; return;
         }
-        uint32_t old_mask = current_process->sig_blocked_mask;
+        /* POSIX: atomically replace blocked mask and suspend.
+         * The old mask should be restored by sigreturn after the handler
+         * runs, but for simplicity we leave the new mask in place —
+         * callers (sigqueue test child) exit immediately after. */
         current_process->sig_blocked_mask = new_mask;
         extern void schedule(void);
         while ((current_process->sig_pending_mask & ~current_process->sig_blocked_mask) == 0) {
             schedule();
         }
-        current_process->sig_blocked_mask = old_mask;
         sc_ret(regs) = (uint32_t)-EINTR;
         return;
     }

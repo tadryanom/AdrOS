@@ -488,6 +488,11 @@ void isr_handler(struct registers* regs) {
                 }
 
                 // Kernel-mode page faults during copy_{to,from}_user should not panic.
+                // First, try to resolve COW faults — the page becomes writable
+                // and the faulting instruction can be retried.
+                if ((regs->err_code & 0x2) && vmm_handle_cow_fault((uintptr_t)cr2)) {
+                    return;  // CoW resolved, retry the faulting instruction.
+                }
                 if (uaccess_try_recover((uintptr_t)cr2, regs)) {
                     return;
                 }
