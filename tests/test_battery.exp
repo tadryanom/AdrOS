@@ -166,6 +166,12 @@ set patterns {
     {"named semaphore"       "\\[test\\] named semaphore OK"}
     {"getrusage"             "\\[test\\] getrusage OK"}
     {"mount/umount2"         "\\[test\\] mount/umount2 OK"}
+    {"sigqueue"              "\\[test\\] sigqueue OK"}
+    {"clone"                 "\\[test\\] clone OK"}
+    {"inotify_init1"         "\\[test\\] inotify_init1 OK"}
+    {"dlopen/dlsym/dlclose"  "\\[test\\] dlopen/dlsym/dlclose OK"}
+    {"execveat"              "\\[test\\] execveat OK"}
+    {"pivot_root"            "\\[test\\] pivot_root OK"}
 }
 
 set res [wait_for_patterns $serial_log $timeout_sec $patterns]
