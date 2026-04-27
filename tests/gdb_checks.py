@@ -121,6 +121,52 @@ def run_checks():
     except gdb.error as e:
         c.check("VGA mapping accessible", False, str(e))
 
+    # ---- Process Table ----
+    try:
+        # PID 1 (init/fulltest) should exist and be in RUNNING state
+        proc_ptr = gdb.parse_and_eval("(struct process*)process_table")
+        if proc_ptr:
+            p1_state = c.read_u32(int(proc_ptr) + 0)  # state is first field
+            # State values: RUNNING=1, READY=2, BLOCKED=3, SLEEPING=4, ZOMBIE=5
+            c.check("PID 1 state is RUNNING or READY",
+                    p1_state is not None and (p1_state == 1 or p1_state == 2),
+                    f"state={p1_state}")
+    except gdb.error as e:
+        c.check("Process table accessible", False, str(e))
+
+    # ---- Scheduler State ----
+    try:
+        # active_runqueue bitmap should be non-zero (at least one process ready)
+        rq_bitmap = gdb.parse_and_eval("active_rq.bitmap")
+        bitmap_val = int(rq_bitmap) & 0xFFFFFFFF
+        c.check("Active runqueue bitmap non-zero (processes ready)",
+                bitmap_val != 0,
+                f"bitmap={bitmap_val:#x}")
+    except gdb.error as e:
+        c.check("Scheduler runqueue accessible", False, str(e))
+
+    # ---- Mount Table ----
+    try:
+        # g_mount_count should be > 0 (at least root mounted)
+        mc = gdb.parse_and_eval("g_mount_count")
+        mount_count = int(mc)
+        c.check("Mount count > 0",
+                mount_count > 0,
+                f"mount_count={mount_count}")
+    except gdb.error as e:
+        c.check("Mount table accessible", False, str(e))
+
+    # ---- Frame Reference Counts ----
+    try:
+        # frame_refcount[0] should be > 0 (frame 0 is never freed)
+        ref0 = gdb.parse_and_eval("frame_refcount[0]")
+        ref0_val = int(ref0) & 0xFFFFFFFF
+        c.check("Frame 0 refcount > 0",
+                ref0_val > 0,
+                f"refcount[0]={ref0_val}")
+    except gdb.error as e:
+        c.check("Frame refcounts accessible", False, str(e))
+
     # ---- Summary ----
     total = c.passed + c.failed
     print(f"\n  {c.passed}/{total} passed, {c.failed} failed")
