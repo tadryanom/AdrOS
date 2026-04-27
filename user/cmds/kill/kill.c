@@ -25,6 +25,16 @@ int main(int argc, char** argv) {
 
     if (argv[1][0] == '-') {
         const char* s = argv[1] + 1;
+        if (strcmp(s, "l") == 0) {
+            /* List signal names */
+            printf(" 1) SIGHUP   2) SIGINT   3) SIGQUIT  4) SIGILL   5) SIGTRAP\n");
+            printf(" 6) SIGABRT  7) SIGBUS   8) SIGFPE   9) SIGKILL 10) SIGUSR1\n");
+            printf("11) SIGSEGV 12) SIGUSR2 13) SIGPIPE 14) SIGALRM 15) SIGTERM\n");
+            printf("16) SIGSTKFLT 17) SIGCHLD 18) SIGCONT 19) SIGSTOP 20) SIGTSTP\n");
+            printf("21) SIGTTIN 22) SIGTTOU 23) SIGURG  24) SIGXCPU 25) SIGXFSZ\n");
+            printf("26) SIGVTALRM 27) SIGPROF 28) SIGWINCH 29) SIGIO 30) SIGPWR\n");
+            return 0;
+        }
         if (strcmp(s, "9") == 0 || strcmp(s, "KILL") == 0) sig = 9;
         else if (strcmp(s, "15") == 0 || strcmp(s, "TERM") == 0) sig = 15;
         else if (strcmp(s, "2") == 0 || strcmp(s, "INT") == 0) sig = 2;

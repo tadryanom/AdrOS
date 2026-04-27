@@ -33,6 +33,7 @@
 #include <signal.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
+#include <pwd.h>
 
 static struct termios orig_termios;
 
@@ -80,14 +81,16 @@ static void var_set(const char* name, const char* value, int exported) {
             return;
         }
     }
-    if (nvar < MAX_VARS) {
-        strncpy(vars[nvar].name, name, 63);
-        vars[nvar].name[63] = '\0';
-        strncpy(vars[nvar].value, value, 255);
-        vars[nvar].value[255] = '\0';
-        vars[nvar].exported = exported;
-        nvar++;
+    if (nvar >= MAX_VARS) {
+        fprintf(stderr, "sh: too many variables\n");
+        return;
     }
+    strncpy(vars[nvar].name, name, 63);
+    vars[nvar].name[63] = '\0';
+    strncpy(vars[nvar].value, value, 255);
+    vars[nvar].value[255] = '\0';
+    vars[nvar].exported = exported;
+    nvar++;
 }
 
 static void var_unset(const char* name) {
@@ -453,10 +456,61 @@ static int read_line_edit(void) {
 static void expand_vars(const char* src, char* dst, int maxlen) {
     int di = 0;
     while (*src && di < maxlen - 1) {
-        if (*src == '$') {
+        if (*src == '$' && *(src + 1) == '(') {
+            /* Command substitution $(cmd...) */
+            src += 2;
+            const char* start = src;
+            int depth = 1;
+            while (*src && depth > 0) {
+                if (*src == '(') depth++;
+                else if (*src == ')') { depth--; if (depth == 0) break; }
+                src++;
+            }
+            int cmdlen = (int)(src - start);
+            if (*src == ')') src++;
+            /* Execute command and capture output */
+            if (cmdlen > 0 && cmdlen < 256) {
+                char cmd[258];
+                cmd[0] = '(';  /* wrap in subshell */
+                memcpy(cmd + 1, start, (size_t)cmdlen);
+                cmd[1 + cmdlen] = '\0';
+                int pfd[2];
+                if (pipe(pfd) == 0) {
+                    int pid = fork();
+                    if (pid == 0) {
+                        close(pfd[0]);
+                        dup2(pfd[1], STDOUT_FILENO);
+                        close(pfd[1]);
+                        /* Execute via sh -c */
+                        char* sh_argv[] = { "/bin/sh", "-c", cmd, NULL };
+                        char** envp = build_envp();
+                        execve("/bin/sh", sh_argv, envp);
+                        _exit(127);
+                    }
+                    close(pfd[1]);
+                    char buf[512];
+                    int n;
+                    while ((n = read(pfd[0], buf, sizeof(buf))) > 0) {
+                        for (int i = 0; i < n && di < maxlen - 1; i++) {
+                            if (buf[i] == '\n') continue;  /* strip trailing newlines */
+                            dst[di++] = buf[i];
+                        }
+                    }
+                    close(pfd[0]);
+                    int st;
+                    waitpid(pid, &st, 0);
+                }
+            }
+        } else if (*src == '$') {
             src++;
             if (*src == '?') {
                 di += snprintf(dst + di, (size_t)(maxlen - di), "%d", last_status);
+                src++;
+            } else if (*src == '$') {
+                di += snprintf(dst + di, (size_t)(maxlen - di), "%d", getpid());
+                src++;
+            } else if (*src == '!') {
+                di += snprintf(dst + di, (size_t)(maxlen - di), "%d", 0);
                 src++;
             } else if (*src == '{') {
                 src++;
@@ -487,6 +541,47 @@ static void expand_vars(const char* src, char* dst, int maxlen) {
             }
         } else {
             dst[di++] = *src++;
+        }
+    }
+    dst[di] = '\0';
+}
+
+/* Tilde expansion: ~ -> $HOME, ~user -> user's home */
+static void expand_tilde(char* src, char* dst, int maxlen) {
+    int di = 0;
+    char* p = src;
+    /* Only expand tilde at the start of a word */
+    int word_start = 1;
+    while (*p && di < maxlen - 1) {
+        if (*p == '~' && word_start) {
+            p++;
+            if (*p == '/' || *p == '\0' || *p == ' ' || *p == '\t') {
+                /* ~ alone = $HOME */
+                const char* home = var_get("HOME");
+                if (!home) home = "/";
+                int hl = (int)strlen(home);
+                if (di + hl < maxlen) { memcpy(dst + di, home, (size_t)hl); di += hl; }
+            } else {
+                /* ~user = lookup user's home */
+                char uname[64];
+                int ui = 0;
+                while (*p && *p != '/' && *p != ' ' && *p != '\t' && ui < 63)
+                    uname[ui++] = *p++;
+                uname[ui] = '\0';
+                struct passwd* pw = getpwnam(uname);
+                if (pw) {
+                    int hl = (int)strlen(pw->pw_dir);
+                    if (di + hl < maxlen) { memcpy(dst + di, pw->pw_dir, (size_t)hl); di += hl; }
+                } else {
+                    /* Unknown user, keep ~user literal */
+                    dst[di++] = '~';
+                    if (di + ui < maxlen) { memcpy(dst + di, uname, (size_t)ui); di += ui; }
+                }
+            }
+        } else {
+            dst[di++] = *p;
+            word_start = (*p == ' ' || *p == '\t' || *p == '=');
+            p++;
         }
     }
     dst[di] = '\0';
@@ -565,9 +660,12 @@ static void run_simple(char* cmd) {
     /* Expand variables */
     char expanded[LINE_MAX];
     expand_vars(cmd, expanded, LINE_MAX);
+    /* Expand tildes */
+    char texpanded[LINE_MAX];
+    expand_tilde(expanded, texpanded, LINE_MAX);
 
     char* argv[MAX_ARGS];
-    int argc = parse_args(expanded, argv, MAX_ARGS);
+    int argc = parse_args(texpanded, argv, MAX_ARGS);
     if (argc == 0) return;
 
     /* Check for variable assignment (no command, just VAR=value) */

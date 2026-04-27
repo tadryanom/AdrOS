@@ -51,6 +51,10 @@ struct inittab_entry {
 static struct inittab_entry entries[MAX_ENTRIES];
 static int nentries = 0;
 static int current_runlevel = 3;  /* Default: multi-user */
+static volatile int do_shutdown = 0;   /* 1=poweroff, 2=reboot */
+
+static void sigusr1_handler(int sig) { (void)sig; do_shutdown = 1; }
+static void sigusr2_handler(int sig) { (void)sig; do_shutdown = 2; }
 
 static enum action parse_action(const char* s) {
     if (strcmp(s, "sysinit") == 0) return ACT_SYSINIT;
@@ -271,6 +275,12 @@ int main(int argc, char** argv) {
     sigaction(SIGINT, &sa, NULL);
     sigaction(SIGTERM, &sa, NULL);
 
+    /* SIGUSR1 = poweroff, SIGUSR2 = reboot */
+    sa.sa_handler = (uintptr_t)sigusr1_handler;
+    sigaction(SIGUSR1, &sa, NULL);
+    sa.sa_handler = (uintptr_t)sigusr2_handler;
+    sigaction(SIGUSR2, &sa, NULL);
+
     printf("AdrOS init starting (PID %d)\n", getpid());
 
     /* Try to parse inittab */
@@ -297,6 +307,25 @@ int main(int argc, char** argv) {
 
     /* Main loop: reap children and respawn */
     while (1) {
+        if (do_shutdown) {
+            printf("init: shutting down (%s)\n",
+                   do_shutdown == 1 ? "poweroff" : "reboot");
+            run_action(ACT_SHUTDOWN, 1);
+            /* Kill all processes */
+            kill(-1, SIGTERM);
+            struct timespec ts = {2, 0};
+            nanosleep(&ts, NULL);
+            kill(-1, SIGKILL);
+            if (do_shutdown == 1) {
+                printf("init: System halted\n");
+                _exit(0);
+            } else {
+                printf("init: Rebooting...\n");
+                /* Attempt reboot via triple-fork or just exit */
+                _exit(0);
+            }
+        }
+
         int st;
         int pid = waitpid(-1, &st, 0);
 

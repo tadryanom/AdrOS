@@ -16,9 +16,13 @@
 #include <fcntl.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <pwd.h>
+#include <grp.h>
+#include <time.h>
 
 static int aflag = 0;   /* -a: show hidden files */
 static int lflag = 0;   /* -l: long format */
+static int nflag = 0;   /* -n: numeric UID/GID */
 
 #define LS_MAX_ENTRIES 512
 
@@ -32,6 +36,20 @@ static struct ls_entry entries[LS_MAX_ENTRIES];
 static int cmp_entry(const void* a, const void* b) {
     return strcmp(((const struct ls_entry*)a)->name,
                   ((const struct ls_entry*)b)->name);
+}
+
+static void uid_to_name(unsigned uid, char* buf, size_t bufsz) {
+    if (nflag) { snprintf(buf, bufsz, "%u", uid); return; }
+    struct passwd* pw = getpwuid((int)uid);
+    if (pw) { snprintf(buf, bufsz, "%s", pw->pw_name); }
+    else    { snprintf(buf, bufsz, "%u", uid); }
+}
+
+static void gid_to_name(unsigned gid, char* buf, size_t bufsz) {
+    if (nflag) { snprintf(buf, bufsz, "%u", gid); return; }
+    struct group* gr = getgrgid((int)gid);
+    if (gr) { snprintf(buf, bufsz, "%s", gr->gr_name); }
+    else    { snprintf(buf, bufsz, "%u", gid); }
 }
 
 static void ls_dir(const char* path) {
@@ -106,8 +124,20 @@ static void ls_dir(const char* path) {
             unsigned long sz = have_stat ? (unsigned long)st.st_size : 0;
             unsigned nlink = have_stat ? (unsigned)st.st_nlink : 1;
 
-            printf("%c%s %2u root root %8lu %s\n",
-                   type, perms, nlink, sz, entries[i].name);
+            char owner[32], group[32];
+            uid_to_name(have_stat ? (unsigned)st.st_uid : 0, owner, sizeof(owner));
+            gid_to_name(have_stat ? (unsigned)st.st_gid : 0, group, sizeof(group));
+
+            char timebuf[32];
+            if (have_stat) {
+                time_t mtime = (time_t)st.st_mtime;
+                strftime(timebuf, sizeof(timebuf), "%b %d %H:%M", localtime(&mtime));
+            } else {
+                strcpy(timebuf, "?");
+            }
+
+            printf("%c%s %2u %-8s %-8s %8lu %s %s\n",
+                   type, perms, nlink, owner, group, sz, timebuf, entries[i].name);
         } else {
             printf("%s\n", entries[i].name);
         }
@@ -124,6 +154,7 @@ int main(int argc, char** argv) {
             while (*f) {
                 if (*f == 'a') aflag = 1;
                 else if (*f == 'l') lflag = 1;
+                else if (*f == 'n') nflag = 1;
                 else {
                     fprintf(stderr, "ls: invalid option -- '%c'\n", *f);
                     return 1;
