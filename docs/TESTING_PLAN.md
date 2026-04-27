@@ -6,9 +6,9 @@ All testing layers are **implemented and operational**:
 
 - **Static analysis** (`make check`): cppcheck + sparse + gcc -fanalyzer
 - **QEMU smoke tests** (`make test`): expect-based, 120 checks (file I/O, signals, memory, IPC, devices, procfs, networking, epoll, epollet, inotify, aio, nanosleep, CLOCK_REALTIME/CLOCK_MONOTONIC, /dev/urandom, /proc/cmdline, CoW fork, readv/writev, fsync, truncate, getuid/getgid, chmod, flock, times, gettid, posix_spawn, TSC ns precision, SIGSEGV, gettimeofday, mprotect, getrlimit/setrlimit, uname, LZ4 initrd decomp, lazy PLT, execve, clone, pivot_root, dlopen/dlsym/dlclose, execveat, futex, sigaltstack, socket API, mqueue, semaphores, chown, mount/umount2), 4-CPU SMP, 120s timeout
-- **Test battery** (`make test-battery`): 33 checks across QEMU scenarios — multi-disk ATA, VFS mount, ping, diskfs, clone, socket API, mqueue, semaphores, futex, sigaltstack, chown, mount/umount2
-- **Host unit tests** (`make test-host`): 69 tests — `test_utils.c` (28) + `test_security.c` (19) + `test_host_utils.sh` (22 cross-compiled utility tests)
-- **GDB scripted checks** (`make test-gdb`): heap/PMM/VGA integrity validation
+- **Test battery** (`make test-battery`): 152 checks across QEMU scenarios — 120 smoke patterns + SMP=1 boot (12 checks) + SMP=2 boot (6 checks) + multi-disk ATA (hda+hdb+hdd) + VFS mount + ICMP ping + diskfs ops
+- **Host unit tests** (`make test-host`): 212 tests — `test_utils.c` (63: itoa/atoi, path_normalize, align, tar_parse_octal, mount prefix/normalize, VFS permission, ELF validation) + `test_security.c` (38: user_range_ok, bitmap, eflags, signal mask logic, chmod symbolic parsing) + `test_host_utils.sh` (111 cross-compiled utility tests)
+- **GDB scripted checks** (`make test-gdb`): 10 checks — heap integrity, PMM bitmap sanity, VGA mapping, PID 1 state, scheduler runqueue bitmap, mount count, frame 0 refcount
 - **Full suite** (`make test-all`): runs check + test-host + test
 - **Multi-arch build verification**: `make ARCH=arm`, `make ARCH=riscv`, and `make ARCH=mips` compile and boot on QEMU
 
@@ -84,6 +84,12 @@ Some kernel functions are pure computation with no hardware dependency:
 - `path_normalize_inplace` (critical for security)
 - `align_up`, `align_down`
 - Bitmap operations
+- `tar_parse_octal` (initrd header parsing)
+- `path_is_mountpoint_prefix`, `normalize_mountpoint` (VFS mount logic)
+- `vfs_check_permission` (file permission checks)
+- `elf32_validate` (ELF header validation)
+- Signal mask logic (KILL/STOP always deliverable, sigpending = pending & blocked)
+- `parse_symbolic` (chmod symbolic mode parsing)
 
 These can be compiled and run on the host with `gcc -m32` and a minimal test harness.
 No need for Unity — a simple `assert()` + `main()` is sufficient for a kernel project.
@@ -112,7 +118,7 @@ To run manually: boot AdrOS with `-vga std`, then execute `/bin/doom.elf` from t
 ```makefile
 make check        # cppcheck + sparse + gcc -fanalyzer
 make test         # QEMU + expect automated smoke test (120 checks incl. ICMP ping, epoll, epollet, inotify, aio, CoW fork, flock, posix_spawn, gettimeofday, mprotect, uname, LZ4, lazy PLT, clone, pivot_root, dlopen/dlsym/dlclose, execveat, futex, sigaltstack, socket API, mqueue, semaphores, chown, mount/umount2)
-make test-battery # Full test battery: multi-disk ATA, VFS mount, ping, diskfs, clone, socket API, mqueue, semaphores, futex, sigaltstack, chown, mount/umount2 (33 checks)
+make test-battery # Full test battery: 120 smoke + SMP=1 (12) + SMP=2 (6) + multi-disk ATA + VFS mount + ping + diskfs (152 checks)
 make test-host    # Host-side unit tests for pure functions
 make test-gdb     # QEMU + GDB scripted checks (optional)
 make test-all     # All of the above

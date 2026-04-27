@@ -1,10 +1,10 @@
 # AdrOS — Syscall Test Coverage & POSIX Compliance Analysis
 
-**Date:** 2026-04-26
+**Date:** 2026-04-27
 **Kernel syscalls:** 141 (defined in `include/syscall.h`)
 **Fulltest smoke tests:** 120
-**Test battery checks:** 33
-**Host tests:** 69
+**Test battery checks:** 152
+**Host tests:** 212
 
 ---
 
@@ -255,8 +255,8 @@ These syscalls are implemented and tested, but have known limitations:
 | Syscalls tested by fulltest | 124 (87.9%) |
 | Syscalls without test | 17 (12.1%) |
 | Smoke tests | 120 |
-| Battery checks | 33 |
-| Host tests | 69 |
+| Battery checks | 152 |
+| Host tests | 212 |
 | Test:syscall ratio | ~0.85:1 (not 1:1) |
 | POSIX-mandated features missing | ~55+ |
 | Major missing categories | Threads, TCP loopback, mkfifo/mknod, chroot, getgroups/setgroups, POSIX timers, msync, fchmod, pathconf, socketpair |

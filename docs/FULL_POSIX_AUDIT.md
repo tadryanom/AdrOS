@@ -1,7 +1,7 @@
 # AdrOS — Full POSIX/Unix Compatibility Audit & Porting Analysis
 
 **Date:** 2026-03-14 (updated after Tier 1-5 implementation)
-**Original commit:** 2deaf85 — **Current state reflects commit aa5474a (Tiers 1-5 complete)**
+**Original commit:** 2deaf85 — **Current state reflects commit 0e463dd (Tiers 1-5 complete, tests expanded)**
 
 ---
 

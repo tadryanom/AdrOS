@@ -34,7 +34,7 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **`mmap`/`munmap`** — anonymous mappings, shared memory backing, and file-backed (fd) mappings
 - **SMEP** — Supervisor Mode Execution Prevention enabled in CR4
 - **SMAP** — Supervisor Mode Access Prevention enabled in CR4 (bit 21)
-- **W^X** — user `.text` segments marked read-only after ELF load; NX on data segments
+- **W^X** — user `.text` segments mapped RW for load + relocations, then re-protected to RO+X after `elf32_reprotect_segments()`; NX on data segments; boundary pages shared between .text/.data stay writable
 - **Guard pages** — 32KB user stack with unmapped guard page below (triggers SIGSEGV on overflow); kernel stacks use dedicated guard-paged region at `0xC8000000`
 - **ASLR** — TSC-seeded xorshift32 PRNG randomizes user stack base by up to 1MB per `execve`
 - **vDSO** — kernel-updated shared page mapped read-only into every user process at `0x007FE000`
@@ -163,11 +163,11 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **PMM spinlock** for SMP safety
 
 ### Testing
-- **69 host-side tests** — `test_utils.c` (28) + `test_security.c` (19) + `test_host_utils.sh` (22 cross-compiled utility tests)
+- **212 host-side tests** — `test_utils.c` (63: itoa/atoi, path_normalize, align, tar_parse_octal, mount prefix/normalize, VFS permission, ELF validation) + `test_security.c` (38: user_range_ok, bitmap, eflags, signal mask logic, chmod symbolic parsing) + `test_host_utils.sh` (111 cross-compiled utility tests)
 - **120 QEMU smoke tests** — 4-CPU expect-based (file I/O, signals, memory mgmt, IPC, devices, procfs, networking, epoll, epollet, inotify, aio, nanosleep, CoW fork, readv/writev, fsync, flock, posix_spawn, TSC precision, gettimeofday, mprotect, getrlimit/setrlimit, uname, LZ4, lazy PLT, execve, clone, pivot_root, dlopen/dlsym/dlclose, execveat, futex, sigaltstack, socket API, mqueue, semaphores, chown, mount/umount2)
-- **33-check test battery** — multi-disk ATA (hda+hdb+hdd), VFS mount, ping, diskfs ops, clone, socket API, mqueue, semaphores, futex, sigaltstack, chown, mount/umount2 (`make test-battery`)
+- **152-check test battery** — 120 smoke patterns + SMP=1 boot (12) + SMP=2 boot (6) + multi-disk ATA (hda+hdb+hdd) + VFS mount + ping + diskfs ops (`make test-battery`)
+- **10 GDB scripted checks** — heap/PMM/VGA integrity, PID 1 state, scheduler bitmap, mount count, frame refcount
 - **Static analysis** — cppcheck, sparse, gcc -fanalyzer
-- **GDB scripted checks** — heap/PMM/VGA integrity
 - `make test-all` runs everything
 
 ## Running
@@ -204,7 +204,7 @@ QEMU debug helpers:
 
 See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for a detailed checklist.
 
-**All 31 planned POSIX tasks are complete**, plus 60 additional features (91 total). The kernel has **141 syscalls** with **124 tested** (87.9% coverage) by the 120 smoke tests. The kernel covers **~98%** of the core POSIX interfaces needed for a practical Unix-like system. All 120 smoke tests, 33 battery checks, and 69 host tests pass clean. ARM64, RISC-V 64, and MIPS32 boot on QEMU.
+**All 31 planned POSIX tasks are complete**, plus 60 additional features (91 total). The kernel has **141 syscalls** with **124 tested** (87.9% coverage) by the 120 smoke tests. The kernel covers **~98%** of the core POSIX interfaces needed for a practical Unix-like system. All 120 smoke tests, 152 battery checks, and 212 host tests pass clean. ARM64, RISC-V 64, and MIPS32 boot on QEMU.
 
 Rump Kernel integration is in progress — prerequisites (condition variables, TSC nanosecond clock, IRQ chaining) are implemented and the `rumpuser` hypercall scaffold is in place.
 
@@ -216,8 +216,8 @@ Rump Kernel integration is in progress — prerequisites (condition variables, T
 | Syscalls tested by fulltest | 124 (87.9%) |
 | Syscalls without test | 17 (12.1%) |
 | Smoke tests | 120 |
-| Battery checks | 33 |
-| Host tests | 69 |
+| Battery checks | 152 |
+| Host tests | 212 |
 
 **17 untested syscalls:** `shmctl`, `set_thread_area` (indirect via clone), `accept`, `connect`, `send`, `recv`, `sendto`, `recvfrom`, `fdatasync`, `getaddrinfo`, `sendmsg`, `recvmsg`, `aio_suspend`, `setsockopt`, `getsockopt`, `getpeername`, `wait4`
 
@@ -248,7 +248,7 @@ For **100% POSIX compliance**, the following categories are still missing:
 - `user/` — Userland programs (52 commands: `init.c`, `sh.c`, `cat.c`, `ls.c`, `echo.c`, `cp.c`, `mv.c`, `grep.c`, `sed.c`, `awk.c`, `find.c`, `which.c`, `ps.c`, `top.c`, `kill.c`, `mount.c`, etc. + `ldso.c`, `fulltest.c`, `pie_main.c`)
 - `user/doom/` — DOOM port (doomgeneric engine + AdrOS platform adapter)
 - `user/ulibc/` — Minimal C library (`printf`, `malloc`, `string.h`, `errno.h`, `pthread.h`, `signal.h`, `stdio.h`, `stdlib.h`, `ctype.h`, `math.h`, `sys/mman.h`, `sys/ioctl.h`, `sys/uio.h`, `time.h`, `linux/futex.h`)
-- `tests/` — Host unit tests, smoke tests, GDB scripted checks
+- `tests/` — Host unit tests (212: utils 63 + security 38 + utilities 111), smoke tests (120), battery tests (152), GDB scripted checks (10), serial input test
 - `tools/` — Build tools (`mkinitrd` — produces USTAR archives with LZ4 Frame compression)
 - `docs/` — Documentation (POSIX roadmap, audit report, supplementary analysis, testing plan)
 - `third_party/lwip/` — lwIP TCP/IP stack (vendored)

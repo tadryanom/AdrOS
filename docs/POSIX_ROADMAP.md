@@ -296,6 +296,9 @@ Notes:
 |---------|--------|-------|
 | ELF32 loader | [x] | Secure with W^X + ASLR; supports `ET_EXEC` + `ET_DYN` + `PT_INTERP` |
 | `/sbin/fulltest` (smoke tests) | [x] | Comprehensive test suite (120 checks: file I/O, signals, memory, IPC, devices, procfs, networking, epoll, epollet, inotify, aio, nanosleep, CoW fork, readv/writev, fsync, flock, posix_spawn, TSC precision, gettimeofday, mprotect, getrlimit/setrlimit, uname, LZ4, lazy PLT, execve, clone, pivot_root, dlopen/dlsym/dlclose, execveat, futex, sigaltstack, socket API, mqueue, semaphores, chown, mount/umount2) |
+| Host unit tests | [x] | 212 tests: `test_utils.c` (63: itoa/atoi, path_normalize, align, tar_parse_octal, mount prefix/normalize, VFS permission, ELF validation) + `test_security.c` (38: user_range_ok, bitmap, eflags, signal mask, chmod symbolic) + `test_host_utils.sh` (111 utility tests) |
+| Test battery | [x] | 152 checks: 120 smoke patterns + SMP=1 boot (12) + SMP=2 boot (6) + multi-disk ATA + VFS mount + ping + diskfs |
+| GDB scripted checks | [x] | 10 checks: heap/PMM/VGA integrity, PID 1 state, scheduler bitmap, mount count, frame refcount |
 | `/bin/echo` | [x] | argv/envp test |
 | `/bin/sh` | [x] | POSIX sh-compatible shell; builtins, pipes, redirects, `$PATH` search |
 | `/bin/cat` | [x] | |
@@ -442,7 +445,7 @@ Notes:
 85. ~~MIPS32 bring-up (QEMU Malta boot + UART)~~ ✅
 86. ~~SysV `/sbin/init` (inittab, runlevels, respawn)~~ ✅
 87. ~~50+ userland POSIX utilities (cp, mv, sed, awk, grep, find, etc.)~~ ✅
-88. ~~Host utility test harness (68 cross-platform tests)~~ ✅
+88. ~~Host utility test harness (111 cross-platform tests)~~ ✅
 89. ~~Native toolchain (GCC 13.2 + Binutils 2.42, Canadian cross for i686-adros)~~ ✅
 90. ~~`mount` syscall — runtime filesystem mounting~~ ✅
 91. ~~USTAR InitRD format with LZ4 Frame compression~~ ✅

@@ -328,3 +328,17 @@ SMEP enabled via CR4, heap grows dynamically to 64MB, waitpid NULL guard.
 **1 additional MODERATE fixed**: `schedule()` now calls `context_switch` BEFORE `spin_unlock_irqrestore`, preventing the timer-fired race window.
 
 **Remaining**: 4 MODERATE (open): hardcoded heap VA (1.2), x86 registers leak in interrupts.h (1.3), itoa no buffer size (2.6), itoa UB for INT_MIN (2.7), fd bounds (3.5), kfree doesn't zero (4.2).
+
+**Additional fixes (post-audit):**
+
+| Fix | Severity | Description |
+|-----|----------|-------------|
+| ELF W^X reprotect | CRITICAL | `elf32_reprotect_segments()` re-protects text segments to RO+X AFTER relocations; boundary pages shared with data segments stay writable |
+| `vfs_lookup_initrd` | HIGH | ELF loader and execve use `vfs_lookup_initrd()` (bypasses mount table) so `pivot_root` doesn't break binary lookups |
+| Heap corruption handling | HIGH | On bad magic/double-free, kernel marks process ZOMBIE and calls `schedule()` instead of infinite `hal_cpu_idle()` loop |
+| SHM UAF | HIGH | `shm_at()` rejects IPC_RMID'd segments with `-EIDRM`; `shm_get()` skips marked_rm segments |
+| Procfs UAF | CRITICAL | Dedicated `g_pid_cmdline` pool prevents `/proc/<pid>/cmdline` from overwriting status entries |
+| ext2 partial inode | HIGH | `ext2_file_write` calls `ext2_write_inode()` after each `i_blocks` increment for on-disk consistency |
+| `rq_remove_if_queued` | HIGH | Scans ALL priority queues in both active/expired runqueues (not just `p->priority`) |
+| `execve_copy_user_str` | HIGH | Upfront `user_range_ok()` check before byte-by-byte copy loop |
+| Frame refcount overflow | MODERATE | `frame_refcount[]` changed from `uint16_t` to `uint32_t` to prevent overflow |
