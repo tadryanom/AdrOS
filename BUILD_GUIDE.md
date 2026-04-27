@@ -107,7 +107,7 @@ Syscall return convention note:
 
 ### Userland programs
 The following ELF binaries are bundled in the initrd:
-- `/sbin/fulltest` — comprehensive smoke test suite (102 checks)
+- `/sbin/fulltest` — comprehensive smoke test suite (120 checks)
 - `/sbin/init` — SysV-like init process (inittab, runlevels, respawn)
 - `/bin/sh` — POSIX sh-compatible shell with `$PATH` search, pipes, redirects, builtins
 - `/bin/echo`, `/bin/cat`, `/bin/ls`, `/bin/mkdir`, `/bin/rm` — core utilities
@@ -132,7 +132,7 @@ The following ELF binaries are bundled in the initrd:
 The ulibc provides: `printf`, `malloc`/`free`/`calloc`/`realloc`, `string.h`, `unistd.h`, `errno.h`, `pthread.h`, `signal.h` (with `raise`, `sigaltstack`, `sigpending`, `sigsuspend`), `stdio.h` (buffered I/O with `fopen`/`fread`/`fwrite`/`fclose`), `stdlib.h` (`atof`, `strtol`, `getenv` stub, `system` stub), `ctype.h`, `sys/mman.h` (`mmap`/`munmap`), `sys/ioctl.h` (`ioctl`), `time.h` (`nanosleep`/`clock_gettime`), `sys/times.h`, `sys/uio.h`, `sys/types.h`, `sys/stat.h`, `math.h` (`fabs`), `assert.h`, `fcntl.h`, `strings.h`, `inttypes.h`, `linux/futex.h`, and `realpath()`.
 
 ### Smoke tests
-The fulltest binary (`/sbin/fulltest`) runs a comprehensive suite of 102 smoke tests on boot, covering:
+The fulltest binary (`/sbin/fulltest`) runs a comprehensive suite of 120 smoke tests on boot, covering:
 - File I/O (`open`, `read`, `write`, `close`, `lseek`, `stat`, `fstat`)
 - Overlay copy-up, `dup2`, `pipe`, `select`, `poll`
 - TTY/ioctl, job control (`SIGTTIN`/`SIGTTOU`)
@@ -153,9 +153,15 @@ The fulltest binary (`/sbin/fulltest`) runs a comprehensive suite of 102 smoke t
 - Memory: `brk`, `mmap`/`munmap`, `clock_gettime`, shared memory (`shmget`/`shmat`/`shmdt`)
 - Advanced: `pread`/`pwrite`, `ftruncate`, `symlink`/`readlink`, `access`, `sigprocmask`/`sigpending`, `alarm`/`SIGALRM`, `O_APPEND`, `umask`, pipe capacity (`F_GETPIPE_SZ`/`F_SETPIPE_SZ`), `waitid`, `setitimer`/`getitimer`, `select`/`poll` on regular files, hard links
 - Advanced I/O: `epoll` (create/ctl/wait on pipe), `epollet` (edge-triggered), `inotify` (init/add_watch/rm_watch), `aio_*` (read/write/error/return)
-- System: `gettimeofday`, `mprotect`, `getrlimit`/`setrlimit`, `uname`
-- Dynamic linking: lazy PLT resolution, PLT caching
+- System: `gettimeofday`, `mprotect`, `getrlimit`/`setrlimit`, `uname`, `mount`/`umount2`
+- Dynamic linking: lazy PLT resolution, PLT caching, `dlopen`/`dlsym`/`dlclose`
 - LZ4 initrd decompression
+- Threads: `clone` (thread creation), `futex` (FUTEX_WAIT/WAKE)
+- Signals: `sigaltstack`, `sigqueue`, `sigsuspend`
+- IPC: POSIX message queues (`mq_*`), named semaphores (`sem_*`)
+- Network: socket API (`socket`/`bind`/`listen`/`getsockname`/`shutdown`)
+- Credentials: `chown`, `geteuid`/`getegid`, `seteuid`/`setegid`
+- Advanced: `pivot_root`, `execveat`, `CLOCK_MONOTONIC`
 
 All tests print `[test] ... OK` on success. Any failure calls `sys_exit(1)`.
 
@@ -169,10 +175,10 @@ make test-all
 Individual test targets:
 ```bash
 make check        # cppcheck + sparse + gcc -fanalyzer
-make test-host    # 115 host-side tests (test_utils + test_security + test_host_utils.sh)
-make test         # QEMU smoke test (4 CPUs, 120s timeout, 102 checks incl. ICMP ping, epoll, epollet, inotify, aio, LZ4, lazy PLT)
+make test-host    # 69 host-side tests (test_utils + test_security + test_host_utils.sh)
+make test         # QEMU smoke test (4 CPUs, 120s timeout, 120 checks incl. ICMP ping, epoll, epollet, inotify, aio, LZ4, lazy PLT, clone, pivot_root, dlopen/dlsym/dlclose, execveat, futex, sigaltstack, socket API, mqueue, semaphores, chown, mount/umount2)
 make test-1cpu    # Single-CPU smoke test (50s timeout)
-make test-battery # Full test battery: multi-disk ATA, VFS mount, ping, diskfs (16 checks)
+make test-battery # Full test battery: multi-disk ATA, VFS mount, ping, diskfs, clone, socket API, mqueue, semaphores, futex, sigaltstack, chown, mount/umount2 (33 checks)
 make test-gdb     # GDB scripted integrity checks (heap, PMM, VGA)
 ```
 

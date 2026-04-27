@@ -41,13 +41,13 @@ lwIP is tracked as a git submodule (`.gitmodules` exists). DOOM is optional and 
 | `setsockopt` / `getsockopt` | Required | ✅ **IMPLEMENTED** (syscalls 131/132) |
 | `shutdown` (socket) | Required | ✅ **IMPLEMENTED** (syscall 133) |
 | `getpeername` / `getsockname` | Required | ✅ **IMPLEMENTED** (syscalls 134/135) |
-| `madvise` | Optional | ❌ Not implemented (low priority) |
+| `madvise` | Optional | ✅ **IMPLEMENTED** (syscall 140) |
 | `mremap` | Linux ext | ❌ Not implemented (low priority) |
-| `execveat` | Linux ext | ❌ Not implemented (low priority) |
+| `execveat` | Linux ext | ✅ **IMPLEMENTED** (syscall 142) |
 | `umount2` | Required | ✅ **IMPLEMENTED** (syscall 138) |
 | `ioctl FIONREAD` | Required | ✅ **IMPLEMENTED** (ioctl 0x541B) |
 
-**9 of 12 previously missing syscalls are now implemented.** The kernel now has **139 syscalls** (138 entries) total.
+**9 of 12 previously missing syscalls are now implemented.** The kernel now has **141 syscalls** total.
 
 ### 2B. ulibc Headers — Status Update
 
@@ -353,7 +353,7 @@ Native Binutils 2.42 + GCC 13.2.0 built as ELF32 i686 static binaries.
 
 | Component | Current State | Ready to Port? |
 |---|---|---|
-| **Kernel syscalls** | 139 syscalls (138 entries), ~99% POSIX | ✅ All critical syscalls implemented |
+| **Kernel syscalls** | 141 syscalls, ~99% POSIX, 124/141 tested (87.9%) | ✅ All critical syscalls implemented |
 | **ulibc** | Full libc for AdrOS userspace | ✅ Sufficient for 52 utilities |
 | **Build system** | Works with `git clone --recursive` | ✅ Submodules + .gitignore |
 | **Newlib** | ✅ **DONE** | `newlib/libgloss/adros/` with all stubs |
@@ -362,4 +362,25 @@ Native Binutils 2.42 + GCC 13.2.0 built as ELF32 i686 static binaries.
 | **Bash** | Not started | **Feasible** — all kernel blockers resolved, Newlib provides libc |
 | **Busybox** | Not started | **Feasible** — after Bash |
 
-**Bottom line:** The kernel is **~99% POSIX-ready** with 139 syscalls (138 entries). All 30 required ulibc headers are implemented, all previously missing functions in existing headers are resolved, and pthread sync primitives are complete with futex-based locking. The Newlib port and native toolchain (GCC 13.2 + Binutils 2.42) are **complete**. The next step is cross-compiling Bash, which is now feasible since all kernel-level and library-level blockers have been resolved. AdrOS ships with 52 native POSIX utilities, 101 smoke tests, and full POSIX header coverage.
+**Bottom line:** The kernel is **~99% POSIX-ready** with 141 syscalls (124 tested, 87.9% coverage). All 30 required ulibc headers are implemented, all previously missing functions in existing headers are resolved, and pthread sync primitives are complete with futex-based locking. The Newlib port and native toolchain (GCC 13.2 + Binutils 2.42) are **complete**. The next step is cross-compiling Bash, which is now feasible since all kernel-level and library-level blockers have been resolved. AdrOS ships with 52 native POSIX utilities, 120 smoke tests, and full POSIX header coverage.
+
+### Syscall Test Coverage
+
+The fulltest suite exercises **124 of 141** kernel syscalls (87.9%).
+
+**17 untested syscalls:** `shmctl`, `set_thread_area`, `accept`, `connect`, `send`, `recv`, `sendto`, `recvfrom`, `fdatasync`, `getaddrinfo`, `sendmsg`, `recvmsg`, `aio_suspend`, `setsockopt`, `getsockopt`, `getpeername`, `wait4`
+
+### Remaining POSIX Gaps for 100% Compliance
+
+These POSIX-mandated features are not yet implemented in the kernel:
+
+| Category | Missing Features |
+|----------|-----------------|
+| **Process/Credentials** | `chroot`, `getgroups`/`setgroups`, `getpgid`/`getsid`, `ptrace`, `nice`/`getpriority`/`setpriority`, saved set-user-ID |
+| **Filesystem** | `mkfifo`/`mknod`, `fchdir`, `fchmod`/`fchown`/`lchown`, `sync`/`syncfs`, `statfs`/`fstatfs`, `fpathconf`/`pathconf`, `readlinkat`/`mkdirat`/`fchmodat` |
+| **Signals** | `sigwait`/`sigwaitinfo`/`sigtimedwait` |
+| **POSIX Timers** | `timer_create`/`timer_delete`/`timer_settime`/`timer_gettime`, `clock_settime`/`clock_getres`/`clock_nanosleep` |
+| **IPC** | `shmctl IPC_RMID/IPC_STAT`, `sem_init`/`sem_destroy`, `mq_notify`/`mq_getattr`/`mq_setattr` |
+| **Memory** | `mremap`, `msync`, `mincore` |
+| **Network** | `socketpair`, TCP loopback (`connect`/`accept`/`send`/`recv`), `AF_UNIX`/`AF_INET6` |
+| **Threads** | `pthread_cancel`/`pthread_testcancel`/`pthread_detach`, thread-safe `errno` via TLS, `pthread_atfork` |

@@ -231,7 +231,7 @@ for the full list. All previously identified Tier 1/2/3 gaps have been resolved.
 8. **Hardware** — PCI, ATA PIO+DMA (bounce + zero-copy), Virtio-blk, LAPIC/IOAPIC, SMP (4 CPUs), ACPI, VBE framebuffer, SYSENTER, CPUID, RTC, MTRR write-combining
 9. **Networking** — E1000 NIC, lwIP TCP/IP (IPv4+IPv6 dual-stack), socket API (TCP+UDP), DNS resolver, DHCP client
 10. **Userland** — ulibc (full libc), ELF loader with W^X + ASLR, functional `ld.so` (auxv + PLT/GOT + `dlopen`/`dlsym`/`dlclose`), POSIX shell, core utilities, DOOM port
-11. **Testing** — 102 smoke tests, 16 battery checks, 115 host tests (28 unit + 19 security + 68 utility), cppcheck, sparse, gcc -fanalyzer, GDB scripted checks
+11. **Testing** — 120 smoke tests, 33 battery checks, 69 host tests (28 unit + 19 security + 22 utility), cppcheck, sparse, gcc -fanalyzer, GDB scripted checks
 12. **Security** — SMEP, PAE+NX, ASLR, guard pages (user + kernel), user_range_ok hardened, sigreturn eflags sanitized, atomic file refcounts, VFS permission enforcement (uid/gid/euid/egid vs file mode)
 13. **Scheduler** — O(1) with bitmap + active/expired, 32 priority levels, decay-based priority, CPU time accounting
 14. **Threads** — `clone`, `gettid`, TLS via GDT, pthread in ulibc, futex synchronization
@@ -359,4 +359,4 @@ TSC nanosecond clock, and IRQ chaining are already implemented), **full SMP sche
 (moving processes to AP runqueues — per-CPU infrastructure in place), **non-x86 subsystems**
 (PMM/VMM/scheduler for ARM64/RISC-V/MIPS), and Intel HDA audio.
 
-102 QEMU smoke tests, 16 battery checks, and 115 host tests pass clean.
+120 QEMU smoke tests, 33 battery checks, and 69 host tests pass clean.
