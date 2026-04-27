@@ -148,36 +148,137 @@ set pid [run_qemu $iso $smp $serial_log $timeout_sec \
     {{-drive file=disk.img,if=ide,format=raw}}]
 
 set patterns {
-    {"NET lwIP init"         "\\[NET\\] lwIP initialized"}
-    {"PING network OK"       "\\[PING\\] .*received.*network OK"}
-    {"ATA /dev/hda"          "\\[ATA\\] /dev/hda detected"}
-    {"INITRD found"          "\\[INITRD\\] Found"}
-    {"diskfs mount /disk"    "\\[MOUNT\\] diskfs on /dev/hda"}
-    {"diskfs test"           "\\[test\\] /disk/test prev="}
-    {"diskfs getdents"       "\\[test\\] diskfs getdents OK"}
-    {"geteuid/getegid"       "\\[test\\] geteuid/getegid OK"}
-    {"seteuid/setegid"       "\\[test\\] seteuid/setegid OK"}
-    {"CLOCK_MONOTONIC"       "\\[test\\] CLOCK_MONOTONIC OK"}
-    {"chown"                 "\\[test\\] chown OK"}
-    {"futex"                 "\\[test\\] futex OK"}
-    {"sigaltstack"           "\\[test\\] sigaltstack OK"}
-    {"socket API"            "\\[test\\] socket API OK"}
-    {"mqueue"                "\\[test\\] mqueue OK"}
-    {"named semaphore"       "\\[test\\] named semaphore OK"}
-    {"getrusage"             "\\[test\\] getrusage OK"}
-    {"mount/umount2"         "\\[test\\] mount/umount2 OK"}
-    {"sigqueue"              "\\[test\\] sigqueue OK"}
-    {"clone"                 "\\[test\\] clone OK"}
-    {"inotify_init1"         "\\[test\\] inotify_init1 OK"}
-    {"dlopen/dlsym/dlclose"  "\\[test\\] dlopen/dlsym/dlclose OK"}
-    {"execveat"              "\\[test\\] execveat OK"}
-    {"pivot_root"            "\\[test\\] pivot_root OK"}
+    {"Heap init"            "\\[HEAP\\] 8MB Buddy Allocator Ready."}
+    {"PCI enumeration"      "\\[PCI\\] Enumerated"}
+    {"ATA DMA init"         "\\[ATA-DMA\\] Ch0 initialized"}
+    {"ATA DMA mode"         "\\[ATA\\] Channel 0: DMA mode."}
+    {"SMP CPUs active"      "CPU\\(s\\) active."}
+    {"User ring3 entry"     "\\[USER\\] enter ring3"}
+    {"fulltest.elf hello"   "\\[test\\] hello from fulltest.elf"}
+    {"open/read/close"      "\\[test\\] open/read/close OK"}
+    {"overlay copy-up"      "\\[test\\] overlay copy-up OK"}
+    {"lseek/stat/fstat"     "\\[test\\] lseek/stat/fstat OK"}
+    {"dup2 restore"         "\\[test\\] dup2 restore tty OK"}
+    {"kill SIGKILL"         "\\[test\\] kill\\(SIGKILL\\) OK"}
+    {"poll pipe"            "\\[test\\] poll\\(pipe\\) OK"}
+    {"select pipe"          "\\[test\\] select\\(pipe\\) OK"}
+    {"ioctl tty"            "\\[test\\] ioctl\\(/dev/tty\\) OK"}
+    {"job control"          "\\[test\\] job control \\(SIGTTIN/SIGTTOU\\) OK"}
+    {"poll /dev/null"       "\\[test\\] poll\\(/dev/null\\) OK"}
+    {"pty bidirectional"    "\\[test\\] pty OK"}
+    {"setsid/setpgid"       "\\[test\\] setsid/setpgid/getpgrp OK"}
+    {"sigaction SIGUSR1"    "\\[test\\] sigaction/kill\\(SIGUSR1\\) OK"}
+    {"sigreturn"            "\\[test\\] sigreturn OK"}
+    {"tmpfs/mount"          "\\[test\\] tmpfs/mount OK"}
+    {"dev null"             "\\[test\\] /dev/null OK"}
+    {"persist counter"      "\\[test\\] /persist/counter="}
+    {"dev tty write"        "\\[test\\] /dev/tty write OK"}
+    {"diskfs test"          "\\[test\\] /disk/test prev="}
+    {"diskfs mkdir/unlink"  "\\[test\\] diskfs mkdir/unlink OK"}
+    {"diskfs getdents"      "\\[test\\] diskfs getdents OK"}
+    {"isatty"               "\\[test\\] isatty OK"}
+    {"O_NONBLOCK"           "\\[test\\] O_NONBLOCK OK"}
+    {"pipe2/dup3"           "\\[test\\] pipe2/dup3 OK"}
+    {"chdir/getcwd"         "\\[test\\] chdir/getcwd OK"}
+    {"*at syscalls"         "\\[test\\] \\*at OK"}
+    {"rename/rmdir"         "\\[test\\] rename/rmdir OK"}
+    {"getdents multi-fs"    "\\[test\\] getdents multi-fs OK"}
+    {"brk heap"             "\\[test\\] brk OK"}
+    {"mmap/munmap"          "\\[test\\] mmap/munmap OK"}
+    {"clock_gettime"        "\\[test\\] clock_gettime OK"}
+    {"dev zero"             "\\[test\\] /dev/zero OK"}
+    {"dev random"           "\\[test\\] /dev/random OK"}
+    {"procfs"               "\\[test\\] procfs OK"}
+    {"pread/pwrite"         "\\[test\\] pread/pwrite OK"}
+    {"ftruncate"            "\\[test\\] ftruncate OK"}
+    {"symlink/readlink"     "\\[test\\] symlink/readlink OK"}
+    {"access"               "\\[test\\] access OK"}
+    {"sigprocmask"          "\\[test\\] sigprocmask/sigpending OK"}
+    {"alarm SIGALRM"        "\\[test\\] alarm/SIGALRM OK"}
+    {"shmget/shmat"         "\\[test\\] shmget/shmat/shmdt OK"}
+    {"O_APPEND"             "\\[test\\] O_APPEND OK"}
+    {"umask"                "\\[test\\] umask OK"}
+    {"pipe capacity"        "\\[test\\] pipe capacity OK"}
+    {"waitid"               "\\[test\\] waitid OK"}
+    {"setitimer/getitimer"  "\\[test\\] setitimer/getitimer OK"}
+    {"select regfile"       "\\[test\\] select regfile OK"}
+    {"poll regfile"         "\\[test\\] poll regfile OK"}
+    {"hard link"            "\\[test\\] hard link OK"}
+    {"epoll"                "\\[test\\] epoll OK"}
+    {"epollet"              "\\[test\\] epollet OK"}
+    {"inotify"              "\\[test\\] inotify OK"}
+    {"aio"                  "\\[test\\] aio OK"}
+    {"nanosleep"            "\\[test\\] nanosleep OK"}
+    {"CLOCK_REALTIME"       "\\[test\\] CLOCK_REALTIME OK"}
+    {"dev urandom"          "\\[test\\] /dev/urandom OK"}
+    {"proc cmdline"         "\\[test\\] /proc/cmdline OK"}
+    {"CoW fork"             "\\[test\\] CoW fork OK"}
+    {"readv/writev"         "\\[test\\] readv/writev OK"}
+    {"fsync"                "\\[test\\] fsync OK"}
+    {"truncate path"        "\\[test\\] truncate OK"}
+    {"getuid/getgid"        "\\[test\\] getuid/getgid OK"}
+    {"chmod"                "\\[test\\] chmod OK"}
+    {"flock"                "\\[test\\] flock OK"}
+    {"times"                "\\[test\\] times OK"}
+    {"gettid"               "\\[test\\] gettid OK"}
+    {"posix_spawn"          "\\[test\\] posix_spawn OK"}
+    {"clock_ns precision"   "\\[test\\] clock_ns precision OK"}
+    {"getppid"              "\\[test\\] getppid OK"}
+    {"waitpid WNOHANG"      "\\[test\\] waitpid WNOHANG OK"}
+    {"SIGSEGV handler"      "\\[test\\] SIGSEGV OK"}
+    {"waitpid 100 children" "\\[test\\] waitpid OK \\(100 children"}
+    {"lazy PLT"             "\\[test\\] lazy PLT OK"}
+    {"PLT cached"           "\\[test\\] PLT cached OK"}
+    {"PING network"         "\\[PING\\] .*received.*network OK"}
+    {"echo execve"          "\\[echo\\] hello from echo"}
+    {"setuid/setgid"        "\\[test\\] setuid/setgid OK"}
+    {"fcntl F_GETFL/SETFL"  "\\[test\\] fcntl F_GETFL/F_SETFL OK"}
+    {"fcntl FD_CLOEXEC"     "\\[test\\] fcntl FD_CLOEXEC OK"}
+    {"sigsuspend"           "\\[test\\] sigsuspend OK"}
+    {"orphan reparent"      "\\[test\\] orphan reparent OK"}
+    {"proc PID cmdline"    "\\[test\\] /proc/PID/cmdline OK"}
+    {"proc PID status"     "\\[test\\] /proc/PID/status OK"}
+    {"dev console"         "\\[test\\] /dev/console OK"}
+    {"multi-pty"           "\\[test\\] multi-pty OK"}
+    {"dup standalone"      "\\[test\\] dup OK"}
+    {"pipe EOF"            "\\[test\\] pipe EOF OK"}
+    {"readdir /proc"       "\\[test\\] readdir /proc OK"}
+    {"readdir /bin"        "\\[test\\] readdir /bin OK"}
+    {"gettimeofday"        "\\[test\\] gettimeofday OK"}
+    {"mprotect"            "\\[test\\] mprotect OK"}
+    {"madvise"             "\\[test\\] madvise OK"}
+    {"getrlimit/setrlimit" "\\[test\\] getrlimit/setrlimit OK"}
+    {"uname"               "\\[test\\] uname OK"}
+    {"SMP parallel fork"   "\\[test\\] SMP parallel fork OK"}
+    {"LZ4 Frame decomp"    "\\[INITRD\\] LZ4"}
+    {"NET lwIP init"       "\\[NET\\] lwIP initialized"}
+    {"PING network OK"     "\\[PING\\] .*received.*network OK"}
+    {"ATA /dev/hda"        "\\[ATA\\] /dev/hda detected"}
+    {"INITRD found"        "\\[INITRD\\] Found"}
+    {"diskfs mount /disk"  "\\[MOUNT\\] diskfs on /dev/hda"}
+    {"geteuid/getegid"     "\\[test\\] geteuid/getegid OK"}
+    {"seteuid/setegid"     "\\[test\\] seteuid/setegid OK"}
+    {"CLOCK_MONOTONIC"     "\\[test\\] CLOCK_MONOTONIC OK"}
+    {"chown"               "\\[test\\] chown OK"}
+    {"futex"               "\\[test\\] futex OK"}
+    {"sigaltstack"         "\\[test\\] sigaltstack OK"}
+    {"socket API"          "\\[test\\] socket API OK"}
+    {"mqueue"              "\\[test\\] mqueue OK"}
+    {"named semaphore"     "\\[test\\] named semaphore OK"}
+    {"getrusage"           "\\[test\\] getrusage OK"}
+    {"mount/umount2"       "\\[test\\] mount/umount2 OK"}
+    {"sigqueue"            "\\[test\\] sigqueue OK"}
+    {"clone"               "\\[test\\] clone OK"}
+    {"inotify_init1"       "\\[test\\] inotify_init1 OK"}
+    {"dlopen/dlsym/dlclose" "\\[test\\] dlopen/dlsym/dlclose OK"}
+    {"execveat"            "\\[test\\] execveat OK"}
+    {"pivot_root"          "\\[test\\] pivot_root OK"}
 }
 
 set res [wait_for_patterns $serial_log $timeout_sec $patterns]
 kill_qemu $iso
 
-report_section "Smoke + Ping (1 disk)" [lindex $res 0] [lindex $res 1]
+report_section "Full smoke + Ping + diskfs (1 disk, SMP=4)" [lindex $res 0] [lindex $res 1]
 
 # ================================================================
 # TEST 2: Multi-disk ATA detection (hda + hdb + hdd)
@@ -262,6 +363,58 @@ set res [wait_for_patterns $serial_log $timeout_sec $patterns]
 kill_qemu $iso
 
 report_section "ATA /dev/hdd detection" [lindex $res 0] [lindex $res 1]
+
+# ================================================================
+# TEST 6: SMP=1 boot (single-CPU regression)
+# ================================================================
+
+create_disk "smp1_disk.img" 4
+
+set pid [run_qemu $iso 1 $serial_log $timeout_sec \
+    {{-drive file=smp1_disk.img,if=ide,format=raw}}]
+
+set patterns {
+    {"SMP1 boot"          "\\[USER\\] enter ring3"}
+    {"SMP1 fulltest"      "\\[test\\] hello from fulltest.elf"}
+    {"SMP1 open/read"     "\\[test\\] open/read/close OK"}
+    {"SMP1 brk"           "\\[test\\] brk OK"}
+    {"SMP1 mmap"          "\\[test\\] mmap/munmap OK"}
+    {"SMP1 fork"          "\\[test\\] CoW fork OK"}
+    {"SMP1 waitpid"       "\\[test\\] waitpid WNOHANG OK"}
+    {"SMP1 kill"          "\\[test\\] kill\\(SIGKILL\\) OK"}
+    {"SMP1 signal"        "\\[test\\] sigaction/kill\\(SIGUSR1\\) OK"}
+    {"SMP1 pipe"          "\\[test\\] poll\\(pipe\\) OK"}
+    {"SMP1 diskfs"        "\\[test\\] /disk/test prev="}
+    {"SMP1 PING"          "\\[PING\\] .*received.*network OK"}
+}
+
+set res [wait_for_patterns $serial_log $timeout_sec $patterns]
+kill_qemu $iso
+
+report_section "SMP=1 boot regression" [lindex $res 0] [lindex $res 1]
+
+# ================================================================
+# TEST 7: SMP=2 boot (dual-CPU)
+# ================================================================
+
+create_disk "smp2_disk.img" 4
+
+set pid [run_qemu $iso 2 $serial_log $timeout_sec \
+    {{-drive file=smp2_disk.img,if=ide,format=raw}}]
+
+set patterns {
+    {"SMP2 boot"          "\\[USER\\] enter ring3"}
+    {"SMP2 fulltest"      "\\[test\\] hello from fulltest.elf"}
+    {"SMP2 CoW fork"      "\\[test\\] CoW fork OK"}
+    {"SMP2 parallel fork" "\\[test\\] SMP parallel fork OK"}
+    {"SMP2 diskfs"        "\\[test\\] /disk/test prev="}
+    {"SMP2 PING"          "\\[PING\\] .*received.*network OK"}
+}
+
+set res [wait_for_patterns $serial_log $timeout_sec $patterns]
+kill_qemu $iso
+
+report_section "SMP=2 boot" [lindex $res 0] [lindex $res 1]
 
 # ================================================================
 # Final Summary
