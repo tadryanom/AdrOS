@@ -58,11 +58,9 @@ int ksem_wait_timeout(ksem_t* s, uint32_t timeout_ms) {
     current_process->state = PROCESS_BLOCKED;
 
     /* Set a wake timeout if requested (convert ms to ticks) */
-    uint32_t deadline = 0;
     if (timeout_ms > 0) {
         uint32_t ticks = (timeout_ms + TIMER_MS_PER_TICK - 1) / TIMER_MS_PER_TICK;
-        deadline = get_tick_count() + ticks;
-        current_process->wake_at_tick = deadline;
+        current_process->wake_at_tick = get_tick_count() + ticks;
         current_process->state = PROCESS_SLEEPING; /* timer will wake us */
     }
 

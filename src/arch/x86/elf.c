@@ -145,12 +145,9 @@ static int elf32_load_segments(const uint8_t* file, uint32_t file_len,
         if ((uint64_t)ph[i].p_offset + (uint64_t)ph[i].p_filesz > (uint64_t)file_len)
             return -EINVAL;
 
-        /* Parse segment permissions: PF_R=4, PF_W=2, PF_X=1 */
-        uint32_t seg_vmm_flags = VMM_FLAG_PRESENT | VMM_FLAG_USER;
-        if (ph[i].p_flags & 0x2) seg_vmm_flags |= VMM_FLAG_RW;
-        if (!(ph[i].p_flags & 0x1)) seg_vmm_flags |= VMM_FLAG_NX;  /* no execute */
-
-        /* Map as RW initially so we can write segment data */
+        /* Map as RW initially so we can write segment data.
+         * Final permissions are applied by elf32_reprotect_segments
+         * after relocations are processed. */
         int mrc = elf32_map_user_range(as, vaddr, (size_t)ph[i].p_memsz, VMM_FLAG_RW);
         if (mrc < 0) return mrc;
 
