@@ -134,7 +134,7 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **Shell** — `/bin/sh` (POSIX sh-compatible with builtins, pipes, redirects, `$PATH` search)
 - **52 userland programs** — `/bin/cat`, `/bin/ls`, `/bin/mkdir`, `/bin/rm`, `/bin/echo`, `/bin/cp`, `/bin/mv`, `/bin/touch`, `/bin/ln`, `/bin/head`, `/bin/tail`, `/bin/wc`, `/bin/sort`, `/bin/uniq`, `/bin/cut`, `/bin/grep`, `/bin/sed`, `/bin/awk`, `/bin/find`, `/bin/which`, `/bin/chmod`, `/bin/chown`, `/bin/chgrp`, `/bin/mount`, `/bin/umount`, `/bin/ps`, `/bin/top`, `/bin/kill`, `/bin/df`, `/bin/du`, `/bin/free`, `/bin/date`, `/bin/hostname`, `/bin/uptime`, `/bin/uname`, `/bin/env`, `/bin/printenv`, `/bin/id`, `/bin/tee`, `/bin/dd`, `/bin/tr`, `/bin/basename`, `/bin/dirname`, `/bin/pwd`, `/bin/stat`, `/bin/sleep`, `/bin/clear`, `/bin/rmdir`, `/bin/dmesg`, `/bin/who`, `/bin/pie_test`
 - `/sbin/init` — SysV-like init process (inittab, runlevels, respawn)
-- `/sbin/fulltest` — comprehensive smoke test suite (102 checks)
+- `/sbin/fulltest` — comprehensive smoke test suite (120 checks)
 - `/bin/doom.elf` — DOOM (doomgeneric port) — runs on `/dev/fb0` + `/dev/kbd`
 - `/lib/ld.so` — dynamic linker with auxv parsing, PLT/GOT lazy relocation
 
@@ -163,9 +163,9 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **PMM spinlock** for SMP safety
 
 ### Testing
-- **115 host-side tests** — `test_utils.c` (28) + `test_security.c` (19) + `test_host_utils.sh` (68 cross-compiled utility tests)
-- **102 QEMU smoke tests** — 4-CPU expect-based (file I/O, signals, memory mgmt, IPC, devices, procfs, networking, epoll, epollet, inotify, aio, nanosleep, CoW fork, readv/writev, fsync, flock, posix_spawn, TSC precision, gettimeofday, mprotect, getrlimit/setrlimit, uname, LZ4, lazy PLT, execve)
-- **16-check test battery** — multi-disk ATA (hda+hdb+hdd), VFS mount, ping, diskfs ops (`make test-battery`)
+- **69 host-side tests** — `test_utils.c` (28) + `test_security.c` (19) + `test_host_utils.sh` (22 cross-compiled utility tests)
+- **120 QEMU smoke tests** — 4-CPU expect-based (file I/O, signals, memory mgmt, IPC, devices, procfs, networking, epoll, epollet, inotify, aio, nanosleep, CoW fork, readv/writev, fsync, flock, posix_spawn, TSC precision, gettimeofday, mprotect, getrlimit/setrlimit, uname, LZ4, lazy PLT, execve, clone, pivot_root, dlopen/dlsym/dlclose, execveat, futex, sigaltstack, socket API, mqueue, semaphores, chown, mount/umount2)
+- **33-check test battery** — multi-disk ATA (hda+hdb+hdd), VFS mount, ping, diskfs ops, clone, socket API, mqueue, semaphores, futex, sigaltstack, chown, mount/umount2 (`make test-battery`)
 - **Static analysis** — cppcheck, sparse, gcc -fanalyzer
 - **GDB scripted checks** — heap/PMM/VGA integrity
 - `make test-all` runs everything
@@ -204,9 +204,34 @@ QEMU debug helpers:
 
 See [POSIX_ROADMAP.md](docs/POSIX_ROADMAP.md) for a detailed checklist.
 
-**All 31 planned POSIX tasks are complete**, plus 60 additional features (91 total). The kernel covers **~98%** of the core POSIX interfaces needed for a practical Unix-like system. All 102 smoke tests, 16 battery checks, and 115 host tests pass clean. ARM64, RISC-V 64, and MIPS32 boot on QEMU.
+**All 31 planned POSIX tasks are complete**, plus 60 additional features (91 total). The kernel has **141 syscalls** with **124 tested** (87.9% coverage) by the 120 smoke tests. The kernel covers **~98%** of the core POSIX interfaces needed for a practical Unix-like system. All 120 smoke tests, 33 battery checks, and 69 host tests pass clean. ARM64, RISC-V 64, and MIPS32 boot on QEMU.
 
 Rump Kernel integration is in progress — prerequisites (condition variables, TSC nanosecond clock, IRQ chaining) are implemented and the `rumpuser` hypercall scaffold is in place.
+
+### Syscall Test Coverage
+
+| Metric | Value |
+|--------|-------|
+| Syscalls implemented | 141 |
+| Syscalls tested by fulltest | 124 (87.9%) |
+| Syscalls without test | 17 (12.1%) |
+| Smoke tests | 120 |
+| Battery checks | 33 |
+| Host tests | 69 |
+
+**17 untested syscalls:** `shmctl`, `set_thread_area` (indirect via clone), `accept`, `connect`, `send`, `recv`, `sendto`, `recvfrom`, `fdatasync`, `getaddrinfo`, `sendmsg`, `recvmsg`, `aio_suspend`, `setsockopt`, `getsockopt`, `getpeername`, `wait4`
+
+### Remaining POSIX Gaps
+
+For **100% POSIX compliance**, the following categories are still missing:
+- **pthreads complete** — mutex/cond/rwlock exist in ulibc but need kernel-level thread lifecycle, cancellation, per-thread errno via TLS
+- **TCP loopback** — `connect()`/`accept()` hang in QEMU; network I/O tests disabled
+- **Filesystem POSIX** — `mkfifo`/`mknod`, `fchmod`/`fchown`/`lchown`, `fchdir`, `sync`/`syncfs`, `statfs`/`fstatfs`, `readlinkat`/`mkdirat`/`fchmodat`
+- **Process/credentials** — `chroot`, `getgroups`/`setgroups`, saved setuid, `ptrace`, `nice`/`getpriority`/`setpriority`
+- **POSIX timers** — `timer_create`/`timer_delete`/`timer_settime`/`timer_gettime`, `clock_settime`/`clock_getres`/`clock_nanosleep`
+- **IPC** — `shmctl IPC_RMID/IPC_STAT`, unnamed semaphores (`sem_init`/`sem_destroy`), `mq_notify`/`mq_getattr`/`mq_setattr`
+- **Memory** — `mremap`, `msync`, `mincore`
+- **Signals** — `sigwait`/`sigwaitinfo`/`sigtimedwait`
 
 ## Directory Structure
 - `src/kernel/` — Architecture-independent kernel (VFS, syscalls, scheduler, tmpfs, diskfs, devfs, overlayfs, procfs, FAT12/16/32, ext2, PTY, TTY, shm, signals, networking, threads, vDSO, KASLR, permissions)

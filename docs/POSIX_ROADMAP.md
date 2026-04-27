@@ -295,7 +295,7 @@ Notes:
 | Feature | Status | Notes |
 |---------|--------|-------|
 | ELF32 loader | [x] | Secure with W^X + ASLR; supports `ET_EXEC` + `ET_DYN` + `PT_INTERP` |
-| `/sbin/fulltest` (smoke tests) | [x] | Comprehensive test suite (102 checks: file I/O, signals, memory, IPC, devices, procfs, networking, epoll, epollet, inotify, aio, nanosleep, CoW fork, readv/writev, fsync, flock, posix_spawn, TSC precision, gettimeofday, mprotect, getrlimit/setrlimit, uname, LZ4, lazy PLT, execve) |
+| `/sbin/fulltest` (smoke tests) | [x] | Comprehensive test suite (120 checks: file I/O, signals, memory, IPC, devices, procfs, networking, epoll, epollet, inotify, aio, nanosleep, CoW fork, readv/writev, fsync, flock, posix_spawn, TSC precision, gettimeofday, mprotect, getrlimit/setrlimit, uname, LZ4, lazy PLT, execve, clone, pivot_root, dlopen/dlsym/dlclose, execveat, futex, sigaltstack, socket API, mqueue, semaphores, chown, mount/umount2) |
 | `/bin/echo` | [x] | argv/envp test |
 | `/bin/sh` | [x] | POSIX sh-compatible shell; builtins, pipes, redirects, `$PATH` search |
 | `/bin/cat` | [x] | |
@@ -449,11 +449,43 @@ Notes:
 
 ---
 
+## Syscall Test Coverage
+
+The fulltest suite exercises **124 of 141** kernel syscalls (87.9% coverage).
+
+### Tested Syscalls (124/141)
+
+`write`, `exit`, `getpid`, `open`, `read`, `close`, `waitpid`, `lseek`, `fstat`, `stat`, `dup`, `dup2`, `pipe`, `execve`, `fork`, `getppid`, `poll`, `kill`, `select`, `ioctl`, `setsid`, `setpgid`, `getpgrp`, `sigaction`, `sigprocmask`, `sigreturn`, `mkdir`, `unlink`, `getdents`, `fcntl`, `chdir`, `getcwd`, `pipe2`, `dup3`, `openat`, `fstatat`, `unlinkat`, `rename`, `rmdir`, `brk`, `nanosleep`, `clock_gettime`, `mmap`, `munmap`, `shmget`, `shmat`, `chmod`, `chown`, `getuid`, `getgid`, `link`, `symlink`, `readlink`, `socket`, `bind`, `listen`, `clone`, `gettid`, `fsync`, `sigpending`, `pread`, `pwrite`, `access`, `umask`, `setuid`, `setgid`, `truncate`, `ftruncate`, `sigsuspend`, `readv`, `writev`, `alarm`, `times`, `futex`, `sigaltstack`, `flock`, `geteuid`, `getegid`, `seteuid`, `setegid`, `setitimer`, `getitimer`, `waitid`, `sigqueue`, `posix_spawn`, `mq_open`, `mq_close`, `mq_send`, `mq_receive`, `mq_unlink`, `sem_open`, `sem_close`, `sem_wait`, `sem_post`, `sem_unlink`, `sem_getvalue`, `dlopen`, `dlsym`, `dlclose`, `epoll_create`, `epoll_ctl`, `epoll_wait`, `inotify_init`, `inotify_add_watch`, `inotify_rm_watch`, `pivot_root`, `aio_read`, `aio_write`, `aio_error`, `aio_return`, `mount`, `gettimeofday`, `mprotect`, `getrlimit`, `setrlimit`, `shutdown`, `getsockname`, `uname`, `getrusage`, `umount2`, `madvise`, `execveat`
+
+### Untested Syscalls (17/141)
+
+| Syscall | Reason |
+|---------|--------|
+| `shmctl` | Shared memory control (IPC_RMID/IPC_STAT) not tested |
+| `set_thread_area` | Used implicitly by clone/TLS, no direct test |
+| `accept` | TCP connect/accept hangs in QEMU — test disabled |
+| `connect` | TCP loopback hangs in QEMU — test disabled |
+| `send` | Depends on connect — no test |
+| `recv` | Depends on connect — no test |
+| `sendto` | UDP I/O not tested |
+| `recvfrom` | UDP I/O not tested |
+| `fdatasync` | Similar to fsync but data-only — no test |
+| `getaddrinfo` | DNS resolution not tested in fulltest |
+| `sendmsg` | Scatter/gather socket I/O not tested |
+| `recvmsg` | Scatter/gather socket I/O not tested |
+| `aio_suspend` | Async I/O wait not tested |
+| `setsockopt` | Socket options not tested |
+| `getsockopt` | Socket options not tested |
+| `getpeername` | Depends on connect — no test |
+| `wait4` | Different from waitpid — no test |
+
+---
+
 ## Remaining Work
 
 All previously identified gaps have been implemented. Rump Kernel integration prerequisites (condition variables, TSC nanosecond clock, IRQ chaining) are complete, and the `rumpuser` hypercall scaffold is in place.
 
-Potential future enhancements:
+### Future Enhancements
 
 | Area | Description |
 |------|-------------|
@@ -463,3 +495,55 @@ Potential future enhancements:
 | **ARM64/RISC-V/MIPS subsystems** | PMM, VMM, scheduler, syscalls for non-x86 |
 | **Intel HDA audio** | DMA ring buffer audio driver |
 | ~~**USTAR initrd format**~~ | ✅ Implemented — USTAR + LZ4 Frame format |
+
+### POSIX Gaps for 100% Compliance
+
+These are POSIX-mandated features not yet implemented in the kernel:
+
+#### Process & Credentials
+- `chroot` — Change root directory
+- `getgroups` / `setgroups` — Supplementary group IDs
+- `getpgid` / `getsid` — Query PGID/SID of arbitrary process
+- `ptrace` — Process tracing (for gdb/strace)
+- `nice` / `getpriority` / `setpriority` — Process priority
+- `pause` — Wait for signal (sigsuspend partially covers)
+- Saved set-user-ID (POSIX requires)
+
+#### Filesystem
+- `mkfifo` / `mknod` — Create FIFOs and device nodes
+- `fchdir` — chdir via fd
+- `fchmod` / `fchown` / `lchown` — chmod/chown by fd or without symlink follow
+- `sync` / `syncfs` — Synchronize entire filesystem
+- `statfs` / `fstatfs` — Filesystem statistics
+- `fpathconf` / `pathconf` — Configurable path variables
+- `readlinkat` / `mkdirat` / `fchmodat` — Missing *at() variants
+
+#### Signals
+- `sigwait` / `sigwaitinfo` / `sigtimedwait` — Synchronous signal waiting
+
+#### POSIX Timers
+- `timer_create` / `timer_delete` / `timer_settime` / `timer_gettime` — POSIX timers
+- `clock_settime` / `clock_getres` / `clock_nanosleep` — Clock management
+
+#### IPC
+- `shmctl IPC_RMID/IPC_STAT` — Shared memory control operations
+- `sem_init` / `sem_destroy` — Unnamed (anonymous) semaphores
+- `mq_notify` / `mq_getattr` / `mq_setattr` — Message queue notifications and attributes
+
+#### Memory
+- `mremap` — Remap virtual memory
+- `msync` — Synchronize mmap with file
+- `mincore` — Check page residency
+
+#### Network
+- `socketpair` — Connected socket pairs (UNIX domain)
+- TCP loopback (`connect`/`accept`/`send`/`recv`) — currently hangs in QEMU
+- `AF_UNIX` / `AF_INET6` address families
+
+#### Threads (pthreads)
+- Full thread lifecycle: `pthread_cancel`, `pthread_testcancel`, `pthread_detach`
+- Thread-safe `errno` via TLS (per-thread errno)
+- `pthread_atfork` handlers
+
+#### Terminal
+- `tcsendbreak` / `tcdrain` / `tcflush` / `tcflow` — Terminal control (ulibc has wrappers, kernel ioctl needed)
