@@ -210,6 +210,7 @@ int init_start(const struct boot_info* bi) {
             fs_node_t* ovl = overlayfs_create_root(fs_root, upper);
             if (ovl) {
                 (void)vfs_mount("/", ovl);
+                vfs_set_initrd_root(ovl);
             }
         }
     }

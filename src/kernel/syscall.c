@@ -2056,7 +2056,8 @@ static int syscall_execve_impl(struct registers* regs, const char* user_path, co
     }
 
     // Distinguish ENOENT early.
-    fs_node_t* node = vfs_lookup(path);
+    fs_node_t* node = vfs_lookup_initrd(path);
+    if (!node) node = vfs_lookup(path);
     if (!node) { ret = -ENOENT; goto out; }
 
     uintptr_t entry = 0;

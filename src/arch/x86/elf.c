@@ -264,7 +264,8 @@ static void elf32_process_relocations(const uint8_t* file, uint32_t file_len,
  * Returns 0 on success, fills *loaded_end with highest mapped address. */
 static int elf32_load_shared_lib_at(const char* path, uintptr_t as,
                                      uintptr_t base, uintptr_t* loaded_end) {
-    fs_node_t* node = vfs_lookup(path);
+    fs_node_t* node = vfs_lookup_initrd(path);
+    if (!node) node = vfs_lookup(path);
     if (!node) return -ENOENT;
 
     uint32_t flen = node->length;
@@ -355,7 +356,8 @@ static int elf32_load_interp(const char* interp_path, uintptr_t as,
                               uintptr_t* interp_entry, uintptr_t* interp_base_out) {
     if (!interp_path || !interp_entry) return -EINVAL;
 
-    fs_node_t* node = vfs_lookup(interp_path);
+    fs_node_t* node = vfs_lookup_initrd(interp_path);
+    if (!node) node = vfs_lookup(interp_path);
     if (!node) {
         kprintf("[ELF] interp not found: %s\n", interp_path);
         return -ENOENT;
@@ -410,7 +412,10 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
 
     uintptr_t old_as = hal_cpu_get_address_space();
 
-    fs_node_t* node = vfs_lookup(filename);
+    /* Use vfs_lookup_initrd so that pivot_root (which changes the global
+     * fs_root and the "/" mount entry) does not break execve lookups. */
+    fs_node_t* node = vfs_lookup_initrd(filename);
+    if (!node) node = vfs_lookup(filename);
     if (!node) {
         kprintf("[ELF] file not found: %s\n", filename);
         vmm_as_destroy(new_as);

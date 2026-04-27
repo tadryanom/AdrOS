@@ -83,6 +83,10 @@ void vfs_close(fs_node_t* node);
 
 fs_node_t* vfs_lookup(const char* path);
 
+/* Lookup from the saved initrd root (immune to pivot_root). */
+void vfs_set_initrd_root(fs_node_t* root);
+fs_node_t* vfs_lookup_initrd(const char* path);
+
 // Resolve path to (parent_dir, basename).  Returns parent node or NULL.
 fs_node_t* vfs_lookup_parent(const char* path, char* name_out, size_t name_sz);
 

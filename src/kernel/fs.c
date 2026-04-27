@@ -14,6 +14,7 @@
 #include "errno.h"
 
 fs_node_t* fs_root = NULL;
+static fs_node_t* g_initrd_root = NULL;
 
 struct vfs_mount {
     char mountpoint[128];
@@ -122,6 +123,41 @@ static fs_node_t* vfs_lookup_depth(const char* path, int depth);
 
 fs_node_t* vfs_lookup(const char* path) {
     return vfs_lookup_depth(path, 0);
+}
+
+void vfs_set_initrd_root(fs_node_t* root) {
+    g_initrd_root = root;
+}
+
+fs_node_t* vfs_lookup_initrd(const char* path) {
+    if (!path || !g_initrd_root) return NULL;
+
+    /* Direct finddir traversal from the saved initrd root.
+     * Bypasses the VFS mount table so that pivot_root (which changes
+     * fs_root and the "/" mount entry) does not break execve lookups. */
+    const char* p = path;
+    while (*p == '/') p++;
+    if (*p == 0) return g_initrd_root;
+
+    fs_node_t* cur = g_initrd_root;
+    char part[128];
+    while (*p != 0) {
+        size_t i = 0;
+        while (*p != 0 && *p != '/') {
+            if (i + 1 < sizeof(part)) part[i++] = *p;
+            p++;
+        }
+        part[i] = 0;
+        while (*p == '/') p++;
+        if (part[0] == 0) continue;
+        if (!cur) return NULL;
+        fs_node_t* (*fn_finddir)(fs_node_t*, const char*) = NULL;
+        if (cur->i_ops && cur->i_ops->lookup) fn_finddir = cur->i_ops->lookup;
+        if (!fn_finddir) return NULL;
+        cur = fn_finddir(cur, part);
+        if (!cur) return NULL;
+    }
+    return cur;
 }
 
 static fs_node_t* vfs_lookup_depth(const char* path, int depth) {

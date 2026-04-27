@@ -5257,13 +5257,27 @@ void _start(void) {
                   (uint32_t)(sizeof("[test] pivot_root OK\n") - 1));
     }
 
-    (void)sys_write(1, "[test] execve(/bin/echo)\n",
-                    (uint32_t)(sizeof("[test] execve(/bin/echo)\n") - 1));
-    static const char* const argv[] = {"echo", "[echo]", "hello", "from", "echo", 0};
-    static const char* const envp[] = {"FOO=bar", "HELLO=world", 0};
-    (void)sys_execve("/bin/echo", argv, envp);
-    (void)sys_write(1, "[test] execve returned (unexpected)\n",
-                    (uint32_t)(sizeof("[test] execve returned (unexpected)\n") - 1));
-    sys_exit(1);
+    // execve — fork a child that replaces itself with /bin/echo
+    {
+        int pid = sys_fork();
+        if (pid < 0) {
+            sys_write(1, "[test] execve fork failed\n",
+                      (uint32_t)(sizeof("[test] execve fork failed\n") - 1));
+            sys_exit(1);
+        }
+        if (pid == 0) {
+            static const char* const ev_argv[] = {"echo", "[echo]", "hello", "from", "echo", 0};
+            static const char* const ev_envp[] = {"FOO=bar", "HELLO=world", 0};
+            (void)sys_execve("/bin/echo", ev_argv, ev_envp);
+            sys_exit(1); /* execve should not return */
+        }
+        int st = 0;
+        sys_waitpid(pid, &st, 0);
+        if (st != 0) {
+            sys_write(1, "[test] execve child failed\n",
+                      (uint32_t)(sizeof("[test] execve child failed\n") - 1));
+            sys_exit(1);
+        }
+    }
     sys_exit(0);
 }
