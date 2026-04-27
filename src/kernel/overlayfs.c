@@ -213,7 +213,6 @@ static int overlay_readdir_impl(struct fs_node* node, uint32_t* inout_index, voi
         uint32_t upper_idx = idx;
         int rc = dir->upper->i_ops->readdir(dir->upper, &upper_idx, ents, buf_len);
         if (rc > 0) {
-            written = (uint32_t)rc / (uint32_t)sizeof(struct vfs_dirent);
             *inout_index = upper_idx;
             return rc;
         }

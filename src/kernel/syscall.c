@@ -964,9 +964,7 @@ static int syscall_fork_impl(struct registers* regs) {
     if (!current_process) return -EINVAL;
 
     uintptr_t src_as = hal_cpu_get_address_space() & ~(uintptr_t)0xFFFU;
-    if (current_process->addr_space != src_as) {
-        current_process->addr_space = src_as;
-    }
+    current_process->addr_space = src_as;
 
     uintptr_t child_as = vmm_as_clone_user_cow(src_as);
     if (!child_as) return -ENOMEM;
