@@ -73,7 +73,10 @@ static int grep_fd(int fd, const char* fname) {
             if (invert) m = !m;
             if (m) {
                 matches++;
-                if (list_files) return 1;
+                if (list_files) {
+                    printf("%s\n", fname);
+                    return 0;
+                }
                 if (!count_only && !quiet) {
                     if (show_name) printf("%s:", fname);
                     if (line_num) printf("%d:", lnum);

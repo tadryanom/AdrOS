@@ -16,22 +16,33 @@
 #include <sys/stat.h>
 
 static unsigned int parse_symbolic(const char* mode, unsigned int old) {
-    /* Parse symbolic mode: [ugoa...][+-=][rwxst...][,...] */
+    /* Parse symbolic mode: [ugoa...][+-=][rwxst...][,...]
+     * For each who-specifier, rwxst are mapped to that who's bit range:
+     *   u+rwx → 0700,  g+rwx → 0070,  o+rwx → 0007
+     *   u+s   → 4000,  g+s    → 2000,  s alone → 6000
+     *   u+t   → (invalid, sticky is others-only), t → 1000
+     */
     unsigned int result = old;
     const char* p = mode;
     while (*p) {
-        /* Parse who */
-        unsigned int who = 0;
+        /* Parse who — build per-who permission mapping */
+        unsigned int who_bits = 0;  /* which bit positions to affect */
+        int has_u = 0, has_g = 0, has_o = 0;
         while (*p == 'u' || *p == 'g' || *p == 'o' || *p == 'a') {
             switch (*p) {
-            case 'u': who |= 04700; break; /* user: setuid + user bits */
-            case 'g': who |= 02070; break; /* group: setgid + group bits */
-            case 'o': who |= 00007; break; /* other bits */
-            case 'a': who |= 06777; break; /* all */
+            case 'u': has_u = 1; break;
+            case 'g': has_g = 1; break;
+            case 'o': has_o = 1; break;
+            case 'a': has_u = has_g = has_o = 1; break;
             }
             p++;
         }
-        if (who == 0) who = 06777; /* default: all */
+        if (!has_u && !has_g && !has_o) has_u = has_g = has_o = 1; /* default: all */
+
+        /* Build who_bits from who specifiers */
+        if (has_u) who_bits |= 04700; /* setuid + user rwx */
+        if (has_g) who_bits |= 02070; /* setgid + group rwx */
+        if (has_o) who_bits |= 00007; /* other rwx */
 
         /* Parse operation */
         while (*p) {
@@ -39,30 +50,44 @@ static unsigned int parse_symbolic(const char* mode, unsigned int old) {
             if (op != '+' && op != '-' && op != '=') break;
             p++;
 
-            /* Parse permissions */
+            /* Parse permissions — map to who-specific bits */
             unsigned int perm = 0;
             while (*p == 'r' || *p == 'w' || *p == 'x' ||
                    *p == 's' || *p == 't') {
                 switch (*p) {
-                case 'r': perm |= 0444; break;
-                case 'w': perm |= 0222; break;
-                case 'x': perm |= 0111; break;
-                case 's': perm |= 06000; break; /* setuid+setgid */
-                case 't': perm |= 01000; break; /* sticky */
+                case 'r':
+                    if (has_u) perm |= 0400;
+                    if (has_g) perm |= 0040;
+                    if (has_o) perm |= 0004;
+                    break;
+                case 'w':
+                    if (has_u) perm |= 0200;
+                    if (has_g) perm |= 0020;
+                    if (has_o) perm |= 0002;
+                    break;
+                case 'x':
+                    if (has_u) perm |= 0100;
+                    if (has_g) perm |= 0010;
+                    if (has_o) perm |= 0001;
+                    break;
+                case 's':
+                    if (has_u) perm |= 04000; /* setuid */
+                    if (has_g) perm |= 02000; /* setgid */
+                    break;
+                case 't':
+                    perm |= 01000; /* sticky */
+                    break;
                 }
                 p++;
             }
 
-            /* Apply perm mask to who */
-            unsigned int masked = perm & who;
-
             if (op == '+') {
-                result |= masked;
+                result |= perm;
             } else if (op == '-') {
-                result &= ~masked;
+                result &= ~perm;
             } else { /* = */
-                result &= ~who;  /* clear who bits */
-                result |= masked;
+                result &= ~who_bits;  /* clear who bits */
+                result |= perm;
             }
 
             /* Check for comma separator or next operation */
