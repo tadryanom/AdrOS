@@ -681,6 +681,7 @@ static uint32_t ext2_file_write(fs_node_t* node, uint32_t offset, uint32_t size,
                 break;
             }
             inode.i_blocks += g_ext2.block_size / EXT2_SECTOR_SIZE;
+            (void)ext2_write_inode(en->ino, &inode);
         }
 
         uint8_t blk_buf[4096];

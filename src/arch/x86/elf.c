@@ -145,6 +145,12 @@ static int elf32_load_segments(const uint8_t* file, uint32_t file_len,
         if ((uint64_t)ph[i].p_offset + (uint64_t)ph[i].p_filesz > (uint64_t)file_len)
             return -EINVAL;
 
+        /* Parse segment permissions: PF_R=4, PF_W=2, PF_X=1 */
+        uint32_t seg_vmm_flags = VMM_FLAG_PRESENT | VMM_FLAG_USER;
+        if (ph[i].p_flags & 0x2) seg_vmm_flags |= VMM_FLAG_RW;
+        if (!(ph[i].p_flags & 0x1)) seg_vmm_flags |= VMM_FLAG_NX;  /* no execute */
+
+        /* Map as RW initially so we can write segment data */
         int mrc = elf32_map_user_range(as, vaddr, (size_t)ph[i].p_memsz, VMM_FLAG_RW);
         if (mrc < 0) return mrc;
 
@@ -260,6 +266,51 @@ static void elf32_process_relocations(const uint8_t* file, uint32_t file_len,
     #undef APPLY_REL
 }
 
+/* Re-protect all PT_LOAD segments to their final permissions.
+ * Must be called AFTER relocations, which write to read-only pages.
+ * Only re-protects pages that are ENTIRELY within a non-writable segment;
+ * pages shared between .text and .data stay writable. */
+static void elf32_reprotect_segments(const uint8_t* file, uint32_t file_len,
+                                      uintptr_t as, uintptr_t base_offset) {
+    (void)file_len;
+    const elf32_ehdr_t* eh = (const elf32_ehdr_t*)file;
+    const elf32_phdr_t* ph = (const elf32_phdr_t*)(file + eh->e_phoff);
+
+    uintptr_t old_as = hal_cpu_get_address_space();
+    vmm_as_activate(as);
+
+    for (uint16_t i = 0; i < eh->e_phnum; i++) {
+        if (ph[i].p_type != PT_LOAD) continue;
+        if (ph[i].p_memsz == 0) continue;
+
+        uintptr_t vaddr = (uintptr_t)ph[i].p_vaddr + base_offset;
+        if (vaddr == 0 || vaddr >= hal_mm_kernel_virt_base()) continue;
+
+        /* Parse segment permissions: PF_R=4, PF_W=2, PF_X=1 */
+        uint32_t seg_vmm_flags = VMM_FLAG_PRESENT | VMM_FLAG_USER;
+        if (ph[i].p_flags & 0x2) seg_vmm_flags |= VMM_FLAG_RW;
+        if (!(ph[i].p_flags & 0x1)) seg_vmm_flags |= VMM_FLAG_NX;
+
+        /* Only re-protect non-writable segments */
+        if (seg_vmm_flags & VMM_FLAG_RW) continue;
+
+        uintptr_t seg_start = vaddr;
+        uintptr_t seg_end   = vaddr + ph[i].p_memsz;
+        uintptr_t start_page = (seg_start + 0xFFF) & ~(uintptr_t)0xFFF;  /* first FULL page */
+        uintptr_t end_page   = seg_end & ~(uintptr_t)0xFFF;               /* last FULL page start */
+
+        /* Only re-protect pages entirely within this segment.
+         * Partial pages at the start/end may be shared with a
+         * writable segment and must stay writable. */
+        for (uintptr_t va = start_page; va < end_page; va += 0x1000) {
+            uintptr_t phys = vmm_virt_to_phys((uint64_t)va);
+            if (phys) vmm_map_page((uint64_t)phys, (uint64_t)va, seg_vmm_flags);
+        }
+    }
+
+    vmm_as_activate(old_as);
+}
+
 /* Load a shared library ELF at the given base VA.
  * Returns 0 on success, fills *loaded_end with highest mapped address. */
 static int elf32_load_shared_lib_at(const char* path, uintptr_t as,
@@ -288,6 +339,7 @@ static int elf32_load_shared_lib_at(const char* path, uintptr_t as,
     if (rc < 0) { kfree(fbuf); return rc; }
 
     elf32_process_relocations(fbuf, flen, base, 0);
+    elf32_reprotect_segments(fbuf, flen, as, base);
 
     if (loaded_end) *loaded_end = seg_end;
     kfree(fbuf);
@@ -394,6 +446,7 @@ static int elf32_load_interp(const char* interp_path, uintptr_t as,
 
     if (eh->e_type == ET_DYN) {
         elf32_process_relocations(fbuf, flen, base_off, 0);
+        elf32_reprotect_segments(fbuf, flen, as, base_off);
     }
 
     *interp_entry = (uintptr_t)eh->e_entry + base_off;
@@ -492,6 +545,7 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
 
     /* Process relocations — skip JMP_SLOT when ld.so will handle them lazily */
     elf32_process_relocations(file, file_len, 0, has_interp);
+    elf32_reprotect_segments(file, file_len, new_as, 0);
 
     /* Load DT_NEEDED shared libraries (kernel loads segments, ld.so resolves PLT) */
     if (has_interp) {

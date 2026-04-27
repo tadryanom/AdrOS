@@ -15,6 +15,7 @@
 #include "spinlock.h"
 #include "utils.h"
 #include "hal/cpu.h"
+#include "process.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -168,8 +169,13 @@ void* kmalloc(size_t size) {
 
     if (blk->magic != BUDDY_MAGIC || !blk->is_free) {
         spin_unlock_irqrestore(&heap_lock, flags);
-        kprintf("[HEAP] Corruption in kmalloc!\n");
-        for (;;) hal_cpu_idle();
+        kprintf("[HEAP] CORRUPTION in kmalloc! hdr=0x%x magic=0x%x\n",
+                (unsigned)(uintptr_t)blk, (unsigned)blk->magic);
+        if (current_process) {
+            current_process->state = PROCESS_ZOMBIE;
+            current_process->exit_status = 128;
+        }
+        for (;;) { hal_cpu_disable_interrupts(); schedule(); hal_cpu_idle(); }
     }
 
     /* Split down to the required order */
@@ -201,16 +207,24 @@ void kfree(void* ptr) {
 
     if (blk->magic != BUDDY_MAGIC) {
         spin_unlock_irqrestore(&heap_lock, flags);
-        kprintf("[HEAP] Corruption in kfree! (bad magic)\n");
-        kprintf("[HEAP] hdr=0x%x magic=0x%x\n",
+        kprintf("[HEAP] CORRUPTION in kfree! (bad magic) hdr=0x%x magic=0x%x\n",
                 (unsigned)(uintptr_t)blk, (unsigned)blk->magic);
-        for (;;) hal_cpu_idle();
+        if (current_process) {
+            current_process->state = PROCESS_ZOMBIE;
+            current_process->exit_status = 128;
+        }
+        for (;;) { hal_cpu_disable_interrupts(); schedule(); hal_cpu_idle(); }
     }
 
     if (blk->is_free) {
         spin_unlock_irqrestore(&heap_lock, flags);
-        kprintf("[HEAP] Double free!\n");
-        for (;;) hal_cpu_idle();
+        kprintf("[HEAP] CORRUPTION: Double free! hdr=0x%x\n",
+                (unsigned)(uintptr_t)blk);
+        if (current_process) {
+            current_process->state = PROCESS_ZOMBIE;
+            current_process->exit_status = 128;
+        }
+        for (;;) { hal_cpu_disable_interrupts(); schedule(); hal_cpu_idle(); }
     }
 
     blk->is_free = 1;

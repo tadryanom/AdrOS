@@ -175,20 +175,22 @@ static void rq_dequeue(struct runqueue* rq, struct process* p) {
 }
 
 static void rq_remove_if_queued(struct process* p) {
-    uint8_t prio = p->priority;
     struct process* it;
     struct cpu_rq *crq = &pcpu_rq[p->cpu_id < SCHED_MAX_CPUS ? p->cpu_id : 0];
 
-    it = crq->active->queue[prio].head;
-    while (it) {
-        if (it == p) { rq_dequeue(crq->active, p); return; }
-        it = it->rq_next;
-    }
-
-    it = crq->expired->queue[prio].head;
-    while (it) {
-        if (it == p) { rq_dequeue(crq->expired, p); return; }
-        it = it->rq_next;
+    /* Scan ALL priority queues in both active and expired, since
+     * the process may have been enqueued at a different priority
+     * (e.g. via renice) and p->priority no longer matches. */
+    for (int rq_idx = 0; rq_idx < 2; rq_idx++) {
+        struct runqueue* rq = (rq_idx == 0) ? crq->active : crq->expired;
+        for (int prio = 0; prio < SCHED_NUM_PRIOS; prio++) {
+            if (!(rq->bitmap & (1U << prio))) continue;
+            it = rq->queue[prio].head;
+            while (it) {
+                if (it == p) { rq_dequeue(rq, p); return; }
+                it = it->rq_next;
+            }
+        }
     }
 }
 

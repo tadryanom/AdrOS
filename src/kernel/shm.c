@@ -62,7 +62,7 @@ int shm_get(uint32_t key, uint32_t size, int flags) {
     /* If key != IPC_PRIVATE, search for existing */
     if (key != IPC_PRIVATE) {
         for (int i = 0; i < SHM_MAX_SEGMENTS; i++) {
-            if (segments[i].used && segments[i].key == key) {
+            if (segments[i].used && segments[i].key == key && !segments[i].marked_rm) {
                 if ((flags & IPC_CREAT) && (flags & IPC_EXCL)) {
                     spin_unlock_irqrestore(&shm_lock, irqf);
                     return -EEXIST;
@@ -123,6 +123,11 @@ void* shm_at(int shmid, uintptr_t shmaddr) {
     if (!seg->used) {
         spin_unlock_irqrestore(&shm_lock, irqf);
         return (void*)(uintptr_t)-EINVAL;
+    }
+
+    if (seg->marked_rm) {
+        spin_unlock_irqrestore(&shm_lock, irqf);
+        return (void*)(uintptr_t)-EIDRM;
     }
 
     if (!current_process) {

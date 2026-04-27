@@ -29,7 +29,7 @@ extern uint8_t _end;
 #define BITMAP_SIZE (MAX_RAM_SIZE / PAGE_SIZE / 8)
 
 static uint8_t memory_bitmap[BITMAP_SIZE];
-static uint16_t frame_refcount[MAX_RAM_SIZE / PAGE_SIZE];
+static uint32_t frame_refcount[MAX_RAM_SIZE / PAGE_SIZE];
 static uint64_t total_memory = 0;
 static uint64_t used_memory = 0;
 static uint64_t max_frames = 0;
@@ -211,7 +211,7 @@ void pmm_free_page(void* ptr) {
 
     uintptr_t flags = spin_lock_irqsave(&pmm_lock);
 
-    uint16_t rc = frame_refcount[frame];
+    uint32_t rc = frame_refcount[frame];
 
     if (rc == 0 || !bitmap_test(frame)) {
         spin_unlock_irqrestore(&pmm_lock, flags);
@@ -241,11 +241,11 @@ void pmm_incref(uintptr_t paddr) {
     spin_unlock_irqrestore(&pmm_lock, flags);
 }
 
-uint16_t pmm_decref(uintptr_t paddr) {
+uint32_t pmm_decref(uintptr_t paddr) {
     uint64_t frame = paddr / PAGE_SIZE;
     if (frame == 0 || frame >= max_frames) return 0;
     uintptr_t flags = spin_lock_irqsave(&pmm_lock);
-    uint16_t new_val = --frame_refcount[frame];
+    uint32_t new_val = --frame_refcount[frame];
     if (new_val == 0) {
         bitmap_unset(frame);
         used_memory -= PAGE_SIZE;
@@ -254,11 +254,11 @@ uint16_t pmm_decref(uintptr_t paddr) {
     return new_val;
 }
 
-uint16_t pmm_get_refcount(uintptr_t paddr) {
+uint32_t pmm_get_refcount(uintptr_t paddr) {
     uint64_t frame = paddr / PAGE_SIZE;
     if (frame >= max_frames) return 0;
     uintptr_t flags = spin_lock_irqsave(&pmm_lock);
-    uint16_t rc = frame_refcount[frame];
+    uint32_t rc = frame_refcount[frame];
     spin_unlock_irqrestore(&pmm_lock, flags);
     return rc;
 }

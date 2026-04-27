@@ -32,6 +32,7 @@ static fs_node_t g_proc_dmesg;
 static fs_node_t g_pid_dir[PID_NODE_POOL];
 static fs_node_t g_pid_status[PID_NODE_POOL];
 static fs_node_t g_pid_maps[PID_NODE_POOL];
+static fs_node_t g_pid_cmdline[PID_NODE_POOL];
 static uint32_t g_pid_pool_idx = 0;
 
 extern struct process* ready_queue_head;
@@ -311,12 +312,12 @@ static fs_node_t* proc_pid_finddir(fs_node_t* node, const char* name) {
     }
     if (strcmp(name, "cmdline") == 0) {
         g_pid_pool_idx = (slot + 1) % PID_NODE_POOL;
-        memset(&g_pid_status[slot], 0, sizeof(fs_node_t));
-        strcpy(g_pid_status[slot].name, "cmdline");
-        g_pid_status[slot].flags = FS_FILE;
-        g_pid_status[slot].inode = pid;
-        g_pid_status[slot].f_ops = &procfs_pid_cmdline_fops;
-        return &g_pid_status[slot];
+        memset(&g_pid_cmdline[slot], 0, sizeof(fs_node_t));
+        strcpy(g_pid_cmdline[slot].name, "cmdline");
+        g_pid_cmdline[slot].flags = FS_FILE;
+        g_pid_cmdline[slot].inode = pid;
+        g_pid_cmdline[slot].f_ops = &procfs_pid_cmdline_fops;
+        return &g_pid_cmdline[slot];
     }
     return NULL;
 }

@@ -69,14 +69,17 @@ int ksem_wait_timeout(ksem_t* s, uint32_t timeout_ms) {
     spin_unlock_irqrestore(&s->lock, flags);
     schedule();
 
-    /* We were woken — check if it was a timeout or a signal */
+    /* We were woken — check if it was a timeout, signal, or sem post */
     flags = spin_lock_irqsave(&s->lock);
 
-    /* Remove ourselves from waiters if still present (timeout case) */
+    /* If ksem_signal woke us, we were already removed from waiters
+     * and our state was set to READY.  If still in waiters, we were
+     * woken by timeout or signal.  Distinguish by checking state:
+     * SLEEPING with deadline passed => timeout; READY => signal. */
     int found = 0;
     for (uint32_t i = 0; i < s->nwaiters; i++) {
         if (s->waiters[i] == current_process) {
-            /* We timed out — remove from list */
+            /* Still in waiters — remove from list */
             for (uint32_t j = i; j + 1 < s->nwaiters; j++)
                 s->waiters[j] = s->waiters[j + 1];
             s->waiters[--s->nwaiters] = NULL;
@@ -87,8 +90,17 @@ int ksem_wait_timeout(ksem_t* s, uint32_t timeout_ms) {
 
     spin_unlock_irqrestore(&s->lock, flags);
 
-    /* If we were still in the waiters list, it was a timeout */
-    return found ? 1 : 0;
+    /* If not in waiters, ksem_signal removed us => success */
+    if (!found) return 0;
+
+    /* Still in waiters: was it timeout or signal wake? */
+    if (timeout_ms > 0 && current_process->state == PROCESS_READY) {
+        /* Woken by signal (not timeout) while waiting with timeout */
+        return -1;  /* interrupted */
+    }
+
+    /* Timed out */
+    return 1;
 }
 
 void ksem_signal(ksem_t* s) {

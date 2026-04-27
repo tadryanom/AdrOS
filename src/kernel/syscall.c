@@ -421,6 +421,7 @@ static int syscall_dlopen_impl(const char* user_path) {
         uint32_t p_vaddr  = *(uint32_t*)(ph + 8);
         uint32_t p_filesz = *(uint32_t*)(ph + 16);
         uint32_t p_memsz  = *(uint32_t*)(ph + 20);
+        uint32_t p_flags  = *(uint32_t*)(ph + 24);
 
         if (p_type != 1) continue; /* PT_LOAD = 1 */
         if (p_memsz == 0) continue;
@@ -433,7 +434,13 @@ static int syscall_dlopen_impl(const char* user_path) {
         /* Detect 32-bit overflow in vaddr + p_memsz */
         if (p_memsz > (UINT32_MAX - vaddr)) continue;
 
-        /* Map pages */
+        /* Parse segment permissions: PF_R=4, PF_W=2, PF_X=1 */
+        uint32_t seg_vmm_flags = VMM_FLAG_PRESENT | VMM_FLAG_USER;
+        if (p_flags & 0x2) seg_vmm_flags |= VMM_FLAG_RW;
+        if (!(p_flags & 0x1)) seg_vmm_flags |= VMM_FLAG_NX;  /* no execute */
+
+        /* Map pages as RW initially so we can write segment data,
+         * then re-protect below after the copy. */
         uint32_t start_page = vaddr & ~0xFFFU;
         uint32_t end_page = (vaddr + p_memsz - 1) & ~0xFFFU;
         for (uint32_t va = start_page; va <= end_page; va += 0x1000) {
@@ -459,6 +466,19 @@ static int syscall_dlopen_impl(const char* user_path) {
             memcpy((void*)vaddr, fbuf + p_offset, p_filesz);
         if (p_memsz > p_filesz)
             memset((void*)(vaddr + p_filesz), 0, p_memsz - p_filesz);
+
+        /* Re-protect pages to final permissions (drop W if not PF_W).
+         * Only re-protect full pages entirely within this segment;
+         * partial pages at boundaries may be shared with a writable
+         * segment and must stay writable. */
+        if (!(seg_vmm_flags & VMM_FLAG_RW)) {
+            uint32_t full_start = (vaddr + 0xFFF) & ~0xFFFU;  /* first FULL page */
+            uint32_t full_end   = (vaddr + p_memsz) & ~0xFFFU; /* end of full pages */
+            for (uint32_t va = full_start; va < full_end; va += 0x1000) {
+                vmm_map_page(vmm_virt_to_phys((uint64_t)va), (uint64_t)va,
+                             seg_vmm_flags);
+            }
+        }
     }
 
     /* Extract symbols from .dynsym + .dynstr via PT_DYNAMIC */
@@ -917,6 +937,8 @@ static int syscall_select_impl(uint32_t nfds,
 
 static int execve_copy_user_str(char* out, size_t out_sz, const char* user_s) {
     if (!out || out_sz == 0 || !user_s) return -EFAULT;
+    /* Check full range upfront to avoid 128 individual copy_from_user calls */
+    if (user_range_ok(user_s, out_sz) == 0) return -EFAULT;
     for (size_t i = 0; i < out_sz; i++) {
         if (copy_from_user(&out[i], &user_s[i], 1) < 0) return -EFAULT;
         if (out[i] == 0) return 0;
