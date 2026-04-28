@@ -15,13 +15,13 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-static int parse_size(const char* s) {
-    int v = atoi(s);
+static long parse_size(const char* s) {
+    long v = strtol(s, NULL, 10);
     int len = (int)strlen(s);
     if (len > 0) {
         char suf = s[len - 1];
-        if (suf == 'k' || suf == 'K') v *= 1024;
-        else if (suf == 'm' || suf == 'M') v *= 1024 * 1024;
+        if (suf == 'k' || suf == 'K') v *= 1024L;
+        else if (suf == 'm' || suf == 'M') v *= 1024L * 1024L;
     }
     return v;
 }
@@ -36,7 +36,7 @@ static int parse_size(const char* s) {
 int main(int argc, char** argv) {
     const char* inf = NULL;
     const char* outf = NULL;
-    int bs = 512;
+    long bs = 512;
     int count = -1;
     int skip = 0;
     int seek_val = 0;

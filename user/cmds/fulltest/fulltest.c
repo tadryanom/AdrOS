@@ -607,7 +607,7 @@ static int sys_sigaction(int sig, void (*handler)(int), uintptr_t* old_out) {
     act.sa_mask = 0;
     act.sa_flags = 0;
 
-    struct sigaction oldact;
+    struct sigaction oldact = {{0}};
     struct sigaction* oldp = old_out ? &oldact : 0;
 
     int r = sys_sigaction2(sig, &act, oldp);
@@ -1449,7 +1449,7 @@ static int sys_chown(const char* path, uint32_t uid, uint32_t gid) {
 
 static int sys_futex(uint32_t* uaddr, int op, uint32_t val) {
     int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_FUTEX), "b"(uaddr), "c"(op), "d"(val) : "memory");
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_FUTEX), "b"(uaddr), "c"(op), "d"(val), "S"(0) : "memory");
     return __syscall_fix(ret);
 }
 

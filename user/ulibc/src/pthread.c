@@ -184,11 +184,11 @@ void pthread_testcancel(void) {}
 #define FUTEX_WAKE 1
 
 static int futex_wait(volatile int* addr, int val) {
-    return _syscall3(SYS_FUTEX, (int)addr, FUTEX_WAIT, val);
+    return _syscall4(SYS_FUTEX, (int)addr, FUTEX_WAIT, val, 0);
 }
 
 static int futex_wake(volatile int* addr, int count) {
-    return _syscall3(SYS_FUTEX, (int)addr, FUTEX_WAKE, count);
+    return _syscall4(SYS_FUTEX, (int)addr, FUTEX_WAKE, count, 0);
 }
 
 static int atomic_cas(volatile int* ptr, int old, int new_val) {

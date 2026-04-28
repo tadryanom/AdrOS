@@ -123,8 +123,11 @@ void free(void* ptr) {
     /* Coalesce with previous block if adjacent */
     struct block_hdr* p_prev = free_list;
     if (p_prev != b) {
-        while (p_prev && (struct block_hdr*)(uintptr_t)p_prev->next_free != b)
+        int iters = 0;
+        while (p_prev && (struct block_hdr*)(uintptr_t)p_prev->next_free != b) {
             p_prev = (struct block_hdr*)(uintptr_t)p_prev->next_free;
+            if (++iters > 1024 || (uintptr_t)p_prev < 0x1000U) { p_prev = NULL; break; }
+        }
         if (p_prev && (char*)p_prev + blk_size(p_prev) == (char*)b) {
             p_prev->size += blk_size(b);
             p_prev->next_free = b->next_free;

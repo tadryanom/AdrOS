@@ -164,6 +164,7 @@ static void grep_recursive(const char* path, const char* prefix) {
 
 int main(int argc, char** argv) {
     int i = 1;
+    const char* e_pattern = NULL;
     while (i < argc && argv[i][0] == '-' && argv[i][1]) {
         if (strcmp(argv[i], "--") == 0) { i++; break; }
         for (int j = 1; argv[i][j]; j++) {
@@ -176,10 +177,15 @@ int main(int argc, char** argv) {
             else if (argv[i][j] == 'r') recursive = 1;
             else if (argv[i][j] == 'E') use_regex = 2;
             else if (argv[i][j] == 'F') use_regex = 0;
-            else if (argv[i][j] == 'e' && j == 1) {
-                /* -e PATTERN */
-                if (argv[i][j+1]) { /* pattern follows in same arg */ }
-                /* handled below */
+            else if (argv[i][j] == 'e') {
+                if (argv[i][j+1]) {
+                    e_pattern = &argv[i][j+1];
+                } else {
+                    i++;
+                    if (i >= argc) { fprintf(stderr, "grep: -e requires an argument\n"); return 2; }
+                    e_pattern = argv[i];
+                }
+                break; /* rest of this arg is the pattern */
             }
             else {
                 fprintf(stderr, "grep: invalid option -- '%c'\n", argv[i][j]);
@@ -188,8 +194,11 @@ int main(int argc, char** argv) {
         }
         i++;
     }
-    if (i >= argc) { fprintf(stderr, "usage: grep [-vcnlqiErF] PATTERN [FILE...]\n"); return 2; }
-    const char* pattern = argv[i++];
+    const char* pattern = e_pattern;
+    if (!pattern) {
+        if (i >= argc) { fprintf(stderr, "usage: grep [-vcnlqiErF] PATTERN [FILE...]\n"); return 2; }
+        pattern = argv[i++];
+    }
 
     /* Compile regex or set fixed pattern */
     if (use_regex == 0) {

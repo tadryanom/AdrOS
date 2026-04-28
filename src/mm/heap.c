@@ -174,8 +174,9 @@ void* kmalloc(size_t size) {
         if (current_process) {
             current_process->state = PROCESS_ZOMBIE;
             current_process->exit_status = 128;
+            schedule();
         }
-        for (;;) { hal_cpu_disable_interrupts(); schedule(); hal_cpu_idle(); }
+        return NULL;
     }
 
     /* Split down to the required order */
@@ -212,8 +213,9 @@ void kfree(void* ptr) {
         if (current_process) {
             current_process->state = PROCESS_ZOMBIE;
             current_process->exit_status = 128;
+            schedule();
         }
-        for (;;) { hal_cpu_disable_interrupts(); schedule(); hal_cpu_idle(); }
+        return;
     }
 
     if (blk->is_free) {
@@ -223,8 +225,9 @@ void kfree(void* ptr) {
         if (current_process) {
             current_process->state = PROCESS_ZOMBIE;
             current_process->exit_status = 128;
+            schedule();
         }
-        for (;;) { hal_cpu_disable_interrupts(); schedule(); hal_cpu_idle(); }
+        return;
     }
 
     blk->is_free = 1;

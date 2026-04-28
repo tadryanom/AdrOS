@@ -85,12 +85,19 @@ static int parse_cmd(const char* expr, struct sed_cmd* c) {
     /* Parse first address */
     if (*p && *p != 's' && *p != 'd' && *p != 'p' && *p != 'q' &&
         *p != 'a' && *p != 'i' && *p != 'c' && *p != 'y') {
-        if (parse_addr(&p, &c->addr1) < 0) return -1;
+        if (parse_addr(&p, &c->addr1) < 0) {
+            if (c->addr1.has_re) regfree(&c->addr1.re);
+            return -1;
+        }
         while (*p == ' ' || *p == '\t') p++;
         if (*p == ',') {
             p++;
             while (*p == ' ' || *p == '\t') p++;
-            if (parse_addr(&p, &c->addr2) < 0) return -1;
+            if (parse_addr(&p, &c->addr2) < 0) {
+                if (c->addr1.has_re) regfree(&c->addr1.re);
+                if (c->addr2.has_re) regfree(&c->addr2.re);
+                return -1;
+            }
             c->has_addr2 = 1;
             while (*p == ' ' || *p == '\t') p++;
         }
@@ -105,13 +112,13 @@ static int parse_cmd(const char* expr, struct sed_cmd* c) {
         int pi = 0;
         while (*p && *p != delim && pi < 255) c->s_pat[pi++] = *p++;
         c->s_pat[pi] = '\0';
-        if (*p != delim) return -1;
+        if (*p != delim) { if (c->addr1.has_re) regfree(&c->addr1.re); if (c->addr2.has_re) regfree(&c->addr2.re); return -1; }
         p++;
         int ri = 0;
         while (*p && *p != delim && ri < 255) c->s_rep[ri++] = *p++;
         c->s_rep[ri] = '\0';
         if (*p == delim) { p++; if (*p == 'g') c->s_global = 1; }
-        if (regcomp(&c->s_re, c->s_pat, 0) != 0) return -1;
+        if (regcomp(&c->s_re, c->s_pat, 0) != 0) { if (c->addr1.has_re) regfree(&c->addr1.re); if (c->addr2.has_re) regfree(&c->addr2.re); return -1; }
         c->s_has_re = 1;
         break;
     }

@@ -85,6 +85,10 @@ static int parse_inittab(void) {
     buf[total] = '\0';
     close(fd);
 
+    if (total >= (int)sizeof(buf) - 1) {
+        write(2, "init: warning: /etc/inittab truncated\n", 38);
+    }
+
     char* p = buf;
     while (*p && nentries < MAX_ENTRIES) {
         /* Skip whitespace and comments */

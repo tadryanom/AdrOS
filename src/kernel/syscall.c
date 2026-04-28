@@ -2469,7 +2469,7 @@ static int syscall_fcntl_impl(int fd, int cmd, uint32_t arg) {
         }
         if (new_fd < 0) return -EMFILE;
         current_process->files[new_fd] = f;
-        f->refcount++;
+        __sync_fetch_and_add(&f->refcount, 1);
         current_process->fd_flags[new_fd] = FD_CLOEXEC;
         return new_fd;
     }
@@ -4363,9 +4363,9 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
         uint32_t* uaddr = (uint32_t*)sc_arg0(regs);
         int op = (int)sc_arg1(regs);
         uint32_t val = sc_arg2(regs);
-        
+
         if (!uaddr) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
-        
+
         if (op == FUTEX_WAIT) {
             uint32_t cur = 0;
             if (copy_from_user(&cur, uaddr, sizeof(cur)) < 0) {
@@ -4381,8 +4381,26 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
             futex_waiters[slot].addr = (uintptr_t)uaddr;
             futex_waiters[slot].proc = current_process;
             extern void schedule(void);
+
+            /* Compute timeout: arg3 is a userspace timespec* or NULL */
+            uint32_t timeout_ticks = 5000; /* default ~100s */
+            const struct k_timeval* user_ts = (const struct k_timeval*)(uintptr_t)sc_arg3(regs);
+            if (user_ts && user_range_ok(user_ts, sizeof(struct k_timeval))) {
+                struct k_timeval kts;
+                if (copy_from_user(&kts, user_ts, sizeof(kts)) == 0) {
+                    if (kts.tv_sec == 0 && kts.tv_usec == 0) {
+                        /* timeout==0 means no wait (poll) */
+                        futex_waiters[slot].proc = NULL;
+                        futex_waiters[slot].addr = 0;
+                        sc_ret(regs) = (uint32_t)-ETIMEDOUT;
+                        return;
+                    }
+                    timeout_ticks = timeval_to_ticks(&kts);
+                }
+            }
+
             current_process->state = PROCESS_SLEEPING;
-            current_process->wake_at_tick = get_tick_count() + 5000; /* 100s timeout */
+            current_process->wake_at_tick = get_tick_count() + timeout_ticks;
             schedule();
             futex_waiters[slot].proc = NULL;
             futex_waiters[slot].addr = 0;

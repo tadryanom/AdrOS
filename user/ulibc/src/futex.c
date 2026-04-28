@@ -10,7 +10,8 @@
 
 #include "linux/futex.h"
 #include "syscall.h"
+#include <sys/time.h>
 
-int futex(uint32_t* uaddr, int op, uint32_t val) {
-    return _syscall3(SYS_FUTEX, (int)uaddr, op, (int)val);
+int futex(uint32_t* uaddr, int op, uint32_t val, const struct timeval* timeout) {
+    return _syscall4(SYS_FUTEX, (int)uaddr, op, (int)val, (int)(uintptr_t)timeout);
 }

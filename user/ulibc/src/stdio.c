@@ -213,12 +213,16 @@ void setbuf(FILE* fp, char* buf) {
 }
 
 int vfprintf(FILE* fp, const char* fmt, va_list ap) {
-    char buf[1024];
+    char buf[4096];
     int n = vsnprintf(buf, sizeof(buf), fmt, ap);
     if (n > 0) {
         int w = n;
-        if (w > (int)(sizeof(buf) - 1)) w = (int)(sizeof(buf) - 1);
-        fwrite(buf, 1, (size_t)w, fp);
+        if (w > (int)(sizeof(buf) - 1)) {
+            /* Output was truncated — write the full buffer and report total */
+            fwrite(buf, 1, sizeof(buf) - 1, fp);
+        } else {
+            fwrite(buf, 1, (size_t)w, fp);
+        }
     }
     return n;
 }
