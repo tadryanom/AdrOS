@@ -606,7 +606,7 @@ static int sys_sigaction(int sig, void (*handler)(int), uintptr_t* old_out) {
     act.sa_mask = 0;
     act.sa_flags = 0;
 
-    struct sigaction oldact = {{0}};
+    struct sigaction oldact = {0};
     struct sigaction* oldp = old_out ? &oldact : 0;
 
     int r = sys_sigaction2(sig, &act, oldp);
@@ -5218,7 +5218,7 @@ void _start(void) {
                   (uint32_t)(sizeof("[test] execveat OK\n") - 1));
     }
 
-    // I17: pivot_root — mount tmpfs + pivot_root + verify (isolated fork)
+    // I17: pivot_root — mount tmpfs + pivot_root + undo (isolated fork)
     {
         int pid = sys_fork();
         if (pid < 0) {
@@ -5241,6 +5241,34 @@ void _start(void) {
                 sys_write(1, "[test] pivot_root failed\n",
                           (uint32_t)(sizeof("[test] pivot_root failed\n") - 1));
                 sys_exit(1);
+            }
+
+            /* Undo pivot_root to restore global VFS state.
+             * Without per-process mount namespaces, pivot_root modifies
+             * the global fs_root and "/" mount entry.  After the child
+             * exits the parent (and the shell) would see an empty tmpfs
+             * as "/", breaking all command lookups via access()/vfs_lookup().
+             * Pivot back so the overlayfs root is restored. */
+            (void)sys_mkdir("/undo_dir");
+            if (sys_pivot_root("/tmp/pivot_old", "/undo_dir") < 0) {
+                sys_write(1, "[test] pivot_root undo failed\n",
+                          (uint32_t)(sizeof("[test] pivot_root undo failed\n") - 1));
+                sys_exit(1);
+            }
+            (void)sys_umount2("/undo_dir");
+            (void)sys_umount2("/tmp/pivot_old");
+            (void)sys_umount2("/tmp/pivot_new");
+
+            /* Verify that the original mount points are accessible
+             * after undoing pivot_root. */
+            {
+                int vfd = sys_open("/dev/null", 0);
+                if (vfd < 0) {
+                    sys_write(1, "[test] pivot_root undo verify /dev failed\n",
+                              (uint32_t)(sizeof("[test] pivot_root undo verify /dev failed\n") - 1));
+                    sys_exit(1);
+                }
+                (void)sys_close(vfd);
             }
 
             sys_exit(0);

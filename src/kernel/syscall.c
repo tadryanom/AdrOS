@@ -4878,12 +4878,17 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
             sc_ret(regs) = (uint32_t)-EINVAL;
             return;
         }
+        /* Hold g_vfs_lock across the compound mutation so that
+         * concurrent vfs_lookup() on other CPUs never sees an
+         * inconsistent (fs_root, mount-table) pair. */
+        uintptr_t vfs_fl = spin_lock_irqsave(&g_vfs_lock);
         fs_node_t* old_root = fs_root;
         fs_root = new_root;
-        (void)vfs_mount("/", new_root);
+        (void)vfs_mount_nolock("/", new_root);
         if (old_root) {
-            (void)vfs_mount(kput, old_root);
+            (void)vfs_mount_nolock(kput, old_root);
         }
+        spin_unlock_irqrestore(&g_vfs_lock, vfs_fl);
         sc_ret(regs) = 0;
         return;
     }

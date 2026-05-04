@@ -12,6 +12,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "spinlock.h"
 
 #define FS_FILE        0x01
 #define FS_DIRECTORY   0x02
@@ -100,6 +101,16 @@ int vfs_link(const char* old_path, const char* new_path);
 
 int vfs_mount(const char* mountpoint, fs_node_t* root);
 int vfs_umount(const char* mountpoint);
+
+/* _nolock variants — caller must already hold g_vfs_lock.
+ * Used by compound operations like pivot_root that need atomicity
+ * across multiple mount-table modifications. */
+int vfs_mount_nolock(const char* mountpoint, fs_node_t* root);
+int vfs_umount_nolock(const char* mountpoint);
+
+/* Global VFS spinlock — protects fs_root, g_mounts[], g_mount_count.
+ * Acquire via spin_lock_irqsave() for any compound VFS mutation. */
+extern spinlock_t g_vfs_lock;
 
 // Global root of the filesystem
 extern fs_node_t* fs_root;

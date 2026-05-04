@@ -84,6 +84,7 @@ char* strchr(const char* s, int c) {
 }
 
 char* strrchr(const char* s, int c) {
+    if (!s) return (void*)0;
     const char* last = (void*)0;
     while (*s) {
         if (*s == (char)c) last = s;

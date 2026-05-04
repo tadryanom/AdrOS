@@ -11,9 +11,15 @@
 
 #include "utils.h"
 #include "errno.h"
+#include "spinlock.h"
 
 fs_node_t* fs_root = NULL;
 static fs_node_t* g_initrd_root = NULL;
+
+/* Global VFS spinlock — protects fs_root, g_mounts[], and g_mount_count.
+ * Must be held across any compound operation (e.g. pivot_root) that
+ * modifies more than one of these fields. */
+spinlock_t g_vfs_lock;
 
 struct vfs_mount {
     char mountpoint[128];
@@ -59,7 +65,7 @@ static void normalize_mountpoint(const char* in, char* out, size_t out_sz) {
     }
 }
 
-int vfs_mount(const char* mountpoint, fs_node_t* root) {
+int vfs_mount_nolock(const char* mountpoint, fs_node_t* root) {
     if (!root) return -EINVAL;
     if (g_mount_count >= (int)(sizeof(g_mounts) / sizeof(g_mounts[0]))) return -ENOSPC;
 
@@ -79,7 +85,14 @@ int vfs_mount(const char* mountpoint, fs_node_t* root) {
     return 0;
 }
 
-int vfs_umount(const char* mountpoint) {
+int vfs_mount(const char* mountpoint, fs_node_t* root) {
+    uintptr_t fl = spin_lock_irqsave(&g_vfs_lock);
+    int ret = vfs_mount_nolock(mountpoint, root);
+    spin_unlock_irqrestore(&g_vfs_lock, fl);
+    return ret;
+}
+
+int vfs_umount_nolock(const char* mountpoint) {
     char mp[128];
     normalize_mountpoint(mountpoint, mp, sizeof(mp));
 
@@ -94,6 +107,13 @@ int vfs_umount(const char* mountpoint) {
         }
     }
     return -EINVAL;
+}
+
+int vfs_umount(const char* mountpoint) {
+    uintptr_t fl = spin_lock_irqsave(&g_vfs_lock);
+    int ret = vfs_umount_nolock(mountpoint);
+    spin_unlock_irqrestore(&g_vfs_lock, fl);
+    return ret;
 }
 
 uint32_t vfs_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
@@ -160,8 +180,14 @@ fs_node_t* vfs_lookup_initrd(const char* path) {
 }
 
 static fs_node_t* vfs_lookup_depth(const char* path, int depth) {
-    if (!path || !fs_root) return NULL;
+    if (!path) return NULL;
     if (depth > 8) return NULL;
+
+    /* Snapshot mount-table state under the VFS lock so that concurrent
+     * mount/umount/pivot_root on another CPU cannot corrupt our view. */
+    uintptr_t fl = spin_lock_irqsave(&g_vfs_lock);
+
+    if (!fs_root) { spin_unlock_irqrestore(&g_vfs_lock, fl); return NULL; }
 
     fs_node_t* base = fs_root;
     const char* rel = path;
@@ -180,6 +206,8 @@ static fs_node_t* vfs_lookup_depth(const char* path, int depth) {
             }
         }
     }
+
+    spin_unlock_irqrestore(&g_vfs_lock, fl);
 
     if (!rel) return NULL;
     while (*rel == '/') rel++;
