@@ -34,7 +34,7 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    const char* fstype = "diskfs";
+    const char* fstype = NULL;
     const char* device = NULL;
     const char* mountpoint = NULL;
     unsigned long mountflags = 0;
@@ -58,8 +58,10 @@ int main(int argc, char** argv) {
                 } else if (strncmp(o, "rw", 2) == 0 && (o[2] == ',' || o[2] == '\0')) {
                     o += 2;
                 } else {
-                    /* Skip unknown option */
+                    /* Warn on unknown option */
+                    const char* start = o;
                     while (*o && *o != ',') o++;
+                    fprintf(stderr, "mount: unknown option: %.*s\n", (int)(o - start), start);
                 }
                 if (*o == ',') o++;
             }
@@ -72,6 +74,11 @@ int main(int argc, char** argv) {
 
     if (!mountpoint) {
         fprintf(stderr, "usage: mount [-t fstype] [-o options] device mountpoint\n");
+        return 1;
+    }
+
+    if (!fstype) {
+        fprintf(stderr, "mount: filesystem type required (-t fstype)\n");
         return 1;
     }
 

@@ -934,6 +934,23 @@ static int syscall_select_impl(uint32_t nfds,
     return ready;
 }
 
+static int copy_user_cstr(char* dst, const char* src, size_t dst_sz) {
+    /* Copy a user-space C string byte-by-byte until NUL terminator.
+     * Returns 0 on success, -EFAULT on bad address, -ENAMETOOLONG if
+     * the string (including NUL) exceeds dst_sz. */
+    if (!dst || dst_sz == 0) return -EINVAL;
+    if (!src) { dst[0] = '\0'; return 0; }
+    for (size_t i = 0; i < dst_sz; i++) {
+        uint8_t byte;
+        if (copy_from_user(&byte, src + i, 1) < 0) return -EFAULT;
+        dst[i] = (char)byte;
+        if (byte == 0) return 0;
+    }
+    /* String too long — NUL-terminate and report error */
+    dst[dst_sz - 1] = '\0';
+    return -ENAMETOOLONG;
+}
+
 static int execve_copy_user_str(char* out, size_t out_sz, const char* user_s) {
     if (!out || out_sz == 0 || !user_s) return -EFAULT;
     /* Check full range upfront to avoid 128 individual copy_from_user calls */
@@ -4913,14 +4930,13 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         const char* user_type = (const char*)sc_arg2(regs);
         unsigned long mount_flags = (unsigned long)sc_arg3(regs);
         char kdev[64], kmp[128], ktype[32];
-        if (copy_from_user(kdev, user_dev, sizeof(kdev)) < 0 ||
-            path_resolve_user(user_mp, kmp, sizeof(kmp)) < 0 ||
-            copy_from_user(ktype, user_type, sizeof(ktype)) < 0) {
-            sc_ret(regs) = (uint32_t)-EFAULT;
-            return;
-        }
-        kdev[sizeof(kdev)-1] = '\0';
-        ktype[sizeof(ktype)-1] = '\0';
+
+        int crc;
+        crc = copy_user_cstr(kdev, user_dev, sizeof(kdev));
+        if (crc < 0) { sc_ret(regs) = (uint32_t)crc; return; }
+        if (path_resolve_user(user_mp, kmp, sizeof(kmp)) < 0) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
+        crc = copy_user_cstr(ktype, user_type, sizeof(ktype));
+        if (crc < 0) { sc_ret(regs) = (uint32_t)crc; return; }
 
         /* MS_REMOUNT (0x20): update flags on existing mount */
         if (mount_flags & 0x20 /* MS_REMOUNT */) {
@@ -4963,7 +4979,7 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         extern int init_mount_fs(const char* fstype, int drive, uint32_t lba, const char* mountpoint);
         (void)vfs_mkdirp(kmp);  /* auto-create mountpoint (recursive) */
         int rc = init_mount_fs(ktype, drive, 0, kmp);
-        sc_ret(regs) = (uint32_t)(rc < 0 ? -EIO : 0);
+        sc_ret(regs) = (uint32_t)(rc < 0 ? rc : 0);
         return;
     }
 

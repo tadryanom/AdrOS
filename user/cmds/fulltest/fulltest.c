@@ -1610,9 +1610,9 @@ static int sys_sigqueue(int pid, int sig, int value) {
     return __syscall_fix(ret);
 }
 
-static int sys_mount(const char* dev, const char* dir, const char* type) {
+static int sys_mount(const char* dev, const char* dir, const char* type, unsigned long flags) {
     int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_MOUNT), "b"(dev), "c"(dir), "d"(type) : "memory");
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_MOUNT), "b"(dev), "c"(dir), "d"(type), "S"(flags) : "memory");
     return __syscall_fix(ret);
 }
 
@@ -5184,7 +5184,7 @@ void _start(void) {
     {
         /* Create mount point directory first */
         (void)sys_mkdir("/tmp/mnt_test");
-        if (sys_mount("none", "/tmp/mnt_test", "tmpfs") < 0) {
+        if (sys_mount("none", "/tmp/mnt_test", "tmpfs", 0) < 0) {
             sys_write(1, "[test] mount tmpfs failed\n",
                       (uint32_t)(sizeof("[test] mount tmpfs failed\n") - 1));
             sys_exit(1);
@@ -5357,7 +5357,7 @@ void _start(void) {
             (void)sys_mkdir("/tmp/pivot_new");
             (void)sys_mkdir("/tmp/pivot_old");
 
-            if (sys_mount("none", "/tmp/pivot_new", "tmpfs") < 0) {
+            if (sys_mount("none", "/tmp/pivot_new", "tmpfs", 0) < 0) {
                 sys_write(1, "[test] pivot_root mount tmpfs failed\n",
                           (uint32_t)(sizeof("[test] pivot_root mount tmpfs failed\n") - 1));
                 sys_exit(1);
