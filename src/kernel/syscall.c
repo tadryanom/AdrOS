@@ -4884,9 +4884,9 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         uintptr_t vfs_fl = spin_lock_irqsave(&g_vfs_lock);
         fs_node_t* old_root = fs_root;
         fs_root = new_root;
-        (void)vfs_mount_nolock("/", new_root);
+        (void)vfs_mount_nolock_full("/", new_root, NULL, NULL, 0);
         if (old_root) {
-            (void)vfs_mount_nolock(kput, old_root);
+            (void)vfs_mount_nolock_full(kput, old_root, NULL, NULL, 0);
         }
         spin_unlock_irqrestore(&g_vfs_lock, vfs_fl);
         sc_ret(regs) = 0;
@@ -4901,6 +4901,7 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         const char* user_dev  = (const char*)sc_arg0(regs);
         const char* user_mp   = (const char*)sc_arg1(regs);
         const char* user_type = (const char*)sc_arg2(regs);
+        unsigned long mount_flags = (unsigned long)sc_arg3(regs);
         char kdev[64], kmp[128], ktype[32];
         if (copy_from_user(kdev, user_dev, sizeof(kdev)) < 0 ||
             path_resolve_user(user_mp, kmp, sizeof(kmp)) < 0 ||
@@ -4911,28 +4912,34 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         kdev[sizeof(kdev)-1] = '\0';
         ktype[sizeof(ktype)-1] = '\0';
 
+        /* MS_REMOUNT (0x20): update flags on existing mount */
+        if (mount_flags & 0x20 /* MS_REMOUNT */) {
+            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, NULL, NULL, NULL, mount_flags & ~0x20);
+            return;
+        }
+
         /* Virtual filesystems — no device argument needed */
         if (strcmp(ktype, "tmpfs") == 0) {
             fs_node_t* tmp = tmpfs_create_root();
             if (!tmp) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
-            (void)vfs_mkdir(kmp);  /* auto-create mountpoint */
-            sc_ret(regs) = (uint32_t)vfs_mount(kmp, tmp);
+            (void)vfs_mkdirp(kmp);  /* auto-create mountpoint (recursive) */
+            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, tmp, "tmpfs", kdev, mount_flags);
             return;
         }
         if (strcmp(ktype, "devfs") == 0) {
             extern fs_node_t* devfs_create_root(void);
             fs_node_t* dev = devfs_create_root();
             if (!dev) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
-            (void)vfs_mkdir(kmp);
-            sc_ret(regs) = (uint32_t)vfs_mount(kmp, dev);
+            (void)vfs_mkdirp(kmp);
+            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, dev, "devfs", kdev, mount_flags);
             return;
         }
         if (strcmp(ktype, "procfs") == 0) {
             extern fs_node_t* procfs_create_root(void);
             fs_node_t* proc = procfs_create_root();
             if (!proc) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
-            (void)vfs_mkdir(kmp);
-            sc_ret(regs) = (uint32_t)vfs_mount(kmp, proc);
+            (void)vfs_mkdirp(kmp);
+            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, proc, "procfs", kdev, mount_flags);
             return;
         }
 
@@ -4944,7 +4951,7 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         if (drive < 0) { sc_ret(regs) = (uint32_t)-ENODEV; return; }
 
         extern int init_mount_fs(const char* fstype, int drive, uint32_t lba, const char* mountpoint);
-        (void)vfs_mkdir(kmp);  /* auto-create mountpoint */
+        (void)vfs_mkdirp(kmp);  /* auto-create mountpoint (recursive) */
         int rc = init_mount_fs(ktype, drive, 0, kmp);
         sc_ret(regs) = (uint32_t)(rc < 0 ? -EIO : 0);
         return;
@@ -5077,11 +5084,15 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
             return;
         }
         const char* user_target = (const char*)sc_arg0(regs);
+        unsigned long umount_flags = (unsigned long)sc_arg1(regs);
         char ktarget[128];
         if (path_resolve_user(user_target, ktarget, sizeof(ktarget)) < 0) {
             sc_ret(regs) = (uint32_t)-EFAULT;
             return;
         }
+        /* MNT_FORCE (1) — for now, same as regular umount (no lazy unmount) */
+        /* MNT_DETACH (2) — lazy unmount; currently equivalent to immediate */
+        (void)umount_flags;
         sc_ret(regs) = (uint32_t)vfs_umount(ktarget);
         return;
     }

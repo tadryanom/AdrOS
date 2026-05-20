@@ -16,6 +16,7 @@
 #include "pmm.h"
 #include "timer.h"
 #include "kernel/cmdline.h"
+#include "fs.h"
 
 #include <stddef.h>
 
@@ -26,6 +27,7 @@ static fs_node_t g_proc_uptime;
 static fs_node_t g_proc_meminfo;
 static fs_node_t g_proc_cmdline;
 static fs_node_t g_proc_dmesg;
+static fs_node_t g_proc_mounts;
 
 #define PID_NODE_POOL 8
 static fs_node_t g_pid_dir[PID_NODE_POOL];
@@ -359,6 +361,25 @@ static fs_node_t* proc_get_pid_dir(uint32_t pid) {
     return &g_pid_dir[slot];
 }
 
+/* --- /proc/mounts read --- */
+
+static uint32_t proc_mounts_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
+    (void)node;
+    /* Allocate from heap — mount table can be large */
+    char* tmp = kmalloc(4096);
+    if (!tmp) return 0;
+    uint32_t len = vfs_mounts_read((uint8_t*)tmp, 4096);
+    uint32_t ret = 0;
+    if (offset < len) {
+        uint32_t avail = len - offset;
+        if (size > avail) size = avail;
+        memcpy(buffer, tmp + offset, size);
+        ret = size;
+    }
+    kfree(tmp);
+    return ret;
+}
+
 /* --- /proc/self --- */
 
 static fs_node_t* proc_self_finddir(fs_node_t* node, const char* name) {
@@ -409,6 +430,7 @@ static fs_node_t* proc_root_finddir(fs_node_t* node, const char* name) {
     if (strcmp(name, "meminfo") == 0) return &g_proc_meminfo;
     if (strcmp(name, "cmdline") == 0) return &g_proc_cmdline;
     if (strcmp(name, "dmesg") == 0) return &g_proc_dmesg;
+    if (strcmp(name, "mounts") == 0) return &g_proc_mounts;
     if (is_numeric(name)) return proc_get_pid_dir(parse_uint(name));
     return NULL;
 }
@@ -421,8 +443,8 @@ static int proc_root_readdir(fs_node_t* node, uint32_t* inout_index, void* buf, 
     uint32_t idx = *inout_index;
     struct vfs_dirent* d = (struct vfs_dirent*)buf;
 
-    static const char* fixed[] = { "self", "uptime", "meminfo", "cmdline", "dmesg" };
-    if (idx < 5) {
+    static const char* fixed[] = { "self", "uptime", "meminfo", "cmdline", "dmesg", "mounts" };
+    if (idx < 6) {
         d->d_ino = 200 + idx;
         d->d_type = (idx == 0) ? FS_DIRECTORY : FS_FILE;
         d->d_reclen = sizeof(struct vfs_dirent);
@@ -503,6 +525,10 @@ static const struct file_operations procfs_dmesg_fops = {
     .read = proc_dmesg_read,
 };
 
+static const struct file_operations procfs_mounts_fops = {
+    .read = proc_mounts_read,
+};
+
 static const struct file_operations procfs_pid_dir_fops = {0};
 
 static const struct inode_operations procfs_pid_dir_iops = {
@@ -559,6 +585,11 @@ fs_node_t* procfs_create_root(void) {
     strcpy(g_proc_dmesg.name, "dmesg");
     g_proc_dmesg.flags = FS_FILE;
     g_proc_dmesg.f_ops = &procfs_dmesg_fops;
+
+    memset(&g_proc_mounts, 0, sizeof(g_proc_mounts));
+    strcpy(g_proc_mounts.name, "mounts");
+    g_proc_mounts.flags = FS_FILE;
+    g_proc_mounts.f_ops = &procfs_mounts_fops;
 
     return &g_proc_root;
 }

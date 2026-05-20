@@ -40,6 +40,7 @@
 #include "kernel/cmdline.h"
 
 #include <stddef.h>
+#include <string.h>
 
 /* ---- Mount helper: used by fstab parser and kconsole 'mount' command ---- */
 
@@ -66,7 +67,19 @@ int init_mount_fs(const char* fstype, int drive, uint32_t lba, const char* mount
         return -1;
     }
 
-    if (vfs_mount(mountpoint, root) < 0) {
+    /* Build device name for mount table metadata */
+    char devname[32] = "none";
+    const char* dname = ata_drive_to_name(drive);
+    if (dname) {
+        strcpy(devname, "/dev/");
+        /* Append drive name after /dev/ */
+        char* dp = devname + 5;
+        while (*dname && (dp - devname) < (int)sizeof(devname) - 2)
+            *dp++ = *dname++;
+        *dp = '\0';
+    }
+
+    if (vfs_mount_full(mountpoint, root, fstype, devname, 0) < 0) {
         kprintf("[MOUNT] Failed to register mount at %s\n", mountpoint);
         return -1;
     }
@@ -208,7 +221,7 @@ int init_start(const struct boot_info* bi) {
         if (upper) {
             fs_node_t* ovl = overlayfs_create_root(fs_root, upper);
             if (ovl) {
-                (void)vfs_mount("/", ovl);
+                (void)vfs_mount_full("/", ovl, "overlayfs", "initrd", 0);
                 vfs_set_initrd_root(ovl);
             }
         }
@@ -234,7 +247,7 @@ int init_start(const struct boot_info* bi) {
     if (tmp) {
         static const uint8_t hello[] = "hello from tmpfs\n";
         (void)tmpfs_add_file(tmp, "hello.txt", hello, (uint32_t)(sizeof(hello) - 1));
-        (void)vfs_mount("/tmp", tmp);
+        (void)vfs_mount_full("/tmp", tmp, "tmpfs", "none", 0);
     }
 
     /* Register hardware drivers with HAL and init in priority order */
@@ -258,7 +271,7 @@ int init_start(const struct boot_info* bi) {
      * existing entry so this is a harmless overlap. */
     fs_node_t* dev = devfs_create_root();
     if (dev) {
-        (void)vfs_mount("/dev", dev);
+        (void)vfs_mount_full("/dev", dev, "devfs", "none", 0);
     }
 
     vbe_register_devfs();
@@ -266,7 +279,7 @@ int init_start(const struct boot_info* bi) {
 
     fs_node_t* proc = procfs_create_root();
     if (proc) {
-        (void)vfs_mount("/proc", proc);
+        (void)vfs_mount_full("/proc", proc, "procfs", "none", 0);
     }
 
     /* Initialize ATA subsystem — probe all 4 drives

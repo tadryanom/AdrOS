@@ -243,13 +243,54 @@ static void check_respawn(void) {
 /* Mount virtual filesystems (migrated from kernel-space).
  * These must be done before spawning the shell since /dev/console
  * is needed for terminal I/O. */
+static int is_mounted(const char* mountpoint) {
+    /* Check /proc/mounts for an existing entry */
+    int fd = open("/proc/mounts", 0);
+    if (fd < 0) return 0;
+    char buf[2048];
+    int n = read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    if (n <= 0) return 0;
+    buf[n] = '\0';
+
+    int mplen = 0;
+    const char* p = mountpoint;
+    while (*p++) mplen++;
+
+    /* Scan lines: source mountpoint fstype options ... */
+    char* line = buf;
+    while (line && *line) {
+        char* nl = line;
+        while (*nl && *nl != '\n') nl++;
+        int eol = (*nl == '\n');
+        if (eol) *nl = '\0';
+        /* Skip source */
+        char* mp = line;
+        while (*mp && *mp != ' ') mp++;
+        if (*mp) mp++;
+        /* Compare mountpoint */
+        const char* lmp = mp;
+        const char* pmp = mountpoint;
+        while (*lmp != ' ' && *lmp != '\0' && *pmp && *lmp == *pmp) { lmp++; pmp++; }
+        if (*lmp == ' ' && *pmp == '\0') return 1;
+        line = eol ? nl + 1 : nl;
+    }
+    return 0;
+}
+
 static void mount_virtual_fs(void) {
-    if (mount("none", "/dev", "devfs", 0, NULL) < 0)
-        fprintf(stderr, "init: mount devfs on /dev failed\n");
-    if (mount("none", "/proc", "procfs", 0, NULL) < 0)
-        fprintf(stderr, "init: mount procfs on /proc failed\n");
-    if (mount("none", "/tmp", "tmpfs", 0, NULL) < 0)
-        fprintf(stderr, "init: mount tmpfs on /tmp failed\n");
+    /* Only mount if not already mounted by kernel init.
+     * vfs_mount replaces existing entries, but re-creating root nodes
+     * (e.g. tmpfs) leaks the old instance. */
+    if (!is_mounted("/dev"))
+        if (mount("none", "/dev", "devfs", 0, NULL) < 0)
+            fprintf(stderr, "init: mount devfs on /dev failed\n");
+    if (!is_mounted("/proc"))
+        if (mount("none", "/proc", "procfs", 0, NULL) < 0)
+            fprintf(stderr, "init: mount procfs on /proc failed\n");
+    if (!is_mounted("/tmp"))
+        if (mount("none", "/tmp", "tmpfs", 0, NULL) < 0)
+            fprintf(stderr, "init: mount tmpfs on /tmp failed\n");
 }
 
 static void default_init(void) {

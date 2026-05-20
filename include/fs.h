@@ -93,6 +93,7 @@ fs_node_t* vfs_lookup_parent(const char* path, char* name_out, size_t name_sz);
 // Directory mutation wrappers — route through mount points transparently
 int vfs_create(const char* path, uint32_t flags, fs_node_t** out);
 int vfs_mkdir(const char* path);
+int vfs_mkdirp(const char* path);
 int vfs_unlink(const char* path);
 int vfs_rmdir(const char* path);
 int vfs_rename(const char* old_path, const char* new_path);
@@ -100,13 +101,22 @@ int vfs_truncate(const char* path, uint32_t length);
 int vfs_link(const char* old_path, const char* new_path);
 
 int vfs_mount(const char* mountpoint, fs_node_t* root);
+int vfs_mount_full(const char* mountpoint, fs_node_t* root,
+                    const char* fstype, const char* source,
+                    unsigned long flags);
 int vfs_umount(const char* mountpoint);
 
 /* _nolock variants — caller must already hold g_vfs_lock.
  * Used by compound operations like pivot_root that need atomicity
  * across multiple mount-table modifications. */
 int vfs_mount_nolock(const char* mountpoint, fs_node_t* root);
+int vfs_mount_nolock_full(const char* mountpoint, fs_node_t* root,
+                            const char* fstype, const char* source,
+                            unsigned long flags);
 int vfs_umount_nolock(const char* mountpoint);
+
+/* Read mount table for /proc/mounts. Returns bytes written. */
+uint32_t vfs_mounts_read(uint8_t* buffer, uint32_t size);
 
 /* Global VFS spinlock — protects fs_root, g_mounts[], g_mount_count.
  * Acquire via spin_lock_irqsave() for any compound VFS mutation. */

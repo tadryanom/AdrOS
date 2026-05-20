@@ -18,8 +18,27 @@ int main(int argc, char** argv) {
         fprintf(stderr, "umount: missing operand\n");
         return 1;
     }
-    if (umount(argv[1]) < 0) {
-        fprintf(stderr, "umount: %s: %s\n", argv[1], strerror(errno));
+
+    int flags = 0;
+    const char* target = NULL;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-f") == 0) {
+            flags |= MNT_FORCE;
+        } else if (strcmp(argv[i], "-l") == 0) {
+            flags |= MNT_DETACH;
+        } else {
+            target = argv[i];
+        }
+    }
+
+    if (!target) {
+        fprintf(stderr, "umount: missing operand\n");
+        return 1;
+    }
+
+    if (umount2(target, flags) < 0) {
+        fprintf(stderr, "umount: %s: %s\n", target, strerror(errno));
         return 1;
     }
     return 0;

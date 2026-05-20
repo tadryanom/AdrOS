@@ -18,15 +18,13 @@
 static void show_mounts(void) {
     int fd = open("/proc/mounts", O_RDONLY);
     if (fd >= 0) {
-        char buf[1024];
+        char buf[2048];
         int n;
         while ((n = read(fd, buf, sizeof(buf))) > 0)
             write(STDOUT_FILENO, buf, (size_t)n);
         close(fd);
     } else {
-        printf("tmpfs on / type overlayfs (rw)\n");
-        printf("devfs on /dev type devfs (rw)\n");
-        printf("procfs on /proc type procfs (ro)\n");
+        fprintf(stderr, "mount: /proc/mounts not available\n");
     }
 }
 
@@ -39,12 +37,32 @@ int main(int argc, char** argv) {
     const char* fstype = "diskfs";
     const char* device = NULL;
     const char* mountpoint = NULL;
+    unsigned long mountflags = 0;
 
     /* Parse options first, then collect positional args */
     int i;
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
             fstype = argv[++i];
+        } else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
+            i++;
+            /* Parse comma-separated options */
+            const char* o = argv[i];
+            while (*o) {
+                if (strncmp(o, "ro", 2) == 0 && (o[2] == ',' || o[2] == '\0')) {
+                    mountflags |= MS_RDONLY;
+                    o += 2;
+                } else if (strncmp(o, "remount", 7) == 0 && (o[7] == ',' || o[7] == '\0')) {
+                    mountflags |= MS_REMOUNT;
+                    o += 7;
+                } else if (strncmp(o, "rw", 2) == 0 && (o[2] == ',' || o[2] == '\0')) {
+                    o += 2;
+                } else {
+                    /* Skip unknown option */
+                    while (*o && *o != ',') o++;
+                }
+                if (*o == ',') o++;
+            }
         } else if (!device) {
             device = argv[i];
         } else if (!mountpoint) {
@@ -52,12 +70,14 @@ int main(int argc, char** argv) {
         }
     }
 
-    if (!device || !mountpoint) {
-        fprintf(stderr, "usage: mount [-t fstype] device mountpoint\n");
+    if (!mountpoint) {
+        fprintf(stderr, "usage: mount [-t fstype] [-o options] device mountpoint\n");
         return 1;
     }
 
-    int rc = mount(device, mountpoint, fstype, 0, NULL);
+    if (!device) device = "none";
+
+    int rc = mount(device, mountpoint, fstype, mountflags, NULL);
     if (rc < 0) {
         fprintf(stderr, "mount: mounting %s on %s failed: %s\n", device, mountpoint, strerror(errno));
         return 1;
