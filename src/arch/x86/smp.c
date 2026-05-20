@@ -171,6 +171,7 @@ int smp_enumerate(void) {
 
 int smp_start_aps(void) {
     if (g_cpu_count <= 1) {
+        kprintf("[SMP] 1 CPU(s) active.\n");
         return 1;
     }
 
