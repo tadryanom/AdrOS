@@ -111,6 +111,24 @@ static void diskfs_close_impl(fs_node_t* node) {
     kfree(dn);
 }
 
+static int diskfs_format(struct diskfs_super* sb) {
+    /* Initialize a fresh diskfs superblock and write it to disk.
+     * This is the ONLY function that writes a new superblock.
+     * Callers must explicitly request formatting — probe/mount must NOT
+     * call this automatically on unknown disks. */
+    memset(sb, 0, sizeof(*sb));
+    sb->magic = DISKFS_MAGIC;
+    sb->version = DISKFS_VERSION;
+    sb->next_free_lba = DISKFS_LBA_DATA_START;
+
+    // Root inode
+    sb->inodes[0].type = DISKFS_INODE_DIR;
+    sb->inodes[0].parent = 0;
+    sb->inodes[0].name[0] = 0;
+
+    return diskfs_super_store(sb);
+}
+
 static int diskfs_super_load(struct diskfs_super* sb) {
     if (!sb) return -EINVAL;
     uint8_t sec0[DISKFS_SECTOR];
@@ -125,17 +143,8 @@ static int diskfs_super_load(struct diskfs_super* sb) {
     }
 
     if (sb->magic != DISKFS_MAGIC) {
-        memset(sb, 0, sizeof(*sb));
-        sb->magic = DISKFS_MAGIC;
-        sb->version = DISKFS_VERSION;
-        sb->next_free_lba = DISKFS_LBA_DATA_START;
-
-        // Root inode
-        sb->inodes[0].type = DISKFS_INODE_DIR;
-        sb->inodes[0].parent = 0;
-        sb->inodes[0].name[0] = 0;
-
-        return diskfs_super_store(sb);
+        /* Not a diskfs filesystem — do NOT auto-format */
+        return -ENODEV;
     }
 
     if (sb->version == DISKFS_VERSION) {
@@ -188,15 +197,8 @@ static int diskfs_super_load(struct diskfs_super* sb) {
         return diskfs_super_store(sb);
     }
 
-    // Unknown version -> re-init (best-effort)
-    memset(sb, 0, sizeof(*sb));
-    sb->magic = DISKFS_MAGIC;
-    sb->version = DISKFS_VERSION;
-    sb->next_free_lba = DISKFS_LBA_DATA_START;
-    sb->inodes[0].type = DISKFS_INODE_DIR;
-    sb->inodes[0].parent = 0;
-    sb->inodes[0].name[0] = 0;
-    return diskfs_super_store(sb);
+    /* Unknown version — do NOT reformat */
+    return -EINVAL;
 }
 
 static int diskfs_super_store(const struct diskfs_super* sb) {
@@ -1183,9 +1185,32 @@ fs_node_t* diskfs_create_root(int drive) {
 
         if (g_ready) {
             struct diskfs_super sb;
-            (void)diskfs_super_load(&sb);
+            int rc = diskfs_super_load(&sb);
+            if (rc == -ENODEV) {
+                /* No diskfs superblock found — format a fresh one.
+                 * This preserves the auto-format behavior for boot-time
+                 * mounting of blank disks (e.g. battery test root_hda.img).
+                 * Autodetect probing will check diskfs_probe() first and
+                 * skip diskfs if it returns -ENODEV, so this path is only
+                 * reached when the caller explicitly requests diskfs. */
+                (void)diskfs_format(&sb);
+            }
         }
     }
 
     return g_ready ? &g_root.vfs : NULL;
+}
+
+int diskfs_probe(int drive) {
+    /* Non-destructive probe: check if the drive contains a valid diskfs
+     * superblock without formatting.  Returns 0 if valid, -ENODEV if
+     * not a diskfs disk, or other negative errno on I/O error.
+     * Does NOT modify global state. */
+    if (!ata_pio_drive_present(drive)) return -ENODEV;
+    uint8_t sec0[DISKFS_SECTOR];
+    if (ata_pio_read28(drive, DISKFS_LBA_SUPER, sec0) < 0) return -EIO;
+    uint32_t magic;
+    memcpy(&magic, sec0, sizeof(magic));
+    if (magic != DISKFS_MAGIC) return -ENODEV;
+    return 0;
 }

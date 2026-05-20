@@ -57,14 +57,14 @@ int init_mount_fs(const char* fstype, int drive, uint32_t lba, const char* mount
         root = persistfs_create_root(drive);
     } else {
         kprintf("[MOUNT] Unknown filesystem type: %s\n", fstype);
-        return -1;
+        return -EINVAL;
     }
 
     if (!root) {
         kprintf("[MOUNT] Failed to mount %s on /dev/%s at %s\n",
                 fstype, ata_drive_to_name(drive) ? ata_drive_to_name(drive) : "?",
                 mountpoint);
-        return -1;
+        return -ENODEV;
     }
 
     /* Build device name for mount table metadata */
@@ -79,9 +79,10 @@ int init_mount_fs(const char* fstype, int drive, uint32_t lba, const char* mount
         *dp = '\0';
     }
 
-    if (vfs_mount_full(mountpoint, root, fstype, devname, 0) < 0) {
-        kprintf("[MOUNT] Failed to register mount at %s\n", mountpoint);
-        return -1;
+    int rc = vfs_mount_full(mountpoint, root, fstype, devname, 0);
+    if (rc < 0) {
+        kprintf("[MOUNT] Failed to register mount at %s (err=%d)\n", mountpoint, rc);
+        return rc;
     }
 
     kprintf("[MOUNT] %s on /dev/%s -> %s\n",
@@ -206,10 +207,18 @@ int init_start(const struct boot_info* bi) {
         if (strncmp(root_dev, "/dev/", 5) == 0)
             drive = ata_name_to_drive(root_dev + 5);
         if (drive >= 0 && ata_pio_drive_present(drive)) {
-            /* Try auto-detect: diskfs, fat, ext2 */
-            static const char* fstypes[] = { "diskfs", "fat", "ext2", NULL };
+            /* Auto-detect: try ext2, fat first (non-destructive), then diskfs.
+             * diskfs_probe() is non-destructive — it only checks the magic
+             * without formatting.  diskfs_create_root() will auto-format
+             * blank disks, so it is only called when probe confirms diskfs. */
+            static const char* fstypes[] = { "ext2", "fat", "diskfs", NULL };
             int mounted = 0;
             for (int i = 0; fstypes[i]; i++) {
+                if (strcmp(fstypes[i], "diskfs") == 0) {
+                    /* Non-destructive probe first — skip if not diskfs */
+                    extern int diskfs_probe(int drive);
+                    if (diskfs_probe(drive) != 0) continue;
+                }
                 if (init_mount_fs(fstypes[i], drive, 0, "/disk") == 0) {
                     kprintf("[INIT] root=%s mounted as %s on /disk\n",
                             root_dev, fstypes[i]);
@@ -224,8 +233,12 @@ int init_start(const struct boot_info* bi) {
         }
     } else if (ata_pio_drive_present(0)) {
         /* No root= on cmdline, but primary master is present — auto-mount */
-        static const char* fstypes[] = { "diskfs", "fat", "ext2", NULL };
+        static const char* fstypes[] = { "ext2", "fat", "diskfs", NULL };
         for (int i = 0; fstypes[i]; i++) {
+            if (strcmp(fstypes[i], "diskfs") == 0) {
+                extern int diskfs_probe(int drive);
+                if (diskfs_probe(0) != 0) continue;
+            }
             if (init_mount_fs(fstypes[i], 0, 0, "/disk") == 0) {
                 kprintf("[INIT] /dev/hda auto-mounted as %s on /disk\n", fstypes[i]);
                 break;

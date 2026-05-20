@@ -15,6 +15,10 @@
 
 fs_node_t* diskfs_create_root(int drive);
 
+// Non-destructive probe: returns 0 if drive has valid diskfs superblock,
+// -ENODEV if not diskfs, or other negative errno on I/O error.
+int diskfs_probe(int drive);
+
 // Open (and optionally create) a diskfs file at the root (flat namespace).
 // rel_path must not contain '/'.
 // flags: supports O_CREAT (0x40) and O_TRUNC (0x200) semantics (minimal).

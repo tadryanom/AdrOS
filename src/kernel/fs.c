@@ -74,8 +74,6 @@ static void normalize_mountpoint(const char* in, char* out, size_t out_sz) {
 int vfs_mount_nolock_full(const char* mountpoint, fs_node_t* root,
                             const char* fstype, const char* source,
                             unsigned long flags) {
-    if (g_mount_count >= (int)(sizeof(g_mounts) / sizeof(g_mounts[0]))) return -ENOSPC;
-
     char mp[128];
     normalize_mountpoint(mountpoint, mp, sizeof(mp));
 
@@ -83,23 +81,38 @@ int vfs_mount_nolock_full(const char* mountpoint, fs_node_t* root,
         if (strcmp(g_mounts[i].mountpoint, mp) == 0) {
             /* Remount: update provided fields only */
             if (root) g_mounts[i].root = root;
-            if (fstype) strncpy(g_mounts[i].fstype, fstype, sizeof(g_mounts[i].fstype) - 1);
-            if (source) strncpy(g_mounts[i].source, source, sizeof(g_mounts[i].source) - 1);
+            if (fstype) {
+                strncpy(g_mounts[i].fstype, fstype, sizeof(g_mounts[i].fstype) - 1);
+                g_mounts[i].fstype[sizeof(g_mounts[i].fstype) - 1] = '\0';
+            }
+            if (source) {
+                strncpy(g_mounts[i].source, source, sizeof(g_mounts[i].source) - 1);
+                g_mounts[i].source[sizeof(g_mounts[i].source) - 1] = '\0';
+            }
             /* Always update flags on remount (even if 0, caller explicitly set them) */
             g_mounts[i].flags = flags;
             return 0;
         }
     }
 
-    /* New mount entry — root is required */
+    /* New mount entry — check table space first, then require root */
+    if (g_mount_count >= (int)(sizeof(g_mounts) / sizeof(g_mounts[0]))) return -ENOSPC;
     if (!root) return -EINVAL;
 
     strcpy(g_mounts[g_mount_count].mountpoint, mp);
     g_mounts[g_mount_count].root = root;
-    if (fstype) strncpy(g_mounts[g_mount_count].fstype, fstype, sizeof(g_mounts[g_mount_count].fstype) - 1);
-    else g_mounts[g_mount_count].fstype[0] = '\0';
-    if (source) strncpy(g_mounts[g_mount_count].source, source, sizeof(g_mounts[g_mount_count].source) - 1);
-    else g_mounts[g_mount_count].source[0] = '\0';
+    if (fstype) {
+        strncpy(g_mounts[g_mount_count].fstype, fstype, sizeof(g_mounts[g_mount_count].fstype) - 1);
+        g_mounts[g_mount_count].fstype[sizeof(g_mounts[g_mount_count].fstype) - 1] = '\0';
+    } else {
+        g_mounts[g_mount_count].fstype[0] = '\0';
+    }
+    if (source) {
+        strncpy(g_mounts[g_mount_count].source, source, sizeof(g_mounts[g_mount_count].source) - 1);
+        g_mounts[g_mount_count].source[sizeof(g_mounts[g_mount_count].source) - 1] = '\0';
+    } else {
+        g_mounts[g_mount_count].source[0] = '\0';
+    }
     g_mounts[g_mount_count].flags = flags;
     g_mount_count++;
     return 0;
