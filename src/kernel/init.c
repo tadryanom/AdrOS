@@ -90,101 +90,6 @@ int init_mount_fs(const char* fstype, int drive, uint32_t lba, const char* mount
     return 0;
 }
 
-/* ---- /etc/fstab parser ---- */
-
-/* fstab format (one entry per line, '#' comments):
- *   <device>  <mountpoint>  <fstype>  [options]
- * Example:
- *   /dev/hda  /disk    diskfs   defaults
- *   /dev/hda  /persist persistfs defaults
- *   /dev/hdb  /ext2    ext2     defaults
- */
-static void init_parse_fstab(void) {
-    fs_node_t* fstab = vfs_lookup("/etc/fstab");
-    if (!fstab) return;
-
-    uint32_t len = fstab->length;
-    if (len == 0 || len > 4096) return;
-
-    uint8_t* buf = (uint8_t*)kmalloc(len + 1);
-    if (!buf) return;
-
-    uint32_t rd = vfs_read(fstab, 0, len, buf);
-    buf[rd] = '\0';
-
-    kprintf("[FSTAB] Parsing /etc/fstab (%u bytes)\n", rd);
-
-    /* Parse line by line */
-    char* p = (char*)buf;
-    while (*p) {
-        /* Skip leading whitespace */
-        while (*p == ' ' || *p == '\t') p++;
-        if (*p == '\0') break;
-        if (*p == '#' || *p == '\n') {
-            while (*p && *p != '\n') p++;
-            if (*p == '\n') p++;
-            continue;
-        }
-
-        /* Extract device field */
-        char* dev_start = p;
-        while (*p && *p != ' ' && *p != '\t' && *p != '\n') p++;
-        char dev_end_ch = *p; *p = '\0';
-        char device[32];
-        strncpy(device, dev_start, sizeof(device) - 1);
-        device[sizeof(device) - 1] = '\0';
-        *p = dev_end_ch;
-        if (*p == '\n' || *p == '\0') { if (*p == '\n') p++; continue; }
-
-        /* Skip whitespace */
-        while (*p == ' ' || *p == '\t') p++;
-
-        /* Extract mountpoint field */
-        char* mp_start = p;
-        while (*p && *p != ' ' && *p != '\t' && *p != '\n') p++;
-        char mp_end_ch = *p; *p = '\0';
-        char mountpoint[64];
-        strncpy(mountpoint, mp_start, sizeof(mountpoint) - 1);
-        mountpoint[sizeof(mountpoint) - 1] = '\0';
-        *p = mp_end_ch;
-        if (*p == '\n' || *p == '\0') { if (*p == '\n') p++; continue; }
-
-        /* Skip whitespace */
-        while (*p == ' ' || *p == '\t') p++;
-
-        /* Extract fstype field */
-        char* fs_start = p;
-        while (*p && *p != ' ' && *p != '\t' && *p != '\n') p++;
-        char fs_end_ch = *p; *p = '\0';
-        char fstype[16];
-        strncpy(fstype, fs_start, sizeof(fstype) - 1);
-        fstype[sizeof(fstype) - 1] = '\0';
-        *p = fs_end_ch;
-
-        /* Skip rest of line */
-        while (*p && *p != '\n') p++;
-        if (*p == '\n') p++;
-
-        /* Parse device: expect /dev/hdX */
-        int drive = -1;
-        if (strncmp(device, "/dev/", 5) == 0) {
-            drive = ata_name_to_drive(device + 5);
-        }
-        if (drive < 0) {
-            kprintf("[FSTAB] Unknown device: %s\n", device);
-            continue;
-        }
-        if (!ata_pio_drive_present(drive)) {
-            kprintf("[FSTAB] Device %s not present, skipping\n", device);
-            continue;
-        }
-
-        (void)init_mount_fs(fstype, drive, 0, mountpoint);
-    }
-
-    kfree(buf);
-}
-
 int init_start(const struct boot_info* bi) {
     /* Parse kernel command line (Linux-like triaging) */
     cmdline_parse(bi ? bi->cmdline : NULL);
@@ -245,8 +150,6 @@ int init_start(const struct boot_info* bi) {
 
     fs_node_t* tmp = tmpfs_create_root();
     if (tmp) {
-        static const uint8_t hello[] = "hello from tmpfs\n";
-        (void)tmpfs_add_file(tmp, "hello.txt", hello, (uint32_t)(sizeof(hello) - 1));
         (void)vfs_mount_full("/tmp", tmp, "tmpfs", "none", 0);
     }
 
@@ -258,7 +161,6 @@ int init_start(const struct boot_info* bi) {
     hal_drivers_init_all();
 
     net_init();
-    net_ping_test();
     ksocket_init();
     vbe_init(bi);
 
@@ -293,7 +195,11 @@ int init_start(const struct boot_info* bi) {
     /* If root= is specified on the kernel command line, mount that device
      * as the disk root filesystem.  The filesystem type is auto-detected
      * by trying each supported type in order.
-     * Example:  root=/dev/hda  or  root=/dev/hdb */
+     * Example:  root=/dev/hda  or  root=/dev/hdb
+     *
+     * If no root= is given but the primary master (hda) is present,
+     * auto-mount it on /disk so that any init= binary (including fulltest)
+     * has disk access.  /etc/fstab parsing is now done by /sbin/init. */
     const char* root_dev = cmdline_get("root");
     if (root_dev) {
         int drive = -1;
@@ -316,11 +222,24 @@ int init_start(const struct boot_info* bi) {
         } else {
             kprintf("[INIT] root=%s: device not found\n", root_dev);
         }
+    } else if (ata_pio_drive_present(0)) {
+        /* No root= on cmdline, but primary master is present — auto-mount */
+        static const char* fstypes[] = { "diskfs", "fat", "ext2", NULL };
+        for (int i = 0; fstypes[i]; i++) {
+            if (init_mount_fs(fstypes[i], 0, 0, "/disk") == 0) {
+                kprintf("[INIT] /dev/hda auto-mounted as %s on /disk\n", fstypes[i]);
+                break;
+            }
+        }
+        /* Also mount persistfs on /persist (was previously in /etc/fstab) */
+        if (init_mount_fs("persistfs", 0, 0, "/persist") == 0) {
+            kprintf("[INIT] /dev/hda auto-mounted as persistfs on /persist\n");
+        }
     }
 
     /* Disk-based filesystems can also be mounted via /etc/fstab entries
-     * or manually via the kconsole 'mount' command. */
-    init_parse_fstab();
+     * (parsed by userspace /sbin/init) or manually via the kconsole
+     * 'mount' command. */
 
     if (!fs_root) {
         kprintf("[INIT] No root filesystem -- cannot start userspace.\n");
@@ -328,10 +247,6 @@ int init_start(const struct boot_info* bi) {
     }
 
     int user_ret = arch_platform_start_userspace(bi);
-
-    if (cmdline_has("ring3")) {
-        arch_platform_usermode_test_start();
-    }
 
     return user_ret;
 }

@@ -19,10 +19,13 @@
 /* Socket types */
 #define SOCK_STREAM 1   /* TCP */
 #define SOCK_DGRAM  2   /* UDP */
+#define SOCK_RAW    3   /* Raw IP */
 
 /* Protocols */
-#define IPPROTO_TCP 6
-#define IPPROTO_UDP 17
+#define IPPROTO_ICMP 1
+#define IPPROTO_TCP  6
+#define IPPROTO_UDP  17
+#define IPPROTO_RAW  255
 
 /* Shutdown how */
 #define SHUT_RD     0

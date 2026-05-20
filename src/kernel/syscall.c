@@ -4656,13 +4656,18 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
     }
 
     if (syscall_no == SYSCALL_RECV) {
-        int sid = sock_fd_get_sid((int)sc_arg0(regs));
+        int fd = (int)sc_arg0(regs);
+        int sid = sock_fd_get_sid(fd);
         if (sid < 0) { sc_ret(regs) = (uint32_t)-EBADF; return; }
         size_t len = (size_t)sc_arg2(regs);
         if (!user_range_ok((void*)sc_arg1(regs), len)) {
             sc_ret(regs) = (uint32_t)-EFAULT; return;
         }
-        sc_ret(regs) = (uint32_t)ksocket_recv(sid, (void*)sc_arg1(regs), len, (int)sc_arg3(regs));
+        /* Merge O_NONBLOCK from fd flags into recv flags */
+        int rflags = (int)sc_arg3(regs);
+        struct file* rf = fd_get(fd);
+        if (rf && (rf->flags & O_NONBLOCK)) rflags |= O_NONBLOCK;
+        sc_ret(regs) = (uint32_t)ksocket_recv(sid, (void*)sc_arg1(regs), len, rflags);
         return;
     }
 
@@ -4683,15 +4688,20 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
     }
 
     if (syscall_no == SYSCALL_RECVFROM) {
-        int sid = sock_fd_get_sid((int)sc_arg0(regs));
+        int fd = (int)sc_arg0(regs);
+        int sid = sock_fd_get_sid(fd);
         if (sid < 0) { sc_ret(regs) = (uint32_t)-EBADF; return; }
         size_t len = (size_t)sc_arg2(regs);
         if (!user_range_ok((void*)sc_arg1(regs), len)) {
             sc_ret(regs) = (uint32_t)-EFAULT; return;
         }
+        /* Merge O_NONBLOCK from fd flags into recv flags */
+        int rflags = (int)sc_arg3(regs);
+        struct file* rf = fd_get(fd);
+        if (rf && (rf->flags & O_NONBLOCK)) rflags |= O_NONBLOCK;
         struct sockaddr_in src;
         memset(&src, 0, sizeof(src));
-        int ret = ksocket_recvfrom(sid, (void*)sc_arg1(regs), len, (int)sc_arg3(regs), &src);
+        int ret = ksocket_recvfrom(sid, (void*)sc_arg1(regs), len, rflags, &src);
         if (ret > 0 && sc_arg4(regs)) {
             (void)copy_to_user((void*)sc_arg4(regs), &src, sizeof(src));
         }

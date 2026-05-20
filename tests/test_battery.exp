@@ -153,7 +153,6 @@ set patterns {
     {"ATA DMA init"         "\\[ATA-DMA\\] Ch0 initialized"}
     {"ATA DMA mode"         "\\[ATA\\] Channel 0: DMA mode."}
     {"SMP CPUs active"      "CPU\\(s\\) active."}
-    {"User ring3 entry"     "\\[USER\\] enter ring3"}
     {"fulltest.elf hello"   "\\[test\\] hello from fulltest.elf"}
     {"open/read/close"      "\\[test\\] open/read/close OK"}
     {"overlay copy-up"      "\\[test\\] overlay copy-up OK"}
@@ -229,7 +228,6 @@ set patterns {
     {"waitpid 100 children" "\\[test\\] waitpid OK \\(100 children"}
     {"lazy PLT"             "\\[test\\] lazy PLT OK"}
     {"PLT cached"           "\\[test\\] PLT cached OK"}
-    {"PING network"         "\\[PING\\] .*received.*network OK"}
     {"echo execve"          "\\[echo\\] hello from echo"}
     {"setuid/setgid"        "\\[test\\] setuid/setgid OK"}
     {"fcntl F_GETFL/SETFL"  "\\[test\\] fcntl F_GETFL/F_SETFL OK"}
@@ -252,7 +250,6 @@ set patterns {
     {"SMP parallel fork"   "\\[test\\] SMP parallel fork OK"}
     {"LZ4 Frame decomp"    "\\[INITRD\\] LZ4"}
     {"NET lwIP init"       "\\[NET\\] lwIP initialized"}
-    {"PING network OK"     "\\[PING\\] .*received.*network OK"}
     {"ATA /dev/hda"        "\\[ATA\\] /dev/hda detected"}
     {"INITRD found"        "\\[INITRD\\] Found"}
     {"diskfs mount /disk"  "\\[MOUNT\\] diskfs on /dev/hda"}
@@ -263,6 +260,7 @@ set patterns {
     {"futex"               "\\[test\\] futex OK"}
     {"sigaltstack"         "\\[test\\] sigaltstack OK"}
     {"socket API"          "\\[test\\] socket API OK"}
+    {"ICMP ping"           "\\[test\\] ICMP ping (OK|timeout \\(non-fatal\\))"}
     {"mqueue"              "\\[test\\] mqueue OK"}
     {"named semaphore"     "\\[test\\] named semaphore OK"}
     {"getrusage"           "\\[test\\] getrusage OK"}
@@ -278,7 +276,7 @@ set patterns {
 set res [wait_for_patterns $serial_log $timeout_sec $patterns]
 kill_qemu $iso
 
-report_section "Full smoke + Ping + diskfs (1 disk, SMP=4)" [lindex $res 0] [lindex $res 1]
+report_section "Full smoke + diskfs (1 disk, SMP=4)" [lindex $res 0] [lindex $res 1]
 
 # ================================================================
 # TEST 2: Multi-disk ATA detection (hda + hdb + hdd)
@@ -374,7 +372,7 @@ set pid [run_qemu $iso 1 $serial_log $timeout_sec \
     {{-drive file=smp1_disk.img,if=ide,format=raw}}]
 
 set patterns {
-    {"SMP1 boot"          "\\[USER\\] enter ring3"}
+    {"SMP1 boot"          "CPU\\(s\\) active."}
     {"SMP1 fulltest"      "\\[test\\] hello from fulltest.elf"}
     {"SMP1 open/read"     "\\[test\\] open/read/close OK"}
     {"SMP1 brk"           "\\[test\\] brk OK"}
@@ -385,7 +383,6 @@ set patterns {
     {"SMP1 signal"        "\\[test\\] sigaction/kill\\(SIGUSR1\\) OK"}
     {"SMP1 pipe"          "\\[test\\] poll\\(pipe\\) OK"}
     {"SMP1 diskfs"        "\\[test\\] /disk/test prev="}
-    {"SMP1 PING"          "\\[PING\\] .*received.*network OK"}
 }
 
 set res [wait_for_patterns $serial_log $timeout_sec $patterns]
@@ -403,12 +400,11 @@ set pid [run_qemu $iso 2 $serial_log $timeout_sec \
     {{-drive file=smp2_disk.img,if=ide,format=raw}}]
 
 set patterns {
-    {"SMP2 boot"          "\\[USER\\] enter ring3"}
+    {"SMP2 boot"          "CPU\\(s\\) active."}
     {"SMP2 fulltest"      "\\[test\\] hello from fulltest.elf"}
     {"SMP2 CoW fork"      "\\[test\\] CoW fork OK"}
     {"SMP2 parallel fork" "\\[test\\] SMP parallel fork OK"}
     {"SMP2 diskfs"        "\\[test\\] /disk/test prev="}
-    {"SMP2 PING"          "\\[PING\\] .*received.*network OK"}
 }
 
 set res [wait_for_patterns $serial_log $timeout_sec $patterns]

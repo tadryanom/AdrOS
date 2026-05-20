@@ -52,13 +52,15 @@ ifeq ($(ARCH),x86)
 
     # Default Toolchain Prefix (can be overridden)
     ifdef CROSS
-        TOOLPREFIX ?= i686-elf-
+        TOOLPREFIX = i686-elf-
+        CC  = $(TOOLPREFIX)gcc
+        AS  = $(TOOLPREFIX)as
+        LD  = $(TOOLPREFIX)ld
+    else
+        CC  ?= $(TOOLPREFIX)gcc
+        AS  ?= $(TOOLPREFIX)as
+        LD  ?= $(TOOLPREFIX)ld
     endif
-
-    # Toolchain tools (Allow user override via make CC=...)
-    CC ?= $(TOOLPREFIX)gcc
-    AS ?= $(TOOLPREFIX)as
-    LD ?= $(TOOLPREFIX)ld
     
     # lwIP sources (NO_SYS=0, IPv4, threaded API + sockets)
     LWIPDIR := third_party/lwip/src
@@ -144,9 +146,9 @@ endif
 
 # --- ARM64 Configuration ---
 ifeq ($(ARCH),arm)
-    CC := aarch64-linux-gnu-gcc
-    AS := aarch64-linux-gnu-as
-    LD := aarch64-linux-gnu-ld
+    CC ?= aarch64-linux-gnu-gcc
+    AS ?= aarch64-linux-gnu-as
+    LD ?= aarch64-linux-gnu-ld
     OBJCOPY := aarch64-linux-gnu-objcopy
     CFLAGS := -ffreestanding -O2 -Wall -Wextra -Werror -Wno-error=cpp -mno-outline-atomics -Iinclude
     LDFLAGS := -T $(SRC_DIR)/arch/arm/linker.ld
@@ -157,9 +159,9 @@ endif
 
 # --- RISC-V 64 Configuration ---
 ifeq ($(ARCH),riscv)
-    CC := riscv64-linux-gnu-gcc
-    AS := riscv64-linux-gnu-as
-    LD := riscv64-linux-gnu-ld
+    CC ?= riscv64-linux-gnu-gcc
+    AS ?= riscv64-linux-gnu-as
+    LD ?= riscv64-linux-gnu-ld
     OBJCOPY := riscv64-linux-gnu-objcopy
     CFLAGS := -ffreestanding -O2 -Wall -Wextra -Werror -Wno-error=cpp -Iinclude -mcmodel=medany
     LDFLAGS := -T $(SRC_DIR)/arch/riscv/linker.ld
@@ -170,9 +172,9 @@ endif
 
 # --- MIPS 32 Configuration ---
 ifeq ($(ARCH),mips)
-    CC := mipsel-linux-gnu-gcc
-    AS := mipsel-linux-gnu-as
-    LD := mipsel-linux-gnu-ld
+    CC ?= mipsel-linux-gnu-gcc
+    AS ?= mipsel-linux-gnu-as
+    LD ?= mipsel-linux-gnu-ld
     CFLAGS := -ffreestanding -O2 -Wall -Wextra -Werror -Wno-error=cpp -Iinclude -mabi=32 -march=mips32r2 -mno-abicalls -fno-pic -G0
     LDFLAGS := -T $(SRC_DIR)/arch/mips/linker.ld
     ASFLAGS := -march=mips32r2

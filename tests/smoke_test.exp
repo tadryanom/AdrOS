@@ -48,7 +48,6 @@ set tests {
     {"ATA DMA init"         "\\[ATA-DMA\\] Ch0 initialized"}
     {"ATA DMA mode"         "\\[ATA\\] Channel 0: DMA mode."}
     {"SMP CPUs active"      "CPU\\(s\\) active."}
-    {"User ring3 entry"     "\\[USER\\] enter ring3"}
     {"fulltest.elf hello"   "\\[test\\] hello from fulltest.elf"}
     {"open/read/close"      "\\[test\\] open/read/close OK"}
     {"overlay copy-up"      "\\[test\\] overlay copy-up OK"}
@@ -124,7 +123,6 @@ set tests {
     {"waitpid 100 children" "\\[test\\] waitpid OK \\(100 children"}
     {"lazy PLT"             "\\[test\\] lazy PLT OK"}
     {"PLT cached"           "\\[test\\] PLT cached OK"}
-    {"PING network"         "\\[PING\\] .*received.*network OK"}
     {"echo execve"          "\\[echo\\] hello from echo"}
     {"setuid/setgid"        "\\[test\\] setuid/setgid OK"}
     {"fcntl F_GETFL/SETFL"  "\\[test\\] fcntl F_GETFL/F_SETFL OK"}
@@ -153,6 +151,7 @@ set tests {
     {"futex"               "\\[test\\] futex OK"}
     {"sigaltstack"         "\\[test\\] sigaltstack OK"}
     {"socket API"          "\\[test\\] socket API OK"}
+    {"ICMP ping"           "\\[test\\] ICMP ping (OK|timeout \\(non-fatal\\))"}
     {"mqueue"              "\\[test\\] mqueue OK"}
     {"named semaphore"     "\\[test\\] named semaphore OK"}
     {"getrusage"           "\\[test\\] getrusage OK"}

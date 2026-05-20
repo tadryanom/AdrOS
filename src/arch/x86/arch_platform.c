@@ -37,10 +37,6 @@
 #endif
 
 #if defined(__i386__)
-extern void x86_usermode_test_start(void);
-#endif
-
-#if defined(__i386__)
 static uint8_t ring0_trap_stack[16384] __attribute__((aligned(16)));
 #endif
 
@@ -253,16 +249,5 @@ int arch_platform_start_userspace(const struct boot_info* bi) {
     return 0;
 #else
     return -1;
-#endif
-}
-
-static void ring3_test_thread(void) {
-    x86_usermode_test_start();
-    for (;;) hal_cpu_idle();
-}
-
-void arch_platform_usermode_test_start(void) {
-#if defined(__i386__)
-    process_create_kernel(ring3_test_thread);
 #endif
 }

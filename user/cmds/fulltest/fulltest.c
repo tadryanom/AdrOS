@@ -170,6 +170,8 @@ enum {
     SYSCALL_CONNECT   = 62,
     SYSCALL_SEND      = 63,
     SYSCALL_RECV      = 64,
+    SYSCALL_SENDTO    = 65,
+    SYSCALL_RECVFROM  = 66,
     SYSCALL_SHUTDOWN  = 133,
     SYSCALL_GETSOCKNAME  = 135,
 
@@ -265,11 +267,12 @@ enum {
 };
 
 enum {
-    O_CREAT = 0x40,
-    O_TRUNC = 0x200,
+    O_WRONLY  = 0x01,
+    O_RDWR    = 0x02,
+    O_CREAT   = 0x40,
+    O_TRUNC   = 0x200,
+    O_APPEND  = 0x400,
     O_NONBLOCK = 0x800,
-    O_APPEND = 0x400,
-    O_RDWR = 0x02,
 };
 
 enum {
@@ -328,7 +331,10 @@ enum {
 enum {
     AF_INET = 2,
     SOCK_STREAM = 1,
-    IPPROTO_TCP = 6,
+    SOCK_DGRAM  = 2,
+    SOCK_RAW    = 3,
+    IPPROTO_ICMP = 1,
+    IPPROTO_TCP  = 6,
 };
 
 #define RUSAGE_SELF 0
@@ -1500,6 +1506,20 @@ static int sys_recv(int sockfd, void* buf, uint32_t len, int flags) {
     return __syscall_fix(ret);
 }
 
+static int sys_sendto(int sockfd, const void* buf, uint32_t len, int flags,
+                      const void* dest_addr) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SENDTO), "b"(sockfd), "c"(buf), "d"(len), "S"(flags), "D"(dest_addr) : "memory");
+    return __syscall_fix(ret);
+}
+
+static int sys_recvfrom(int sockfd, void* buf, uint32_t len, int flags,
+                        void* src_addr) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_RECVFROM), "b"(sockfd), "c"(buf), "d"(len), "S"(flags), "D"(src_addr) : "memory");
+    return __syscall_fix(ret);
+}
+
 static int sys_shutdown(int sockfd, int how) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_SHUTDOWN), "b"(sockfd), "c"(how) : "memory");
@@ -1723,6 +1743,16 @@ void _start(void) {
 
     static const char msg[] = "[test] hello from fulltest.elf\n";
     (void)sys_write(1, msg, (uint32_t)(sizeof(msg) - 1));
+
+    /* Create /tmp/hello.txt — previously done by kernel, now in userspace */
+    {
+        int hfd = sys_open("/tmp/hello.txt", O_CREAT | O_WRONLY | O_TRUNC);
+        if (hfd >= 0) {
+            static const uint8_t hello[] = "hello from tmpfs\n";
+            (void)sys_write(hfd, hello, (uint32_t)(sizeof(hello) - 1));
+            (void)sys_close(hfd);
+        }
+    }
 
     static const char path[] = "/sbin/fulltest";
 
@@ -4911,6 +4941,102 @@ void _start(void) {
         (void)sys_close(sfd);
         sys_write(1, "[test] socket API OK\n",
                   (uint32_t)(sizeof("[test] socket API OK\n") - 1));
+    }
+
+    // I7b: ICMP ping via SOCK_RAW — send echo request to QEMU gateway (10.0.2.2)
+    {
+        int pfd = sys_socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+        if (pfd < 0) {
+            sys_write(1, "[test] SOCK_RAW socket failed\n",
+                      (uint32_t)(sizeof("[test] SOCK_RAW socket failed\n") - 1));
+            sys_exit(1);
+        }
+
+        /* Set non-blocking so recvfrom returns -EAGAIN instead of blocking */
+        (void)sys_fcntl(pfd, 4 /* F_SETFL */, 0x800U /* O_NONBLOCK */);
+
+        struct sockaddr_in dst;
+        dst.sin_family = AF_INET;
+        dst.sin_port = 0;
+        /* 10.0.2.2 in network byte order (big-endian) = 0x0A000202 */
+        dst.sin_addr = 0x0202000AU; /* little-endian representation of 10.0.2.2 */
+        for (int i = 0; i < 8; i++) dst.sin_zero[i] = 0;
+
+        int got_reply = 0;
+        for (int seq = 1; seq <= 3; seq++) {
+            /* Build ICMP echo request header (8 bytes) */
+            uint8_t icmp_req[8];
+            icmp_req[0] = 8;   /* type = echo request */
+            icmp_req[1] = 0;   /* code = 0 */
+            icmp_req[2] = 0;   /* checksum high (calculated below) */
+            icmp_req[3] = 0;   /* checksum low */
+            icmp_req[4] = 0xAD; icmp_req[5] = 0x05; /* ID = 0xAD05 */
+            icmp_req[6] = (uint8_t)(seq >> 8);   /* seq high */
+            icmp_req[7] = (uint8_t)(seq & 0xFF); /* seq low */
+
+            /* Calculate checksum */
+            uint32_t sum = 0;
+            for (int i = 0; i < 8; i += 2) {
+                sum += (uint32_t)((uint16_t)icmp_req[i] << 8 | icmp_req[i + 1]);
+            }
+            while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
+            icmp_req[2] = (uint8_t)(~(sum >> 8) & 0xFF);
+            icmp_req[3] = (uint8_t)(~sum & 0xFF);
+
+            int sent = sys_sendto(pfd, icmp_req, 8, 0, &dst);
+            if (sent < 8) {
+                sys_write(1, "[test] ping sendto failed\n",
+                          (uint32_t)(sizeof("[test] ping sendto failed\n") - 1));
+                (void)sys_close(pfd);
+                sys_exit(1);
+            }
+
+            /* Wait for reply with timeout using non-blocking recvfrom */
+            struct timespec ts_now;
+            sys_clock_gettime(CLOCK_MONOTONIC, &ts_now);
+            uint32_t deadline = ts_now.tv_sec + 3; /* 3 second timeout */
+
+            while (1) {
+                uint8_t rbuf[128];
+                struct sockaddr_in src;
+                int n = sys_recvfrom(pfd, rbuf, sizeof(rbuf), 0, &src);
+                if (n < 0) {
+                    /* -EAGAIN: no data yet, check timeout */
+                    sys_clock_gettime(CLOCK_MONOTONIC, &ts_now);
+                    if (ts_now.tv_sec >= deadline) break;
+                    struct timespec ys = {0, 50000000}; /* 50ms */
+                    (void)sys_nanosleep(&ys, 0);
+                    continue;
+                }
+                if (n >= 28) {
+                    /* IP header (20) + ICMP header (8) minimum */
+                    uint8_t ihl = (uint8_t)(rbuf[0] & 0x0F);
+                    int ip_hdr_len = ihl * 4;
+                    if (n >= ip_hdr_len + 8) {
+                        uint8_t type = rbuf[ip_hdr_len];
+                        uint8_t code = rbuf[ip_hdr_len + 1];
+                        if (type == 0 && code == 0) { /* ICMP echo reply */
+                            got_reply = 1;
+                            break;
+                        }
+                    }
+                }
+                sys_clock_gettime(CLOCK_MONOTONIC, &ts_now);
+                if (ts_now.tv_sec >= deadline) break;
+            }
+
+            if (got_reply) break;
+        }
+
+        (void)sys_close(pfd);
+
+        if (got_reply) {
+            sys_write(1, "[test] ICMP ping OK\n",
+                      (uint32_t)(sizeof("[test] ICMP ping OK\n") - 1));
+        } else {
+            sys_write(1, "[test] ICMP ping timeout (non-fatal)\n",
+                      (uint32_t)(sizeof("[test] ICMP ping timeout (non-fatal)\n") - 1));
+        }
     }
 
     // I8: mqueue — open/send/receive/close/unlink

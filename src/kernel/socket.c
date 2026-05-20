@@ -18,8 +18,10 @@
 
 #include "lwip/tcp.h"
 #include "lwip/udp.h"
+#include "lwip/raw.h"
 #include "lwip/ip_addr.h"
 #include "lwip/pbuf.h"
+#include "lwip/prot/icmp.h"
 
 #include <stddef.h>
 
@@ -29,11 +31,13 @@
 
 struct ksocket {
     int      in_use;
-    int      type;          /* SOCK_STREAM or SOCK_DGRAM */
+    int      type;          /* SOCK_STREAM, SOCK_DGRAM, or SOCK_RAW */
+    int      protocol;      /* IPPROTO_ICMP, IPPROTO_TCP, etc. */
     int      state;
     union {
         struct tcp_pcb* tcp;
         struct udp_pcb* udp;
+        struct raw_pcb* raw;
     } pcb;
 
     /* Receive ring buffer */
@@ -214,29 +218,58 @@ static void udp_recv_cb(void* arg, struct udp_pcb* upcb, struct pbuf* p,
 }
 
 /* ------------------------------------------------------------------ */
+/* lwIP RAW callback                                                  */
+/* ------------------------------------------------------------------ */
+
+static u8_t raw_recv_cb(void* arg, struct raw_pcb* pcb, struct pbuf* p,
+                        const ip_addr_t* addr) {
+    (void)pcb; (void)addr;
+    int sid = (int)(uintptr_t)arg;
+    struct ksocket* s = get_socket(sid);
+    if (!s || !p) { if (p) pbuf_free(p); return 0; }
+
+    /* Store source IP for recvfrom */
+    s->last_remote_ip = ip_addr_get_ip4_u32(addr);
+    s->last_remote_port = 0; /* raw sockets have no ports */
+
+    for (struct pbuf* q = p; q != NULL; q = q->next) {
+        rxbuf_write(s, q->payload, q->len);
+    }
+    pbuf_free(p);
+
+    wq_wake_all(&s->rx_wq);
+    return 1; /* consumed */
+}
+
+/* ------------------------------------------------------------------ */
 /* Public API                                                         */
 /* ------------------------------------------------------------------ */
 
 int ksocket_create(int domain, int type, int protocol) {
-    (void)protocol;
     if (domain != AF_INET) return -EAFNOSUPPORT;
-    if (type != SOCK_STREAM && type != SOCK_DGRAM) return -EPROTONOSUPPORT;
+    if (type != SOCK_STREAM && type != SOCK_DGRAM && type != SOCK_RAW) return -EPROTONOSUPPORT;
 
     int sid = alloc_socket();
     if (sid < 0) return sid;
 
     struct ksocket* s = &sockets[sid];
     s->type = type;
+    s->protocol = protocol;
 
     if (type == SOCK_STREAM) {
         s->pcb.tcp = tcp_new();
         if (!s->pcb.tcp) { s->in_use = 0; return -ENOMEM; }
         tcp_arg(s->pcb.tcp, (void*)(uintptr_t)sid);
         tcp_recv(s->pcb.tcp, tcp_recv_cb);
-    } else {
+    } else if (type == SOCK_DGRAM) {
         s->pcb.udp = udp_new();
         if (!s->pcb.udp) { s->in_use = 0; return -ENOMEM; }
         udp_recv(s->pcb.udp, udp_recv_cb, (void*)(uintptr_t)sid);
+    } else {
+        /* SOCK_RAW */
+        s->pcb.raw = raw_new((u8_t)protocol);
+        if (!s->pcb.raw) { s->in_use = 0; return -ENOMEM; }
+        raw_recv(s->pcb.raw, raw_recv_cb, (void*)(uintptr_t)sid);
     }
 
     return sid;
@@ -254,8 +287,11 @@ int ksocket_bind(int sid, const struct sockaddr_in* addr) {
     err_t err;
     if (s->type == SOCK_STREAM) {
         err = tcp_bind(s->pcb.tcp, &ip, port);
-    } else {
+    } else if (s->type == SOCK_DGRAM) {
         err = udp_bind(s->pcb.udp, &ip, port);
+    } else {
+        /* SOCK_RAW — bind ignores port */
+        err = raw_bind(s->pcb.raw, &ip);
     }
 
     if (err != ERR_OK) return -EADDRINUSE;
@@ -354,7 +390,7 @@ int ksocket_send(int sid, const void* buf, size_t len, int flags) {
         if (err != ERR_OK) return -EIO;
         tcp_output(s->pcb.tcp);
         return (int)snd_len;
-    } else {
+    } else if (s->type == SOCK_DGRAM) {
         /* UDP connected send */
         if (s->state != KSOCK_CONNECTED) return -ENOTCONN;
         struct pbuf* p = pbuf_alloc(PBUF_TRANSPORT, (u16_t)len, PBUF_RAM);
@@ -363,16 +399,27 @@ int ksocket_send(int sid, const void* buf, size_t len, int flags) {
         err_t err = udp_send(s->pcb.udp, p);
         pbuf_free(p);
         return (err == ERR_OK) ? (int)len : -EIO;
+    } else {
+        /* SOCK_RAW connected send */
+        if (!s->pcb.raw) return -ENOTCONN;
+        struct pbuf* p = pbuf_alloc(PBUF_IP, (u16_t)len, PBUF_RAM);
+        if (!p) return -ENOMEM;
+        memcpy(p->payload, buf, len);
+        err_t err = raw_send(s->pcb.raw, p);
+        pbuf_free(p);
+        return (err == ERR_OK) ? (int)len : -EIO;
     }
 }
 
 int ksocket_recv(int sid, void* buf, size_t len, int flags) {
-    (void)flags;
     struct ksocket* s = get_socket(sid);
     if (!s) return -EBADF;
 
+    int nonblock = flags & 0x800; /* O_NONBLOCK */
+
     /* Block until data available or peer closed */
     while (s->rx_count == 0 && s->state != KSOCK_PEER_CLOSED && s->state != KSOCK_CLOSED) {
+        if (nonblock) return -EAGAIN;
         wq_push(&s->rx_wq, current_process);
         current_process->state = PROCESS_BLOCKED;
         schedule();
@@ -389,19 +436,31 @@ int ksocket_sendto(int sid, const void* buf, size_t len, int flags,
     (void)flags;
     struct ksocket* s = get_socket(sid);
     if (!s) return -EBADF;
-    if (s->type != SOCK_DGRAM) return -EOPNOTSUPP;
 
     ip_addr_t ip;
     ip_addr_set_zero_ip4(&ip);
     ip4_addr_set_u32(ip_2_ip4(&ip), dest->sin_addr);
     uint16_t port = ntohs(dest->sin_port);
 
-    struct pbuf* p = pbuf_alloc(PBUF_TRANSPORT, (u16_t)len, PBUF_RAM);
-    if (!p) return -ENOMEM;
-    memcpy(p->payload, buf, len);
-    err_t err = udp_sendto(s->pcb.udp, p, &ip, port);
-    pbuf_free(p);
-    return (err == ERR_OK) ? (int)len : -EIO;
+    if (s->type == SOCK_DGRAM) {
+        struct pbuf* p = pbuf_alloc(PBUF_TRANSPORT, (u16_t)len, PBUF_RAM);
+        if (!p) return -ENOMEM;
+        memcpy(p->payload, buf, len);
+        err_t err = udp_sendto(s->pcb.udp, p, &ip, port);
+        pbuf_free(p);
+        return (err == ERR_OK) ? (int)len : -EIO;
+    } else if (s->type == SOCK_RAW) {
+        /* For raw sockets, buf contains the IP payload (e.g. ICMP header+data).
+         * lwIP raw_sendto adds the IP header automatically. */
+        struct pbuf* p = pbuf_alloc(PBUF_IP, (u16_t)len, PBUF_RAM);
+        if (!p) return -ENOMEM;
+        memcpy(p->payload, buf, len);
+        err_t err = raw_sendto(s->pcb.raw, p, &ip);
+        pbuf_free(p);
+        return (err == ERR_OK) ? (int)len : -EIO;
+    }
+
+    return -EOPNOTSUPP;
 }
 
 int ksocket_recvfrom(int sid, void* buf, size_t len, int flags,
@@ -414,6 +473,8 @@ int ksocket_recvfrom(int sid, void* buf, size_t len, int flags,
             src->sin_port = htons(s->last_remote_port);
             src->sin_addr = s->last_remote_ip;
         }
+    } else if (ret == -EAGAIN && src) {
+        /* Non-blocking: still fill src if data was available from a prior call */
     }
     return ret;
 }
@@ -429,6 +490,8 @@ int ksocket_close(int sid) {
         tcp_close(s->pcb.tcp);
     } else if (s->type == SOCK_DGRAM && s->pcb.udp) {
         udp_remove(s->pcb.udp);
+    } else if (s->type == SOCK_RAW && s->pcb.raw) {
+        raw_remove(s->pcb.raw);
     }
 
     /* Free any pending accepted sockets */
@@ -538,6 +601,12 @@ int ksocket_getsockname(int sid, struct sockaddr_in* addr) {
         addr->sin_family = AF_INET;
         addr->sin_port = htons(s->pcb.udp->local_port);
         addr->sin_addr = ip_addr_get_ip4_u32(&s->pcb.udp->local_ip);
+        return 0;
+    }
+    if (s->type == SOCK_RAW && s->pcb.raw) {
+        addr->sin_family = AF_INET;
+        addr->sin_port = 0;
+        addr->sin_addr = ip_addr_get_ip4_u32(&s->pcb.raw->local_ip);
         return 0;
     }
     return -EINVAL;

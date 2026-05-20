@@ -293,9 +293,77 @@ static void mount_virtual_fs(void) {
             fprintf(stderr, "init: mount tmpfs on /tmp failed\n");
 }
 
+/* Parse /etc/fstab and mount disk-based filesystems.
+ * Format: device mountpoint fstype options
+ * Example: /dev/hda /disk diskfs defaults
+ * Migrated from kernel init_parse_fstab() to userspace. */
+static void parse_fstab(void) {
+    int fd = open("/etc/fstab", O_RDONLY);
+    if (fd < 0) return;
+
+    char buf[2048];
+    int total = 0, r;
+    while ((r = read(fd, buf + total, (size_t)(sizeof(buf) - (size_t)total - 1))) > 0)
+        total += r;
+    buf[total] = '\0';
+    close(fd);
+
+    char* p = buf;
+    while (*p) {
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p == '\0') break;
+        if (*p == '#' || *p == '\n') {
+            while (*p && *p != '\n') p++;
+            if (*p == '\n') p++;
+            continue;
+        }
+
+        /* device */
+        char device[64] = {0};
+        { char* s = p; while (*p && *p != ' ' && *p != '\t' && *p != '\n') p++;
+          int len = (int)(p - s); if (len > 63) len = 63; memcpy(device, s, (size_t)len); }
+        if (*p == '\n' || *p == '\0') { if (*p == '\n') p++; continue; }
+        while (*p == ' ' || *p == '\t') p++;
+
+        /* mountpoint */
+        char mountpoint[64] = {0};
+        { char* s = p; while (*p && *p != ' ' && *p != '\t' && *p != '\n') p++;
+          int len = (int)(p - s); if (len > 63) len = 63; memcpy(mountpoint, s, (size_t)len); }
+        if (*p == '\n' || *p == '\0') { if (*p == '\n') p++; continue; }
+        while (*p == ' ' || *p == '\t') p++;
+
+        /* fstype */
+        char fstype[32] = {0};
+        { char* s = p; while (*p && *p != ' ' && *p != '\t' && *p != '\n') p++;
+          int len = (int)(p - s); if (len > 31) len = 31; memcpy(fstype, s, (size_t)len); }
+
+        /* Skip rest of line */
+        while (*p && *p != '\n') p++;
+        if (*p == '\n') p++;
+
+        /* Skip virtual FS — already mounted by mount_virtual_fs() */
+        if (strcmp(fstype, "devfs") == 0 || strcmp(fstype, "procfs") == 0
+            || strcmp(fstype, "tmpfs") == 0 || strcmp(fstype, "overlayfs") == 0)
+            continue;
+
+        /* Skip if already mounted */
+        if (is_mounted(mountpoint)) continue;
+
+        if (mount(device, mountpoint, fstype, 0, NULL) < 0) {
+            fprintf(stderr, "init: mount %s on %s (%s) failed\n",
+                    device, mountpoint, fstype);
+        } else {
+            printf("init: mounted %s on %s (%s)\n", device, mountpoint, fstype);
+        }
+    }
+}
+
 static void default_init(void) {
     /* Mount virtual filesystems before anything else */
     mount_virtual_fs();
+
+    /* Mount disk filesystems from /etc/fstab */
+    parse_fstab();
 
     /* Run /etc/init.d/rcS if it exists */
     if (access("/etc/init.d/rcS", 0) == 0) {
@@ -355,6 +423,9 @@ int main(int argc, char** argv) {
 
     /* Mount virtual filesystems before running any inittab entries */
     mount_virtual_fs();
+
+    /* Mount disk filesystems from /etc/fstab */
+    parse_fstab();
 
     /* Phase 1: sysinit entries */
     run_action(ACT_SYSINIT, 1);
