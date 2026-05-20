@@ -24,6 +24,7 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <time.h>
+#include <sys/mount.h>
 
 #define MAX_ENTRIES 32
 #define LINE_MAX   256
@@ -239,7 +240,22 @@ static void check_respawn(void) {
 }
 
 /* Default behavior when no inittab exists */
+/* Mount virtual filesystems (migrated from kernel-space).
+ * These must be done before spawning the shell since /dev/console
+ * is needed for terminal I/O. */
+static void mount_virtual_fs(void) {
+    if (mount("none", "/dev", "devfs", 0, NULL) < 0)
+        fprintf(stderr, "init: mount devfs on /dev failed\n");
+    if (mount("none", "/proc", "procfs", 0, NULL) < 0)
+        fprintf(stderr, "init: mount procfs on /proc failed\n");
+    if (mount("none", "/tmp", "tmpfs", 0, NULL) < 0)
+        fprintf(stderr, "init: mount tmpfs on /tmp failed\n");
+}
+
 static void default_init(void) {
+    /* Mount virtual filesystems before anything else */
+    mount_virtual_fs();
+
     /* Run /etc/init.d/rcS if it exists */
     if (access("/etc/init.d/rcS", 0) == 0) {
         run_and_wait("/etc/init.d/rcS");
@@ -295,6 +311,9 @@ int main(int argc, char** argv) {
 
     printf("init: loaded %d inittab entries, runlevel %d\n",
            nentries, current_runlevel);
+
+    /* Mount virtual filesystems before running any inittab entries */
+    mount_virtual_fs();
 
     /* Phase 1: sysinit entries */
     run_action(ACT_SYSINIT, 1);

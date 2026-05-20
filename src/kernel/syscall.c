@@ -4911,10 +4911,28 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         kdev[sizeof(kdev)-1] = '\0';
         ktype[sizeof(ktype)-1] = '\0';
 
+        /* Virtual filesystems — no device argument needed */
         if (strcmp(ktype, "tmpfs") == 0) {
             fs_node_t* tmp = tmpfs_create_root();
             if (!tmp) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
+            (void)vfs_mkdir(kmp);  /* auto-create mountpoint */
             sc_ret(regs) = (uint32_t)vfs_mount(kmp, tmp);
+            return;
+        }
+        if (strcmp(ktype, "devfs") == 0) {
+            extern fs_node_t* devfs_create_root(void);
+            fs_node_t* dev = devfs_create_root();
+            if (!dev) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
+            (void)vfs_mkdir(kmp);
+            sc_ret(regs) = (uint32_t)vfs_mount(kmp, dev);
+            return;
+        }
+        if (strcmp(ktype, "procfs") == 0) {
+            extern fs_node_t* procfs_create_root(void);
+            fs_node_t* proc = procfs_create_root();
+            if (!proc) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
+            (void)vfs_mkdir(kmp);
+            sc_ret(regs) = (uint32_t)vfs_mount(kmp, proc);
             return;
         }
 
@@ -4926,6 +4944,7 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         if (drive < 0) { sc_ret(regs) = (uint32_t)-ENODEV; return; }
 
         extern int init_mount_fs(const char* fstype, int drive, uint32_t lba, const char* mountpoint);
+        (void)vfs_mkdir(kmp);  /* auto-create mountpoint */
         int rc = init_mount_fs(ktype, drive, 0, kmp);
         sc_ret(regs) = (uint32_t)(rc < 0 ? -EIO : 0);
         return;

@@ -255,14 +255,15 @@ USER_BIN_NAMES := $(filter-out init,$(USER_CMD_NAMES))
 
 # Build INITRD_FILES list: <elf>:<rootfs-path>
 FSTAB := rootfs/etc/fstab
+RCS   := rootfs/etc/init.d/rcS
 INITRD_FILES := $(FULLTEST_ELF):sbin/fulltest \
     $(USER_BUILD)/cmds/init/init.elf:sbin/init \
     $(foreach cmd,$(USER_BIN_NAMES),$(USER_BUILD)/cmds/$(cmd)/$(cmd).elf:bin/$(cmd)) \
     $(LDSO_ELF):lib/ld.so $(ULIBC_SO):lib/libc.so \
     $(PIE_SO):lib/libpietest.so $(PIE_ELF):bin/pie_test \
-    $(FSTAB):etc/fstab
+    $(FSTAB):etc/fstab $(RCS):etc/init.d/rcS
 
-INITRD_DEPS := $(MKINITRD) $(FULLTEST_ELF) $(USER_CMD_ELFS) $(LDSO_ELF) $(ULIBC_SO) $(PIE_SO) $(PIE_ELF) $(FSTAB)
+INITRD_DEPS := $(MKINITRD) $(FULLTEST_ELF) $(USER_CMD_ELFS) $(LDSO_ELF) $(ULIBC_SO) $(PIE_SO) $(PIE_ELF) $(FSTAB) $(RCS)
 
 # doom (build via 'make doom', included in initrd if present)
 doom: $(DOOM_SENTINEL) $(ULIBC_LIB) $(ULIBC_SO)

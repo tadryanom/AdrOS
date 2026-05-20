@@ -213,6 +213,11 @@ int init_start(const struct boot_info* bi) {
             }
         }
     }
+    /* Create mount-point directories and mount virtual filesystems.
+     * When /sbin/init runs in userspace it re-mounts these (vfs_mount
+     * replaces existing entries, so it is a harmless no-op).  When a
+     * different init= binary is used (e.g. fulltest), these kernel-side
+     * mounts ensure the system is functional. */
     {
         int rc;
         rc = vfs_mkdir("/dev");
@@ -247,6 +252,10 @@ int init_start(const struct boot_info* bi) {
     tty_init();
     pty_init();
 
+    /* Mount devfs — kernel-side fallback so that any init= binary
+     * (including fulltest) has /dev available.  When /sbin/init runs
+     * it re-mounts devfs via mount() syscall; vfs_mount replaces the
+     * existing entry so this is a harmless overlap. */
     fs_node_t* dev = devfs_create_root();
     if (dev) {
         (void)vfs_mount("/dev", dev);

@@ -1,0 +1,5 @@
+#!/bin/sh
+# /etc/init.d/rcS — System initialization script (run by init)
+# Virtual filesystems (/dev, /proc, /tmp) are mounted by init directly
+# via mount() syscalls before this script runs.
+# Add additional startup commands below.
