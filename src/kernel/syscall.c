@@ -4976,9 +4976,9 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         int drive = ata_name_to_drive(devname);
         if (drive < 0) { sc_ret(regs) = (uint32_t)-ENODEV; return; }
 
-        extern int init_mount_fs(const char* fstype, int drive, uint32_t lba, const char* mountpoint);
+        extern int init_mount_fs(const char* fstype, int drive, uint32_t lba, const char* mountpoint, unsigned long flags);
         (void)vfs_mkdirp(kmp);  /* auto-create mountpoint (recursive) */
-        int rc = init_mount_fs(ktype, drive, 0, kmp);
+        int rc = init_mount_fs(ktype, drive, 0, kmp, mount_flags);
         sc_ret(regs) = (uint32_t)(rc < 0 ? rc : 0);
         return;
     }

@@ -21,6 +21,7 @@
 #include "hal/cpu.h"
 #include "kernel/init.h"
 #include "ata_pio.h"
+#include "errno.h"
 
 #define KCMD_MAX 128
 
@@ -258,6 +259,7 @@ static void kconsole_help(void) {
     kc_puts("  dmesg                             - Show kernel log buffer\n");
     kc_puts("  lsblk                             - List detected ATA drives\n");
     kc_puts("  mount -t <type> /dev/<hd> <mnt>   - Mount filesystem\n");
+    kc_puts("  mkfs diskfs /dev/<hd>              - Format diskfs filesystem\n");
     kc_puts("  reboot                            - Restart system\n");
     kc_puts("  halt                              - Halt the CPU\n");
 }
@@ -363,7 +365,61 @@ static void kconsole_mount(const char* args) {
         return;
     }
 
-    (void)init_mount_fs(fstype, drive, 0, mountpoint);
+    (void)init_mount_fs(fstype, drive, 0, mountpoint, 0);
+}
+
+/* mkfs diskfs /dev/<hdX> */
+static void kconsole_mkfs(const char* args) {
+    const char* p = args;
+    while (*p == ' ') p++;
+
+    /* Extract fstype */
+    const char* fs_start = p;
+    while (*p && *p != ' ') p++;
+    char fstype[16];
+    size_t fs_len = (size_t)(p - fs_start);
+    if (fs_len >= sizeof(fstype)) fs_len = sizeof(fstype) - 1;
+    memcpy(fstype, fs_start, fs_len);
+    fstype[fs_len] = '\0';
+
+    if (strcmp(fstype, "diskfs") != 0) {
+        kprintf("mkfs: unsupported filesystem type: %s (only 'diskfs')\n", fstype);
+        return;
+    }
+
+    while (*p == ' ') p++;
+
+    /* Extract device */
+    const char* dev_start = p;
+    while (*p && *p != ' ') p++;
+    char device[32];
+    size_t dev_len = (size_t)(p - dev_start);
+    if (dev_len >= sizeof(device)) dev_len = sizeof(device) - 1;
+    memcpy(device, dev_start, dev_len);
+    device[dev_len] = '\0';
+
+    int drive = -1;
+    if (strncmp(device, "/dev/", 5) == 0) {
+        drive = ata_name_to_drive(device + 5);
+    }
+    if (drive < 0) {
+        kprintf("mkfs: unknown device: %s\n", device);
+        return;
+    }
+    if (!ata_pio_drive_present(drive)) {
+        kprintf("mkfs: device %s not present\n", device);
+        return;
+    }
+
+    extern int diskfs_mkfs(int drive);
+    int rc = diskfs_mkfs(drive);
+    if (rc == 0) {
+        kprintf("mkfs: diskfs filesystem created on %s\n", device);
+    } else if (rc == -EBUSY) {
+        kprintf("mkfs: %s already has an active diskfs mount\n", device);
+    } else {
+        kprintf("mkfs: failed to format %s (err=%d)\n", device, rc);
+    }
 }
 
 static void kconsole_exec(const char* cmd) {
@@ -437,6 +493,9 @@ static void kconsole_exec(const char* cmd) {
     }
     else if (strncmp(cmd, "mount ", 6) == 0) {
         kconsole_mount(cmd + 6);
+    }
+    else if (strncmp(cmd, "mkfs ", 5) == 0) {
+        kconsole_mkfs(cmd + 5);
     }
     else if (cmd[0] != '\0') {
         kprintf("unknown command: %s\n", cmd);

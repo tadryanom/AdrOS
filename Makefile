@@ -288,7 +288,7 @@ $(INITRD_IMG): $(INITRD_DEPS)
 
 run: iso
 	@rm -f serial.log qemu.log
-	@test -f disk.img || dd if=/dev/zero of=disk.img bs=1M count=4 2>/dev/null
+	@test -f disk.img || { dd if=/dev/zero of=disk.img bs=1M count=4 2>/dev/null && printf '\x31\x53\x46\x44\x03\x00\x00\x00\x04\x00\x00\x00' | dd of=disk.img bs=1 seek=1024 conv=notrunc 2>/dev/null; }
 	@qemu-system-i386 -boot d -cdrom adros-$(ARCH).iso -m 128M -display none \
 		-drive file=disk.img,if=ide,format=raw \
 		-nic user,model=e1000 \
@@ -384,7 +384,7 @@ test-host:
 test-gdb: $(KERNEL_NAME) iso
 	@echo "[TEST-GDB] Starting QEMU with GDB stub..."
 	@rm -f serial.log
-	@test -f disk.img || dd if=/dev/zero of=disk.img bs=1M count=4 2>/dev/null
+	@test -f disk.img || { dd if=/dev/zero of=disk.img bs=1M count=4 2>/dev/null && printf '\x31\x53\x46\x44\x03\x00\x00\x00\x04\x00\x00\x00' | dd of=disk.img bs=1 seek=1024 conv=notrunc 2>/dev/null; }
 	@qemu-system-i386 -smp 4 -boot d -cdrom adros-$(ARCH).iso -m 128M -display none \
 		-drive file=disk.img,if=ide,format=raw \
 		-serial file:serial.log -monitor none -no-reboot -no-shutdown \

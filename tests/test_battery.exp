@@ -26,6 +26,28 @@ proc create_disk {path mb} {
     }
 }
 
+# Create a disk image with a minimal diskfs superblock pre-formatted.
+# diskfs no longer auto-formats on mount, so test disks need this.
+proc create_diskfs_disk {path mb} {
+    if {![file exists $path]} {
+        exec dd if=/dev/zero of=$path bs=1M count=$mb 2>/dev/null
+        # Write diskfs superblock at LBA 2 (byte offset 1024):
+        #   magic=0x44465331 version=3 next_free_lba=4
+        #   root inode: type=1 (DIR) parent=0
+        # Using printf + dd to stamp the 12-byte header + root inode
+        set fd [open $path r+]
+        fconfigure $fd -translation binary
+        seek $fd 1024
+        # magic (4 bytes LE) + version (4 bytes LE) + next_free_lba (4 bytes LE)
+        puts -nonewline $fd [binary format iiii 0x44465331 3 4 0]
+        # Root inode at offset 1024+12: type=1(DIR), parent=0
+        # struct diskfs_inode: type(4) parent(4) name(24) start_lba(4) nsectors(4) nlink(4) cap_sectors(4)
+        seek $fd [expr {1024 + 12}]
+        puts -nonewline $fd [binary format ii 1 0]
+        close $fd
+    }
+}
+
 proc run_qemu {iso smp serial_log timeout_sec drive_args} {
     file delete -force $serial_log
     set cmd [list qemu-system-i386 \
@@ -142,7 +164,7 @@ puts "========================================="
 puts "  AdrOS Test Battery"
 puts "========================================="
 
-create_disk "disk.img" 4
+create_diskfs_disk "disk.img" 4
 
 set pid [run_qemu $iso $smp $serial_log $timeout_sec \
     {{-drive file=disk.img,if=ide,format=raw}}]
@@ -306,10 +328,10 @@ kill_qemu $iso
 report_section "Multi-disk ATA (3 drives)" [lindex $res 0] [lindex $res 1]
 
 # ================================================================
-# TEST 3: VFS mount root=/dev/hda (diskfs auto-format)
+# TEST 3: VFS mount root=/dev/hda (diskfs pre-formatted)
 # ================================================================
 
-create_disk "root_hda.img" 4
+create_diskfs_disk "root_hda.img" 4
 
 set pid [run_qemu $iso $smp $serial_log $timeout_sec \
     {{-drive file=root_hda.img,if=ide,index=0,format=raw}}]
@@ -366,7 +388,7 @@ report_section "ATA /dev/hdd detection" [lindex $res 0] [lindex $res 1]
 # TEST 6: SMP=1 boot (single-CPU regression)
 # ================================================================
 
-create_disk "smp1_disk.img" 4
+create_diskfs_disk "smp1_disk.img" 4
 
 set pid [run_qemu $iso 1 $serial_log $timeout_sec \
     {{-drive file=smp1_disk.img,if=ide,format=raw}}]
@@ -394,7 +416,7 @@ report_section "SMP=1 boot regression" [lindex $res 0] [lindex $res 1]
 # TEST 7: SMP=2 boot (dual-CPU)
 # ================================================================
 
-create_disk "smp2_disk.img" 4
+create_diskfs_disk "smp2_disk.img" 4
 
 set pid [run_qemu $iso 2 $serial_log $timeout_sec \
     {{-drive file=smp2_disk.img,if=ide,format=raw}}]

@@ -1,4 +1,5 @@
 # /etc/fstab — AdrOS filesystem table
 # <device>      <mountpoint>  <fstype>     <options>
+# Note: diskfs requires a pre-formatted disk (use 'mkfs diskfs /dev/hdX').
 /dev/hda        /disk         diskfs       defaults
 /dev/hda        /persist      persistfs    defaults

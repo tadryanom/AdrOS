@@ -10,6 +10,7 @@
 #include "persistfs.h"
 
 #include "ata_pio.h"
+#include "console.h"
 #include "diskfs.h"
 #include "errno.h"
 #include "heap.h"
@@ -100,21 +101,31 @@ fs_node_t* persistfs_create_root(int drive) {
         }
 
         if (g_ready) {
-            // Ensure diskfs is initialized even if /disk mount happens later.
-            (void)diskfs_create_root(drive);
+            /* Only initialize diskfs backing if the drive actually contains
+             * a diskfs filesystem.  Without this check, diskfs_create_root()
+             * would auto-format a non-diskfs disk (FAT/ext2), corrupting
+             * data.  Now that diskfs_create_root() no longer auto-formats,
+             * the call would simply fail — but we skip it entirely when the
+             * probe fails to avoid unnecessary I/O and confusing log msgs. */
+            extern int diskfs_probe(int drive);
+            if (diskfs_probe(drive) == 0) {
+                (void)diskfs_create_root(drive);
 
-            // One-time migration from legacy LBA1 counter storage.
-            uint8_t sec[512];
-            if (ata_pio_read28(drive, PERSISTFS_LBA_COUNTER, sec) == 0) {
-                fs_node_t* b = persistfs_backing_open(PERSIST_O_CREAT);
-                if (b) {
-                    uint8_t cur4[4];
-                    uint32_t rd = vfs_read(b, 0, 4, cur4);
-                    if (rd == 0) {
-                        (void)vfs_write(b, 0, 4, sec);
+                // One-time migration from legacy LBA1 counter storage.
+                uint8_t sec[512];
+                if (ata_pio_read28(drive, PERSISTFS_LBA_COUNTER, sec) == 0) {
+                    fs_node_t* b = persistfs_backing_open(PERSIST_O_CREAT);
+                    if (b) {
+                        uint8_t cur4[4];
+                        uint32_t rd = vfs_read(b, 0, 4, cur4);
+                        if (rd == 0) {
+                            (void)vfs_write(b, 0, 4, sec);
+                        }
+                        persistfs_backing_close(b);
                     }
-                    persistfs_backing_close(b);
                 }
+            } else {
+                kprintf("[PERSISTFS] No diskfs backing on drive %d — skipping\n", drive);
             }
         }
 

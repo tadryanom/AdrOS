@@ -44,7 +44,7 @@
 
 /* ---- Mount helper: used by fstab parser and kconsole 'mount' command ---- */
 
-int init_mount_fs(const char* fstype, int drive, uint32_t lba, const char* mountpoint) {
+int init_mount_fs(const char* fstype, int drive, uint32_t lba, const char* mountpoint, unsigned long flags) {
     fs_node_t* root = NULL;
 
     if (strcmp(fstype, "diskfs") == 0) {
@@ -79,7 +79,7 @@ int init_mount_fs(const char* fstype, int drive, uint32_t lba, const char* mount
         *dp = '\0';
     }
 
-    int rc = vfs_mount_full(mountpoint, root, fstype, devname, 0);
+    int rc = vfs_mount_full(mountpoint, root, fstype, devname, flags);
     if (rc < 0) {
         kprintf("[MOUNT] Failed to register mount at %s (err=%d)\n", mountpoint, rc);
         return rc;
@@ -209,8 +209,8 @@ int init_start(const struct boot_info* bi) {
         if (drive >= 0 && ata_pio_drive_present(drive)) {
             /* Auto-detect: try ext2, fat first (non-destructive), then diskfs.
              * diskfs_probe() is non-destructive — it only checks the magic
-             * without formatting.  diskfs_create_root() will auto-format
-             * blank disks, so it is only called when probe confirms diskfs. */
+             * without formatting.  diskfs_create_root() no longer auto-formats;
+             * use 'mkfs diskfs /dev/hdX' from kconsole to create a new fs. */
             static const char* fstypes[] = { "ext2", "fat", "diskfs", NULL };
             int mounted = 0;
             for (int i = 0; fstypes[i]; i++) {
@@ -219,7 +219,7 @@ int init_start(const struct boot_info* bi) {
                     extern int diskfs_probe(int drive);
                     if (diskfs_probe(drive) != 0) continue;
                 }
-                if (init_mount_fs(fstypes[i], drive, 0, "/disk") == 0) {
+                if (init_mount_fs(fstypes[i], drive, 0, "/disk", 0) == 0) {
                     kprintf("[INIT] root=%s mounted as %s on /disk\n",
                             root_dev, fstypes[i]);
                     mounted = 1;
@@ -239,13 +239,13 @@ int init_start(const struct boot_info* bi) {
                 extern int diskfs_probe(int drive);
                 if (diskfs_probe(0) != 0) continue;
             }
-            if (init_mount_fs(fstypes[i], 0, 0, "/disk") == 0) {
+            if (init_mount_fs(fstypes[i], 0, 0, "/disk", 0) == 0) {
                 kprintf("[INIT] /dev/hda auto-mounted as %s on /disk\n", fstypes[i]);
                 break;
             }
         }
         /* Also mount persistfs on /persist (was previously in /etc/fstab) */
-        if (init_mount_fs("persistfs", 0, 0, "/persist") == 0) {
+        if (init_mount_fs("persistfs", 0, 0, "/persist", 0) == 0) {
             kprintf("[INIT] /dev/hda auto-mounted as persistfs on /persist\n");
         }
     }
