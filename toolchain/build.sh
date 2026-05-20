@@ -16,10 +16,9 @@
 #   2. GCC       (bootstrap, C only, no libc headers)
 #   3. Newlib    (C library)
 #   4. GCC       (full rebuild with Newlib sysroot)
-#   5. Bash      (optional, cross-compiled)
 #
 # Usage:
-#   ./toolchain/build.sh [--prefix /opt/adros] [--jobs 4] [--skip-bash]
+#   ./toolchain/build.sh [--prefix /opt/adros] [--jobs 4]
 #
 # Prerequisites:
 #   - GCC (host), G++, Make, Texinfo, GMP, MPFR, MPC, ISL (dev packages)
@@ -35,27 +34,23 @@ ADROS_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PREFIX="/opt/adros-toolchain"
 TARGET="i686-adros"
 JOBS="$(nproc 2>/dev/null || echo 4)"
-SKIP_BASH=0
 
 # ---- Versions ----
 BINUTILS_VER="2.42"
 GCC_VER="13.2.0"
 NEWLIB_VER="4.4.0.20231231"
-BASH_VER="5.2.21"
 
 BINUTILS_URL="https://ftp.gnu.org/gnu/binutils/binutils-${BINUTILS_VER}.tar.xz"
 GCC_URL="https://ftp.gnu.org/gnu/gcc/gcc-${GCC_VER}/gcc-${GCC_VER}.tar.xz"
 NEWLIB_URL="https://sourceware.org/pub/newlib/newlib-${NEWLIB_VER}.tar.gz"
-BASH_URL="https://ftp.gnu.org/gnu/bash/bash-${BASH_VER}.tar.gz"
 
 # ---- Parse args ----
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --prefix)  PREFIX="$2"; shift 2 ;;
         --jobs)    JOBS="$2"; shift 2 ;;
-        --skip-bash) SKIP_BASH=1; shift ;;
         --help|-h)
-            echo "Usage: $0 [--prefix DIR] [--jobs N] [--skip-bash]"
+            echo "Usage: $0 [--prefix DIR] [--jobs N]"
             exit 0 ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
@@ -104,13 +99,11 @@ msg "Downloading sources"
 download "$BINUTILS_URL" "$SRC_DIR/binutils-${BINUTILS_VER}.tar.xz"
 download "$GCC_URL"      "$SRC_DIR/gcc-${GCC_VER}.tar.xz"
 download "$NEWLIB_URL"   "$SRC_DIR/newlib-${NEWLIB_VER}.tar.gz"
-[[ $SKIP_BASH -eq 0 ]] && download "$BASH_URL" "$SRC_DIR/bash-${BASH_VER}.tar.gz"
 
 msg "Extracting sources"
 extract "$SRC_DIR/binutils-${BINUTILS_VER}.tar.xz" "$SRC_DIR/binutils-${BINUTILS_VER}"
 extract "$SRC_DIR/gcc-${GCC_VER}.tar.xz"           "$SRC_DIR/gcc-${GCC_VER}"
 extract "$SRC_DIR/newlib-${NEWLIB_VER}.tar.gz"      "$SRC_DIR/newlib-${NEWLIB_VER}"
-[[ $SKIP_BASH -eq 0 ]] && extract "$SRC_DIR/bash-${BASH_VER}.tar.gz" "$SRC_DIR/bash-${BASH_VER}"
 
 # ---- Apply AdrOS target patches (sed-based, robust against line shifts) ----
 
@@ -469,22 +462,11 @@ EOF
     touch "$marker"
 }
 
-patch_bash() {
-    local d="$SRC_DIR/bash-${BASH_VER}"
-    [[ ! -d "$d" ]] && return
-    local marker="$d/.adros_patched"
-    [[ -f "$marker" ]] && { step "Bash already patched"; return; }
-
-    patch_config_sub "$d/support/config.sub"
-
-    touch "$marker"
-}
 
 msg "Applying AdrOS target patches"
 patch_binutils
 patch_gcc
 patch_newlib
-patch_bash
 
 # Always sync libgloss/adros source files (even if patches are already applied)
 # so that edits to our stubs are picked up on rebuild.
@@ -806,233 +788,6 @@ chmod +x "$PREFIX/bin/${TARGET}-gcc-newlib"
 step "Created newlib.specs + i686-adros-gcc-newlib wrapper"
 
 # ==================================================================
-# STEP 5: Cross-compile Bash (optional)
-# ==================================================================
-if [[ $SKIP_BASH -eq 0 ]]; then
-    msg "Cross-compiling Bash ${BASH_VER}"
-    mkdir -p "$BUILD_DIR/bash"
-    cd "$BUILD_DIR/bash"
-
-    if [[ ! -f "$BUILD_DIR/bash/bash" ]]; then
-        # Bash needs a config.cache for cross-compilation
-        # Comprehensive cross-compilation cache for Bash on AdrOS/newlib.
-        # Cross-compile configure tests can't run programs, so we must
-        # pre-seed results for functions/headers that newlib provides.
-        cat > config.cache <<'CACHE_EOF'
-# --- Types ---
-ac_cv_type_getgroups=gid_t
-ac_cv_type_sigset_t=yes
-ac_cv_type_sig_atomic_t=yes
-ac_cv_type_clock_t=yes
-ac_cv_c_long_double=yes
-ac_cv_sizeof_int=4
-ac_cv_sizeof_long=4
-ac_cv_sizeof_char_p=4
-ac_cv_sizeof_double=8
-ac_cv_sizeof_long_long=8
-ac_cv_sizeof_intmax_t=4
-ac_cv_sizeof_wchar_t=4
-
-# --- Headers (newlib provides these) ---
-ac_cv_header_unistd_h=yes
-ac_cv_header_stdlib_h=yes
-ac_cv_header_string_h=yes
-ac_cv_header_strings_h=yes
-ac_cv_header_memory_h=yes
-ac_cv_header_locale_h=yes
-ac_cv_header_termios_h=yes
-ac_cv_header_termio_h=no
-ac_cv_header_sys_wait_h=yes
-ac_cv_header_sys_select_h=yes
-ac_cv_header_sys_file_h=no
-ac_cv_header_sys_resource_h=yes
-ac_cv_header_sys_param_h=yes
-ac_cv_header_sys_socket_h=no
-ac_cv_header_sys_ioctl_h=yes
-ac_cv_header_sys_mman_h=no
-ac_cv_header_sys_pte_h=no
-ac_cv_header_sys_ptem_h=no
-ac_cv_header_sys_stream_h=no
-ac_cv_header_dirent_h=yes
-ac_cv_header_dirent_dirent_h=yes
-ac_cv_header_grp_h=yes
-ac_cv_header_pwd_h=yes
-ac_cv_header_regex_h=yes
-ac_cv_header_fnmatch_h=yes
-ac_cv_header_dlfcn_h=no
-ac_cv_header_netdb_h=no
-ac_cv_header_netinet_in_h=no
-ac_cv_header_arpa_inet_h=no
-ac_cv_header_wctype_h=yes
-ac_cv_header_wchar_h=yes
-ac_cv_header_langinfo_h=no
-ac_cv_header_libintl_h=no
-ac_cv_header_stdint_h=yes
-ac_cv_header_inttypes_h=yes
-ac_cv_header_stdbool_h=yes
-ac_cv_header_sys_stat_h=yes
-ac_cv_header_sys_types_h=yes
-ac_cv_header_fcntl_h=yes
-ac_cv_header_signal_h=yes
-ac_cv_header_limits_h=yes
-
-# --- Functions in newlib libc.a ---
-ac_cv_func_memmove=yes
-ac_cv_func_memset=yes
-ac_cv_func_strchr=yes
-ac_cv_func_strerror=yes
-ac_cv_func_strtol=yes
-ac_cv_func_strtoul=yes
-ac_cv_func_strtod=yes
-ac_cv_func_strtoimax=yes
-ac_cv_func_strtoumax=yes
-ac_cv_func_snprintf=yes
-ac_cv_func_vsnprintf=yes
-ac_cv_func_setlocale=yes
-ac_cv_func_putenv=yes
-ac_cv_func_setenv=yes
-ac_cv_func_mkstemp=yes
-ac_cv_func_rename=yes
-ac_cv_func_mbrtowc=yes
-ac_cv_func_wcrtomb=yes
-ac_cv_func_wctomb=yes
-ac_cv_func_mbrlen=yes
-ac_cv_func_regcomp=yes
-ac_cv_func_regexec=yes
-ac_cv_func_fnmatch=yes
-ac_cv_func_strsignal=yes
-ac_cv_func_raise=yes
-ac_cv_func_getopt=no
-
-# --- Functions provided by libadros.a stubs ---
-ac_cv_func_dup2=yes
-ac_cv_func_fcntl=yes
-ac_cv_func_getcwd=yes
-ac_cv_func_pipe=yes
-ac_cv_func_select=yes
-ac_cv_func_pselect=yes
-ac_cv_func_chown=yes
-ac_cv_func_lstat=yes
-ac_cv_func_readlink=no
-ac_cv_func_killpg=yes
-ac_cv_func_tcgetattr=yes
-ac_cv_func_tcsetattr=yes
-ac_cv_func_tcgetpgrp=yes
-ac_cv_func_tcsetpgrp=yes
-ac_cv_func_tcsendbreak=no
-ac_cv_func_cfgetospeed=no
-ac_cv_func_sigaction=yes
-ac_cv_func_sigprocmask=yes
-ac_cv_func_siginterrupt=no
-ac_cv_func_waitpid=yes
-ac_cv_func_gethostname=yes
-ac_cv_func_getpwnam=yes
-ac_cv_func_getpwuid=yes
-ac_cv_func_getpwent=no
-ac_cv_func_getgroups=no
-ac_cv_func_getrlimit=no
-ac_cv_func_setrlimit=no
-ac_cv_func_sysconf=no
-ac_cv_func_pathconf=no
-ac_cv_func_getpagesize=no
-ac_cv_func_getdtablesize=no
-ac_cv_func_mkfifo=yes
-ac_cv_func_opendir=yes
-ac_cv_func_readdir=yes
-ac_cv_func_closedir=yes
-ac_cv_func_mmap_fixed_mapped=no
-ac_cv_func_setvbuf_reversed=no
-ac_cv_func_strcoll_works=yes
-ac_cv_func_working_mktime=yes
-ac_cv_func_getenv=yes
-ac_cv_func_setpgid=yes
-ac_cv_func_setsid=yes
-ac_cv_func_getpgrp=yes
-ac_cv_func_setpgrp=no
-ac_cv_func_getpeername=no
-ac_cv_func_gethostbyname=no
-ac_cv_func_getaddrinfo=no
-ac_cv_func_getservbyname=no
-ac_cv_func_getservent=no
-ac_cv_func_inet_aton=no
-ac_cv_func_dlopen=no
-ac_cv_func_dlclose=no
-ac_cv_func_dlsym=no
-ac_cv_func_confstr=no
-ac_cv_func_eaccess=no
-ac_cv_func_faccessat=no
-ac_cv_func_arc4random=no
-ac_cv_func_getrandom=no
-ac_cv_func_getentropy=no
-ac_cv_func_iconv=no
-ac_cv_func_getwd=no
-ac_cv_func_doprnt=no
-ac_cv_func_mbscasecmp=no
-ac_cv_func_mbschr=no
-ac_cv_func_mbscmp=no
-ac_cv_func_setdtablesize=no
-ac_cv_func_getrusage=no
-ac_cv_func_locale_charset=no
-
-# --- Bash-specific cross-compile overrides ---
-ac_cv_rl_version=8.2
-bash_cv_func_sigsetjmp=missing
-bash_cv_func_ctype_nonascii=no
-bash_cv_func_snprintf=yes
-bash_cv_func_vsnprintf=yes
-bash_cv_printf_a_format=no
-bash_cv_must_reinstall_sighandlers=no
-bash_cv_pgrp_pipe=no
-bash_cv_sys_named_pipes=missing
-bash_cv_job_control_missing=present
-bash_cv_sys_siglist=yes
-bash_cv_under_sys_siglist=yes
-bash_cv_opendir_not_robust=no
-bash_cv_ulimit_maxfds=no
-bash_cv_getenv_redef=yes
-bash_cv_getcwd_malloc=yes
-bash_cv_type_rlimit=long
-bash_cv_type_intmax_t=int
-bash_cv_type_uintmax_t=unsigned
-bash_cv_posix_signals=yes
-bash_cv_bsd_signals=no
-bash_cv_sysv_signals=no
-bash_cv_speed_t_in_sys_types=no
-bash_cv_struct_winsize_header=other
-bash_cv_struct_winsize_in_ioctl=yes
-bash_cv_tiocstat_in_ioctl=no
-bash_cv_tiocgwinsz_in_ioctl=yes
-bash_cv_unusedvar=yes
-CACHE_EOF
-
-        "$SRC_DIR/bash-${BASH_VER}/configure" \
-            --host="$TARGET" \
-            --prefix=/usr \
-            --without-bash-malloc \
-            --disable-nls \
-            --cache-file=config.cache \
-            CC="${TARGET}-gcc -specs=$NEWLIB_SPECS" \
-            AR="${TARGET}-ar" \
-            RANLIB="${TARGET}-ranlib" \
-            CFLAGS="-Os -D_POSIX_VERSION=200112L" \
-            LDFLAGS="-Wl,--allow-multiple-definition" \
-            2>&1 | tee "$LOG_DIR/bash-configure.log"
-
-        make -j"$JOBS" 2>&1 | tee "$LOG_DIR/bash-build.log"
-        step "Bash built: $BUILD_DIR/bash/bash"
-
-        # Copy to AdrOS initrd
-        if [[ -d "$ADROS_ROOT/iso/boot" ]]; then
-            step "Installing bash to AdrOS filesystem..."
-            mkdir -p "$ADROS_ROOT/iso/bin"
-            cp "$BUILD_DIR/bash/bash" "$ADROS_ROOT/iso/bin/bash"
-        fi
-    else
-        step "Bash already built"
-    fi
-fi
-
-# ==================================================================
 # Summary
 # ==================================================================
 msg "Toolchain build complete!"
@@ -1056,6 +811,3 @@ echo "    ${TARGET}-gcc -o hello hello.c          # dynamic (ulibc)"
 echo "    ${TARGET}-gcc -static -o hello hello.c  # static  (ulibc)"
 echo "    ${TARGET}-gcc-newlib -o hello hello.c   # static  (Newlib)"
 echo ""
-if [[ $SKIP_BASH -eq 0 ]]; then
-    echo "  Bash: $BUILD_DIR/bash/bash"
-fi

@@ -15,11 +15,11 @@ export PATH=/opt/adros-toolchain/bin:$PATH
 
 ### Bash 5.2.21
 
-Built as part of the toolchain. See `toolchain/build.sh`.
+GNU Bash shell, cross-compiled for AdrOS using Newlib (static).
 
 ```bash
-./toolchain/build.sh          # builds bash along with toolchain
-# Binary: toolchain/build/bash/bash
+./ports/bash/build.sh
+# Binary: ports/bash/build/bash
 ```
 
 ### Busybox 1.36.1
@@ -38,7 +38,7 @@ After building, copy binaries into the initrd staging area:
 
 ```bash
 # Bash
-cp toolchain/build/bash/bash rootfs/bin/bash
+cp ports/bash/build/bash rootfs/bin/bash
 
 # Busybox — install as individual symlinks
 cp ports/busybox/build/busybox rootfs/bin/busybox
