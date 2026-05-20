@@ -24,7 +24,4 @@ struct netif* net_get_netif(void);
 /* Start DHCP client on the active network interface. */
 void net_dhcp_start(void);
 
-/* Run ICMP ping test (sends echo requests to QEMU gateway 10.0.2.2). */
-void net_ping_test(void);
-
 #endif

@@ -53,9 +53,9 @@ ifeq ($(ARCH),x86)
     # Default Toolchain Prefix (can be overridden)
     ifdef CROSS
         TOOLPREFIX = i686-elf-
-        CC  = $(TOOLPREFIX)gcc
-        AS  = $(TOOLPREFIX)as
-        LD  = $(TOOLPREFIX)ld
+        override CC  = $(TOOLPREFIX)gcc
+        override AS  = $(TOOLPREFIX)as
+        override LD  = $(TOOLPREFIX)ld
     else
         CC  ?= $(TOOLPREFIX)gcc
         AS  ?= $(TOOLPREFIX)as
