@@ -51,7 +51,7 @@ static const char* const known_kv_keys[] = {
 };
 
 static const char* const known_flags[] = {
-    "quiet", "ring3", "nokaslr", "single", "noapic", "nosmp", NULL
+    "quiet", "nokaslr", "single", "noapic", "nosmp", NULL
 };
 
 static int is_known_kv_key(const char* key, size_t keylen) {

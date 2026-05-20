@@ -44,6 +44,9 @@ C_SOURCES += $(wildcard $(SRC_DIR)/hal/$(ARCH)/*.c)
 
 # --- x86 Configuration ---
 ifeq ($(ARCH),x86)
+    # KERNEL TRICK: Dynamically creates fake headers in memory/temporary folder
+    _DUMMY_HEADERS := $(shell mkdir -p build/_headers && touch build/_headers/string.h build/_headers/stdio.h build/_headers/stdlib.h)
+
     # x86 gets ALL kernel sources, drivers, and mm
     C_SOURCES := $(wildcard $(SRC_DIR)/kernel/*.c)
     C_SOURCES += $(wildcard $(SRC_DIR)/drivers/*.c)
@@ -53,15 +56,15 @@ ifeq ($(ARCH),x86)
     # Default Toolchain Prefix (can be overridden)
     ifdef CROSS
         TOOLPREFIX = i686-elf-
-        CC  = $(TOOLPREFIX)gcc
-        AS  = $(TOOLPREFIX)as
-        LD  = $(TOOLPREFIX)ld
+        override CC  = $(TOOLPREFIX)gcc
+        override AS  = $(TOOLPREFIX)as
+        override LD  = $(TOOLPREFIX)ld
     else
         CC  ?= $(TOOLPREFIX)gcc
         AS  ?= $(TOOLPREFIX)as
         LD  ?= $(TOOLPREFIX)ld
     endif
-    
+
     # lwIP sources (NO_SYS=0, IPv4, threaded API + sockets)
     LWIPDIR := third_party/lwip/src
     LWIP_CORE := $(LWIPDIR)/core/init.c $(LWIPDIR)/core/def.c $(LWIPDIR)/core/inet_chksum.c \
@@ -87,7 +90,10 @@ ifeq ($(ARCH),x86)
     C_SOURCES += $(NET_SOURCES)
 
     # Mandatory Architecture Flags
-    ARCH_CFLAGS := -m32 -ffreestanding -fno-builtin -U_FORTIFY_SOURCE -mno-sse -mno-mmx -Iinclude -Iinclude/net -Ithird_party/lwip/src/include
+    ARCH_CFLAGS := -m32 -ffreestanding -fno-builtin -nostdlib -U_FORTIFY_SOURCE -mno-sse -mno-mmx \
+        -Ibuild/_headers \
+        -Iinclude -Iinclude/net -Ithird_party/lwip/src/include \
+        -include utils.h
     ARCH_LDFLAGS := -m elf_i386 -T $(SRC_DIR)/arch/x86/linker.ld
     ARCH_ASFLAGS := --32
 
