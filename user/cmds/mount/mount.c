@@ -15,7 +15,7 @@
 #include <sys/mount.h>
 #include <errno.h>
 
-static void show_mounts(void) {
+static int show_mounts(void) {
     int fd = open("/proc/mounts", O_RDONLY);
     if (fd >= 0) {
         char buf[2048];
@@ -23,15 +23,16 @@ static void show_mounts(void) {
         while ((n = read(fd, buf, sizeof(buf))) > 0)
             write(STDOUT_FILENO, buf, (size_t)n);
         close(fd);
+        return 0;
     } else {
         fprintf(stderr, "mount: /proc/mounts not available\n");
+        return 1;
     }
 }
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        show_mounts();
-        return 0;
+        return show_mounts();
     }
 
     const char* fstype = NULL;
@@ -57,11 +58,21 @@ int main(int argc, char** argv) {
                     o += 7;
                 } else if (strncmp(o, "rw", 2) == 0 && (o[2] == ',' || o[2] == '\0')) {
                     o += 2;
+                } else if (strncmp(o, "nosuid", 6) == 0 && (o[6] == ',' || o[6] == '\0')) {
+                    mountflags |= MS_NOSUID;
+                    o += 6;
+                } else if (strncmp(o, "nodev", 5) == 0 && (o[5] == ',' || o[5] == '\0')) {
+                    mountflags |= MS_NODEV;
+                    o += 5;
+                } else if (strncmp(o, "noexec", 6) == 0 && (o[6] == ',' || o[6] == '\0')) {
+                    mountflags |= MS_NOEXEC;
+                    o += 6;
                 } else {
-                    /* Warn on unknown option */
+                    /* Fail on unknown option */
                     const char* start = o;
                     while (*o && *o != ',') o++;
                     fprintf(stderr, "mount: unknown option: %.*s\n", (int)(o - start), start);
+                    return 1;
                 }
                 if (*o == ',') o++;
             }

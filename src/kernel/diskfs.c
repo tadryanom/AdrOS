@@ -1168,11 +1168,8 @@ static int diskfs_vfs_link(struct fs_node* dir, const char* name, struct fs_node
 fs_node_t* diskfs_create_root(int drive) {
     if (!g_ready) {
         g_diskfs_drive = drive;
-        if (ata_pio_drive_present(drive)) {
-            g_ready = 1;
-        } else {
-            g_ready = 0;
-        }
+        if (!ata_pio_drive_present(drive))
+            return NULL;
 
         memset(&g_root, 0, sizeof(g_root));
         strcpy(g_root.vfs.name, "disk");
@@ -1183,22 +1180,18 @@ fs_node_t* diskfs_create_root(int drive) {
         g_root.vfs.i_ops = &diskfs_dir_iops;
         g_root.ino = 0;
 
-        if (g_ready) {
-            struct diskfs_super sb;
-            int rc = diskfs_super_load(&sb);
-            if (rc == -ENODEV) {
-                /* No diskfs superblock found — format a fresh one.
-                 * This preserves the auto-format behavior for boot-time
-                 * mounting of blank disks (e.g. battery test root_hda.img).
-                 * Autodetect probing will check diskfs_probe() first and
-                 * skip diskfs if it returns -ENODEV, so this path is only
-                 * reached when the caller explicitly requests diskfs. */
-                (void)diskfs_format(&sb);
-            }
+        struct diskfs_super sb;
+        int rc = diskfs_super_load(&sb);
+        if (rc < 0) {
+            /* No valid diskfs superblock — do NOT auto-format.
+             * Use 'mkfs diskfs /dev/hdX' from kconsole to format. */
+            return NULL;
         }
+
+        g_ready = 1;
     }
 
-    return g_ready ? &g_root.vfs : NULL;
+    return &g_root.vfs;
 }
 
 int diskfs_probe(int drive) {
@@ -1213,4 +1206,24 @@ int diskfs_probe(int drive) {
     memcpy(&magic, sec0, sizeof(magic));
     if (magic != DISKFS_MAGIC) return -ENODEV;
     return 0;
+}
+
+int diskfs_mkfs(int drive) {
+    /* Explicit formatting: write a fresh diskfs superblock to the drive.
+     * This is the ONLY way to create a new diskfs filesystem.
+     * Returns 0 on success, negative errno on error. */
+    if (!ata_pio_drive_present(drive)) return -ENODEV;
+
+    /* If diskfs is already initialized on this drive, reject */
+    if (g_ready && g_diskfs_drive == drive) return -EBUSY;
+
+    /* Temporarily set the drive so diskfs_format can write */
+    int saved_drive = g_diskfs_drive;
+    g_diskfs_drive = drive;
+
+    struct diskfs_super sb;
+    int rc = diskfs_format(&sb);
+
+    g_diskfs_drive = saved_drive;
+    return rc;
 }
