@@ -23,7 +23,6 @@ enum fat_type {
 /* Per-mount filesystem state */
 struct fat_mount {
     const block_device_t* bdev;
-    int      drive;
     uint32_t part_lba;
     uint16_t bytes_per_sector;
     uint8_t  sectors_per_cluster;

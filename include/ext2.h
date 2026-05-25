@@ -19,7 +19,6 @@ struct ext2_group_desc;
 /* Per-mount filesystem state */
 struct ext2_mount {
     const block_device_t* bdev;
-    int      drive;
     uint32_t part_lba;        /* partition start LBA */
     uint32_t block_size;      /* bytes per block (1024, 2048, or 4096) */
     uint32_t sectors_per_block;
