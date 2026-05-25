@@ -13,6 +13,8 @@
 #include "hal/driver.h"
 
 #include "fs.h"
+#include "fat.h"
+#include "ext2.h"
 #include "initrd.h"
 #include "overlayfs.h"
 #include "tmpfs.h"
@@ -21,8 +23,6 @@
 #include "pty.h"
 /* diskfs and persistfs removed — use fat/ext2 for disk storage */
 #include "procfs.h"
-#include "fat.h"
-#include "ext2.h"
 #include "pci.h"
 #include "e1000.h"
 #include "net.h"
@@ -45,17 +45,13 @@
 /* ---- Mount helper: used by fstab parser and kconsole 'mount' command ---- */
 
 int init_mount_fs(const char* fstype, const block_device_t* bdev, uint32_t lba, const char* mountpoint, unsigned long flags) {
-    fs_node_t* root = NULL;
-
-    if (strcmp(fstype, "fat") == 0) {
-        root = fat_mount(bdev, lba);
-    } else if (strcmp(fstype, "ext2") == 0) {
-        root = ext2_mount(bdev, lba);
-    } else {
+    const vfs_fs_type_t* fst = vfs_fs_type_find(fstype);
+    if (!fst) {
         kprintf("[MOUNT] Unknown filesystem type: %s\n", fstype);
         return -EINVAL;
     }
 
+    fs_node_t* root = fst->mount(bdev, lba);
     if (!root) {
         kprintf("[MOUNT] Failed to mount %s on %s at %s\n",
                 fstype, bdev ? bdev->name : "?",
@@ -96,6 +92,21 @@ int init_mount_fs(const char* fstype, const block_device_t* bdev, uint32_t lba, 
 }
 
 int init_start(const struct boot_info* bi) {
+    /* Register filesystem types */
+    static vfs_fs_type_t fat_fs_type = {
+        .name = "fat",
+        .flags = FS_NEEDS_BDEV,
+        .mount = fat_mount
+    };
+    vfs_fs_type_register(&fat_fs_type);
+
+    static vfs_fs_type_t ext2_fs_type = {
+        .name = "ext2",
+        .flags = FS_NEEDS_BDEV,
+        .mount = ext2_mount
+    };
+    vfs_fs_type_register(&ext2_fs_type);
+
     /* Parse kernel command line (Linux-like triaging) */
     cmdline_parse(bi ? bi->cmdline : NULL);
 
