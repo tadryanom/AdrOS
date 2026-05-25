@@ -92,21 +92,32 @@ int vfs_mount_nolock_full(const char* mountpoint, fs_node_t* root,
 
     for (int i = 0; i < g_mount_count; i++) {
         if (strcmp(g_mounts[i].mountpoint, mp) == 0) {
-            /* Remount: update provided fields only */
-            if (root) g_mounts[i].root = root;
-            if (fstype) {
-                strncpy(g_mounts[i].fstype, fstype, sizeof(g_mounts[i].fstype) - 1);
-                g_mounts[i].fstype[sizeof(g_mounts[i].fstype) - 1] = '\0';
+            /* Mount already exists at this mountpoint */
+            if (flags & MS_REMOUNT) {
+                /* Remount: update flags only (bdev, sb, root, source, fstype preserved) */
+                g_mounts[i].flags = flags;
+                return 0;
+            } else {
+                /* New mount attempt on existing mountpoint - reject if active */
+                if (g_mounts[i].refcount > 0) {
+                    return -EBUSY;
+                }
+                /* Allow replacement if mount is idle (refcount == 0) */
+                /* This is the old behavior for backward compatibility */
+                if (root) g_mounts[i].root = root;
+                if (fstype) {
+                    strncpy(g_mounts[i].fstype, fstype, sizeof(g_mounts[i].fstype) - 1);
+                    g_mounts[i].fstype[sizeof(g_mounts[i].fstype) - 1] = '\0';
+                }
+                if (source) {
+                    strncpy(g_mounts[i].source, source, sizeof(g_mounts[i].source) - 1);
+                    g_mounts[i].source[sizeof(g_mounts[i].source) - 1] = '\0';
+                }
+                g_mounts[i].flags = flags;
+                g_mounts[i].bdev = bdev;
+                g_mounts[i].sb = sb;
+                return 0;
             }
-            if (source) {
-                strncpy(g_mounts[i].source, source, sizeof(g_mounts[i].source) - 1);
-                g_mounts[i].source[sizeof(g_mounts[i].source) - 1] = '\0';
-            }
-            /* Always update flags on remount (even if 0, caller explicitly set them) */
-            g_mounts[i].flags = flags;
-            g_mounts[i].bdev = bdev;
-            g_mounts[i].sb = sb;
-            return 0;
         }
     }
 
