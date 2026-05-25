@@ -2333,7 +2333,13 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
             return -EACCES;
     }
 
-    fs_node_t* node = vfs_lookup(path);
+    /* K21: Use vfs_lookup_nofollow when O_NOFOLLOW is set */
+    fs_node_t* node;
+    if (flags & 0x20000) { /* O_NOFOLLOW */
+        node = vfs_lookup_nofollow(path);
+    } else {
+        node = vfs_lookup(path);
+    }
     if (!node && (flags & 0x40U) != 0U) {
         /* O_CREAT: create file through VFS */
         int rc = vfs_require_writable_path(path);

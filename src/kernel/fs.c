@@ -340,10 +340,18 @@ void vfs_close(fs_node_t* node) {
         node->f_ops->close(node);
 }
 
-static fs_node_t* vfs_lookup_depth(const char* path, int depth);
+static fs_node_t* vfs_lookup_depth(const char* path, int depth, int lookup_flags);
+
+#define LOOKUP_FOLLOW 0x01
+#define LOOKUP_NOFOLLOW 0x02
+
+/* K21: Export for use in syscall.c */
+fs_node_t* vfs_lookup_nofollow(const char* path) {
+    return vfs_lookup_depth(path, 0, LOOKUP_NOFOLLOW);
+}
 
 fs_node_t* vfs_lookup(const char* path) {
-    return vfs_lookup_depth(path, 0);
+    return vfs_lookup_depth(path, 0, LOOKUP_FOLLOW);
 }
 
 void vfs_set_initrd_root(fs_node_t* root) {
@@ -381,7 +389,7 @@ fs_node_t* vfs_lookup_initrd(const char* path) {
     return cur;
 }
 
-static fs_node_t* vfs_lookup_depth(const char* path, int depth) {
+static fs_node_t* vfs_lookup_depth(const char* path, int depth, int lookup_flags) {
     if (!path) return NULL;
     if (depth > 8) return NULL;
 
@@ -440,8 +448,13 @@ static fs_node_t* vfs_lookup_depth(const char* path, int depth) {
         cur = fn_finddir(cur, part);
         if (!cur) return NULL;
 
+        /* K21: Only follow symlinks if LOOKUP_FOLLOW is set */
         if (cur->flags == FS_SYMLINK && cur->symlink_target[0]) {
-            cur = vfs_lookup_depth(cur->symlink_target, depth + 1);
+            if (lookup_flags & LOOKUP_NOFOLLOW) {
+                /* Don't follow the symlink - return it as-is */
+                return cur;
+            }
+            cur = vfs_lookup_depth(cur->symlink_target, depth + 1, lookup_flags);
             if (!cur) return NULL;
         }
     }

@@ -110,6 +110,9 @@ void vfs_close(fs_node_t* node);
 
 fs_node_t* vfs_lookup(const char* path);
 
+/* K21: Lookup without following symlinks (for O_NOFOLLOW) */
+fs_node_t* vfs_lookup_nofollow(const char* path);
+
 /* Lookup from the saved initrd root (immune to pivot_root). */
 void vfs_set_initrd_root(fs_node_t* root);
 fs_node_t* vfs_lookup_initrd(const char* path);
