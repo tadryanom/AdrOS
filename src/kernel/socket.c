@@ -249,17 +249,6 @@ int ksocket_create(int domain, int type, int protocol) {
     if (domain != AF_INET) return -EAFNOSUPPORT;
     if (type != SOCK_STREAM && type != SOCK_DGRAM && type != SOCK_RAW) return -EPROTONOSUPPORT;
 
-    /* K15: SOCK_RAW requires root privilege */
-    /* TODO: Temporarily disabled to investigate test failures */
-    /*
-    if (type == SOCK_RAW) {
-        extern struct process* current_process;
-        if (!current_process || current_process->uid != 0) {
-            return -EPERM;
-        }
-    }
-    */
-
     int sid = alloc_socket();
     if (sid < 0) return sid;
 

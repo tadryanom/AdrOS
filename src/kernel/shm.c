@@ -188,7 +188,7 @@ void* shm_at(int shmid, uintptr_t shmaddr) {
 
     /* Map physical pages into user address space.
      * vmm_map_page signature: (phys, virt, flags)
-     * K24: NX flag temporarily disabled - investigating NX bit issues */
+     * K24: NX flag deferred until IA32_EFER.NXE MSR is enabled (A01) */
     for (uint32_t i = 0; i < seg->npages; i++) {
         vmm_map_page((uint64_t)seg->pages[i],
                      (uint64_t)(vaddr + i * PAGE_SIZE),
