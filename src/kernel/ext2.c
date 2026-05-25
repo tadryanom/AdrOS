@@ -1552,6 +1552,7 @@ vfs_mount_result_t ext2_mount(const block_device_t* bdev, uint32_t partition_lba
     vfs_sb->bdev = bdev;
     vfs_sb->lba = partition_lba;
     vfs_sb->private_data = em;
+    vfs_sb->root = &root->vfs;
     /* fstype will be set by caller */
 
     kprintf("[EXT2] Mounted at LBA %u (%u blocks, %u inodes, %u groups, %uB/block)\n",

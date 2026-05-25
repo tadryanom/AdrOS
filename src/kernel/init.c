@@ -97,15 +97,29 @@ int init_mount_fs(const char* fstype, const block_device_t* bdev, uint32_t lba, 
 }
 
 static void fat_kill_sb(vfs_superblock_t* sb) {
-    if (sb && sb->private_data) {
-        fat_umount((struct fat_mount*)sb->private_data);
+    if (sb) {
+        /* Free the root node allocated in fat_mount */
+        if (sb->root) {
+            kfree(sb->root);
+        }
+        /* Free the mount structure */
+        if (sb->private_data) {
+            fat_umount((struct fat_mount*)sb->private_data);
+        }
         kfree(sb);
     }
 }
 
 static void ext2_kill_sb(vfs_superblock_t* sb) {
-    if (sb && sb->private_data) {
-        ext2_umount((struct ext2_mount*)sb->private_data);
+    if (sb) {
+        /* Free the root node allocated in ext2_mount */
+        if (sb->root) {
+            kfree(sb->root);
+        }
+        /* Free the mount structure */
+        if (sb->private_data) {
+            ext2_umount((struct ext2_mount*)sb->private_data);
+        }
         kfree(sb);
     }
 }
