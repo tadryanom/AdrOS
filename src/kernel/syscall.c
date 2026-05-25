@@ -5170,7 +5170,7 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
 
         /* MS_REMOUNT: update flags on existing mount */
         if (mount_flags & MS_REMOUNT) {
-            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, NULL, NULL, NULL, mount_flags & ~MS_REMOUNT, NULL);
+            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, NULL, NULL, NULL, mount_flags & ~MS_REMOUNT, NULL, NULL);
             return;
         }
 
@@ -5183,21 +5183,21 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
         if (strcmp(ktype, "tmpfs") == 0) {
             fs_node_t* tmp = tmpfs_create_root();
             if (!tmp) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
-            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, tmp, "tmpfs", kdev, mount_flags, NULL);
+            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, tmp, "tmpfs", kdev, mount_flags, NULL, NULL);
             return;
         }
         if (strcmp(ktype, "devfs") == 0) {
             extern fs_node_t* devfs_create_root(void);
             fs_node_t* dev = devfs_create_root();
             if (!dev) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
-            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, dev, "devfs", kdev, mount_flags, NULL);
+            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, dev, "devfs", kdev, mount_flags, NULL, NULL);
             return;
         }
         if (strcmp(ktype, "procfs") == 0) {
             extern fs_node_t* procfs_create_root(void);
             fs_node_t* proc = procfs_create_root();
             if (!proc) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
-            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, proc, "procfs", kdev, mount_flags, NULL);
+            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, proc, "procfs", kdev, mount_flags, NULL, NULL);
             return;
         }
 

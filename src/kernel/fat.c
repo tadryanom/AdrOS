@@ -8,6 +8,7 @@
  */
 
 #include "fat.h"
+#include "fs.h"
 #include "blockdev.h"
 #include "heap.h"
 #include "utils.h"
@@ -1134,17 +1135,19 @@ static int fat_truncate_impl(struct fs_node* node, uint32_t length) {
 
 /* ---- Mount ---- */
 
-fs_node_t* fat_mount(const block_device_t* bdev, uint32_t partition_lba) {
+vfs_mount_result_t fat_mount(const block_device_t* bdev, uint32_t partition_lba) {
+    vfs_mount_result_t result = {NULL, NULL};
+
     if (!bdev) {
         kprintf("[FAT] No block device provided\n");
-        return NULL;
+        return result;
     }
 
     /* Allocate mount structure */
     struct fat_mount* fm = (struct fat_mount*)kmalloc(sizeof(struct fat_mount));
     if (!fm) {
         kprintf("[FAT] Failed to allocate mount structure\n");
-        return NULL;
+        return result;
     }
     memset(fm, 0, sizeof(*fm));
 
@@ -1155,7 +1158,7 @@ fs_node_t* fat_mount(const block_device_t* bdev, uint32_t partition_lba) {
     if (fat_read_sector(fm, partition_lba, boot_sec) < 0) {
         kprintf("[FAT] Failed to read BPB at LBA %u\n", partition_lba);
         kfree(fm);
-        return NULL;
+        return result;
     }
 
     struct fat_bpb* bpb = (struct fat_bpb*)boot_sec;
@@ -1163,12 +1166,12 @@ fs_node_t* fat_mount(const block_device_t* bdev, uint32_t partition_lba) {
     if (bpb->bytes_per_sector != 512) {
         kprintf("[FAT] Unsupported sector size %u\n", bpb->bytes_per_sector);
         kfree(fm);
-        return NULL;
+        return result;
     }
     if (bpb->num_fats == 0 || bpb->sectors_per_cluster == 0) {
         kprintf("[FAT] Invalid BPB\n");
         kfree(fm);
-        return NULL;
+        return result;
     }
 
     fm->part_lba = partition_lba;
@@ -1218,10 +1221,25 @@ fs_node_t* fat_mount(const block_device_t* bdev, uint32_t partition_lba) {
     g_fat_root.vfs.f_ops = &fat_dir_fops;
     g_fat_root.vfs.i_ops = &fat_dir_iops;
 
+    /* Build superblock */
+    vfs_superblock_t* sb = (vfs_superblock_t*)kmalloc(sizeof(vfs_superblock_t));
+    if (!sb) {
+        kprintf("[FAT] Failed to allocate superblock\n");
+        kfree(fm);
+        return result;
+    }
+    memset(sb, 0, sizeof(*sb));
+    sb->bdev = bdev;
+    sb->lba = partition_lba;
+    sb->private_data = fm;
+    /* fstype will be set by caller */
+
     kprintf("[FAT] Mounted FAT%u at LBA %u (%u clusters)\n",
             (unsigned)fm->type, partition_lba, fm->total_clusters);
 
-    return &g_fat_root.vfs;
+    result.root = &g_fat_root.vfs;
+    result.sb = sb;
+    return result;
 }
 
 void fat_umount(struct fat_mount* fm) {
