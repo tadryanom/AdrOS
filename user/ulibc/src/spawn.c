@@ -18,12 +18,13 @@ int posix_spawn(int* pid, const char* path,
                 char* const argv[], char* const envp[]) {
     (void)file_actions;
     (void)attrp;
+    /* A13: Kernel copies child PID to *pid via copy_to_user, return value is 0 on success */
     int ret = _syscall4(SYS_POSIX_SPAWN, (int)pid, (int)path, (int)argv, (int)envp);
     if (ret < 0) {
         errno = -ret;
         return -ret;
     }
-    if (pid) *pid = ret;
+    /* Don't overwrite *pid - kernel already filled it in */
     return 0;
 }
 
