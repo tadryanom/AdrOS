@@ -4386,12 +4386,44 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
 
     if (syscall_no == SYSCALL_ACCESS) {
         const char* user_path = (const char*)sc_arg0(regs);
+        int mode = (int)sc_arg1(regs);
         if (!user_path) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
         char path[128];
         int prc = path_resolve_user(user_path, path, sizeof(path));
         if (prc < 0) { sc_ret(regs) = (uint32_t)prc; return; }
         fs_node_t* node = vfs_lookup(path);
         if (!node) { sc_ret(regs) = (uint32_t)-ENOENT; return; }
+        /* A19: Implement mode checking (F_OK, R_OK, W_OK, X_OK) */
+        /* F_OK: just check existence (already done above) */
+        if (mode == 0) {
+            sc_ret(regs) = 0;
+            return;
+        }
+        /* For R_OK/W_OK/X_OK, simplified check since we don't have
+         * granular file permissions implemented yet.
+         * Just check if the file exists and is of the right type. */
+        /* R_OK: check if readable (assume all files are readable if they exist) */
+        if (mode & 4) { /* R_OK = 4 */
+            /* For now, assume readable if exists */
+        }
+        /* W_OK: check if writable (check mount read-only flag) */
+        if (mode & 2) { /* W_OK = 2 */
+            fs_node_t* mount_root = vfs_find_mount_root(path);
+            if (mount_root) {
+                unsigned long mflags = vfs_node_mount_flags(mount_root);
+                if (mflags & MS_RDONLY) {
+                    sc_ret(regs) = (uint32_t)-EROFS;
+                    return;
+                }
+            }
+        }
+        /* X_OK: check if executable (check if it's a regular file) */
+        if (mode & 1) { /* X_OK = 1 */
+            if (!(node->flags & FS_FILE)) {
+                sc_ret(regs) = (uint32_t)-EACCES;
+                return;
+            }
+        }
         sc_ret(regs) = 0;
         return;
     }
