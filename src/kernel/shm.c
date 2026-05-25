@@ -15,6 +15,7 @@
 #include "uaccess.h"
 #include "errno.h"
 #include "utils.h"
+#include "hal/mm.h"
 
 #include <stddef.h>
 
@@ -149,8 +150,26 @@ void* shm_at(int shmid, uintptr_t shmaddr) {
 
     /* If shmaddr == 0, kernel picks address */
     uintptr_t vaddr = shmaddr;
-    if (vaddr == 0) {
-        vaddr = 0x40000000U + (uint32_t)mslot * (SHM_MAX_PAGES * PAGE_SIZE);
+    uint32_t map_len = seg->npages * PAGE_SIZE;
+
+    if (vaddr != 0) {
+        /* K03: validate user-supplied address */
+        if (vaddr & 0xFFF) {
+            spin_unlock_irqrestore(&shm_lock, irqf);
+            return (void*)(uintptr_t)-EINVAL;
+        }
+        uintptr_t kern_base = hal_mm_kernel_virt_base();
+        if (vaddr >= kern_base || vaddr + map_len > kern_base || vaddr + map_len < vaddr) {
+            spin_unlock_irqrestore(&shm_lock, irqf);
+            return (void*)(uintptr_t)-EINVAL;
+        }
+    } else {
+        /* K03: use vmm_find_free_area instead of fixed formula */
+        vaddr = vmm_find_free_area(0x40000000U, 0x7FF00000U, map_len);
+        if (!vaddr) {
+            spin_unlock_irqrestore(&shm_lock, irqf);
+            return (void*)(uintptr_t)-ENOMEM;
+        }
     }
 
     /* Map physical pages into user address space.
