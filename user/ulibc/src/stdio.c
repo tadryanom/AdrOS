@@ -590,19 +590,28 @@ int pclose(FILE* fp) {
 }
 
 FILE* tmpfile(void) {
-    static int tmpcount = 0;
-    char name[32];
+    /* U01: Use mkstemp for secure temporary file creation */
+    char name[64];
     extern int getpid(void);
-    snprintf(name, sizeof(name), "/tmp/.tmpf_%d_%d", getpid(), tmpcount++);
-    return fopen(name, "w+");
+    snprintf(name, sizeof(name), "/tmp/.tmpf_XXXXXX");
+    int fd = mkstemp(name);
+    if (fd < 0) return NULL;
+    /* U01: Unlink immediately to make it anonymous (deleted on close) */
+    unlink(name);
+    return fdopen(fd, "w+");
 }
 
 char* tmpnam(char* s) {
-    static char buf[32];
-    static int count = 0;
-    snprintf(buf, sizeof(buf), "/tmp/tmp_%d", count++);
-    if (s) { strcpy(s, buf); return s; }
-    return buf;
+    /* U01: Use mkstemp for secure temporary file name generation */
+    static char buf[64];
+    char* target = s ? s : buf;
+    snprintf(target, 64, "/tmp/tmpnam_XXXXXX");
+    int fd = mkstemp(target);
+    if (fd >= 0) {
+        close(fd);
+        unlink(target); /* Don't leave the file around */
+    }
+    return target;
 }
 
 int fscanf(FILE* fp, const char* fmt, ...) {

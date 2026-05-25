@@ -340,15 +340,27 @@ int mkstemp(char* tmpl) {
     /* Check template ends with XXXXXX */
     for (int i = 0; i < 6; i++)
         if (suffix[i] != 'X') return -1;
-    /* Generate unique name using pid + counter */
-    extern int getpid(void);
-    static int counter = 0;
-    int id = getpid() * 1000 + (counter++ % 1000);
-    for (int i = 5; i >= 0; i--) {
-        suffix[i] = (char)('0' + id % 10);
-        id /= 10;
+    /* U01: Try to use /dev/urandom for better randomness, fallback to pid+counter */
+    int rand_bytes[2] = {0, 0};
+    int rand_fd = open("/dev/urandom", 0);
+    if (rand_fd >= 0) {
+        read(rand_fd, rand_bytes, sizeof(rand_bytes));
+        close(rand_fd);
+    } else {
+        extern int getpid(void);
+        static int counter = 0;
+        rand_bytes[0] = getpid();
+        rand_bytes[1] = counter++;
     }
-    int fd = open(tmpl, 1 | 0x40 | 0x80 /* O_WRONLY|O_CREAT|O_EXCL */);
+    /* Use alphanumeric characters for XXXXXX */
+    const char* charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    unsigned int seed = (unsigned int)(rand_bytes[0] ^ rand_bytes[1]);
+    for (int i = 0; i < 6; i++) {
+        suffix[i] = charset[seed % 62];
+        seed = seed * 1103515245 + 12345; /* LCG for variety */
+    }
+    /* U01: Always use O_CREAT|O_EXCL to prevent race conditions */
+    int fd = open(tmpl, 1 | 0x40 | 0x80 /* O_WRONLY|O_CREAT|O_EXCL */, 0600);
     return fd;
 }
 
