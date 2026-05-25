@@ -14,9 +14,38 @@
 #include "blockdev.h"
 #include <stdint.h>
 
-/* Mount a FAT12/16/32 filesystem on the given ATA drive starting at
+enum fat_type {
+    FAT_TYPE_12 = 12,
+    FAT_TYPE_16 = 16,
+    FAT_TYPE_32 = 32,
+};
+
+/* Per-mount filesystem state */
+struct fat_mount {
+    const block_device_t* bdev;
+    int      drive;
+    uint32_t part_lba;
+    uint16_t bytes_per_sector;
+    uint8_t  sectors_per_cluster;
+    uint16_t reserved_sectors;
+    uint8_t  num_fats;
+    uint16_t root_entry_count;
+    uint32_t fat_size;            /* sectors per FAT */
+    uint32_t fat_lba;             /* LBA of first FAT */
+    uint32_t root_dir_lba;        /* LBA of root directory (FAT12/16) */
+    uint32_t root_dir_sectors;    /* sectors used by root dir (FAT12/16), 0 for FAT32 */
+    uint32_t data_lba;            /* LBA of first data cluster */
+    uint32_t total_clusters;
+    uint32_t root_cluster;        /* FAT32 root cluster, 0 for FAT12/16 */
+    enum fat_type type;
+};
+
+/* Mount a FAT12/16/32 filesystem on the given block device starting at
  * the given LBA offset.  Auto-detects FAT type from BPB.
  * Returns a VFS root node or NULL on failure. */
 fs_node_t* fat_mount(const block_device_t* bdev, uint32_t partition_lba);
+
+/* Unmount a FAT filesystem and free its resources */
+void fat_umount(struct fat_mount* fm);
 
 #endif
