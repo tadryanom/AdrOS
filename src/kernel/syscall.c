@@ -3039,7 +3039,12 @@ static uintptr_t syscall_mmap_impl(uintptr_t addr, uint32_t length, uint32_t pro
     uintptr_t base;
     if (flags & MAP_FIXED) {
         if (addr == 0 || (addr & 0xFFF)) return (uintptr_t)-EINVAL;
-        if (hal_mm_kernel_virt_base() && addr >= hal_mm_kernel_virt_base()) return (uintptr_t)-EINVAL;
+        uintptr_t kern_base = hal_mm_kernel_virt_base();
+        if (kern_base && addr >= kern_base) return (uintptr_t)-EINVAL;
+        /* K01: check end address doesn't cross into kernel space */
+        uintptr_t end = addr + aligned_len;
+        if (end < addr) return (uintptr_t)-EINVAL;  /* overflow */
+        if (kern_base && end > kern_base) return (uintptr_t)-EINVAL;
         base = addr;
     } else {
         base = mmap_find_free(aligned_len);
@@ -4201,6 +4206,14 @@ void syscall_handler(struct registers* regs) {
                     break;
                 }
             }
+        }
+
+        /* K02: reject any range that crosses into kernel space */
+        {
+            uintptr_t kern_base = hal_mm_kernel_virt_base();
+            uintptr_t end = addr + aligned_len;
+            if (end < addr) { sc_ret(regs) = (uint32_t)-EINVAL; return; }  /* overflow */
+            if (kern_base && end > kern_base) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
         }
 
         /* Check stack region (user stack is below 0xC0000000, typically around 0xBFxxxxxx) */

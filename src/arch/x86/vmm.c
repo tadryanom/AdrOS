@@ -446,6 +446,8 @@ uintptr_t vmm_as_clone_user_cow(uintptr_t src_as) {
                 uint64_t new_pte = (uint64_t)frame_phys | X86_PTE_PRESENT | X86_PTE_USER;
                 if (pte & X86_PTE_RW) {
                     new_pte |= X86_PTE_COW;
+                    /* A01: preserve NX from original PTE */
+                    if (pte & X86_PTE_NX) new_pte |= X86_PTE_NX;
                     src_pt[ti] = new_pte;
                     invlpg(va);
                 } else {
@@ -456,7 +458,8 @@ uintptr_t vmm_as_clone_user_cow(uintptr_t src_as) {
 
                 vmm_as_map_page_nolock(new_as, (uint64_t)frame_phys, (uint64_t)va,
                                        VMM_FLAG_PRESENT | VMM_FLAG_USER |
-                                       ((new_pte & X86_PTE_COW) ? VMM_FLAG_COW : 0));
+                                       ((new_pte & X86_PTE_COW) ? VMM_FLAG_COW : 0) |
+                                       ((new_pte & X86_PTE_NX) ? VMM_FLAG_NX : 0));
             }
         }
     }
@@ -502,7 +505,8 @@ int vmm_handle_cow_fault(uintptr_t fault_addr) {
     uint16_t rc = pmm_get_refcount((uintptr_t)old_frame);
 
     if (rc <= 1) {
-        pt[ti] = (uint64_t)old_frame | X86_PTE_PRESENT | X86_PTE_RW | X86_PTE_USER;
+        uint64_t nx = pte & X86_PTE_NX;
+        pt[ti] = (uint64_t)old_frame | X86_PTE_PRESENT | X86_PTE_RW | X86_PTE_USER | nx;
         invlpg(va);
         spin_unlock_irqrestore(&vmm_lock, irqf);
         return 1;
@@ -522,7 +526,8 @@ int vmm_handle_cow_fault(uintptr_t fault_addr) {
 
     pmm_decref((uintptr_t)old_frame);
 
-    pt[ti] = (uint64_t)(uintptr_t)new_frame | X86_PTE_PRESENT | X86_PTE_RW | X86_PTE_USER;
+    uint64_t nx = pte & X86_PTE_NX;
+    pt[ti] = (uint64_t)(uintptr_t)new_frame | X86_PTE_PRESENT | X86_PTE_RW | X86_PTE_USER | nx;
     invlpg(va);
 
     spin_unlock_irqrestore(&vmm_lock, irqf);
