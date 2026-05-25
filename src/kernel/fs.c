@@ -505,6 +505,8 @@ fs_node_t* vfs_lookup_parent(const char* path, char* name_out, size_t name_sz) {
 
 int vfs_create(const char* path, uint32_t flags, fs_node_t** out) {
     if (!path || !out) return -EINVAL;
+    int rc = vfs_require_writable_path(path);
+    if (rc < 0) return rc;
     char name[128];
     fs_node_t* parent = vfs_lookup_parent(path, name, sizeof(name));
     if (!parent) return -ENOENT;
@@ -516,6 +518,8 @@ int vfs_create(const char* path, uint32_t flags, fs_node_t** out) {
 
 int vfs_mkdir(const char* path) {
     if (!path) return -EINVAL;
+    int rc = vfs_require_writable_path(path);
+    if (rc < 0) return rc;
     char name[128];
     fs_node_t* parent = vfs_lookup_parent(path, name, sizeof(name));
     if (!parent) return -ENOENT;
@@ -571,6 +575,8 @@ int vfs_mkdirp(const char* path) {
 
 int vfs_unlink(const char* path) {
     if (!path) return -EINVAL;
+    int rc = vfs_require_writable_path(path);
+    if (rc < 0) return rc;
     char name[128];
     fs_node_t* parent = vfs_lookup_parent(path, name, sizeof(name));
     if (!parent) return -ENOENT;
@@ -582,6 +588,8 @@ int vfs_unlink(const char* path) {
 
 int vfs_rmdir(const char* path) {
     if (!path) return -EINVAL;
+    int rc = vfs_require_writable_path(path);
+    if (rc < 0) return rc;
     char name[128];
     fs_node_t* parent = vfs_lookup_parent(path, name, sizeof(name));
     if (!parent) return -ENOENT;
@@ -593,6 +601,10 @@ int vfs_rmdir(const char* path) {
 
 int vfs_rename(const char* old_path, const char* new_path) {
     if (!old_path || !new_path) return -EINVAL;
+    int rc = vfs_require_writable_path(old_path);
+    if (rc < 0) return rc;
+    rc = vfs_require_writable_path(new_path);
+    if (rc < 0) return rc;
     char old_name[128], new_name[128];
     fs_node_t* old_parent = vfs_lookup_parent(old_path, old_name, sizeof(old_name));
     fs_node_t* new_parent = vfs_lookup_parent(new_path, new_name, sizeof(new_name));
