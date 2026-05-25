@@ -5108,11 +5108,15 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
             return;
         }
 
+        /* Check if mountpoint exists */
+        fs_node_t* mp_node = vfs_lookup(kmp);
+        if (!mp_node) { sc_ret(regs) = (uint32_t)-ENOENT; return; }
+        if (!(mp_node->flags & FS_DIRECTORY)) { sc_ret(regs) = (uint32_t)-ENOTDIR; return; }
+
         /* Virtual filesystems — no device argument needed */
         if (strcmp(ktype, "tmpfs") == 0) {
             fs_node_t* tmp = tmpfs_create_root();
             if (!tmp) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
-            (void)vfs_mkdirp(kmp);  /* auto-create mountpoint (recursive) */
             sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, tmp, "tmpfs", kdev, mount_flags, NULL);
             return;
         }
@@ -5120,7 +5124,6 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
             extern fs_node_t* devfs_create_root(void);
             fs_node_t* dev = devfs_create_root();
             if (!dev) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
-            (void)vfs_mkdirp(kmp);
             sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, dev, "devfs", kdev, mount_flags, NULL);
             return;
         }
@@ -5128,7 +5131,6 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
             extern fs_node_t* procfs_create_root(void);
             fs_node_t* proc = procfs_create_root();
             if (!proc) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
-            (void)vfs_mkdirp(kmp);
             sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, proc, "procfs", kdev, mount_flags, NULL);
             return;
         }
@@ -5141,7 +5143,6 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
         if (!bdev) { sc_ret(regs) = (uint32_t)-ENODEV; return; }
 
         extern int init_mount_fs(const char* fstype, const block_device_t* bdev, uint32_t lba, const char* mountpoint, unsigned long flags);
-        (void)vfs_mkdirp(kmp);  /* auto-create mountpoint (recursive) */
         int rc = init_mount_fs(ktype, bdev, 0, kmp, mount_flags);
         sc_ret(regs) = (uint32_t)(rc < 0 ? rc : 0);
         return;

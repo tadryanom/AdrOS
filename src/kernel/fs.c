@@ -15,6 +15,7 @@
 #include "errno.h"
 #include "spinlock.h"
 #include "console.h"
+#include "heap.h"
 
 #include <string.h>
 
@@ -210,24 +211,47 @@ int vfs_umount(const char* mountpoint) {
     return ret;
 }
 
+/* Helper to escape special characters for /proc/mounts */
+static void escape_mount_string(char* dst, const char* src, uint32_t dst_size) {
+    uint32_t di = 0;
+    for (uint32_t si = 0; src[si] && di < dst_size - 1; si++) {
+        switch (src[si]) {
+            case ' ':
+                if (di + 4 < dst_size) { dst[di++] = '\\'; dst[di++] = '0'; dst[di++] = '4'; dst[di++] = '0'; }
+                break;
+            case '\t':
+                if (di + 4 < dst_size) { dst[di++] = '\\'; dst[di++] = '0'; dst[di++] = '1'; dst[di++] = '1'; }
+                break;
+            case '\n':
+                if (di + 4 < dst_size) { dst[di++] = '\\'; dst[di++] = '0'; dst[di++] = '1'; dst[di++] = '2'; }
+                break;
+            case '\\':
+                if (di + 2 < dst_size) { dst[di++] = '\\'; dst[di++] = '\\'; }
+                break;
+            default:
+                dst[di++] = src[si];
+                break;
+        }
+    }
+    dst[di] = '\0';
+}
+
 /* Read the mount table into a user buffer for /proc/mounts.
  * Format per line: <source> <mountpoint> <fstype> <options>\n
+ * Supports offset-based reading like a file.
  * Returns number of bytes written. */
-uint32_t vfs_mounts_read(uint8_t* buffer, uint32_t size) {
+uint32_t vfs_mounts_read(uint8_t* buffer, uint32_t size, uint32_t offset) {
     uintptr_t fl = spin_lock_irqsave(&g_vfs_lock);
 
-    char tmp[2048];
-    uint32_t len = 0;
-
-    for (int i = 0; i < g_mount_count && len < sizeof(tmp) - 80; i++) {
+    /* First pass: calculate total size needed */
+    uint32_t total_size = 0;
+    for (int i = 0; i < g_mount_count; i++) {
         const char* src = g_mounts[i].source[0] ? g_mounts[i].source : "none";
         const char* fst = g_mounts[i].fstype[0] ? g_mounts[i].fstype : "unknown";
 
         /* Build options string from flags */
         char opts[64];
         uint32_t olen = 0;
-
-        /* rw/ro */
         if (g_mounts[i].flags & MS_RDONLY) {
             opts[olen++] = 'r'; opts[olen++] = 'o';
         } else {
@@ -238,16 +262,59 @@ uint32_t vfs_mounts_read(uint8_t* buffer, uint32_t size) {
         if (g_mounts[i].flags & MS_NOEXEC) { opts[olen++] = ','; const char* s = "noexec"; while (*s) opts[olen++] = *s++; }
         opts[olen] = '\0';
 
-        /* source mountpoint fstype options */
-        len += (uint32_t)ksnprintf(tmp + len, sizeof(tmp) - len,
-                    "%s %s %s %s 0 0\n", src, g_mounts[i].mountpoint, fst, opts);
+        /* Estimate size (escaped strings can be up to 4x longer) */
+        total_size += strlen(src) * 4 + strlen(g_mounts[i].mountpoint) * 4 + strlen(fst) * 4 + strlen(opts) * 4 + 20;
+    }
+
+    /* Allocate buffer */
+    char* tmp = (char*)kmalloc(total_size + 1);
+    if (!tmp) {
+        spin_unlock_irqrestore(&g_vfs_lock, fl);
+        return 0;
+    }
+
+    /* Second pass: write escaped content */
+    uint32_t len = 0;
+    for (int i = 0; i < g_mount_count; i++) {
+        const char* src = g_mounts[i].source[0] ? g_mounts[i].source : "none";
+        const char* fst = g_mounts[i].fstype[0] ? g_mounts[i].fstype : "unknown";
+
+        /* Build options string from flags */
+        char opts[64];
+        uint32_t olen = 0;
+        if (g_mounts[i].flags & MS_RDONLY) {
+            opts[olen++] = 'r'; opts[olen++] = 'o';
+        } else {
+            opts[olen++] = 'r'; opts[olen++] = 'w';
+        }
+        if (g_mounts[i].flags & MS_NOSUID) { opts[olen++] = ','; const char* s = "nosuid"; while (*s) opts[olen++] = *s++; }
+        if (g_mounts[i].flags & MS_NODEV)  { opts[olen++] = ','; const char* s = "nodev"; while (*s) opts[olen++] = *s++; }
+        if (g_mounts[i].flags & MS_NOEXEC) { opts[olen++] = ','; const char* s = "noexec"; while (*s) opts[olen++] = *s++; }
+        opts[olen] = '\0';
+
+        /* Escape each field */
+        char esc_src[256], esc_mp[256], esc_fst[64], esc_opts[128];
+        escape_mount_string(esc_src, src, sizeof(esc_src));
+        escape_mount_string(esc_mp, g_mounts[i].mountpoint, sizeof(esc_mp));
+        escape_mount_string(esc_fst, fst, sizeof(esc_fst));
+        escape_mount_string(esc_opts, opts, sizeof(esc_opts));
+
+        len += (uint32_t)ksnprintf(tmp + len, total_size - len,
+                    "%s %s %s %s 0 0\n", esc_src, esc_mp, esc_fst, esc_opts);
     }
 
     spin_unlock_irqrestore(&g_vfs_lock, fl);
 
-    if (len > size) len = size;
-    memcpy(buffer, tmp, len);
-    return len;
+    /* Copy requested portion based on offset */
+    uint32_t copy_len = 0;
+    if (offset < len) {
+        uint32_t available = len - offset;
+        copy_len = (available < size) ? available : size;
+        memcpy(buffer, tmp + offset, copy_len);
+    }
+
+    kfree(tmp);
+    return copy_len;
 }
 
 uint32_t vfs_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {

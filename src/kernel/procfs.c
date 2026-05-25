@@ -365,19 +365,7 @@ static fs_node_t* proc_get_pid_dir(uint32_t pid) {
 
 static uint32_t proc_mounts_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
     (void)node;
-    /* Allocate from heap — mount table can be large */
-    char* tmp = kmalloc(4096);
-    if (!tmp) return 0;
-    uint32_t len = vfs_mounts_read((uint8_t*)tmp, 4096);
-    uint32_t ret = 0;
-    if (offset < len) {
-        uint32_t avail = len - offset;
-        if (size > avail) size = avail;
-        memcpy(buffer, tmp + offset, size);
-        ret = size;
-    }
-    kfree(tmp);
-    return ret;
+    return vfs_mounts_read(buffer, size, offset);
 }
 
 /* --- /proc/self --- */
