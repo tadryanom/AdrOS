@@ -3304,8 +3304,12 @@ static int syscall_link_impl(const char* user_oldpath, const char* user_newpath)
     int rc2 = path_resolve_user(user_newpath, new_path, sizeof(new_path));
     if (rc2 < 0) return rc2;
     
+    /* Check if filesystem is writable (MS_RDONLY) */
+    int rc = vfs_require_writable_path(new_path);
+    if (rc < 0) return rc;
+    
     /* A07: check parent directory write+execute permission for new link */
-    int rc = vfs_check_parent_permission(new_path, 3);  /* write + execute */
+    rc = vfs_check_parent_permission(new_path, 3);  /* write + execute */
     if (rc < 0) return rc;
     
     return vfs_link(old_path, new_path);
