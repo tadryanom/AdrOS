@@ -34,6 +34,7 @@
 #include "hal/mm.h"
 
 #include "hal/cpu.h"
+#include "hal/system.h"
 #include "arch_signal.h"
 #include "arch_syscall.h"
 #include "arch_process.h"
@@ -830,7 +831,7 @@ static int path_resolve_user(const char* user_path, char* out, size_t out_sz);
 static int fd_alloc(struct file* f);
 static int fd_close(int fd);
 static struct file* fd_get(int fd);
-static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no);
+static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_no);
 static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_no);
 
 /* ------------------------------------------------------------------ */
@@ -3948,7 +3949,8 @@ void syscall_handler(struct registers* regs) {
         if (current_process->euid == 0) {
             current_process->uid = new_uid;
             current_process->euid = new_uid;
-        } else if (new_uid == current_process->uid) {
+            current_process->suid = new_uid;
+        } else if (new_uid == current_process->uid || new_uid == current_process->suid) {
             current_process->euid = new_uid;
         } else {
             sc_ret(regs) = (uint32_t)-EPERM;
@@ -3964,7 +3966,8 @@ void syscall_handler(struct registers* regs) {
         if (current_process->euid == 0) {
             current_process->gid = new_gid;
             current_process->egid = new_gid;
-        } else if (new_gid == current_process->gid) {
+            current_process->sgid = new_gid;
+        } else if (new_gid == current_process->gid || new_gid == current_process->sgid) {
             current_process->egid = new_gid;
         } else {
             sc_ret(regs) = (uint32_t)-EPERM;
@@ -3987,7 +3990,9 @@ void syscall_handler(struct registers* regs) {
     if (syscall_no == SYSCALL_SETEUID) {
         if (!current_process) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
         uint32_t new_euid = sc_arg0(regs);
-        if (current_process->euid == 0 || new_euid == current_process->uid) {
+        if (current_process->euid == 0 || new_euid == current_process->uid
+            || new_euid == current_process->suid) {
+            current_process->suid = current_process->euid;
             current_process->euid = new_euid;
             sc_ret(regs) = 0;
         } else {
@@ -3999,7 +4004,9 @@ void syscall_handler(struct registers* regs) {
     if (syscall_no == SYSCALL_SETEGID) {
         if (!current_process) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
         uint32_t new_egid = sc_arg0(regs);
-        if (current_process->euid == 0 || new_egid == current_process->gid) {
+        if (current_process->euid == 0 || new_egid == current_process->gid
+            || new_egid == current_process->sgid) {
+            current_process->sgid = current_process->egid;
             current_process->egid = new_egid;
             sc_ret(regs) = 0;
         } else {
@@ -4214,6 +4221,24 @@ void syscall_handler(struct registers* regs) {
         return;
     }
 
+    if (syscall_no == SYSCALL_REBOOT) {
+        /* reboot(cmd): cmd 0 = halt, 1 = reboot, 2 = poweroff. Root-only. */
+        if (!current_process || current_process->euid != 0) {
+            sc_ret(regs) = (uint32_t)-EPERM; return;
+        }
+        int cmd = (int)sc_arg0(regs);
+        if (cmd == 1) {
+            hal_system_reboot();
+        } else if (cmd == 2) {
+            hal_system_shutdown();
+        }
+        /* halt or unknown: just loop */
+        hal_cpu_disable_interrupts();
+        for (;;) hal_cpu_idle();
+        sc_ret(regs) = 0;  /* unreachable */
+        return;
+    }
+
     if (syscall_no == SYSCALL_MPROTECT) {
         uintptr_t addr = (uintptr_t)sc_arg0(regs);
         uint32_t  len  = sc_arg1(regs);
@@ -4272,7 +4297,7 @@ void syscall_handler(struct registers* regs) {
     }
 
     /* ---- Socket syscalls ---- */
-    socket_syscall_dispatch(regs, syscall_no);
+    extended_syscall_dispatch(regs, syscall_no);
     /* If socket dispatch handled it, the return register is set and we return.
        If not, it sets ENOSYS. Either way, return. */
     return;
@@ -4662,7 +4687,7 @@ static int syscall_recvmsg_impl(int sockfd, void* user_msg, int flags) {
 
 /* Separate function to keep socket locals off syscall_handler's stack frame */
 __attribute__((noinline))
-static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no) {
+static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_no) {
     if (syscall_no == SYSCALL_SOCKET) {
         int domain   = (int)sc_arg0(regs);
         int type     = (int)sc_arg1(regs);

@@ -159,6 +159,9 @@ struct process {
     /* SMP: which CPU's runqueue this process is assigned to */
     uint32_t cpu_id;
 
+    uint32_t suid;  /* saved set-user-ID */
+    uint32_t sgid;  /* saved set-group-ID */
+
     uint8_t fpu_state[FPU_STATE_SIZE] __attribute__((aligned(FPU_STATE_ALIGN)));
 };
 
