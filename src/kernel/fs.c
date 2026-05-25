@@ -202,6 +202,7 @@ int vfs_umount_nolock(const char* mountpoint) {
 
     for (int j = idx; j < g_mount_count - 1; j++)
         g_mounts[j] = g_mounts[j + 1];
+    memset(&g_mounts[g_mount_count - 1], 0, sizeof(g_mounts[0]));
     g_mount_count--;
     return 0;
 }
