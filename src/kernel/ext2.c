@@ -1444,7 +1444,6 @@ vfs_mount_result_t ext2_mount(const block_device_t* bdev, uint32_t partition_lba
     memset(em, 0, sizeof(*em));
 
     em->bdev = bdev;
-    em->drive = bdev->drive_id;
     em->part_lba = partition_lba;
 
     struct ext2_superblock sb;

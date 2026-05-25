@@ -1150,7 +1150,6 @@ vfs_mount_result_t fat_mount(const block_device_t* bdev, uint32_t partition_lba)
     memset(fm, 0, sizeof(*fm));
 
     fm->bdev = bdev;
-    fm->drive = bdev->drive_id;
 
     uint8_t boot_sec[FAT_SECTOR_SIZE];
     if (fat_read_sector(fm, partition_lba, boot_sec) < 0) {
