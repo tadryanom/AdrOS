@@ -405,6 +405,7 @@ int snprintf(char* buf, size_t size, const char* fmt, ...) {
 
 int sscanf(const char* str, const char* fmt, ...) {
     /* Minimal sscanf: only supports %d and %s */
+    /* U02: %s limited to 255 chars by default to prevent buffer overflow */
     va_list ap;
     va_start(ap, fmt);
     int count = 0;
@@ -430,7 +431,7 @@ int sscanf(const char* str, const char* fmt, ...) {
                 char* out = va_arg(ap, char*);
                 while (*s == ' ') s++;
                 int i = 0;
-                while (*s && *s != ' ' && *s != '\n' && *s != '\t') out[i++] = *s++;
+                while (*s && *s != ' ' && *s != '\n' && *s != '\t' && i < 255) out[i++] = *s++;
                 out[i] = '\0';
                 count++;
             } else {
@@ -606,6 +607,7 @@ char* tmpnam(char* s) {
 
 int fscanf(FILE* fp, const char* fmt, ...) {
     /* Read a line, then delegate to sscanf */
+    /* U02: %s limited to 255 chars by default to prevent buffer overflow */
     char line[512];
     if (!fgets(line, (int)sizeof(line), fp)) return EOF;
     va_list ap;
@@ -635,7 +637,7 @@ int fscanf(FILE* fp, const char* fmt, ...) {
                 char* out = va_arg(ap, char*);
                 while (*s == ' ') s++;
                 int i = 0;
-                while (*s && *s != ' ' && *s != '\n' && *s != '\t') out[i++] = *s++;
+                while (*s && *s != ' ' && *s != '\n' && *s != '\t' && i < 255) out[i++] = *s++;
                 out[i] = '\0';
                 count++;
             } else if (*f == 'c') {
@@ -659,6 +661,7 @@ int fscanf(FILE* fp, const char* fmt, ...) {
 }
 
 int scanf(const char* fmt, ...) {
+    /* U02: %s limited to 255 chars by default to prevent buffer overflow */
     char line[512];
     if (!fgets(line, (int)sizeof(line), stdin)) return EOF;
     va_list ap;
@@ -686,7 +689,7 @@ int scanf(const char* fmt, ...) {
                 char* out = va_arg(ap, char*);
                 while (*s == ' ') s++;
                 int i = 0;
-                while (*s && *s != ' ' && *s != '\n' && *s != '\t') out[i++] = *s++;
+                while (*s && *s != ' ' && *s != '\n' && *s != '\t' && i < 255) out[i++] = *s++;
                 out[i] = '\0';
                 count++;
             } else {
