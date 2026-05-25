@@ -31,6 +31,10 @@ struct shm_segment {
     uintptr_t  pages[SHM_MAX_PAGES]; /* physical addresses */
     uint32_t   nattch;       /* attach count */
     int        marked_rm;    /* IPC_RMID pending */
+    /* K14: Permission metadata */
+    uint32_t   uid;
+    uint32_t   gid;
+    uint32_t   mode;
 };
 
 static struct shm_segment segments[SHM_MAX_SEGMENTS];
@@ -95,6 +99,10 @@ int shm_get(uint32_t key, uint32_t size, int flags) {
     seg->npages = npages;
     seg->nattch = 0;
     seg->marked_rm = 0;
+    /* K14: Initialize permission metadata */
+    seg->uid = current_process ? current_process->uid : 0;
+    seg->gid = current_process ? current_process->gid : 0;
+    seg->mode = 0600;  /* rw------- by default */
 
     for (uint32_t i = 0; i < npages; i++) {
         void* page = pmm_alloc_page();
@@ -135,6 +143,12 @@ void* shm_at(int shmid, uintptr_t shmaddr) {
         return (void*)(uintptr_t)-EINVAL;
     }
 
+    /* K14: Check permission - owner or root only */
+    if (seg->uid != current_process->uid && current_process->uid != 0) {
+        spin_unlock_irqrestore(&shm_lock, irqf);
+        return (void*)(uintptr_t)-EACCES;
+    }
+
     /* Find a free mmap slot (always needed to track the mapping) */
     int mslot = -1;
     for (int i = 0; i < PROCESS_MAX_MMAPS; i++) {
@@ -173,7 +187,8 @@ void* shm_at(int shmid, uintptr_t shmaddr) {
     }
 
     /* Map physical pages into user address space.
-     * vmm_map_page signature: (phys, virt, flags) */
+     * vmm_map_page signature: (phys, virt, flags)
+     * K24: NX flag deferred until IA32_EFER.NXE MSR is enabled (A01) */
     for (uint32_t i = 0; i < seg->npages; i++) {
         vmm_map_page((uint64_t)seg->pages[i],
                      (uint64_t)(vaddr + i * PAGE_SIZE),
