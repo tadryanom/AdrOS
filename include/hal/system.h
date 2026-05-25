@@ -11,5 +11,6 @@
 #define HAL_SYSTEM_H
 
 void hal_system_reboot(void);
+void hal_system_shutdown(void);
 
 #endif

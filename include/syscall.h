@@ -183,6 +183,7 @@ enum {
     SYSCALL_WAIT4        = 139,
     SYSCALL_MADVISE      = 140,
     SYSCALL_EXECVEAT     = 141,
+    SYSCALL_REBOOT       = 142,
 };
 
 #endif

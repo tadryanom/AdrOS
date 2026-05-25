@@ -673,6 +673,8 @@ struct process* process_fork_create(uintptr_t child_as, const void* child_regs) 
     proc->gid = current_process ? current_process->gid : 0;
     proc->euid = current_process ? current_process->euid : 0;
     proc->egid = current_process ? current_process->egid : 0;
+    proc->suid = current_process ? current_process->suid : 0;
+    proc->sgid = current_process ? current_process->sgid : 0;
     proc->priority = current_process ? current_process->priority : SCHED_DEFAULT_PRIO;
     proc->nice = current_process ? current_process->nice : 0;
     proc->state = PROCESS_READY;
@@ -874,6 +876,8 @@ struct process* process_clone_create(uint32_t clone_flags,
     proc->gid = current_process->gid;
     proc->euid = current_process->euid;
     proc->egid = current_process->egid;
+    proc->suid = current_process->suid;
+    proc->sgid = current_process->sgid;
     proc->heap_start = current_process->heap_start;
     proc->heap_break = current_process->heap_break;
     memcpy(proc->rlimits, current_process->rlimits, sizeof(proc->rlimits));
