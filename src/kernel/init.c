@@ -51,12 +51,17 @@ int init_mount_fs(const char* fstype, const block_device_t* bdev, uint32_t lba, 
         return -EINVAL;
     }
 
-    fs_node_t* root = fst->mount(bdev, lba);
-    if (!root) {
+    vfs_mount_result_t mres = fst->mount(bdev, lba);
+    if (!mres.root) {
         kprintf("[MOUNT] Failed to mount %s on %s at %s\n",
                 fstype, bdev ? bdev->name : "?",
                 mountpoint);
         return -ENODEV;
+    }
+
+    /* Set fstype pointer in superblock */
+    if (mres.sb) {
+        mres.sb->fstype = fst;
     }
 
     /* Claim the block device */
@@ -76,7 +81,7 @@ int init_mount_fs(const char* fstype, const block_device_t* bdev, uint32_t lba, 
         *dp = '\0';
     }
 
-    int rc = vfs_mount_full(mountpoint, root, fstype, devname, flags, bdev);
+    int rc = vfs_mount_full(mountpoint, mres.root, fstype, devname, flags, bdev, mres.sb);
     if (rc < 0) {
         kprintf("[MOUNT] Failed to register mount at %s (err=%d)\n", mountpoint, rc);
         if (bdev) {
@@ -142,7 +147,7 @@ int init_start(const struct boot_info* bi) {
         if (upper) {
             fs_node_t* ovl = overlayfs_create_root(fs_root, upper);
             if (ovl) {
-                (void)vfs_mount_full("/", ovl, "overlayfs", "initrd", 0, NULL);
+                (void)vfs_mount_full("/", ovl, "overlayfs", "initrd", 0, NULL, NULL);
                 vfs_set_initrd_root(ovl);
             }
         }
@@ -164,7 +169,7 @@ int init_start(const struct boot_info* bi) {
 
     fs_node_t* tmp = tmpfs_create_root();
     if (tmp) {
-        (void)vfs_mount_full("/tmp", tmp, "tmpfs", "none", 0, NULL);
+        (void)vfs_mount_full("/tmp", tmp, "tmpfs", "none", 0, NULL, NULL);
     }
 
     /* Register hardware drivers with HAL and init in priority order */
@@ -191,7 +196,7 @@ int init_start(const struct boot_info* bi) {
      * existing entry so this is a harmless overlap. */
     fs_node_t* dev = devfs_create_root();
     if (dev) {
-        (void)vfs_mount_full("/dev", dev, "devfs", "none", 0, NULL);
+        (void)vfs_mount_full("/dev", dev, "devfs", "none", 0, NULL, NULL);
     }
 
     vbe_register_devfs();
@@ -199,7 +204,7 @@ int init_start(const struct boot_info* bi) {
 
     fs_node_t* proc = procfs_create_root();
     if (proc) {
-        (void)vfs_mount_full("/proc", proc, "procfs", "none", 0, NULL);
+        (void)vfs_mount_full("/proc", proc, "procfs", "none", 0, NULL, NULL);
     }
 
     /* Initialize ATA subsystem — probe all 4 drives

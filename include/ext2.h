@@ -35,8 +35,8 @@ struct ext2_mount {
 };
 
 /* Mount an ext2 filesystem on the given block device starting at the given
- * LBA offset.  Returns a VFS root node or NULL on failure. */
-fs_node_t* ext2_mount(const block_device_t* bdev, uint32_t partition_lba);
+ * LBA offset.  Returns a mount result with root node and superblock, or {NULL, NULL} on failure. */
+vfs_mount_result_t ext2_mount(const block_device_t* bdev, uint32_t partition_lba);
 
 /* Unmount an ext2 filesystem and free its resources */
 void ext2_umount(struct ext2_mount* em);

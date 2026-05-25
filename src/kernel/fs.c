@@ -153,15 +153,16 @@ int vfs_mount_nolock(const char* mountpoint, fs_node_t* root) {
 
 int vfs_mount_full(const char* mountpoint, fs_node_t* root,
                     const char* fstype, const char* source,
-                    unsigned long flags, const block_device_t* bdev) {
+                    unsigned long flags, const block_device_t* bdev,
+                    vfs_superblock_t* sb) {
     uintptr_t fl = spin_lock_irqsave(&g_vfs_lock);
-    int ret = vfs_mount_nolock_full(mountpoint, root, fstype, source, flags, bdev, NULL);
+    int ret = vfs_mount_nolock_full(mountpoint, root, fstype, source, flags, bdev, sb);
     spin_unlock_irqrestore(&g_vfs_lock, fl);
     return ret;
 }
 
 int vfs_mount(const char* mountpoint, fs_node_t* root) {
-    return vfs_mount_full(mountpoint, root, NULL, NULL, 0, NULL);
+    return vfs_mount_full(mountpoint, root, NULL, NULL, 0, NULL, NULL);
 }
 
 int vfs_umount_nolock(const char* mountpoint) {

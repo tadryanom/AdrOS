@@ -8,6 +8,7 @@
  */
 
 #include "ext2.h"
+#include "fs.h"
 #include "blockdev.h"
 #include "heap.h"
 #include "utils.h"
@@ -1426,17 +1427,19 @@ static int ext2_link_impl(struct fs_node* dir, const char* name, struct fs_node*
 
 /* ---- Mount ---- */
 
-fs_node_t* ext2_mount(const block_device_t* bdev, uint32_t partition_lba) {
+vfs_mount_result_t ext2_mount(const block_device_t* bdev, uint32_t partition_lba) {
+    vfs_mount_result_t result = {NULL, NULL};
+
     if (!bdev) {
         kprintf("[EXT2] No block device provided\n");
-        return NULL;
+        return result;
     }
 
     /* Allocate mount structure */
     struct ext2_mount* em = (struct ext2_mount*)kmalloc(sizeof(struct ext2_mount));
     if (!em) {
         kprintf("[EXT2] Failed to allocate mount structure\n");
-        return NULL;
+        return result;
     }
     memset(em, 0, sizeof(*em));
 
@@ -1448,20 +1451,20 @@ fs_node_t* ext2_mount(const block_device_t* bdev, uint32_t partition_lba) {
     if (ext2_read_superblock(em, &sb) < 0) {
         kprintf("[EXT2] Failed to read superblock\n");
         kfree(em);
-        return NULL;
+        return result;
     }
 
     if (sb.s_magic != EXT2_SUPER_MAGIC) {
         kprintf("[EXT2] Invalid magic: 0x%x\n", sb.s_magic);
         kfree(em);
-        return NULL;
+        return result;
     }
 
     em->block_size = 1024U << sb.s_log_block_size;
     if (em->block_size > 4096) {
         kprintf("[EXT2] Unsupported block size %u\n", em->block_size);
         kfree(em);
-        return NULL;
+        return result;
     }
     em->sectors_per_block = em->block_size / EXT2_SECTOR_SIZE;
     em->inodes_per_group = sb.s_inodes_per_group;
@@ -1486,7 +1489,7 @@ fs_node_t* ext2_mount(const block_device_t* bdev, uint32_t partition_lba) {
     if (!em->gdt) {
         kprintf("[EXT2] Failed to allocate GDT (%u bytes)\n", gdt_bytes);
         kfree(em);
-        return NULL;
+        return result;
     }
     memset(em->gdt, 0, gdt_bytes);
 
@@ -1498,7 +1501,7 @@ fs_node_t* ext2_mount(const block_device_t* bdev, uint32_t partition_lba) {
             kprintf("[EXT2] Failed to read GDT block %u\n", gdt_block + b);
             kfree(em->gdt);
             kfree(em);
-            return NULL;
+            return result;
         }
         uint32_t to_copy = em->block_size;
         if (to_copy > gdt_bytes - b * em->block_size)
@@ -1512,7 +1515,7 @@ fs_node_t* ext2_mount(const block_device_t* bdev, uint32_t partition_lba) {
         kprintf("[EXT2] Failed to read root inode\n");
         kfree(em->gdt);
         kfree(em);
-        return NULL;
+        return result;
     }
 
     /* Build root node */
@@ -1521,7 +1524,7 @@ fs_node_t* ext2_mount(const block_device_t* bdev, uint32_t partition_lba) {
         kprintf("[EXT2] Failed to allocate root node\n");
         kfree(em->gdt);
         kfree(em);
-        return NULL;
+        return result;
     }
     memset(root, 0, sizeof(*root));
     root->mount = em;
@@ -1536,11 +1539,28 @@ fs_node_t* ext2_mount(const block_device_t* bdev, uint32_t partition_lba) {
     root->vfs.f_ops = &ext2_dir_fops;
     root->vfs.i_ops = &ext2_dir_iops;
 
+    /* Build superblock */
+    vfs_superblock_t* vfs_sb = (vfs_superblock_t*)kmalloc(sizeof(vfs_superblock_t));
+    if (!vfs_sb) {
+        kprintf("[EXT2] Failed to allocate superblock\n");
+        kfree(root);
+        kfree(em->gdt);
+        kfree(em);
+        return result;
+    }
+    memset(vfs_sb, 0, sizeof(*vfs_sb));
+    vfs_sb->bdev = bdev;
+    vfs_sb->lba = partition_lba;
+    vfs_sb->private_data = em;
+    /* fstype will be set by caller */
+
     kprintf("[EXT2] Mounted at LBA %u (%u blocks, %u inodes, %u groups, %uB/block)\n",
             partition_lba, em->total_blocks, em->total_inodes,
             em->num_groups, em->block_size);
 
-    return &root->vfs;
+    result.root = &root->vfs;
+    result.sb = vfs_sb;
+    return result;
 }
 
 void ext2_umount(struct ext2_mount* em) {

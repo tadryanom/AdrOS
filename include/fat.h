@@ -42,8 +42,8 @@ struct fat_mount {
 
 /* Mount a FAT12/16/32 filesystem on the given block device starting at
  * the given LBA offset.  Auto-detects FAT type from BPB.
- * Returns a VFS root node or NULL on failure. */
-fs_node_t* fat_mount(const block_device_t* bdev, uint32_t partition_lba);
+ * Returns a mount result with root node and superblock, or {NULL, NULL} on failure. */
+vfs_mount_result_t fat_mount(const block_device_t* bdev, uint32_t partition_lba);
 
 /* Unmount a FAT filesystem and free its resources */
 void fat_umount(struct fat_mount* fm);

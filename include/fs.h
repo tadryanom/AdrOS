@@ -34,21 +34,28 @@
 #define FS_NEEDS_BDEV  0x01    /* Requires block device */
 
 struct fs_node; /* forward declaration */
+struct vfs_fs_type; /* forward declaration */
+
+/* VFS superblock — per-mount filesystem metadata */
+typedef struct vfs_superblock {
+    const struct vfs_fs_type* fstype;    /* Filesystem type */
+    const block_device_t* bdev;          /* Block device (NULL for virtual FS) */
+    uint32_t lba;                        /* Partition start LBA (0 for whole disk) */
+    void* private_data;                  /* Filesystem-specific data (e.g. fat_mount, ext2_mount) */
+} vfs_superblock_t;
+
+/* Mount result structure - returned by filesystem mount functions */
+typedef struct vfs_mount_result {
+    struct fs_node* root;                 /* VFS root node */
+    vfs_superblock_t* sb;                 /* Superblock (NULL for virtual FS) */
+} vfs_mount_result_t;
 
 /* Filesystem type structure */
 typedef struct vfs_fs_type {
     const char* name;                     /* e.g. "fat", "ext2" */
     uint32_t flags;                       /* FS_NEEDS_BDEV, etc. */
-    struct fs_node* (*mount)(const block_device_t* bdev, uint32_t lba);  /* Mount function */
+    vfs_mount_result_t (*mount)(const block_device_t* bdev, uint32_t lba);  /* Mount function */
 } vfs_fs_type_t;
-
-/* VFS superblock — per-mount filesystem metadata */
-typedef struct vfs_superblock {
-    const vfs_fs_type_t* fstype;         /* Filesystem type */
-    const block_device_t* bdev;          /* Block device (NULL for virtual FS) */
-    uint32_t lba;                        /* Partition start LBA (0 for whole disk) */
-    void* private_data;                  /* Filesystem-specific data (e.g. fat_mount, ext2_mount) */
-} vfs_superblock_t;
 
 /* poll() event flags — shared between kernel VFS and syscall layer */
 #define VFS_POLL_IN    0x0001
@@ -136,7 +143,8 @@ int vfs_link(const char* old_path, const char* new_path);
 int vfs_mount(const char* mountpoint, fs_node_t* root);
 int vfs_mount_full(const char* mountpoint, fs_node_t* root,
                     const char* fstype, const char* source,
-                    unsigned long flags, const block_device_t* bdev);
+                    unsigned long flags, const block_device_t* bdev,
+                    vfs_superblock_t* sb);
 int vfs_umount(const char* mountpoint);
 
 /* _nolock variants — caller must already hold g_vfs_lock.
