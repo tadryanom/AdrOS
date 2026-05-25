@@ -14,8 +14,31 @@
 #include "blockdev.h"
 #include <stdint.h>
 
-/* Mount an ext2 filesystem on the given ATA drive starting at the given
+struct ext2_group_desc;
+
+/* Per-mount filesystem state */
+struct ext2_mount {
+    const block_device_t* bdev;
+    int      drive;
+    uint32_t part_lba;        /* partition start LBA */
+    uint32_t block_size;      /* bytes per block (1024, 2048, or 4096) */
+    uint32_t sectors_per_block;
+    uint32_t inodes_per_group;
+    uint32_t blocks_per_group;
+    uint32_t inode_size;      /* on-disk inode size (128 or 256) */
+    uint32_t num_groups;
+    uint32_t first_data_block;
+    uint32_t total_blocks;
+    uint32_t total_inodes;
+    struct ext2_group_desc* gdt; /* group descriptor table (heap-allocated) */
+    uint32_t gdt_blocks;      /* number of blocks occupied by GDT */
+};
+
+/* Mount an ext2 filesystem on the given block device starting at the given
  * LBA offset.  Returns a VFS root node or NULL on failure. */
 fs_node_t* ext2_mount(const block_device_t* bdev, uint32_t partition_lba);
+
+/* Unmount an ext2 filesystem and free its resources */
+void ext2_umount(struct ext2_mount* em);
 
 #endif

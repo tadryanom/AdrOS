@@ -8,6 +8,8 @@
  */
 
 #include "fs.h"
+#include "fat.h"
+#include "ext2.h"
 
 #include "utils.h"
 #include "errno.h"
@@ -183,6 +185,16 @@ int vfs_umount_nolock(const char* mountpoint) {
     /* Release the block device */
     if (g_mounts[idx].bdev) {
         blockdev_release(g_mounts[idx].bdev);
+    }
+
+    /* Call filesystem-specific umount to free mount structure */
+    if (g_mounts[idx].sb && g_mounts[idx].sb->private_data) {
+        if (strcmp(g_mounts[idx].fstype, "fat") == 0) {
+            fat_umount((struct fat_mount*)g_mounts[idx].sb->private_data);
+        } else if (strcmp(g_mounts[idx].fstype, "ext2") == 0) {
+            ext2_umount((struct ext2_mount*)g_mounts[idx].sb->private_data);
+        }
+        g_mounts[idx].sb->private_data = NULL;
     }
 
     for (int j = idx; j < g_mount_count - 1; j++)
