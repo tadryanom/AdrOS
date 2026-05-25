@@ -57,6 +57,11 @@ static uint32_t multiboot_copy_size;
 
     if (mbi_phys) {
         uint32_t total_size = *(volatile uint32_t*)mbi_phys;
+        /* A15: Validate total_size is reasonable */
+        if (total_size < 8 || total_size > 65536) {
+            kprintf("[WARN] Invalid Multiboot2 total_size: %u\n", total_size);
+            total_size = 8;  /* Use minimum valid size */
+        }
         if (total_size >= 8) {
             multiboot_copy_size = total_size;
             if (multiboot_copy_size > sizeof(multiboot_copy)) {
@@ -73,9 +78,22 @@ static uint32_t multiboot_copy_size;
 
     if (bi.arch_boot_info) {
         struct multiboot_tag* tag;
-        for (tag = (struct multiboot_tag*)((uint8_t*)bi.arch_boot_info + 8);
-             tag->type != MULTIBOOT_TAG_TYPE_END;
-             tag = (struct multiboot_tag*)((uint8_t*)tag + ((tag->size + 7) & ~7))) {
+        uint32_t cursor = 8;  /* Skip header */
+        while (cursor + 8 <= multiboot_copy_size) {
+            tag = (struct multiboot_tag*)((uint8_t*)bi.arch_boot_info + cursor);
+            
+            /* A15: Validate tag size */
+            if (tag->size < 8) {
+                kprintf("[WARN] Invalid Multiboot2 tag size: %u\n", tag->size);
+                break;
+            }
+            if (cursor + tag->size > multiboot_copy_size) {
+                kprintf("[WARN] Multiboot2 tag exceeds buffer\n");
+                break;
+            }
+            
+            if (tag->type == MULTIBOOT_TAG_TYPE_END) break;
+            
             if (tag->type == MULTIBOOT_TAG_TYPE_MODULE) {
                 const struct multiboot_tag_module* mod = (const struct multiboot_tag_module*)tag;
                 if (!bi.initrd_start) {
@@ -96,6 +114,9 @@ static uint32_t multiboot_copy_size;
                 bi.fb_bpp = fb->framebuffer_bpp;
                 bi.fb_type = fb->framebuffer_type;
             }
+            
+            /* A15: Advance to next tag (8-byte aligned) */
+            cursor += (tag->size + 7) & ~7;
         }
     }
 

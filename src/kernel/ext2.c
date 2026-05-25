@@ -744,6 +744,13 @@ static fs_node_t* ext2_finddir(fs_node_t* node, const char* name) {
             struct ext2_dir_entry* de = (struct ext2_dir_entry*)(blk_buf + off);
             if (de->rec_len == 0) goto done;
 
+            /* F01: Validate rec_len */
+            if (de->rec_len < 8) goto done;
+            if (de->rec_len % 4 != 0) goto done;
+            if (off + de->rec_len > bs) goto done;
+            /* F01: Validate name_len */
+            if (de->name_len >= de->rec_len - 8) goto done;
+
             if (de->inode != 0 && de->name_len == name_len) {
                 if (memcmp(de->name, name, name_len) == 0) {
                     struct ext2_inode child_inode;
@@ -801,6 +808,13 @@ static int ext2_readdir_impl(struct fs_node* node, uint32_t* inout_index, void* 
         while (off < bs && pos < dir_size && written < cap) {
             struct ext2_dir_entry* de = (struct ext2_dir_entry*)(blk_buf + off);
             if (de->rec_len == 0) goto done;
+
+            /* F01: Validate rec_len */
+            if (de->rec_len < 8) goto done;
+            if (de->rec_len % 4 != 0) goto done;
+            if (off + de->rec_len > bs) goto done;
+            /* F01: Validate name_len */
+            if (de->name_len >= de->rec_len - 8) goto done;
 
             if (de->inode != 0) {
                 /* Skip . and .. */
@@ -864,6 +878,13 @@ static int ext2_dir_add_entry(struct ext2_mount* em, uint32_t dir_ino, const cha
         while (off < bs) {
             struct ext2_dir_entry* de = (struct ext2_dir_entry*)(blk_buf + off);
             if (de->rec_len == 0) break;
+
+            /* F01: Validate rec_len */
+            if (de->rec_len < 8) break;
+            if (de->rec_len % 4 != 0) break;
+            if (off + de->rec_len > bs) break;
+            /* F01: Validate name_len */
+            if (de->name_len >= de->rec_len - 8) break;
 
             uint32_t actual_len = ((uint32_t)sizeof(struct ext2_dir_entry) + de->name_len + 3) & ~3U;
             uint32_t free_space = de->rec_len - actual_len;
@@ -944,6 +965,13 @@ static int ext2_dir_remove_entry(struct ext2_mount* em, uint32_t dir_ino, const 
             struct ext2_dir_entry* de = (struct ext2_dir_entry*)(blk_buf + off);
             if (de->rec_len == 0) break;
 
+            /* F01: Validate rec_len */
+            if (de->rec_len < 8) break;
+            if (de->rec_len % 4 != 0) break;
+            if (off + de->rec_len > bs) break;
+            /* F01: Validate name_len */
+            if (de->name_len >= de->rec_len - 8) break;
+
             if (de->inode != 0 && de->name_len == name_len &&
                 memcmp(de->name, name, name_len) == 0) {
                 if (removed_ino) *removed_ino = de->inode;
@@ -991,6 +1019,13 @@ static int ext2_dir_find(struct ext2_mount* em, uint32_t dir_ino, const char* na
             struct ext2_dir_entry* de = (struct ext2_dir_entry*)(blk_buf + off);
             if (de->rec_len == 0) goto not_found;
 
+            /* F01: Validate rec_len */
+            if (de->rec_len < 8) goto not_found;
+            if (de->rec_len % 4 != 0) goto not_found;
+            if (off + de->rec_len > bs) goto not_found;
+            /* F01: Validate name_len */
+            if (de->name_len >= de->rec_len - 8) goto not_found;
+
             if (de->inode != 0 && de->name_len == name_len &&
                 memcmp(de->name, name, name_len) == 0) {
                 if (out_ino) *out_ino = de->inode;
@@ -1027,6 +1062,13 @@ static int ext2_dir_is_empty(struct ext2_mount* em, uint32_t dir_ino) {
         while (off < bs) {
             struct ext2_dir_entry* de = (struct ext2_dir_entry*)(blk_buf + off);
             if (de->rec_len == 0) return 1;
+
+            /* F01: Validate rec_len */
+            if (de->rec_len < 8) return 1;
+            if (de->rec_len % 4 != 0) return 1;
+            if (off + de->rec_len > bs) return 1;
+            /* F01: Validate name_len */
+            if (de->name_len >= de->rec_len - 8) return 1;
 
             if (de->inode != 0) {
                 int is_dot = (de->name_len == 1 && de->name[0] == '.');
