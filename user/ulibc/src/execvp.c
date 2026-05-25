@@ -56,28 +56,35 @@ int execvp(const char* file, char* const argv[]) {
 }
 
 int execlp(const char* file, const char* arg, ...) {
-    /* Count args by walking the va_list manually via stack pointers.
-     * On i386, args are pushed right-to-left on the stack.
-     * We'll use a simple approach: max 32 args. */
+    /* U04: Use va_list instead of pointer arithmetic for portability */
     const char* args[33];
-    const char** p = &arg;
+    __builtin_va_list ap;
+    __builtin_va_start(ap, arg);
     int i = 0;
-    while (*p && i < 32) {
-        args[i++] = *p;
-        p++;
+    args[i++] = arg;
+    while (i < 32) {
+        const char* a = __builtin_va_arg(ap, const char*);
+        if (!a) break;
+        args[i++] = a;
     }
     args[i] = (const char*)0;
+    __builtin_va_end(ap);
     return execvp(file, (char* const*)args);
 }
 
 int execl(const char* path, const char* arg, ...) {
+    /* U04: Use va_list instead of pointer arithmetic for portability */
     const char* args[33];
-    const char** p = &arg;
+    __builtin_va_list ap;
+    __builtin_va_start(ap, arg);
     int i = 0;
-    while (*p && i < 32) {
-        args[i++] = *p;
-        p++;
+    args[i++] = arg;
+    while (i < 32) {
+        const char* a = __builtin_va_arg(ap, const char*);
+        if (!a) break;
+        args[i++] = a;
     }
     args[i] = (const char*)0;
+    __builtin_va_end(ap);
     return execve(path, (char* const*)args, environ);
 }
