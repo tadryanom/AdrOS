@@ -44,45 +44,53 @@
 
 /* ---- Mount helper: used by fstab parser and kconsole 'mount' command ---- */
 
-int init_mount_fs(const char* fstype, int drive, uint32_t lba, const char* mountpoint, unsigned long flags) {
+int init_mount_fs(const char* fstype, const block_device_t* bdev, uint32_t lba, const char* mountpoint, unsigned long flags) {
     fs_node_t* root = NULL;
 
     if (strcmp(fstype, "fat") == 0) {
-        root = fat_mount(drive, lba);
+        root = fat_mount(bdev, lba);
     } else if (strcmp(fstype, "ext2") == 0) {
-        root = ext2_mount(drive, lba);
+        root = ext2_mount(bdev, lba);
     } else {
         kprintf("[MOUNT] Unknown filesystem type: %s\n", fstype);
         return -EINVAL;
     }
 
     if (!root) {
-        kprintf("[MOUNT] Failed to mount %s on /dev/%s at %s\n",
-                fstype, ata_drive_to_name(drive) ? ata_drive_to_name(drive) : "?",
+        kprintf("[MOUNT] Failed to mount %s on %s at %s\n",
+                fstype, bdev ? bdev->name : "?",
                 mountpoint);
         return -ENODEV;
     }
 
+    /* Claim the block device */
+    if (bdev) {
+        blockdev_claim(bdev);
+    }
+
     /* Build device name for mount table metadata */
     char devname[32] = "none";
-    const char* dname = ata_drive_to_name(drive);
-    if (dname) {
+    if (bdev) {
         strcpy(devname, "/dev/");
-        /* Append drive name after /dev/ */
+        /* Append device name after /dev/ */
         char* dp = devname + 5;
+        const char* dname = bdev->name;
         while (*dname && (dp - devname) < (int)sizeof(devname) - 2)
             *dp++ = *dname++;
         *dp = '\0';
     }
 
-    int rc = vfs_mount_full(mountpoint, root, fstype, devname, flags);
+    int rc = vfs_mount_full(mountpoint, root, fstype, devname, flags, bdev);
     if (rc < 0) {
         kprintf("[MOUNT] Failed to register mount at %s (err=%d)\n", mountpoint, rc);
+        if (bdev) {
+            blockdev_release(bdev);
+        }
         return rc;
     }
 
     kprintf("[MOUNT] %s on /dev/%s -> %s\n",
-            fstype, ata_drive_to_name(drive) ? ata_drive_to_name(drive) : "?",
+            fstype, bdev ? bdev->name : "?",
             mountpoint);
     return 0;
 }
@@ -123,7 +131,7 @@ int init_start(const struct boot_info* bi) {
         if (upper) {
             fs_node_t* ovl = overlayfs_create_root(fs_root, upper);
             if (ovl) {
-                (void)vfs_mount_full("/", ovl, "overlayfs", "initrd", 0);
+                (void)vfs_mount_full("/", ovl, "overlayfs", "initrd", 0, NULL);
                 vfs_set_initrd_root(ovl);
             }
         }
@@ -139,13 +147,13 @@ int init_start(const struct boot_info* bi) {
         if (rc < 0 && rc != -EEXIST) kprintf("[INIT] mkdir /dev failed: %d\n", rc);
         rc = vfs_mkdir("/proc");
         if (rc < 0 && rc != -EEXIST) kprintf("[INIT] mkdir /proc failed: %d\n", rc);
-        /* /disk and /persist directories are created by userspace init
+        /* /disk directory is created by userspace init
          * or by fstab-driven mount — no longer created by kernel */
     }
 
     fs_node_t* tmp = tmpfs_create_root();
     if (tmp) {
-        (void)vfs_mount_full("/tmp", tmp, "tmpfs", "none", 0);
+        (void)vfs_mount_full("/tmp", tmp, "tmpfs", "none", 0, NULL);
     }
 
     /* Register hardware drivers with HAL and init in priority order */
@@ -154,6 +162,10 @@ int init_start(const struct boot_info* bi) {
     extern void virtio_blk_driver_register(void);
     virtio_blk_driver_register(); /* priority 25: virtio-blk */
     hal_drivers_init_all();
+
+    /* Register virtio-blk as a block device if initialized */
+    extern void virtio_blk_register_blockdev(void);
+    virtio_blk_register_blockdev();
 
     net_init();
     ksocket_init();
@@ -168,7 +180,7 @@ int init_start(const struct boot_info* bi) {
      * existing entry so this is a harmless overlap. */
     fs_node_t* dev = devfs_create_root();
     if (dev) {
-        (void)vfs_mount_full("/dev", dev, "devfs", "none", 0);
+        (void)vfs_mount_full("/dev", dev, "devfs", "none", 0, NULL);
     }
 
     vbe_register_devfs();
@@ -176,7 +188,7 @@ int init_start(const struct boot_info* bi) {
 
     fs_node_t* proc = procfs_create_root();
     if (proc) {
-        (void)vfs_mount_full("/proc", proc, "procfs", "none", 0);
+        (void)vfs_mount_full("/proc", proc, "procfs", "none", 0, NULL);
     }
 
     /* Initialize ATA subsystem — probe all 4 drives
@@ -200,15 +212,16 @@ int init_start(const struct boot_info* bi) {
      * has disk access.  /etc/fstab parsing is now done by /sbin/init. */
     const char* root_dev = cmdline_get("root");
     if (root_dev) {
-        int drive = -1;
+        const char* devname = root_dev;
         if (strncmp(root_dev, "/dev/", 5) == 0)
-            drive = ata_name_to_drive(root_dev + 5);
-        if (drive >= 0 && ata_pio_drive_present(drive)) {
+            devname = root_dev + 5;
+        const block_device_t* bdev = blockdev_find(devname);
+        if (bdev) {
             /* Auto-detect: try ext2, then fat (non-destructive probes). */
             static const char* fstypes[] = { "ext2", "fat", NULL };
             int mounted = 0;
             for (int i = 0; fstypes[i]; i++) {
-                if (init_mount_fs(fstypes[i], drive, 0, "/disk", 0) == 0) {
+                if (init_mount_fs(fstypes[i], bdev, 0, "/disk", 0) == 0) {
                     kprintf("[INIT] root=%s mounted as %s on /disk\n",
                             root_dev, fstypes[i]);
                     mounted = 1;
@@ -220,13 +233,16 @@ int init_start(const struct boot_info* bi) {
         } else {
             kprintf("[INIT] root=%s: device not found\n", root_dev);
         }
-    } else if (ata_pio_drive_present(0)) {
-        /* No root= on cmdline, but primary master is present — auto-mount */
-        static const char* fstypes[] = { "ext2", "fat", NULL };
-        for (int i = 0; fstypes[i]; i++) {
-            if (init_mount_fs(fstypes[i], 0, 0, "/disk", 0) == 0) {
-                kprintf("[INIT] /dev/hda auto-mounted as %s on /disk\n", fstypes[i]);
-                break;
+    } else {
+        /* No root= on cmdline — try to auto-mount primary master if present */
+        const block_device_t* bdev = blockdev_find("hda");
+        if (bdev) {
+            static const char* fstypes[] = { "ext2", "fat", NULL };
+            for (int i = 0; fstypes[i]; i++) {
+                if (init_mount_fs(fstypes[i], bdev, 0, "/disk", 0) == 0) {
+                    kprintf("[INIT] /dev/hda auto-mounted as %s on /disk\n", fstypes[i]);
+                    break;
+                }
             }
         }
     }

@@ -51,6 +51,21 @@ const block_device_t* blockdev_by_id(int drive_id) {
     return NULL;
 }
 
+void blockdev_claim(const block_device_t* dev) {
+    if (!dev) return;
+    /* Cast away const since we need to modify refcount */
+    block_device_t* mutable_dev = (block_device_t*)dev;
+    mutable_dev->refcount++;
+}
+
+void blockdev_release(const block_device_t* dev) {
+    if (!dev) return;
+    /* Cast away const since we need to modify refcount */
+    block_device_t* mutable_dev = (block_device_t*)dev;
+    if (mutable_dev->refcount > 0)
+        mutable_dev->refcount--;
+}
+
 /* ---- ATA block device ops ---- */
 
 static int ata_bd_read(const block_device_t* dev, uint32_t lba, void* buf) {

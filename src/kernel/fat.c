@@ -1118,17 +1118,15 @@ static int fat_truncate_impl(struct fs_node* node, uint32_t length) {
 
 /* ---- Mount ---- */
 
-fs_node_t* fat_mount(int drive, uint32_t partition_lba) {
-    /* Look up block device by drive ID */
-    const block_device_t* bdev = blockdev_by_id(drive);
+fs_node_t* fat_mount(const block_device_t* bdev, uint32_t partition_lba) {
     if (!bdev) {
-        kprintf("[FAT] No block device for drive %d\n", drive);
+        kprintf("[FAT] No block device provided\n");
         return NULL;
     }
 
     /* Store bdev early so fat_read_sector can use it */
     g_fat.bdev = bdev;
-    g_fat.drive = drive;
+    g_fat.drive = bdev->drive_id;
 
     uint8_t boot_sec[FAT_SECTOR_SIZE];
     if (fat_read_sector(partition_lba, boot_sec) < 0) {
@@ -1149,7 +1147,7 @@ fs_node_t* fat_mount(int drive, uint32_t partition_lba) {
 
     memset(&g_fat, 0, sizeof(g_fat));
     g_fat.bdev = bdev;
-    g_fat.drive = drive;
+    g_fat.drive = bdev->drive_id;
     g_fat.part_lba = partition_lba;
     g_fat.bytes_per_sector = bpb->bytes_per_sector;
     g_fat.sectors_per_cluster = bpb->sectors_per_cluster;

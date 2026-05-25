@@ -30,6 +30,7 @@ struct vfs_mount {
     char source[64];     /* e.g. "/dev/hda", "none", "initrd" */
     unsigned long flags; /* MS_RDONLY, MS_NOSUID, etc. */
     int refcount;        /* number of open files on this mount */
+    const block_device_t* bdev; /* block device (NULL for virtual FS) */
     fs_node_t* root;
 };
 
@@ -74,7 +75,7 @@ static void normalize_mountpoint(const char* in, char* out, size_t out_sz) {
 
 int vfs_mount_nolock_full(const char* mountpoint, fs_node_t* root,
                             const char* fstype, const char* source,
-                            unsigned long flags) {
+                            unsigned long flags, const block_device_t* bdev) {
     char mp[128];
     normalize_mountpoint(mountpoint, mp, sizeof(mp));
 
@@ -92,6 +93,7 @@ int vfs_mount_nolock_full(const char* mountpoint, fs_node_t* root,
             }
             /* Always update flags on remount (even if 0, caller explicitly set them) */
             g_mounts[i].flags = flags;
+            g_mounts[i].bdev = bdev;
             return 0;
         }
     }
@@ -115,25 +117,26 @@ int vfs_mount_nolock_full(const char* mountpoint, fs_node_t* root,
         g_mounts[g_mount_count].source[0] = '\0';
     }
     g_mounts[g_mount_count].flags = flags;
+    g_mounts[g_mount_count].bdev = bdev;
     g_mount_count++;
     return 0;
 }
 
 int vfs_mount_nolock(const char* mountpoint, fs_node_t* root) {
-    return vfs_mount_nolock_full(mountpoint, root, NULL, NULL, 0);
+    return vfs_mount_nolock_full(mountpoint, root, NULL, NULL, 0, NULL);
 }
 
 int vfs_mount_full(const char* mountpoint, fs_node_t* root,
                     const char* fstype, const char* source,
-                    unsigned long flags) {
+                    unsigned long flags, const block_device_t* bdev) {
     uintptr_t fl = spin_lock_irqsave(&g_vfs_lock);
-    int ret = vfs_mount_nolock_full(mountpoint, root, fstype, source, flags);
+    int ret = vfs_mount_nolock_full(mountpoint, root, fstype, source, flags, bdev);
     spin_unlock_irqrestore(&g_vfs_lock, fl);
     return ret;
 }
 
 int vfs_mount(const char* mountpoint, fs_node_t* root) {
-    return vfs_mount_full(mountpoint, root, NULL, NULL, 0);
+    return vfs_mount_full(mountpoint, root, NULL, NULL, 0, NULL);
 }
 
 int vfs_umount_nolock(const char* mountpoint) {
@@ -166,6 +169,11 @@ int vfs_umount_nolock(const char* mountpoint) {
             other[mplen] == '/') {
             return -EBUSY;  /* child mount still active */
         }
+    }
+
+    /* Release the block device */
+    if (g_mounts[idx].bdev) {
+        blockdev_release(g_mounts[idx].bdev);
     }
 
     for (int j = idx; j < g_mount_count - 1; j++)
@@ -485,6 +493,8 @@ int vfs_rename(const char* old_path, const char* new_path) {
 
 int vfs_truncate(const char* path, uint32_t length) {
     if (!path) return -EINVAL;
+    int rc = vfs_require_writable_path(path);
+    if (rc < 0) return rc;
     fs_node_t* node = vfs_lookup(path);
     if (!node) return -ENOENT;
     if (node->flags != FS_FILE) return -EISDIR;
@@ -606,4 +616,13 @@ void vfs_mount_unref(fs_node_t* mount_root) {
         }
     }
     spin_unlock_irqrestore(&g_vfs_lock, fl);
+}
+
+/* Check if the filesystem containing the given path is writable.
+ * Returns 0 if writable, -EROFS if MS_RDONLY is set. */
+int vfs_require_writable_path(const char* path) {
+    if (!path) return -EINVAL;
+    unsigned long mflags = vfs_mount_flags(path);
+    if (mflags & MS_RDONLY) return -EROFS;
+    return 0;
 }

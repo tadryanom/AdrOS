@@ -22,5 +22,6 @@ int  virtio_blk_write(uint64_t sector, const void* buf, uint32_t count);
 uint64_t virtio_blk_capacity(void);
 
 void virtio_blk_driver_register(void);
+void virtio_blk_register_blockdev(void);
 
 #endif

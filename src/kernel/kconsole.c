@@ -350,21 +350,18 @@ static void kconsole_mount(const char* args) {
         return;
     }
 
-    /* Resolve device to drive ID */
-    int drive = -1;
+    /* Resolve device to block device */
+    const char* devname = device;
     if (strncmp(device, "/dev/", 5) == 0) {
-        drive = ata_name_to_drive(device + 5);
+        devname = device + 5;
     }
-    if (drive < 0) {
+    const block_device_t* bdev = blockdev_find(devname);
+    if (!bdev) {
         kprintf("mount: unknown device: %s\n", device);
         return;
     }
-    if (!ata_pio_drive_present(drive)) {
-        kprintf("mount: device %s not present\n", device);
-        return;
-    }
 
-    (void)init_mount_fs(fstype, drive, 0, mountpoint, 0);
+    (void)init_mount_fs(fstype, bdev, 0, mountpoint, 0);
 }
 
 static void kconsole_exec(const char* cmd) {

@@ -261,6 +261,9 @@ set patterns {
     {"named semaphore"     "\\[test\\] named semaphore OK"}
     {"getrusage"           "\\[test\\] getrusage OK"}
     {"mount/umount2"       "\\[test\\] mount/umount2 OK"}
+    {"MS_RDONLY enforcement" "\\[test\\] MS_RDONLY enforcement OK"}
+    {"MS_NODEV enforcement"  "\\[test\\] MS_NODEV enforcement OK"}
+    {"busy umount"          "\\[test\\] busy umount OK"}
     {"sigqueue"            "\\[test\\] sigqueue OK"}
     {"clone"               "\\[test\\] clone OK"}
     {"inotify_init1"       "\\[test\\] inotify_init1 OK"}

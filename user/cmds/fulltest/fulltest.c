@@ -267,6 +267,7 @@ enum {
 };
 
 enum {
+    O_RDONLY  = 0x00,
     O_WRONLY  = 0x01,
     O_RDWR    = 0x02,
     O_CREAT   = 0x40,
@@ -1627,6 +1628,15 @@ static int sys_execveat(int dirfd, const char* path, const char* const* argv, co
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYSCALL_EXECVEAT), "b"(dirfd), "c"(path), "d"(argv), "S"(envp), "D"(flags) : "memory");
     return __syscall_fix(ret);
 }
+
+/* mount flags — must match kernel include/fs.h */
+enum {
+    MS_RDONLY  = 1,
+    MS_NOSUID  = 2,
+    MS_NODEV   = 4,
+    MS_NOEXEC  = 8,
+    MS_REMOUNT = 32,
+};
 
 /* clone flags — must match kernel include/process.h */
 enum {
@@ -5006,6 +5016,120 @@ void _start(void) {
         }
         sys_write(1, "[test] mount/umount2 OK\n",
                   (uint32_t)(sizeof("[test] mount/umount2 OK\n") - 1));
+    }
+
+    // I13: MS_RDONLY enforcement — write operations should fail
+    {
+        (void)sys_mkdir("/tmp/mnt_ro");
+        if (sys_mount("none", "/tmp/mnt_ro", "tmpfs", MS_RDONLY) < 0) {
+            sys_write(1, "[test] mount ro failed\n",
+                      (uint32_t)(sizeof("[test] mount ro failed\n") - 1));
+            sys_exit(1);
+        }
+        /* O_CREAT should fail on read-only mount */
+        int fd = sys_openat(AT_FDCWD, "/tmp/mnt_ro/test.txt", O_CREAT | O_RDWR, 0644);
+        if (fd >= 0) {
+            sys_write(1, "[test] ro: O_CREAT should fail\n",
+                      (uint32_t)(sizeof("[test] ro: O_CREAT should fail\n") - 1));
+            sys_exit(1);
+        }
+        /* mkdir should fail */
+        if (sys_mkdir("/tmp/mnt_ro/subdir") >= 0) {
+            sys_write(1, "[test] ro: mkdir should fail\n",
+                      (uint32_t)(sizeof("[test] ro: mkdir should fail\n") - 1));
+            sys_exit(1);
+        }
+        /* unlink should fail */
+        if (sys_unlinkat(AT_FDCWD, "/tmp/mnt_ro/test.txt", 0) >= 0) {
+            sys_write(1, "[test] ro: unlink should fail\n",
+                      (uint32_t)(sizeof("[test] ro: unlink should fail\n") - 1));
+            sys_exit(1);
+        }
+        /* rmdir should fail */
+        if (sys_rmdir("/tmp/mnt_ro/subdir") >= 0) {
+            sys_write(1, "[test] ro: rmdir should fail\n",
+                      (uint32_t)(sizeof("[test] ro: rmdir should fail\n") - 1));
+            sys_exit(1);
+        }
+        /* rename should fail */
+        if (sys_rename("/tmp/mnt_ro/a", "/tmp/mnt_ro/b") >= 0) {
+            sys_write(1, "[test] ro: rename should fail\n",
+                      (uint32_t)(sizeof("[test] ro: rename should fail\n") - 1));
+            sys_exit(1);
+        }
+        /* chmod should fail */
+        if (sys_chmod("/tmp/mnt_ro/test.txt", 0755) >= 0) {
+            sys_write(1, "[test] ro: chmod should fail\n",
+                      (uint32_t)(sizeof("[test] ro: chmod should fail\n") - 1));
+            sys_exit(1);
+        }
+        /* chown should fail */
+        if (sys_chown("/tmp/mnt_ro/test.txt", 0, 0) >= 0) {
+            sys_write(1, "[test] ro: chown should fail\n",
+                      (uint32_t)(sizeof("[test] ro: chown should fail\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_umount2("/tmp/mnt_ro") < 0) {
+            sys_write(1, "[test] umount ro failed\n",
+                      (uint32_t)(sizeof("[test] umount ro failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[test] MS_RDONLY enforcement OK\n",
+                  (uint32_t)(sizeof("[test] MS_RDONLY enforcement OK\n") - 1));
+    }
+
+    // I14: MS_NODEV enforcement — device nodes should be inaccessible
+    {
+        (void)sys_mkdir("/tmp/mnt_nodev");
+        if (sys_mount("none", "/tmp/mnt_nodev", "devfs", MS_NODEV) < 0) {
+            sys_write(1, "[test] mount nodev failed\n",
+                      (uint32_t)(sizeof("[test] mount nodev failed\n") - 1));
+            sys_exit(1);
+        }
+        /* Opening a device node on nodev mount should fail */
+        int fd = sys_openat(AT_FDCWD, "/tmp/mnt_nodev/tty0", O_RDONLY, 0);
+        if (fd >= 0) {
+            sys_write(1, "[test] nodev: device open should fail\n",
+                      (uint32_t)(sizeof("[test] nodev: device open should fail\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_umount2("/tmp/mnt_nodev") < 0) {
+            sys_write(1, "[test] umount nodev failed\n",
+                      (uint32_t)(sizeof("[test] umount nodev failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[test] MS_NODEV enforcement OK\n",
+                  (uint32_t)(sizeof("[test] MS_NODEV enforcement OK\n") - 1));
+    }
+
+    // I15: Busy umount — umount should fail with open file
+    {
+        (void)sys_mkdir("/tmp/mnt_busy");
+        if (sys_mount("none", "/tmp/mnt_busy", "tmpfs", 0) < 0) {
+            sys_write(1, "[test] mount busy failed\n",
+                      (uint32_t)(sizeof("[test] mount busy failed\n") - 1));
+            sys_exit(1);
+        }
+        int fd = sys_openat(AT_FDCWD, "/tmp/mnt_busy/test.txt", O_CREAT | O_RDWR, 0644);
+        if (fd < 0) {
+            sys_write(1, "[test] busy: file create failed\n",
+                      (uint32_t)(sizeof("[test] busy: file create failed\n") - 1));
+            sys_exit(1);
+        }
+        /* umount should fail because file is open */
+        if (sys_umount2("/tmp/mnt_busy") >= 0) {
+            sys_write(1, "[test] busy: umount should fail with open file\n",
+                      (uint32_t)(sizeof("[test] busy: umount should fail with open file\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+        if (sys_umount2("/tmp/mnt_busy") < 0) {
+            sys_write(1, "[test] umount busy failed\n",
+                      (uint32_t)(sizeof("[test] umount busy failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[test] busy umount OK\n",
+                  (uint32_t)(sizeof("[test] busy umount OK\n") - 1));
     }
 
     // I13: clone — create a thread sharing address space
