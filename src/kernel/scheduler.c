@@ -388,6 +388,14 @@ int process_kill(uint32_t pid, int sig) {
         return 0;
     }
 
+    /* A06: permission check (POSIX) — sender must be root or same uid */
+    if (current_process && current_process->euid != 0) {
+        if (current_process->euid != p->uid && current_process->uid != p->uid) {
+            spin_unlock_irqrestore(&sched_lock, flags);
+            return -EPERM;
+        }
+    }
+
     if (sig == SIG_KILL) {
         /* Remove from runqueue/sleep queue BEFORE marking ZOMBIE */
         if (p->state == PROCESS_READY) {
@@ -435,6 +443,11 @@ int process_kill_pgrp(uint32_t pgrp, int sig) {
         const struct process* const start = it;
         do {
             if (it->pgrp_id == pgrp && it->pid != 0 && it->state != PROCESS_ZOMBIE) {
+                /* A06: permission check — skip processes not owned by sender */
+                if (current_process && current_process->euid != 0) {
+                    if (current_process->euid != it->uid && current_process->uid != it->uid)
+                        continue;
+                }
                 it->sig_pending_mask |= (1U << (uint32_t)sig);
                 if (it->state == PROCESS_BLOCKED || it->state == PROCESS_SLEEPING) {
                     sleep_queue_remove(it);

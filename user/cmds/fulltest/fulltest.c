@@ -1781,7 +1781,7 @@ void _start(void) {
         sys_exit(1);
     }
 
-    fd = sys_open("/sbin/fulltest", 0);
+    fd = sys_open("/sbin/fulltest", 2);  /* O_RDWR — need write for overlay cow */
     if (fd < 0) {
         sys_write(1, "[test] overlay open failed\n",
                   (uint32_t)(sizeof("[test] overlay open failed\n") - 1));
@@ -1808,7 +1808,7 @@ void _start(void) {
         sys_exit(1);
     }
 
-    fd = sys_open("/sbin/fulltest", 0);
+    fd = sys_open("/sbin/fulltest", 2);  /* O_RDWR */
     if (fd < 0) {
         sys_write(1, "[test] overlay open2 failed\n",
                   (uint32_t)(sizeof("[test] overlay open2 failed\n") - 1));
@@ -1888,7 +1888,7 @@ void _start(void) {
     sys_write(1, "[test] lseek/stat/fstat OK\n",
               (uint32_t)(sizeof("[test] lseek/stat/fstat OK\n") - 1));
 
-    fd = sys_open("/tmp/hello.txt", 0);
+    fd = sys_open("/tmp/hello.txt", 2);  /* O_RDWR — need write for dup2 redirect */
     if (fd < 0) {
         sys_write(1, "[test] tmpfs open failed\n",
                   (uint32_t)(sizeof("[test] tmpfs open failed\n") - 1));
@@ -2534,7 +2534,7 @@ void _start(void) {
         sys_exit(1);
     }
 
-    fd = sys_open("/tmp/hello.txt", 0);
+    fd = sys_open("/tmp/hello.txt", 2);  /* O_RDWR — need write for append test */
     if (fd < 0) {
         sys_write(1, "[test] tmpfs open3 failed\n",
                   (uint32_t)(sizeof("[test] tmpfs open3 failed\n") - 1));
@@ -2778,7 +2778,7 @@ void _start(void) {
         }
 
         // Create file using relative path.
-        int fd = sys_open("rel", O_CREAT | O_TRUNC);
+        int fd = sys_open("rel", O_CREAT | O_TRUNC | 1);
         if (fd < 0) {
             sys_write(1, "[test] open relative failed\n",
                       (uint32_t)(sizeof("[test] open relative failed\n") - 1));
@@ -2834,7 +2834,7 @@ void _start(void) {
     // B9: rename + rmdir smoke (rename may be ENOSYS on tmpfs)
     {
         // Create a file, rename it, verify old gone and new exists.
-        int fd = sys_open("/tmp/rnold", O_CREAT | O_TRUNC);
+        int fd = sys_open("/tmp/rnold", O_CREAT | O_TRUNC | 1);
         if (fd < 0) {
             sys_write(1, "[test] rename: create failed\n",
                       (uint32_t)(sizeof("[test] rename: create failed\n") - 1));
@@ -3044,7 +3044,7 @@ void _start(void) {
 
     // C7: pread/pwrite (positional I/O)
     {
-        int fd = sys_open("/tmp/preadtest", O_CREAT | O_TRUNC);
+        int fd = sys_open("/tmp/preadtest", O_CREAT | O_TRUNC | 2);  /* O_RDWR */
         if (fd < 0) {
             sys_write(1, "[test] pread test open failed\n", (uint32_t)(sizeof("[test] pread test open failed\n") - 1));
             sys_exit(1);
@@ -3076,7 +3076,7 @@ void _start(void) {
 
     // C8: ftruncate (may be ENOSYS on tmpfs)
     {
-        int fd = sys_open("/tmp/trunctest", O_CREAT | O_TRUNC);
+        int fd = sys_open("/tmp/trunctest", O_CREAT | O_TRUNC | 1);
         if (fd < 0) {
             sys_write(1, "[test] truncate open failed\n", (uint32_t)(sizeof("[test] truncate open failed\n") - 1));
             sys_exit(1);
@@ -3222,7 +3222,7 @@ void _start(void) {
 
     // C14: O_APPEND
     {
-        int fd = sys_open("/tmp/appendtest", O_CREAT | O_TRUNC);
+        int fd = sys_open("/tmp/appendtest", O_CREAT | O_TRUNC | 1);
         if (fd < 0) {
             sys_write(1, "[test] O_APPEND create failed\n", (uint32_t)(sizeof("[test] O_APPEND create failed\n") - 1));
             sys_exit(1);
@@ -3230,7 +3230,7 @@ void _start(void) {
         (void)sys_write(fd, "AAA", 3);
         (void)sys_close(fd);
 
-        fd = sys_open("/tmp/appendtest", O_APPEND);
+        fd = sys_open("/tmp/appendtest", O_APPEND | 1);  /* O_WRONLY */
         if (fd < 0) {
             sys_write(1, "[test] O_APPEND open failed\n", (uint32_t)(sizeof("[test] O_APPEND open failed\n") - 1));
             sys_exit(1);
@@ -3380,7 +3380,7 @@ void _start(void) {
 
     // C21: hard link (skip gracefully if FS doesn't support it)
     {
-        int fd = sys_open("/tmp/linkoriginal", O_CREAT | O_TRUNC);
+        int fd = sys_open("/tmp/linkoriginal", O_CREAT | O_TRUNC | 1);
         if (fd >= 0) {
             (void)sys_write(fd, "LNK", 3);
             (void)sys_close(fd);
@@ -3537,7 +3537,7 @@ void _start(void) {
 
     // C24: aio_read/aio_write smoke
     {
-        int fd = sys_open("/tmp/aiotest", O_CREAT | O_TRUNC);
+        int fd = sys_open("/tmp/aiotest", O_CREAT | O_TRUNC | 1);
         if (fd < 0) {
             sys_write(1, "[test] aio open failed\n", (uint32_t)(sizeof("[test] aio open failed\n") - 1));
             sys_exit(1);
@@ -3719,7 +3719,7 @@ void _start(void) {
 
     // D7: fsync
     {
-        int fd = sys_open("/tmp/fsynctest", O_CREAT | O_TRUNC);
+        int fd = sys_open("/tmp/fsynctest", O_CREAT | O_TRUNC | 1);
         if (fd < 0) {
             sys_write(1, "[test] fsync open failed\n", (uint32_t)(sizeof("[test] fsync open failed\n") - 1));
             sys_exit(1);
@@ -3757,7 +3757,7 @@ void _start(void) {
 
     // D8: truncate (path-based, may be ENOSYS on tmpfs)
     {
-        int fd = sys_open("/tmp/truncpath", O_CREAT | O_TRUNC);
+        int fd = sys_open("/tmp/truncpath", O_CREAT | O_TRUNC | 1);
         if (fd < 0) {
             sys_write(1, "[test] truncate open failed\n", (uint32_t)(sizeof("[test] truncate open failed\n") - 1));
             sys_exit(1);
@@ -3788,7 +3788,7 @@ void _start(void) {
 
     // D10: chmod (may be ENOSYS on some FS)
     {
-        int fd = sys_open("/tmp/chmodtest", O_CREAT | O_TRUNC);
+        int fd = sys_open("/tmp/chmodtest", O_CREAT | O_TRUNC | 1);
         if (fd >= 0) {
             (void)sys_close(fd);
             int r = sys_chmod("/tmp/chmodtest", 0755);
@@ -3803,7 +3803,7 @@ void _start(void) {
 
     // D11: flock (LOCK_EX=2, LOCK_UN=8)
     {
-        int fd = sys_open("/tmp/flocktest", O_CREAT | O_TRUNC);
+        int fd = sys_open("/tmp/flocktest", O_CREAT | O_TRUNC | 1);
         if (fd < 0) {
             sys_write(1, "[test] flock open failed\n", (uint32_t)(sizeof("[test] flock open failed\n") - 1));
             sys_exit(1);
