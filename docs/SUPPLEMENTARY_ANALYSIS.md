@@ -108,9 +108,9 @@ Unix-like, POSIX-compatible operating system.
 | USTAR InitRD parser | ✅ Full implementation | ❌ Custom binary format (`mkinitrd`) | Different approach, both work |
 | LZ4 decompression | ✅ Decompress initrd.tar.lz4 | ✅ LZ4 frame decompression (`src/kernel/lz4.c`) | None |
 | `pivot_root` | ✅ `sys_pivot_root()` | ✅ Swaps root filesystem, mounts old root at specified path | None |
-| Multiple FS types | ✅ USTAR + FAT | ✅ tmpfs + devfs + overlayfs + diskfs + persistfs + procfs + FAT12/16/32 + ext2 + initrd | **AdrOS is ahead** |
+| Multiple FS types | ✅ USTAR + FAT | ✅ tmpfs + devfs + overlayfs + procfs + FAT12/16/32 + ext2 + initrd | **AdrOS is ahead** |
 | `readdir` generic | Mentioned | ✅ All FS types implement `readdir` callback | None |
-| Hard links | Mentioned | ✅ `diskfs_link()` with shared data blocks and `nlink` tracking | None |
+| Hard links | Mentioned | ✅ ext2 `link()` with shared data blocks and `nlink` tracking | None |
 
 **Summary:** AdrOS VFS is **significantly more advanced** than the supplementary material suggests. It has 9+ filesystem types (including FAT12/16/32, ext2, and procfs), overlayfs, hard links, symlinks, and generic readdir.
 
@@ -224,7 +224,7 @@ for the full list. All previously identified Tier 1/2/3 gaps have been resolved.
 1. **Process model** — `fork` (CoW), `execve`, `waitpid`, `exit`, `getpid`, `getppid`, `setsid`, `setpgid`, `getpgrp`, `brk`, `setuid`/`setgid`/`seteuid`/`setegid`/`getuid`/`getgid`/`geteuid`/`getegid`, `alarm`, `times`, `futex` — all working
 2. **File I/O** — `open`, `read`, `write`, `close`, `lseek`, `stat`, `fstat`, `dup`, `dup2`, `dup3`, `pipe`, `pipe2`, `fcntl`, `getdents`, `pread`/`pwrite`, `readv`/`writev`, `truncate`/`ftruncate`, `fsync`, `O_CLOEXEC`, `O_APPEND`, `FD_CLOEXEC` — comprehensive
 3. **Signals** — `sigaction`, `sigprocmask`, `kill`, `sigreturn`, `raise`, `sigpending`, `sigsuspend`, `sigaltstack`, Ctrl+C/Z/D signal chars — **complete**
-4. **VFS** — 9+ filesystem types (tmpfs, devfs, overlayfs, diskfs, persistfs, procfs, FAT12/16/32, ext2, initrd), mount table, path resolution, hard links, symlinks — excellent
+4. **VFS** — 7+ filesystem types (tmpfs, devfs, overlayfs, procfs, FAT12/16/32, ext2, initrd), mount table, path resolution, hard links, symlinks — excellent
 5. **TTY/PTY** — Line discipline, raw mode, job control, signal chars, `TIOCGWINSZ`, PTY, VMIN/VTIME — very good
 6. **Select/Poll/Epoll** — Working for pipes, TTY, PTY, `/dev/null`, sockets, regular files; epoll scalable I/O notification
 7. **Memory management** — PMM (spinlock + refcount + contiguous alloc), VMM (CoW, recursive PD, PAE+NX), Buddy Allocator heap (8MB), slab allocator, SMEP+SMAP, shared memory, guard pages (user + kernel stacks), ASLR, vDSO, fd-backed mmap
@@ -273,7 +273,7 @@ for the full list. All previously identified Tier 1/2/3 gaps have been resolved.
 | **Boot flow** | GRUB → Stub (LZ4) → Kernel → USTAR InitRD | GRUB → Kernel → USTAR+LZ4 InitRD → OverlayFS | **Comparable** |
 | **Memory architecture** | PMM + Slab + CoW + Zero-Copy DMA | PMM (spinlock+refcount+contig) + Slab + CoW + Heap (64MB) + SMEP/SMAP + PAE/NX + ASLR + Guard pages + vDSO + Zero-copy DMA | **AdrOS is more advanced** |
 | **Scheduler** | O(1) with bitmap + active/expired arrays | O(1) with bitmap + active/expired, 32 levels, decay-based priority, per-CPU infra | **Comparable** |
-| **VFS** | USTAR + FAT (planned) | tmpfs + devfs + overlayfs + diskfs + persistfs + procfs + FAT12/16/32 + ext2 | **AdrOS is more advanced** |
+| **VFS** | USTAR + FAT (planned) | tmpfs + devfs + overlayfs + procfs + FAT12/16/32 + ext2 | **AdrOS is more advanced** |
 | **Syscall interface** | int 0x80 + SYSENTER + vDSO | int 0x80 + SYSENTER + vDSO shared page | **Comparable** |
 | **Signal handling** | Basic trampoline concept | Full SA_SIGINFO + sigreturn + sigframe + signal chars | **AdrOS is more advanced** |
 | **TTY/PTY** | Basic circular buffer | Full PTY + raw mode + job control + signal chars + TIOCGWINSZ | **AdrOS is more advanced** |
@@ -304,7 +304,7 @@ for the full list. All previously identified Tier 1/2/3 gaps have been resolved.
 15. ~~Networking (E1000 + lwIP + sockets)~~ ✅ TCP + UDP + DNS
 16. ~~Threads (`clone`/`pthread`)~~ ✅ + futex
 17. ~~Permissions (`chmod`/`chown`/`access`/`umask`/`setuid`/`setgid`/`seteuid`/`setegid`/`getuid`/`getgid`/`geteuid`/`getegid` + VFS enforcement)~~ ✅
-18. ~~Hard links~~ ✅ `diskfs_link()` with `nlink` tracking
+18. ~~Hard links~~ ✅ ext2 `link()` with `nlink` tracking
 19. ~~`pread`/`pwrite`/`readv`/`writev`~~ ✅
 20. ~~`sigpending`/`sigsuspend`/`sigaltstack`~~ ✅
 21. ~~`alarm`/`SIGALRM`~~ ✅

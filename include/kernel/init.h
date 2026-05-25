@@ -16,7 +16,7 @@
 int init_start(const struct boot_info* bi);
 
 /* Mount a filesystem on the given ATA drive at the given mountpoint.
- * fstype: "diskfs", "fat", "ext2", "persistfs"
+ * fstype: "fat", "ext2"
  * drive: ATA_DEV_PRIMARY_MASTER .. ATA_DEV_SECONDARY_SLAVE
  * lba: partition start LBA (0 for whole disk)
  * mountpoint: e.g. "/disk", "/fat", "/ext2"

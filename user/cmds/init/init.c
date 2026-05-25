@@ -295,7 +295,7 @@ static void mount_virtual_fs(void) {
 
 /* Parse /etc/fstab and mount disk-based filesystems.
  * Format: device mountpoint fstype options
- * Example: /dev/hda /disk diskfs defaults
+ * Example: /dev/hda /disk ext2 defaults
  * Migrated from kernel init_parse_fstab() to userspace. */
 static void parse_fstab(void) {
     int fd = open("/etc/fstab", O_RDONLY);
@@ -336,6 +336,12 @@ static void parse_fstab(void) {
         char fstype[32] = {0};
         { char* s = p; while (*p && *p != ' ' && *p != '\t' && *p != '\n') p++;
           int len = (int)(p - s); if (len > 31) len = 31; memcpy(fstype, s, (size_t)len); }
+        while (*p == ' ' || *p == '\t') p++;
+
+        /* options (comma-separated: ro,rw,nosuid,nodev,noexec,defaults) */
+        char options[128] = {0};
+        { char* s = p; while (*p && *p != ' ' && *p != '\t' && *p != '\n') p++;
+          int len = (int)(p - s); if (len > 127) len = 127; memcpy(options, s, (size_t)len); }
 
         /* Skip rest of line */
         while (*p && *p != '\n') p++;
@@ -349,7 +355,28 @@ static void parse_fstab(void) {
         /* Skip if already mounted */
         if (is_mounted(mountpoint)) continue;
 
-        if (mount(device, mountpoint, fstype, 0, NULL) < 0) {
+        /* Parse options into mount flags */
+        unsigned long mflags = 0;
+        if (options[0] != '\0' && strcmp(options, "defaults") != 0) {
+            char optcopy[128];
+            strncpy(optcopy, options, sizeof(optcopy) - 1);
+            optcopy[sizeof(optcopy) - 1] = '\0';
+            char* tok = optcopy;
+            while (*tok) {
+                char* comma = tok;
+                while (*comma && *comma != ',') comma++;
+                int is_last = (*comma == '\0');
+                if (*comma == ',') *comma = '\0';
+                if (strcmp(tok, "ro") == 0)          mflags |= MS_RDONLY;
+                else if (strcmp(tok, "nosuid") == 0) mflags |= MS_NOSUID;
+                else if (strcmp(tok, "nodev") == 0)  mflags |= MS_NODEV;
+                else if (strcmp(tok, "noexec") == 0)  mflags |= MS_NOEXEC;
+                if (is_last) break;
+                tok = comma + 1;
+            }
+        }
+
+        if (mount(device, mountpoint, fstype, mflags, NULL) < 0) {
             fprintf(stderr, "init: mount %s on %s (%s) failed\n",
                     device, mountpoint, fstype);
         } else {

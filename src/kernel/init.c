@@ -19,8 +19,7 @@
 #include "devfs.h"
 #include "tty.h"
 #include "pty.h"
-#include "persistfs.h"
-#include "diskfs.h"
+/* diskfs and persistfs removed — use fat/ext2 for disk storage */
 #include "procfs.h"
 #include "fat.h"
 #include "ext2.h"
@@ -35,6 +34,7 @@
 #include "utils.h"
 
 #include "ata_pio.h"
+#include "blockdev.h"
 #include "hal/mm.h"
 #include "heap.h"
 #include "kernel/cmdline.h"
@@ -47,14 +47,10 @@
 int init_mount_fs(const char* fstype, int drive, uint32_t lba, const char* mountpoint, unsigned long flags) {
     fs_node_t* root = NULL;
 
-    if (strcmp(fstype, "diskfs") == 0) {
-        root = diskfs_create_root(drive);
-    } else if (strcmp(fstype, "fat") == 0) {
+    if (strcmp(fstype, "fat") == 0) {
         root = fat_mount(drive, lba);
     } else if (strcmp(fstype, "ext2") == 0) {
         root = ext2_mount(drive, lba);
-    } else if (strcmp(fstype, "persistfs") == 0) {
-        root = persistfs_create_root(drive);
     } else {
         kprintf("[MOUNT] Unknown filesystem type: %s\n", fstype);
         return -EINVAL;
@@ -143,10 +139,8 @@ int init_start(const struct boot_info* bi) {
         if (rc < 0 && rc != -EEXIST) kprintf("[INIT] mkdir /dev failed: %d\n", rc);
         rc = vfs_mkdir("/proc");
         if (rc < 0 && rc != -EEXIST) kprintf("[INIT] mkdir /proc failed: %d\n", rc);
-        rc = vfs_mkdir("/disk");
-        if (rc < 0 && rc != -EEXIST) kprintf("[INIT] mkdir /disk failed: %d\n", rc);
-        rc = vfs_mkdir("/persist");
-        if (rc < 0 && rc != -EEXIST) kprintf("[INIT] mkdir /persist failed: %d\n", rc);
+        /* /disk and /persist directories are created by userspace init
+         * or by fstab-driven mount — no longer created by kernel */
     }
 
     fs_node_t* tmp = tmpfs_create_root();
@@ -193,6 +187,9 @@ int init_start(const struct boot_info* bi) {
     extern void ata_register_devfs(void);
     ata_register_devfs();
 
+    /* Register ATA drives as generic block devices (used by fat/ext2) */
+    blockdev_register_ata();
+
     /* If root= is specified on the kernel command line, mount that device
      * as the disk root filesystem.  The filesystem type is auto-detected
      * by trying each supported type in order.
@@ -207,18 +204,10 @@ int init_start(const struct boot_info* bi) {
         if (strncmp(root_dev, "/dev/", 5) == 0)
             drive = ata_name_to_drive(root_dev + 5);
         if (drive >= 0 && ata_pio_drive_present(drive)) {
-            /* Auto-detect: try ext2, fat first (non-destructive), then diskfs.
-             * diskfs_probe() is non-destructive — it only checks the magic
-             * without formatting.  diskfs_create_root() no longer auto-formats;
-             * use 'mkfs diskfs /dev/hdX' from kconsole to create a new fs. */
-            static const char* fstypes[] = { "ext2", "fat", "diskfs", NULL };
+            /* Auto-detect: try ext2, then fat (non-destructive probes). */
+            static const char* fstypes[] = { "ext2", "fat", NULL };
             int mounted = 0;
             for (int i = 0; fstypes[i]; i++) {
-                if (strcmp(fstypes[i], "diskfs") == 0) {
-                    /* Non-destructive probe first — skip if not diskfs */
-                    extern int diskfs_probe(int drive);
-                    if (diskfs_probe(drive) != 0) continue;
-                }
                 if (init_mount_fs(fstypes[i], drive, 0, "/disk", 0) == 0) {
                     kprintf("[INIT] root=%s mounted as %s on /disk\n",
                             root_dev, fstypes[i]);
@@ -233,20 +222,12 @@ int init_start(const struct boot_info* bi) {
         }
     } else if (ata_pio_drive_present(0)) {
         /* No root= on cmdline, but primary master is present — auto-mount */
-        static const char* fstypes[] = { "ext2", "fat", "diskfs", NULL };
+        static const char* fstypes[] = { "ext2", "fat", NULL };
         for (int i = 0; fstypes[i]; i++) {
-            if (strcmp(fstypes[i], "diskfs") == 0) {
-                extern int diskfs_probe(int drive);
-                if (diskfs_probe(0) != 0) continue;
-            }
             if (init_mount_fs(fstypes[i], 0, 0, "/disk", 0) == 0) {
                 kprintf("[INIT] /dev/hda auto-mounted as %s on /disk\n", fstypes[i]);
                 break;
             }
-        }
-        /* Also mount persistfs on /persist (was previously in /etc/fstab) */
-        if (init_mount_fs("persistfs", 0, 0, "/persist", 0) == 0) {
-            kprintf("[INIT] /dev/hda auto-mounted as persistfs on /persist\n");
         }
     }
 

@@ -82,15 +82,13 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 - **termios** — `TCGETS`, `TCSETS`, `TIOCGPGRP`, `TIOCSPGRP`, `VMIN`/`VTIME`, `c_oflag`
 - **Wait queues** — generic `waitqueue_t` abstraction for blocking I/O
 
-### Filesystems (10 types)
+### Filesystems (8 types)
 - **tmpfs** — in-memory filesystem
 - **devfs** — `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom`, `/dev/console`, `/dev/tty`, `/dev/ptmx`, `/dev/pts/N`, `/dev/fb0` (framebuffer), `/dev/kbd` (raw scancodes)
 - **overlayfs** — copy-up semantics
-- **diskfs** — hierarchical inode-based on-disk filesystem at `/disk` with symlinks and hard links
-- **persistfs** — minimal persistence at `/persist`
-- **procfs** — `/proc/meminfo` + per-process `/proc/[pid]/status`, `/proc/[pid]/maps`
 - **FAT12/16/32** — unified FAT driver with full RW support (auto-detection by cluster count per MS spec), 8.3 filenames, subdirectories, cluster chain management, all VFS mutation ops (create/write/delete/mkdir/rmdir/rename/truncate)
 - **ext2** — full RW ext2 filesystem: superblock + block group descriptors, inode read/write, block bitmaps, inode bitmaps, direct/indirect/doubly-indirect/triply-indirect block mapping, directory entry add/remove/split, hard links, symlinks (inline small targets), create/write/delete/mkdir/rmdir/rename/truncate/link
+- **procfs** — `/proc/meminfo` + per-process `/proc/[pid]/status`, `/proc/[pid]/maps`
 - Generic `readdir`/`getdents` across all VFS types; symlink following in path resolution
 
 ### Networking
@@ -165,7 +163,7 @@ AdrOS is a Unix-like, POSIX-compatible, multi-architecture operating system deve
 ### Testing
 - **212 host-side tests** — `test_utils.c` (63: itoa/atoi, path_normalize, align, tar_parse_octal, mount prefix/normalize, VFS permission, ELF validation) + `test_security.c` (38: user_range_ok, bitmap, eflags, signal mask logic, chmod symbolic parsing) + `test_host_utils.sh` (111 cross-compiled utility tests)
 - **120 QEMU smoke tests** — 4-CPU expect-based (file I/O, signals, memory mgmt, IPC, devices, procfs, networking, epoll, epollet, inotify, aio, nanosleep, CoW fork, readv/writev, fsync, flock, posix_spawn, TSC precision, gettimeofday, mprotect, getrlimit/setrlimit, uname, LZ4, lazy PLT, execve, clone, pivot_root, dlopen/dlsym/dlclose, execveat, futex, sigaltstack, socket API, mqueue, semaphores, chown, mount/umount2)
-- **152-check test battery** — 120 smoke patterns + SMP=1 boot (12) + SMP=2 boot (6) + multi-disk ATA (hda+hdb+hdd) + VFS mount + ping + diskfs ops (`make test-battery`)
+- **152-check test battery** — 120 smoke patterns + SMP=1 boot (12) + SMP=2 boot (6) + multi-disk ATA (hda+hdb+hdd) + VFS mount + ping (`make test-battery`)
 - **10 GDB scripted checks** — heap/PMM/VGA integrity, PID 1 state, scheduler bitmap, mount count, frame refcount
 - **Static analysis** — cppcheck, sparse, gcc -fanalyzer
 - `make test-all` runs everything
@@ -234,7 +232,7 @@ For **100% POSIX compliance**, the following categories are still missing:
 - **Signals** — `sigwait`/`sigwaitinfo`/`sigtimedwait`
 
 ## Directory Structure
-- `src/kernel/` — Architecture-independent kernel (VFS, syscalls, scheduler, tmpfs, diskfs, devfs, overlayfs, procfs, FAT12/16/32, ext2, PTY, TTY, shm, signals, networking, threads, vDSO, KASLR, permissions)
+- `src/kernel/` — Architecture-independent kernel (VFS, syscalls, scheduler, tmpfs, devfs, overlayfs, procfs, FAT12/16/32, ext2, PTY, TTY, shm, signals, networking, threads, vDSO, KASLR, permissions)
 - `src/arch/x86/` — x86-specific (boot, VMM, IDT, LAPIC, IOAPIC, SMP, ACPI, CPUID, SYSENTER, ELF loader, MTRR)
 - `src/arch/arm/` — ARM64-specific (boot, EL2→EL1, PL011 UART, stubs)
 - `src/arch/riscv/` — RISC-V 64-specific (boot, NS16550 UART, stubs)

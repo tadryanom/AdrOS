@@ -17,7 +17,7 @@ Notes:
 
 | Syscall | Status | Notes |
 |---------|--------|-------|
-| `open` | [x] | Supports `O_CREAT`, `O_TRUNC`, `O_APPEND`; works on diskfs, devfs, tmpfs, overlayfs |
+| `open` | [x] | Supports `O_CREAT`, `O_TRUNC`, `O_APPEND`; works on fat, ext2, devfs, tmpfs, overlayfs |
 | `openat` | [x] | `AT_FDCWD` supported; other dirfd values return `ENOSYS` |
 | `read` | [x] | Files, pipes, TTY, PTY, sockets; `O_NONBLOCK` returns `EAGAIN` |
 | `write` | [x] | Files, pipes, TTY, PTY, sockets; `O_NONBLOCK` returns `EAGAIN`; `O_APPEND` support |
@@ -35,7 +35,7 @@ Notes:
 | `poll` | [x] | Pipes, TTY, PTY, `/dev/null`, sockets |
 | `ioctl` | [x] | `TCGETS`, `TCSETS`, `TIOCGPGRP`, `TIOCSPGRP`, `TIOCGWINSZ`, `TIOCSWINSZ` |
 | `fcntl` | [x] | `F_GETFL`, `F_SETFL`, `F_GETFD`, `F_SETFD` |
-| `getdents` | [x] | Generic across all VFS (diskfs, tmpfs, devfs, overlayfs, procfs) |
+| `getdents` | [x] | Generic across all VFS (tmpfs, devfs, overlayfs, procfs, fat, ext2) |
 | `pread`/`pwrite` | [x] | Atomic read/write at offset without changing file position |
 | `readv`/`writev` | [x] | Scatter/gather I/O via `struct iovec` |
 | `truncate`/`ftruncate` | [x] | Truncate file to given length |
@@ -45,15 +45,15 @@ Notes:
 
 | Syscall | Status | Notes |
 |---------|--------|-------|
-| `mkdir` | [x] | diskfs |
-| `rmdir` | [x] | diskfs; checks directory is empty (`ENOTEMPTY`) |
-| `unlink` | [x] | diskfs; returns `EISDIR` for directories; respects hard link count |
+| `mkdir` | [x] | tmpfs, fat, ext2 |
+| `rmdir` | [x] | tmpfs, fat, ext2; checks directory is empty (`ENOTEMPTY`) |
+| `unlink` | [x] | tmpfs, fat, ext2; returns `EISDIR` for directories; respects hard link count |
 | `unlinkat` | [x] | `AT_FDCWD` supported |
-| `rename` | [x] | diskfs; handles same-type overwrite |
+| `rename` | [x] | tmpfs, fat, ext2; handles same-type overwrite |
 | `chdir` | [x] | Per-process `cwd` |
 | `getcwd` | [x] | |
-| `link` | [x] | Hard links in diskfs with `nlink` tracking and shared data blocks |
-| `symlink` | [x] | Symbolic links in diskfs |
+| `link` | [x] | Hard links in ext2/fat with `nlink` tracking and shared data blocks |
+| `symlink` | [x] | Symbolic links in tmpfs, ext2 |
 | `readlink` | [x] | |
 | `chmod` | [x] | Set mode bits on VFS nodes |
 | `chown` | [x] | Set uid/gid on VFS nodes |
@@ -149,13 +149,11 @@ Notes:
 | **tmpfs** | [x] | In-memory; dirs + files; `readdir` |
 | **overlayfs** | [x] | Copy-up; `readdir` delegates to upper/lower |
 | **devfs** | [x] | `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom`, `/dev/console`, `/dev/tty`, `/dev/ptmx`, `/dev/pts/N`, `/dev/fb0`, `/dev/kbd` |
-| **diskfs** (on-disk) | [x] | Hierarchical inodes; full POSIX ops; symlinks; hard links with `nlink` tracking |
-| **persistfs** | [x] | Minimal persistence at `/persist` |
+| **fat** (on-disk) | [x] | Unified FAT driver, auto-detection by cluster count (MS spec), 8.3 filenames, subdirs, cluster chain management, all VFS mutation ops (create/write/delete/mkdir/rmdir/rename/truncate/link) |
+| **ext2** (on-disk) | [x] | Superblock + block group descriptors, inode read/write, block/inode bitmaps, direct/indirect/doubly-indirect/triply-indirect block mapping, directory entry add/remove/split, hard links, symlinks (inline), create/write/delete/mkdir/rmdir/rename/truncate/link |
 | **procfs** | [x] | `/proc/meminfo` + per-process `/proc/[pid]/status`, `/proc/[pid]/maps` |
-| **FAT12/16/32** (full RW) | [x] | Unified FAT driver, auto-detection by cluster count (MS spec), 8.3 filenames, subdirs, cluster chain management, all VFS mutation ops (create/write/delete/mkdir/rmdir/rename/truncate) |
-| **ext2** (full RW) | [x] | Superblock + block group descriptors, inode read/write, block/inode bitmaps, direct/indirect/doubly-indirect/triply-indirect block mapping, directory entry add/remove/split, hard links, symlinks (inline), create/write/delete/mkdir/rmdir/rename/truncate/link |
 | Permissions (`uid`/`gid`/`euid`/`egid`/mode) | [x] | `chmod`, `chown` with permission checks; VFS `open()` enforces rwx bits vs process euid/egid and file uid/gid/mode |
-| Hard links | [x] | `diskfs_link()` with shared data blocks and `nlink` tracking |
+| Hard links | [x] | ext2 `link()` with shared data blocks and `nlink` tracking |
 | Symbolic links | [x] | `symlink`, `readlink`; followed by VFS lookup | |
 
 ## 7. TTY / PTY
@@ -297,7 +295,7 @@ Notes:
 | ELF32 loader | [x] | Secure with W^X + ASLR; supports `ET_EXEC` + `ET_DYN` + `PT_INTERP` |
 | `/sbin/fulltest` (smoke tests) | [x] | Comprehensive test suite (120 checks: file I/O, signals, memory, IPC, devices, procfs, networking, epoll, epollet, inotify, aio, nanosleep, CoW fork, readv/writev, fsync, flock, posix_spawn, TSC precision, gettimeofday, mprotect, getrlimit/setrlimit, uname, LZ4, lazy PLT, execve, clone, pivot_root, dlopen/dlsym/dlclose, execveat, futex, sigaltstack, socket API, mqueue, semaphores, chown, mount/umount2) |
 | Host unit tests | [x] | 212 tests: `test_utils.c` (63: itoa/atoi, path_normalize, align, tar_parse_octal, mount prefix/normalize, VFS permission, ELF validation) + `test_security.c` (38: user_range_ok, bitmap, eflags, signal mask, chmod symbolic) + `test_host_utils.sh` (111 utility tests) |
-| Test battery | [x] | 152 checks: 120 smoke patterns + SMP=1 boot (12) + SMP=2 boot (6) + multi-disk ATA + VFS mount + ping + diskfs |
+| Test battery | [x] | 152 checks: 120 smoke patterns + SMP=1 boot (12) + SMP=2 boot (6) + multi-disk ATA + VFS mount + ping |
 | GDB scripted checks | [x] | 10 checks: heap/PMM/VGA integrity, PID 1 state, scheduler bitmap, mount count, frame refcount |
 | `/bin/echo` | [x] | argv/envp test |
 | `/bin/sh` | [x] | POSIX sh-compatible shell; builtins, pipes, redirects, `$PATH` search |
@@ -372,7 +370,7 @@ Notes:
 16. ~~`alarm()` syscall + `SIGALRM` timer~~ ✅
 17. ~~Guard pages (32KB stack + unmapped guard)~~ ✅
 18. ~~PMM contiguous block alloc~~ ✅
-19. ~~Hard links (`diskfs_link()` with shared storage)~~ ✅
+19. ~~Hard links (ext2 `link()` with shared storage)~~ ✅
 20. ~~`times()` syscall — CPU time accounting~~ ✅
 21. ~~Futex — `FUTEX_WAIT`/`FUTEX_WAKE`~~ ✅
 

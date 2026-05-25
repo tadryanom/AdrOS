@@ -26,9 +26,10 @@ spinlock_t g_vfs_lock;
 
 struct vfs_mount {
     char mountpoint[128];
-    char fstype[32];      /* e.g. "overlayfs", "tmpfs", "devfs", "procfs", "diskfs", "fat", "ext2" */
+    char fstype[32];      /* e.g. "overlayfs", "tmpfs", "devfs", "procfs", "fat", "ext2" */
     char source[64];     /* e.g. "/dev/hda", "none", "initrd" */
     unsigned long flags; /* MS_RDONLY, MS_NOSUID, etc. */
+    int refcount;        /* number of open files on this mount */
     fs_node_t* root;
 };
 
@@ -151,6 +152,9 @@ int vfs_umount_nolock(const char* mountpoint) {
     }
     if (idx < 0) return -EINVAL;
 
+    /* Busy check: reject if there are open files on this mount */
+    if (g_mounts[idx].refcount > 0) return -EBUSY;
+
     /* Busy check: reject if any other mount is a child of this one */
     size_t mplen = strlen(mp);
     for (int i = 0; i < g_mount_count; i++) {
@@ -195,14 +199,14 @@ uint32_t vfs_mounts_read(uint8_t* buffer, uint32_t size) {
         uint32_t olen = 0;
 
         /* rw/ro */
-        if (g_mounts[i].flags & 1 /* MS_RDONLY */) {
+        if (g_mounts[i].flags & MS_RDONLY) {
             opts[olen++] = 'r'; opts[olen++] = 'o';
         } else {
             opts[olen++] = 'r'; opts[olen++] = 'w';
         }
-        if (g_mounts[i].flags & 2) { opts[olen++] = ','; const char* s = "nosuid"; while (*s) opts[olen++] = *s++; }
-        if (g_mounts[i].flags & 4) { opts[olen++] = ','; const char* s = "nodev"; while (*s) opts[olen++] = *s++; }
-        if (g_mounts[i].flags & 8) { opts[olen++] = ','; const char* s = "noexec"; while (*s) opts[olen++] = *s++; }
+        if (g_mounts[i].flags & MS_NOSUID) { opts[olen++] = ','; const char* s = "nosuid"; while (*s) opts[olen++] = *s++; }
+        if (g_mounts[i].flags & MS_NODEV)  { opts[olen++] = ','; const char* s = "nodev"; while (*s) opts[olen++] = *s++; }
+        if (g_mounts[i].flags & MS_NOEXEC) { opts[olen++] = ','; const char* s = "noexec"; while (*s) opts[olen++] = *s++; }
         opts[olen] = '\0';
 
         /* source mountpoint fstype options */
@@ -502,4 +506,104 @@ int vfs_link(const char* old_path, const char* new_path) {
     if (parent->i_ops && parent->i_ops->link)
         return parent->i_ops->link(parent, name, target);
     return -ENOSYS;
+}
+
+/* Look up the mount flags for the filesystem that contains the given path.
+ * Returns 0 if no mount matches (default: no restrictions). */
+unsigned long vfs_mount_flags(const char* path) {
+    if (!path) return 0;
+
+    uintptr_t fl = spin_lock_irqsave(&g_vfs_lock);
+
+    size_t best_len = 0;
+    unsigned long best_flags = 0;
+
+    for (int i = 0; i < g_mount_count; i++) {
+        const char* mp = g_mounts[i].mountpoint;
+        if (!mp[0]) continue;
+        if (path_is_mountpoint_prefix(mp, path)) {
+            size_t mpl = strlen(mp);
+            if (mpl >= best_len) {
+                best_len = mpl;
+                best_flags = g_mounts[i].flags;
+            }
+        }
+    }
+
+    spin_unlock_irqrestore(&g_vfs_lock, fl);
+    return best_flags;
+}
+
+/* Look up mount flags by matching the mount's root node pointer.
+ * Useful when you have a fs_node_t* but not a path string. */
+unsigned long vfs_node_mount_flags(const fs_node_t* root) {
+    if (!root) return 0;
+
+    uintptr_t fl = spin_lock_irqsave(&g_vfs_lock);
+
+    unsigned long flags = 0;
+    for (int i = 0; i < g_mount_count; i++) {
+        if (g_mounts[i].root == root) {
+            flags = g_mounts[i].flags;
+            break;
+        }
+    }
+
+    spin_unlock_irqrestore(&g_vfs_lock, fl);
+    return flags;
+}
+
+/* Find the mount root fs_node for the given path.
+ * Returns NULL if the path is not on any mount. */
+fs_node_t* vfs_find_mount_root(const char* path) {
+    if (!path) return NULL;
+
+    uintptr_t fl = spin_lock_irqsave(&g_vfs_lock);
+
+    size_t best_len = 0;
+    fs_node_t* best_root = NULL;
+
+    for (int i = 0; i < g_mount_count; i++) {
+        const char* mp = g_mounts[i].mountpoint;
+        if (!mp[0] || !g_mounts[i].root) continue;
+        if (path_is_mountpoint_prefix(mp, path)) {
+            size_t mpl = strlen(mp);
+            if (mpl >= best_len) {
+                best_len = mpl;
+                best_root = g_mounts[i].root;
+            }
+        }
+    }
+
+    spin_unlock_irqrestore(&g_vfs_lock, fl);
+    return best_root;
+}
+
+/* Increment the refcount on the mount that owns the given root node. */
+void vfs_mount_ref(fs_node_t* mount_root) {
+    if (!mount_root) return;
+
+    uintptr_t fl = spin_lock_irqsave(&g_vfs_lock);
+    for (int i = 0; i < g_mount_count; i++) {
+        if (g_mounts[i].root == mount_root) {
+            g_mounts[i].refcount++;
+            break;
+        }
+    }
+    spin_unlock_irqrestore(&g_vfs_lock, fl);
+}
+
+/* Decrement the refcount on the mount that owns the given root node. */
+void vfs_mount_unref(fs_node_t* mount_root) {
+    if (!mount_root) return;
+
+    uintptr_t fl = spin_lock_irqsave(&g_vfs_lock);
+    for (int i = 0; i < g_mount_count; i++) {
+        if (g_mounts[i].root == mount_root) {
+            if (g_mounts[i].refcount > 0)
+                g_mounts[i].refcount--;
+            break;
+        }
+    }
+    spin_unlock_irqrestore(&g_vfs_lock, fl);
 }

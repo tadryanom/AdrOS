@@ -71,10 +71,8 @@ make ARCH=x86 run
 
 Persistent storage note:
 - The x86 QEMU run target attaches a `disk.img` file as an IDE drive (primary master) and enables an E1000 NIC.
-- The kernel mounts two filesystems from this disk:
-  - `/persist` — minimal persistence filesystem (e.g. `/persist/counter`)
-  - `/disk` — hierarchical inode-based filesystem (diskfs) supporting `mkdir`, `unlink`, `rmdir`, `rename`, `getdents`, etc.
-- If `disk.img` does not exist, it is created automatically by the Makefile.
+- The kernel auto-detects the filesystem type (ext2, FAT) on the disk and mounts it at `/disk`.
+- If `disk.img` does not exist, it is created automatically by the Makefile (blank 4MB image).
 - The `root=` kernel parameter can override which device is mounted at `/disk` (e.g. `root=/dev/hdb`).
 
 Multi-disk testing:
@@ -85,7 +83,7 @@ Multi-disk testing:
 - The kernel auto-detects all attached ATA drives and logs `[ATA] /dev/hdX detected`.
 
 Kernel command line parameters:
-- `root=/dev/hdX` — mount specified device at `/disk` (auto-detects diskfs/FAT/ext2)
+- `root=/dev/hdX` — mount specified device at `/disk` (auto-detects FAT/ext2)
 - `init=/path/to/binary` — override init binary (default: `/bin/init.elf`)
 - `ring3` — enable userspace (ring 3) execution
 - `quiet` — suppress non-critical boot messages
@@ -144,11 +142,11 @@ The fulltest binary (`/sbin/fulltest`) runs a comprehensive suite of 120 smoke t
 - `chdir`/`getcwd` with relative path resolution
 - `openat`/`fstatat`/`unlinkat` (`AT_FDCWD`)
 - `rename`, `rmdir`
-- `getdents` across multiple FS types (diskfs, devfs, tmpfs)
+- `getdents` across multiple FS types (tmpfs, devfs, fat, ext2)
 - `fork` (100 children), `waitpid` (`WNOHANG`), `execve`
 - `SIGSEGV` handler
-- diskfs mkdir/unlink/getdents
-- Persistent counter (`/persist/counter`)
+- tmpfs mkdir/unlink/getdents
+- tmpfs file I/O smoke tests
 - `/dev/tty` write test
 - Memory: `brk`, `mmap`/`munmap`, `clock_gettime`, shared memory (`shmget`/`shmat`/`shmdt`)
 - Advanced: `pread`/`pwrite`, `ftruncate`, `symlink`/`readlink`, `access`, `sigprocmask`/`sigpending`, `alarm`/`SIGALRM`, `O_APPEND`, `umask`, pipe capacity (`F_GETPIPE_SZ`/`F_SETPIPE_SZ`), `waitid`, `setitimer`/`getitimer`, `select`/`poll` on regular files, hard links
@@ -178,7 +176,7 @@ make check        # cppcheck + sparse + gcc -fanalyzer
 make test-host    # 69 host-side tests (test_utils + test_security + test_host_utils.sh)
 make test         # QEMU smoke test (4 CPUs, 120s timeout, 120 checks incl. ICMP ping, epoll, epollet, inotify, aio, LZ4, lazy PLT, clone, pivot_root, dlopen/dlsym/dlclose, execveat, futex, sigaltstack, socket API, mqueue, semaphores, chown, mount/umount2)
 make test-1cpu    # Single-CPU smoke test (50s timeout)
-make test-battery # Full test battery: multi-disk ATA, VFS mount, ping, diskfs, clone, socket API, mqueue, semaphores, futex, sigaltstack, chown, mount/umount2 (33 checks)
+make test-battery # Full test battery: multi-disk ATA, VFS mount, ping, clone, socket API, mqueue, semaphores, futex, sigaltstack, chown, mount/umount2 (33 checks)
 make test-gdb     # GDB scripted integrity checks (heap, PMM, VGA)
 ```
 

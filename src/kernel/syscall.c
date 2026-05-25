@@ -2017,6 +2017,7 @@ static int fd_close(int fd) {
         if (f->node) {
             vfs_close(f->node);
         }
+        vfs_mount_unref(f->mount_root);
         kfree(f);
     }
     return 0;
@@ -2054,6 +2055,10 @@ static int syscall_execve_impl(struct registers* regs, const char* user_path, co
             break;
         }
     }
+
+    /* Enforce MS_NOEXEC: reject execution from noexec mounts */
+    if (vfs_mount_flags(path) & MS_NOEXEC)
+        return -EPERM;
 
     // Snapshot argv/envp into kernel buffers (before switching addr_space).
     char (*kargv)[EXECVE_MAX_STR] = (char(*)[EXECVE_MAX_STR])kmalloc((size_t)EXECVE_MAX_ARGC * (size_t)EXECVE_MAX_STR);
@@ -2340,6 +2345,19 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
     int prc = path_resolve_user(user_path, path, sizeof(path));
     if (prc < 0) return prc;
 
+    /* Enforce mount flags */
+    unsigned long mflags = vfs_mount_flags(path);
+    if ((mflags & MS_RDONLY) && (flags & 3U) != 0U) {
+        /* O_WRONLY or O_RDWR on a read-only mount */
+        return -EROFS;
+    }
+    if ((mflags & MS_NODEV) && (flags & 0x40U) == 0U) {
+        /* Opening an existing file on nodev mount — check if it's a device */
+        fs_node_t* check = vfs_lookup(path);
+        if (check && (check->flags == FS_CHARDEVICE || check->flags == FS_BLOCKDEVICE))
+            return -EACCES;
+    }
+
     fs_node_t* node = vfs_lookup(path);
     if (!node && (flags & 0x40U) != 0U) {
         /* O_CREAT: create file through VFS */
@@ -2368,9 +2386,11 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
     struct file* f = (struct file*)kmalloc(sizeof(*f));
     if (!f) return -ENOMEM;
     f->node = node;
+    f->mount_root = vfs_find_mount_root(path);
     f->offset = 0;
     f->flags = flags;
     f->refcount = 1;
+    vfs_mount_ref(f->mount_root);
 
     int fd = fd_alloc(f);
     if (fd < 0) {
@@ -2799,6 +2819,10 @@ static int syscall_write_impl(int fd, const void* user_buf, uint32_t len) {
 
     struct file* f = fd_get(fd);
     if (!f || !f->node) return -EBADF;
+
+    /* Enforce MS_RDONLY: reject writes to read-only mounts */
+    if (f->mount_root && (vfs_node_mount_flags(f->mount_root) & MS_RDONLY))
+        return -EROFS;
 
     int nonblock = (f->flags & O_NONBLOCK) ? 1 : 0;
     {
@@ -4938,9 +4962,9 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         crc = copy_user_cstr(ktype, user_type, sizeof(ktype));
         if (crc < 0) { sc_ret(regs) = (uint32_t)crc; return; }
 
-        /* MS_REMOUNT (0x20): update flags on existing mount */
-        if (mount_flags & 0x20 /* MS_REMOUNT */) {
-            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, NULL, NULL, NULL, mount_flags & ~0x20);
+        /* MS_REMOUNT: update flags on existing mount */
+        if (mount_flags & MS_REMOUNT) {
+            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, NULL, NULL, NULL, mount_flags & ~MS_REMOUNT);
             return;
         }
 

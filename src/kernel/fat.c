@@ -8,7 +8,7 @@
  */
 
 #include "fat.h"
-#include "ata_pio.h"
+#include "blockdev.h"
 #include "heap.h"
 #include "utils.h"
 #include "console.h"
@@ -90,6 +90,7 @@ enum fat_type {
 /* ---- In-memory filesystem state ---- */
 
 struct fat_state {
+    const block_device_t* bdev;
     int      drive;
     uint32_t part_lba;
     uint16_t bytes_per_sector;
@@ -123,11 +124,13 @@ static uint8_t g_sec_buf[FAT_SECTOR_SIZE];
 /* ---- Low-level sector I/O ---- */
 
 static int fat_read_sector(uint32_t lba, void* buf) {
-    return ata_pio_read28(g_fat.drive, lba, (uint8_t*)buf);
+    if (!g_fat.bdev) return -ENODEV;
+    return blockdev_read(g_fat.bdev, lba, buf);
 }
 
 static int fat_write_sector(uint32_t lba, const void* buf) {
-    return ata_pio_write28(g_fat.drive, lba, (const uint8_t*)buf);
+    if (!g_fat.bdev) return -ENODEV;
+    return blockdev_write(g_fat.bdev, lba, buf);
 }
 
 /* ---- FAT table access ---- */
@@ -1116,7 +1119,15 @@ static int fat_truncate_impl(struct fs_node* node, uint32_t length) {
 /* ---- Mount ---- */
 
 fs_node_t* fat_mount(int drive, uint32_t partition_lba) {
-    /* Store drive early so fat_read_sector can use it */
+    /* Look up block device by drive ID */
+    const block_device_t* bdev = blockdev_by_id(drive);
+    if (!bdev) {
+        kprintf("[FAT] No block device for drive %d\n", drive);
+        return NULL;
+    }
+
+    /* Store bdev early so fat_read_sector can use it */
+    g_fat.bdev = bdev;
     g_fat.drive = drive;
 
     uint8_t boot_sec[FAT_SECTOR_SIZE];
@@ -1137,6 +1148,7 @@ fs_node_t* fat_mount(int drive, uint32_t partition_lba) {
     }
 
     memset(&g_fat, 0, sizeof(g_fat));
+    g_fat.bdev = bdev;
     g_fat.drive = drive;
     g_fat.part_lba = partition_lba;
     g_fat.bytes_per_sector = bpb->bytes_per_sector;

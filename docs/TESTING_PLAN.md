@@ -6,7 +6,7 @@ All testing layers are **implemented and operational**:
 
 - **Static analysis** (`make check`): cppcheck + sparse + gcc -fanalyzer
 - **QEMU smoke tests** (`make test`): expect-based, 120 checks (file I/O, signals, memory, IPC, devices, procfs, networking, epoll, epollet, inotify, aio, nanosleep, CLOCK_REALTIME/CLOCK_MONOTONIC, /dev/urandom, /proc/cmdline, CoW fork, readv/writev, fsync, truncate, getuid/getgid, chmod, flock, times, gettid, posix_spawn, TSC ns precision, SIGSEGV, gettimeofday, mprotect, getrlimit/setrlimit, uname, LZ4 initrd decomp, lazy PLT, execve, clone, pivot_root, dlopen/dlsym/dlclose, execveat, futex, sigaltstack, socket API, mqueue, semaphores, chown, mount/umount2), 4-CPU SMP, 120s timeout
-- **Test battery** (`make test-battery`): 152 checks across QEMU scenarios — 120 smoke patterns + SMP=1 boot (12 checks) + SMP=2 boot (6 checks) + multi-disk ATA (hda+hdb+hdd) + VFS mount + ICMP ping + diskfs ops
+- **Test battery** (`make test-battery`): 152 checks across QEMU scenarios — 120 smoke patterns + SMP=1 boot (12 checks) + SMP=2 boot (6 checks) + multi-disk ATA (hda+hdb+hdd) + VFS mount + ICMP ping
 - **Host unit tests** (`make test-host`): 212 tests — `test_utils.c` (63: itoa/atoi, path_normalize, align, tar_parse_octal, mount prefix/normalize, VFS permission, ELF validation) + `test_security.c` (38: user_range_ok, bitmap, eflags, signal mask logic, chmod symbolic parsing) + `test_host_utils.sh` (111 cross-compiled utility tests)
 - **GDB scripted checks** (`make test-gdb`): 10 checks — heap integrity, PMM bitmap sanity, VGA mapping, PID 1 state, scheduler runqueue bitmap, mount count, frame 0 refcount
 - **Full suite** (`make test-all`): runs check + test-host + test
@@ -118,7 +118,7 @@ To run manually: boot AdrOS with `-vga std`, then execute `/bin/doom.elf` from t
 ```makefile
 make check        # cppcheck + sparse + gcc -fanalyzer
 make test         # QEMU + expect automated smoke test (120 checks incl. ICMP ping, epoll, epollet, inotify, aio, CoW fork, flock, posix_spawn, gettimeofday, mprotect, uname, LZ4, lazy PLT, clone, pivot_root, dlopen/dlsym/dlclose, execveat, futex, sigaltstack, socket API, mqueue, semaphores, chown, mount/umount2)
-make test-battery # Full test battery: 120 smoke + SMP=1 (12) + SMP=2 (6) + multi-disk ATA + VFS mount + ping + diskfs (152 checks)
+make test-battery # Full test battery: 120 smoke + SMP=1 (12) + SMP=2 (6) + multi-disk ATA + VFS mount + ping (152 checks)
 make test-host    # Host-side unit tests for pure functions
 make test-gdb     # QEMU + GDB scripted checks (optional)
 make test-all     # All of the above
