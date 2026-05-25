@@ -4708,11 +4708,23 @@ static int syscall_sendmsg_impl(int sockfd, void* user_msg, int flags) {
             return -EFAULT;
         if (kiov.len == 0) continue;
         if (!user_range_ok(kiov.base, kiov.len)) return -EFAULT;
+        
+        /* K35: Use bounce buffer for SMAP compliance */
+        size_t xfer = (kiov.len > 4096) ? 4096 : kiov.len;
+        uint8_t* kbuf = (uint8_t*)kmalloc(xfer);
+        if (!kbuf) return (total > 0) ? total : -ENOMEM;
+        if (copy_from_user(kbuf, kiov.base, xfer) < 0) {
+            kfree(kbuf);
+            return (total > 0) ? total : -EFAULT;
+        }
+        
         int ret;
         if (has_dest)
-            ret = ksocket_sendto(sid, kiov.base, kiov.len, flags, &dest);
+            ret = ksocket_sendto(sid, kbuf, xfer, flags, &dest);
         else
-            ret = ksocket_send(sid, kiov.base, kiov.len, flags);
+            ret = ksocket_send(sid, kbuf, xfer, flags);
+        kfree(kbuf);
+        
         if (ret < 0) return (total > 0) ? total : ret;
         total += ret;
     }
@@ -4739,10 +4751,24 @@ static int syscall_recvmsg_impl(int sockfd, void* user_msg, int flags) {
             return -EFAULT;
         if (kiov.len == 0) continue;
         if (!user_range_ok(kiov.base, kiov.len)) return -EFAULT;
-        int ret = ksocket_recvfrom(sid, kiov.base, kiov.len, flags, &src);
+        
+        /* K35: Use bounce buffer for SMAP compliance */
+        size_t xfer = (kiov.len > 4096) ? 4096 : kiov.len;
+        uint8_t* kbuf = (uint8_t*)kmalloc(xfer);
+        if (!kbuf) return (total > 0) ? total : -ENOMEM;
+        
+        int ret = ksocket_recvfrom(sid, kbuf, xfer, flags, &src);
+        if (ret > 0) {
+            if (copy_to_user(kiov.base, kbuf, (size_t)ret) < 0) {
+                kfree(kbuf);
+                return (total > 0) ? total : -EFAULT;
+            }
+        }
+        kfree(kbuf);
+        
         if (ret < 0) return (total > 0) ? total : ret;
         total += ret;
-        if ((uint32_t)ret < kiov.len) break;
+        if ((uint32_t)ret < xfer) break;
     }
 
     if (kmsg.name && kmsg.namelen >= sizeof(src))
