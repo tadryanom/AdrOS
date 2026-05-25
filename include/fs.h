@@ -127,6 +127,7 @@ int vfs_rename(const char* old_path, const char* new_path);
 int vfs_truncate(const char* path, uint32_t length);
 int vfs_truncate_node(struct fs_node* node, uint32_t length);
 int vfs_check_parent_permission(const char* path, int perm);
+int vfs_check_permission(struct fs_node* node, int want);
 int vfs_link(const char* old_path, const char* new_path);
 
 int vfs_mount(const char* mountpoint, fs_node_t* root);

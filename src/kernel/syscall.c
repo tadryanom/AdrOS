@@ -2337,31 +2337,6 @@ static int syscall_lseek_impl(int fd, int32_t offset, int whence) {
     return (int)f->offset;
 }
 
-/*
- * Check if the current process has the requested access to a file node.
- * want: bitmask of 4 (read), 2 (write), 1 (execute).
- * Returns 0 if allowed, -EACCES if denied.
- */
-static int vfs_check_permission(fs_node_t* node, int want) {
-    if (!current_process) return 0;       /* kernel context — allow all */
-    if (current_process->euid == 0) return 0;  /* root — allow all */
-    if (node->mode == 0) return 0;        /* mode not set — permissive */
-
-    uint32_t mode = node->mode;
-    uint32_t perm;
-
-    if (current_process->euid == node->uid) {
-        perm = (mode >> 6) & 7;  /* owner bits */
-    } else if (current_process->egid == node->gid) {
-        perm = (mode >> 3) & 7;  /* group bits */
-    } else {
-        perm = mode & 7;         /* other bits */
-    }
-
-    if ((want & perm) != (uint32_t)want) return -EACCES;
-    return 0;
-}
-
 static int syscall_open_impl(const char* user_path, uint32_t flags) {
     if (!user_path) return -EFAULT;
 

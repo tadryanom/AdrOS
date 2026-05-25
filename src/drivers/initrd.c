@@ -321,11 +321,23 @@ fs_node_t* initrd_init(uint32_t location, uint32_t size) {
     const uint8_t* raw = (const uint8_t*)(uintptr_t)location;
     uint8_t* decomp_buf = NULL;
 
+    /* A05: Validate minimum size for magic check */
+    if (size < 4) {
+        kprintf("[INITRD] Invalid size: %u (min 4)\n", size);
+        return NULL;
+    }
+
     /* Detect LZ4-compressed initrd */
     uint32_t magic32 = (uint32_t)raw[0] | ((uint32_t)raw[1] << 8) |
                        ((uint32_t)raw[2] << 16) | ((uint32_t)raw[3] << 24);
 
     if (magic32 == LZ4_FRAME_MAGIC) {
+        /* A05: Validate minimum LZ4 frame header size */
+        if (size < 10) {
+            kprintf("[INITRD] LZ4 frame too small: %u (min 10)\n", size);
+            return NULL;
+        }
+
         /* Official LZ4 Frame format — extract content size from header */
         uint8_t flg = raw[4];
         uint32_t orig_sz = 0;
@@ -350,7 +362,14 @@ fs_node_t* initrd_init(uint32_t location, uint32_t size) {
 
         kprintf("[INITRD] LZ4: %u -> %d bytes\n", size, ret);
         location = (uint32_t)(uintptr_t)decomp_buf;
+        size = (uint32_t)ret;  /* A05: Update size to decompressed size */
     } else if (magic32 == LZ4B_MAGIC_U32) {
+        /* A05: Validate minimum LZ4B header size */
+        if (size < 12) {
+            kprintf("[INITRD] LZ4B header too small: %u (min 12)\n", size);
+            return NULL;
+        }
+
         /* Legacy LZ4B format (backward compatibility) */
         uint32_t orig_sz = (uint32_t)raw[4]  | ((uint32_t)raw[5]  << 8) |
                            ((uint32_t)raw[6]  << 16) | ((uint32_t)raw[7]  << 24);
@@ -373,6 +392,7 @@ fs_node_t* initrd_init(uint32_t location, uint32_t size) {
 
         kprintf("[INITRD] LZ4: %u -> %u bytes\n", comp_sz, orig_sz);
         location = (uint32_t)(uintptr_t)decomp_buf;
+        size = orig_sz;  /* A05: Update size to decompressed size */
     }
 
     initrd_location_base = location;
@@ -413,6 +433,12 @@ fs_node_t* initrd_init(uint32_t location, uint32_t size) {
         uint32_t size = tar_parse_octal(h->size, sizeof(h->size));
         char tf = h->typeflag;
         if (tf == 0) tf = '0';
+
+        /* A05: Validate rec_len (TAR block alignment) */
+        if (size > 256 * 1024 * 1024) {  /* Reasonable limit: 256MB */
+            kprintf("[INITRD] TAR: size too large: %u\n", size);
+            return NULL;
+        }
 
         // Normalize: strip leading './'
         if (name[0] == '.' && name[1] == '/') {
