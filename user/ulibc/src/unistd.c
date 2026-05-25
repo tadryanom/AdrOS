@@ -27,12 +27,15 @@ int write(int fd, const void* buf, size_t count) {
 }
 
 int open(const char* path, int flags, ...) {
-    __builtin_va_list ap;
-    __builtin_va_start(ap, flags);
-    int mode = __builtin_va_arg(ap, int);
-    __builtin_va_end(ap);
-    (void)mode; /* kernel ignores mode currently */
-    return __syscall_ret(_syscall2(SYS_OPEN, (int)path, flags));
+    /* A17: Only read mode from varargs when O_CREAT is set */
+    int mode = 0;
+    if (flags & 0x40) { /* O_CREAT */
+        __builtin_va_list ap;
+        __builtin_va_start(ap, flags);
+        mode = __builtin_va_arg(ap, int);
+        __builtin_va_end(ap);
+    }
+    return __syscall_ret(_syscall3(SYS_OPEN, (int)path, flags, mode));
 }
 
 int close(int fd) {
@@ -353,10 +356,15 @@ int select(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds,
 }
 
 int fcntl(int fd, int cmd, ...) {
-    __builtin_va_list ap;
-    __builtin_va_start(ap, cmd);
-    int arg = __builtin_va_arg(ap, int);
-    __builtin_va_end(ap);
+    /* A17: Only read arg from varargs for commands that need it */
+    int arg = 0;
+    if (cmd == 0 /* F_DUPFD */ || cmd == 1 /* F_GETFD */ || cmd == 2 /* F_SETFD */ ||
+        cmd == 3 /* F_GETFL */ || cmd == 4 /* F_SETFL */ || cmd == 1024 /* F_DUPFD_CLOEXEC */) {
+        __builtin_va_list ap;
+        __builtin_va_start(ap, cmd);
+        arg = __builtin_va_arg(ap, int);
+        __builtin_va_end(ap);
+    }
     return __syscall_ret(_syscall3(SYS_FCNTL, fd, cmd, arg));
 }
 
@@ -373,10 +381,14 @@ int dup3(int oldfd, int newfd, int flags) {
 }
 
 int openat(int dirfd, const char* path, int flags, ...) {
-    __builtin_va_list ap;
-    __builtin_va_start(ap, flags);
-    int mode = __builtin_va_arg(ap, int);
-    __builtin_va_end(ap);
+    /* A17: Only read mode from varargs when O_CREAT is set */
+    int mode = 0;
+    if (flags & 0x40) { /* O_CREAT */
+        __builtin_va_list ap;
+        __builtin_va_start(ap, flags);
+        mode = __builtin_va_arg(ap, int);
+        __builtin_va_end(ap);
+    }
     return __syscall_ret(_syscall4(SYS_OPENAT, dirfd, (int)path, flags, mode));
 }
 
