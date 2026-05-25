@@ -16,6 +16,7 @@
 #include "spinlock.h"
 #include "console.h"
 #include "heap.h"
+#include "process.h"
 
 #include <string.h>
 
@@ -633,10 +634,35 @@ int vfs_check_parent_permission(const char* path, int perm) {
     if (!parent_node) return -ENOENT;
     if (!(parent_node->flags & FS_DIRECTORY)) return -ENOTDIR;
     
-    /* A07: For now, allow all - single-user root system */
-    /* TODO: Implement proper permission check using current_process */
-    (void)parent_node;
-    (void)perm;
+    /* Check permission on parent */
+    return vfs_check_permission(parent_node, perm);
+}
+
+/*
+ * Check if the current process has the requested access to a file node.
+ * want: bitmask of 4 (read), 2 (write), 1 (execute).
+ * Returns 0 if allowed, -EACCES if denied.
+ * A07: Moved from syscall.c to fs.c for use by vfs_check_parent_permission
+ */
+extern struct process* current_process;  /* From process.h */
+
+int vfs_check_permission(fs_node_t* node, int want) {
+    if (!current_process) return 0;       /* kernel context — allow all */
+    if (current_process->euid == 0) return 0;  /* root — allow all */
+    if (node->mode == 0) return 0;        /* mode not set — permissive */
+
+    uint32_t mode = node->mode;
+    uint32_t perm;
+
+    if (current_process->euid == node->uid) {
+        perm = (mode >> 6) & 7;  /* owner bits */
+    } else if (current_process->egid == node->gid) {
+        perm = (mode >> 3) & 7;  /* group bits */
+    } else {
+        perm = mode & 7;         /* other bits */
+    }
+
+    if ((want & perm) != (uint32_t)want) return -EACCES;
     return 0;
 }
 
