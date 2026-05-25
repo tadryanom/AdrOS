@@ -207,6 +207,23 @@ _start:
     or $0x20, %ecx              /* CR4.PAE = bit 5 */
     mov %ecx, %cr4
 
+    /* --- Check for NX support via CPUID.0x80000001:EDX bit 20 --- */
+    mov $0x80000000, %eax       /* Check max extended leaf */
+    cpuid
+    cmp $0x80000001, %eax       /* Need leaf 0x80000001 */
+    jb no_nxe                   /* Skip if not available */
+    mov $0x80000001, %eax       /* Get extended feature flags */
+    cpuid
+    bt $20, %edx                /* Test bit 20 (NX) */
+    jnc no_nxe                  /* Skip if NX not supported */
+
+    /* --- Enable NXE in IA32_EFER (MSR 0xC0000080, bit 11) --- */
+    mov $0xC0000080, %ecx       /* IA32_EFER MSR */
+    rdmsr
+    or $0x800, %eax             /* Set bit 11 (NXE) */
+    wrmsr
+
+no_nxe:
     /* --- Load CR3 with PDPT physical address --- */
     mov $boot_pdpt, %ecx
     sub $KERNEL_VIRT_BASE, %ecx

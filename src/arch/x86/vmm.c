@@ -67,9 +67,17 @@ extern uint64_t boot_pd3[512];
 
 static uintptr_t g_kernel_as = 0;
 static spinlock_t vmm_lock = {0};
+static int g_nxe_enabled = 0;  /* IA32_EFER.NXE enabled in boot.S */
 
 static inline void invlpg(uintptr_t vaddr) {
     __asm__ volatile("invlpg (%0)" : : "r" (vaddr) : "memory");
+}
+
+/* Check if IA32_EFER.NXE is enabled (MSR 0xC0000080, bit 11) */
+static int check_nxe_enabled(void) {
+    uint32_t eax, edx;
+    __asm__ volatile("rdmsr" : "=a"(eax), "=d"(edx) : "c"(0xC0000080));
+    return (eax & 0x800) != 0;  /* Bit 11 = NXE */
 }
 
 /* --- PAE address decomposition --- */
@@ -106,7 +114,8 @@ static uint64_t vmm_flags_to_x86(uint32_t flags) {
     if (flags & VMM_FLAG_PWT)     x86_flags |= X86_PTE_PWT;
     if (flags & VMM_FLAG_PCD)     x86_flags |= X86_PTE_PCD;
     if (flags & VMM_FLAG_COW)     x86_flags |= X86_PTE_COW;
-    if (flags & VMM_FLAG_NX)      x86_flags |= X86_PTE_NX;
+    /* Only set NX bit if IA32_EFER.NXE is enabled */
+    if ((flags & VMM_FLAG_NX) && g_nxe_enabled) x86_flags |= X86_PTE_NX;
     return x86_flags;
 }
 
@@ -576,6 +585,14 @@ void vmm_init(void) {
     kprintf("[VMM] PAE paging active.\n");
 
     g_kernel_as = hal_cpu_get_address_space();
+
+    /* Check if IA32_EFER.NXE was enabled in boot.S */
+    g_nxe_enabled = check_nxe_enabled();
+    if (g_nxe_enabled) {
+        kprintf("[VMM] NX (No-Execute) enabled.\n");
+    } else {
+        kprintf("[VMM] NX not available or not enabled.\n");
+    }
 
     /* Test mapping */
     vmm_map_page(0xB8000, 0xC00B8000, VMM_FLAG_PRESENT | VMM_FLAG_RW);

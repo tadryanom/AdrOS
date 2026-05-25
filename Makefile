@@ -287,6 +287,7 @@ run: iso
 		-drive file=disk.img,if=ide,format=raw \
 		-nic user,model=e1000 \
 		-serial file:serial.log -monitor none -no-reboot -no-shutdown \
+		-cpu qemu32,+nx \
 		$(QEMU_DFLAGS)
 
 run-arm: adros-arm.bin

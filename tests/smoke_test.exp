@@ -35,7 +35,8 @@ set qemu_pid [exec qemu-system-i386 \
     -drive file=$disk,if=ide,format=raw \
     -nic user,model=e1000 \
     -serial file:$serial_log -monitor none \
-    -no-reboot -no-shutdown &]
+    -no-reboot -no-shutdown \
+    -cpu qemu32,+nx &]
 
 # Wait for QEMU to start writing
 after 1000
