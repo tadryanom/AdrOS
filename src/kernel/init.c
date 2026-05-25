@@ -21,7 +21,6 @@
 #include "devfs.h"
 #include "tty.h"
 #include "pty.h"
-/* diskfs and persistfs removed — use fat/ext2 for disk storage */
 #include "procfs.h"
 #include "pci.h"
 #include "e1000.h"
