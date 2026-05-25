@@ -13,6 +13,7 @@
 #include "vmm.h"
 #include "utils.h"
 #include "console.h"
+#include "timer.h"
 
 static uintptr_t vdso_phys = 0;
 static volatile struct vdso_data* vdso_kptr = NULL;
@@ -32,7 +33,7 @@ void vdso_init(void) {
 
     vdso_kptr = (volatile struct vdso_data*)kva;
     memset((void*)vdso_kptr, 0, PAGE_SIZE);
-    vdso_kptr->tick_hz = 50;
+    vdso_kptr->tick_hz = TIMER_HZ;
 
     kprintf("[VDSO] Initialized at phys=0x%x\n", (unsigned)vdso_phys);
 }

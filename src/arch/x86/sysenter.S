@@ -80,9 +80,19 @@ sysenter_entry:
      * We already have return_eip in EDX, so:
      *   real arg3 = *(ECX + 4)
      *   real arg2 = *(ECX + 8)
+     *
+     * SECURITY: validate ECX is in user space before dereferencing.
+     * If ECX >= 0xC0000000 (kernel base), it could leak kernel data.
      */
+    cmpl $0xC0000000, %ecx
+    jae  1f
     mov 4(%ecx), %edx   /* EDX = arg3 (was saved by user) */
     mov 8(%ecx), %ecx   /* ECX = arg2 (was saved by user) */
+    jmp 2f
+1:  /* Invalid user ESP — zero args to prevent data leak */
+    xor %edx, %edx
+    xor %ecx, %ecx
+2:
 
     /* pusha-equivalent: eax ecx edx ebx esp ebp esi edi */
     push %eax

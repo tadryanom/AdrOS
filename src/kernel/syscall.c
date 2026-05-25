@@ -1649,12 +1649,23 @@ static int syscall_aio_rw_impl(void* user_cb, int is_write) {
     }
 
     int32_t result;
+    /* Use kernel bounce buffer to avoid passing user pointer directly to VFS (SMAP) */
+    uint32_t xfer = cb.aio_nbytes;
+    if (xfer > 4096) xfer = 4096;  /* cap per-call transfer */
+    uint8_t* kbuf = (uint8_t*)kmalloc(xfer);
+    if (!kbuf) { cb.aio_error = ENOMEM; cb.aio_return = -ENOMEM; (void)copy_to_user(user_cb, &cb, sizeof(cb)); return 0; }
+
     if (is_write) {
+        if (copy_from_user(kbuf, cb.aio_buf, xfer) < 0) {
+            kfree(kbuf);
+            cb.aio_error = EFAULT; cb.aio_return = -EFAULT;
+            (void)copy_to_user(user_cb, &cb, sizeof(cb));
+            return 0;
+        }
         uint32_t (*fn_write)(fs_node_t*, uint32_t, uint32_t, const uint8_t*) = NULL;
         if (f->node->f_ops && f->node->f_ops->write) fn_write = f->node->f_ops->write;
         if (fn_write) {
-            result = (int32_t)fn_write(f->node, cb.aio_offset, cb.aio_nbytes,
-                                        (const uint8_t*)cb.aio_buf);
+            result = (int32_t)fn_write(f->node, cb.aio_offset, xfer, kbuf);
         } else {
             result = -ENOSYS;
         }
@@ -1662,12 +1673,21 @@ static int syscall_aio_rw_impl(void* user_cb, int is_write) {
         uint32_t (*fn_read)(fs_node_t*, uint32_t, uint32_t, uint8_t*) = NULL;
         if (f->node->f_ops && f->node->f_ops->read) fn_read = f->node->f_ops->read;
         if (fn_read) {
-            result = (int32_t)fn_read(f->node, cb.aio_offset, cb.aio_nbytes,
-                                       (uint8_t*)cb.aio_buf);
+            result = (int32_t)fn_read(f->node, cb.aio_offset, xfer, kbuf);
+            if (result > 0) {
+                if (copy_to_user(cb.aio_buf, kbuf, (uint32_t)result) < 0) {
+                    kfree(kbuf);
+                    cb.aio_error = EFAULT; cb.aio_return = -EFAULT;
+                    (void)copy_to_user(user_cb, &cb, sizeof(cb));
+                    return 0;
+                }
+            }
         } else {
             result = -ENOSYS;
         }
     }
+
+    kfree(kbuf);
 
     cb.aio_error = (result < 0) ? -result : 0;
     cb.aio_return = result;
@@ -1878,8 +1898,10 @@ static int pipe_create_kfds(int kfds[2]) {
     memset(rf, 0, sizeof(*rf));
     memset(wf, 0, sizeof(*wf));
     rf->node = rnode;
+    rf->flags = 0;          /* O_RDONLY — read end */
     rf->refcount = 1;
     wf->node = wnode;
+    wf->flags = 1;          /* O_WRONLY — write end */
     wf->refcount = 1;
 
     int rfd = fd_alloc(rf);
@@ -2750,6 +2772,9 @@ static int syscall_read_impl(int fd, void* user_buf, uint32_t len) {
     struct file* f = fd_get(fd);
     if (!f || !f->node) return -EBADF;
 
+    /* A03: reject read on O_WRONLY fd (except char devices) */
+    if ((f->flags & 3U) == 1U && f->node->flags != FS_CHARDEVICE) return -EBADF;
+
     int nonblock = (f->flags & O_NONBLOCK) ? 1 : 0;
     {
         int (*fn_poll)(fs_node_t*, int) = NULL;
@@ -2819,6 +2844,9 @@ static int syscall_write_impl(int fd, const void* user_buf, uint32_t len) {
 
     struct file* f = fd_get(fd);
     if (!f || !f->node) return -EBADF;
+
+    /* A03: reject write on O_RDONLY fd (except char devices) */
+    if ((f->flags & 3U) == 0U && f->node->flags != FS_CHARDEVICE) return -EBADF;
 
     /* Enforce MS_RDONLY: reject writes to read-only mounts */
     if (f->mount_root && (vfs_node_mount_flags(f->mount_root) & MS_RDONLY))
@@ -4637,7 +4665,7 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         if (!f) { sock_node_close(sn); sc_ret(regs) = (uint32_t)-ENOMEM; return; }
         f->node = sn;
         f->offset = 0;
-        f->flags = 0;
+        f->flags = 2;          /* O_RDWR — sockets are bidirectional */
         f->refcount = 1;
         int fd = fd_alloc(f);
         if (fd < 0) { sock_node_close(sn); kfree(f); sc_ret(regs) = (uint32_t)-EMFILE; return; }
@@ -4676,7 +4704,7 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         if (!f) { sock_node_close(sn); sc_ret(regs) = (uint32_t)-ENOMEM; return; }
         f->node = sn;
         f->offset = 0;
-        f->flags = 0;
+        f->flags = 2;          /* O_RDWR — sockets are bidirectional */
         f->refcount = 1;
         int new_fd = fd_alloc(f);
         if (new_fd < 0) { sock_node_close(sn); kfree(f); sc_ret(regs) = (uint32_t)-EMFILE; return; }
@@ -4705,7 +4733,16 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         if (!user_range_ok((const void*)sc_arg1(regs), len)) {
             sc_ret(regs) = (uint32_t)-EFAULT; return;
         }
-        sc_ret(regs) = (uint32_t)ksocket_send(sid, (const void*)sc_arg1(regs), len, (int)sc_arg3(regs));
+        /* Bounce buffer for SMAP */
+        size_t xfer = (len > 4096) ? 4096 : len;
+        uint8_t* kbuf = (uint8_t*)kmalloc(xfer);
+        if (!kbuf) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
+        if (copy_from_user(kbuf, (const void*)sc_arg1(regs), xfer) < 0) {
+            kfree(kbuf); sc_ret(regs) = (uint32_t)-EFAULT; return;
+        }
+        int sr = ksocket_send(sid, kbuf, xfer, (int)sc_arg3(regs));
+        kfree(kbuf);
+        sc_ret(regs) = (uint32_t)sr;
         return;
     }
 
@@ -4721,7 +4758,18 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         int rflags = (int)sc_arg3(regs);
         struct file* rf = fd_get(fd);
         if (rf && (rf->flags & O_NONBLOCK)) rflags |= O_NONBLOCK;
-        sc_ret(regs) = (uint32_t)ksocket_recv(sid, (void*)sc_arg1(regs), len, rflags);
+        /* Bounce buffer for SMAP */
+        size_t xfer = (len > 4096) ? 4096 : len;
+        uint8_t* kbuf = (uint8_t*)kmalloc(xfer);
+        if (!kbuf) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
+        int rr = ksocket_recv(sid, kbuf, xfer, rflags);
+        if (rr > 0) {
+            if (copy_to_user((void*)sc_arg1(regs), kbuf, (size_t)rr) < 0) {
+                kfree(kbuf); sc_ret(regs) = (uint32_t)-EFAULT; return;
+            }
+        }
+        kfree(kbuf);
+        sc_ret(regs) = (uint32_t)rr;
         return;
     }
 
@@ -4736,8 +4784,16 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         if (copy_from_user(&dest, (const void*)sc_arg4(regs), sizeof(dest)) < 0) {
             sc_ret(regs) = (uint32_t)-EFAULT; return;
         }
-        sc_ret(regs) = (uint32_t)ksocket_sendto(sid, (const void*)sc_arg1(regs), len,
-                                              (int)sc_arg3(regs), &dest);
+        /* Bounce buffer for SMAP */
+        size_t xfer_s = (len > 4096) ? 4096 : len;
+        uint8_t* kbuf_s = (uint8_t*)kmalloc(xfer_s);
+        if (!kbuf_s) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
+        if (copy_from_user(kbuf_s, (const void*)sc_arg1(regs), xfer_s) < 0) {
+            kfree(kbuf_s); sc_ret(regs) = (uint32_t)-EFAULT; return;
+        }
+        int sr2 = ksocket_sendto(sid, kbuf_s, xfer_s, (int)sc_arg3(regs), &dest);
+        kfree(kbuf_s);
+        sc_ret(regs) = (uint32_t)sr2;
         return;
     }
 
@@ -4755,10 +4811,20 @@ static void socket_syscall_dispatch(struct registers* regs, uint32_t syscall_no)
         if (rf && (rf->flags & O_NONBLOCK)) rflags |= O_NONBLOCK;
         struct sockaddr_in src;
         memset(&src, 0, sizeof(src));
-        int ret = ksocket_recvfrom(sid, (void*)sc_arg1(regs), len, rflags, &src);
-        if (ret > 0 && sc_arg4(regs)) {
-            (void)copy_to_user((void*)sc_arg4(regs), &src, sizeof(src));
+        /* Bounce buffer for SMAP */
+        size_t xfer_r = (len > 4096) ? 4096 : len;
+        uint8_t* kbuf_r = (uint8_t*)kmalloc(xfer_r);
+        if (!kbuf_r) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
+        int ret = ksocket_recvfrom(sid, kbuf_r, xfer_r, rflags, &src);
+        if (ret > 0) {
+            if (copy_to_user((void*)sc_arg1(regs), kbuf_r, (size_t)ret) < 0) {
+                kfree(kbuf_r); sc_ret(regs) = (uint32_t)-EFAULT; return;
+            }
+            if (sc_arg4(regs)) {
+                (void)copy_to_user((void*)sc_arg4(regs), &src, sizeof(src));
+            }
         }
+        kfree(kbuf_r);
         sc_ret(regs) = (uint32_t)ret;
         return;
     }
