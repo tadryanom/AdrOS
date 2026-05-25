@@ -31,11 +31,17 @@ struct vfs_mount {
     unsigned long flags; /* MS_RDONLY, MS_NOSUID, etc. */
     int refcount;        /* number of open files on this mount */
     const block_device_t* bdev; /* block device (NULL for virtual FS) */
+    vfs_superblock_t* sb; /* superblock (NULL for virtual FS) */
     fs_node_t* root;
 };
 
 static struct vfs_mount g_mounts[32];
 static int g_mount_count = 0;
+
+/* Filesystem type registry */
+#define FS_TYPE_MAX 8
+static vfs_fs_type_t g_fs_types[FS_TYPE_MAX];
+static int g_fs_type_count = 0;
 
 static int path_is_mountpoint_prefix(const char* mp, const char* path) {
     size_t mpl = strlen(mp);
@@ -75,7 +81,8 @@ static void normalize_mountpoint(const char* in, char* out, size_t out_sz) {
 
 int vfs_mount_nolock_full(const char* mountpoint, fs_node_t* root,
                             const char* fstype, const char* source,
-                            unsigned long flags, const block_device_t* bdev) {
+                            unsigned long flags, const block_device_t* bdev,
+                            vfs_superblock_t* sb) {
     char mp[128];
     normalize_mountpoint(mountpoint, mp, sizeof(mp));
 
@@ -94,6 +101,7 @@ int vfs_mount_nolock_full(const char* mountpoint, fs_node_t* root,
             /* Always update flags on remount (even if 0, caller explicitly set them) */
             g_mounts[i].flags = flags;
             g_mounts[i].bdev = bdev;
+            g_mounts[i].sb = sb;
             return 0;
         }
     }
@@ -118,19 +126,20 @@ int vfs_mount_nolock_full(const char* mountpoint, fs_node_t* root,
     }
     g_mounts[g_mount_count].flags = flags;
     g_mounts[g_mount_count].bdev = bdev;
+    g_mounts[g_mount_count].sb = sb;
     g_mount_count++;
     return 0;
 }
 
 int vfs_mount_nolock(const char* mountpoint, fs_node_t* root) {
-    return vfs_mount_nolock_full(mountpoint, root, NULL, NULL, 0, NULL);
+    return vfs_mount_nolock_full(mountpoint, root, NULL, NULL, 0, NULL, NULL);
 }
 
 int vfs_mount_full(const char* mountpoint, fs_node_t* root,
                     const char* fstype, const char* source,
                     unsigned long flags, const block_device_t* bdev) {
     uintptr_t fl = spin_lock_irqsave(&g_vfs_lock);
-    int ret = vfs_mount_nolock_full(mountpoint, root, fstype, source, flags, bdev);
+    int ret = vfs_mount_nolock_full(mountpoint, root, fstype, source, flags, bdev, NULL);
     spin_unlock_irqrestore(&g_vfs_lock, fl);
     return ret;
 }
@@ -625,4 +634,33 @@ int vfs_require_writable_path(const char* path) {
     unsigned long mflags = vfs_mount_flags(path);
     if (mflags & MS_RDONLY) return -EROFS;
     return 0;
+}
+
+/* ---- Filesystem type registry ---- */
+
+int vfs_fs_type_register(const vfs_fs_type_t* fst) {
+    if (!fst || !fst->name) return -EINVAL;
+    if (g_fs_type_count >= FS_TYPE_MAX) return -ENOSPC;
+
+    /* Check for duplicate name */
+    for (int i = 0; i < g_fs_type_count; i++) {
+        if (strcmp(g_fs_types[i].name, fst->name) == 0) {
+            /* Update existing entry */
+            g_fs_types[i] = *fst;
+            return 0;
+        }
+    }
+
+    g_fs_types[g_fs_type_count++] = *fst;
+    kprintf("[VFS] Registered filesystem type: %s\n", fst->name);
+    return 0;
+}
+
+const vfs_fs_type_t* vfs_fs_type_find(const char* name) {
+    if (!name) return NULL;
+    for (int i = 0; i < g_fs_type_count; i++) {
+        if (strcmp(g_fs_types[i].name, name) == 0)
+            return &g_fs_types[i];
+    }
+    return NULL;
 }

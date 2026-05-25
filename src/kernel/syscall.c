@@ -5075,9 +5075,9 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
         uintptr_t vfs_fl = spin_lock_irqsave(&g_vfs_lock);
         fs_node_t* old_root = fs_root;
         fs_root = new_root;
-        (void)vfs_mount_nolock_full("/", new_root, NULL, NULL, 0, NULL);
+        (void)vfs_mount_nolock_full("/", new_root, NULL, NULL, 0, NULL, NULL);
         if (old_root) {
-            (void)vfs_mount_nolock_full(kput, old_root, NULL, NULL, 0, NULL);
+            (void)vfs_mount_nolock_full(kput, old_root, NULL, NULL, 0, NULL, NULL);
         }
         spin_unlock_irqrestore(&g_vfs_lock, vfs_fl);
         sc_ret(regs) = 0;

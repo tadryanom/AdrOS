@@ -30,13 +30,31 @@
 #define MS_SYNCHRONOUS 16
 #define MS_REMOUNT     32      /* Alter flags of existing mount */
 
+/* Filesystem type flags */
+#define FS_NEEDS_BDEV  0x01    /* Requires block device */
+
+struct fs_node; /* forward declaration */
+
+/* Filesystem type structure */
+typedef struct vfs_fs_type {
+    const char* name;                     /* e.g. "fat", "ext2" */
+    uint32_t flags;                       /* FS_NEEDS_BDEV, etc. */
+    struct fs_node* (*mount)(const block_device_t* bdev, uint32_t lba);  /* Mount function */
+} vfs_fs_type_t;
+
+/* VFS superblock — per-mount filesystem metadata */
+typedef struct vfs_superblock {
+    const vfs_fs_type_t* fstype;         /* Filesystem type */
+    const block_device_t* bdev;          /* Block device (NULL for virtual FS) */
+    uint32_t lba;                        /* Partition start LBA (0 for whole disk) */
+    void* private_data;                  /* Filesystem-specific data (e.g. fat_mount, ext2_mount) */
+} vfs_superblock_t;
+
 /* poll() event flags — shared between kernel VFS and syscall layer */
 #define VFS_POLL_IN    0x0001
 #define VFS_POLL_OUT   0x0004
 #define VFS_POLL_ERR   0x0008
 #define VFS_POLL_HUP   0x0010
-
-struct fs_node; /* forward declaration for file_operations */
 
 /* File operations — per-open-fd I/O (requires an open file descriptor) */
 struct file_operations {
@@ -121,7 +139,8 @@ int vfs_umount(const char* mountpoint);
 int vfs_mount_nolock(const char* mountpoint, fs_node_t* root);
 int vfs_mount_nolock_full(const char* mountpoint, fs_node_t* root,
                             const char* fstype, const char* source,
-                            unsigned long flags, const block_device_t* bdev);
+                            unsigned long flags, const block_device_t* bdev,
+                            vfs_superblock_t* sb);
 int vfs_umount_nolock(const char* mountpoint);
 
 /* Read mount table for /proc/mounts. Returns bytes written. */
@@ -132,6 +151,10 @@ unsigned long vfs_mount_flags(const char* path);
 
 /* Look up mount flags by mount root node pointer. */
 unsigned long vfs_node_mount_flags(const fs_node_t* root);
+
+/* Filesystem type registry */
+int vfs_fs_type_register(const vfs_fs_type_t* fst);
+const vfs_fs_type_t* vfs_fs_type_find(const char* name);
 
 /* Find the mount root fs_node for a given path. */
 fs_node_t* vfs_find_mount_root(const char* path);
