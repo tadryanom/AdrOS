@@ -2387,6 +2387,12 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
         if (rc < 0) return rc;
     } else if (!node) {
         return -ENOENT;
+    } else if ((flags & 0x40U) != 0U && (flags & 0x80U) != 0U) {
+        /* O_CREAT | O_EXCL on existing file → EEXIST */
+        return -EEXIST;
+    } else if ((flags & 0x10000U) != 0U && !(node->flags & FS_DIRECTORY)) {
+        /* O_DIRECTORY on non-directory → ENOTDIR */
+        return -ENOTDIR;
     } else if ((flags & 0x200U) != 0U && node->flags == FS_FILE) {
         /* O_TRUNC on existing file */
         if (node->i_ops && node->i_ops->truncate) {
@@ -2684,7 +2690,8 @@ static int syscall_getcwd_impl(char* user_buf, uint32_t size) {
     return 0;
 }
 
-static int syscall_mkdir_impl(const char* user_path) {
+static int syscall_mkdir_impl(const char* user_path, uint32_t mode) {
+    (void)mode;  /* TODO: pass mode to vfs_mkdir once FS backends support it */
     if (!user_path) return -EFAULT;
 
     char path[128];
@@ -3725,7 +3732,8 @@ void syscall_handler(struct registers* regs) {
 
     if (syscall_no == SYSCALL_MKDIR) {
         const char* path = (const char*)sc_arg0(regs);
-        sc_ret(regs) = (uint32_t)syscall_mkdir_impl(path);
+        uint32_t mode = sc_arg1(regs);
+        sc_ret(regs) = (uint32_t)syscall_mkdir_impl(path, mode);
         return;
     }
 
@@ -4342,6 +4350,7 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
         uint32_t length = sc_arg1(regs);
         struct file* f = fd_get(fd);
         if (!f || !f->node) { sc_ret(regs) = (uint32_t)-EBADF; return; }
+        if ((f->flags & 3U) == 0U) { sc_ret(regs) = (uint32_t)-EBADF; return; }  /* O_RDONLY */
         if (!(f->node->flags & FS_FILE)) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
         f->node->length = length;
         sc_ret(regs) = 0;
@@ -4358,6 +4367,7 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
         fs_node_t* node = vfs_lookup(path);
         if (!node) { sc_ret(regs) = (uint32_t)-ENOENT; return; }
         if (!(node->flags & FS_FILE)) { sc_ret(regs) = (uint32_t)-EISDIR; return; }
+        if (vfs_check_permission(node, 2) != 0) { sc_ret(regs) = (uint32_t)-EACCES; return; }  /* write */
         node->length = length;
         sc_ret(regs) = 0;
         return;
