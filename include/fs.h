@@ -42,6 +42,7 @@ typedef struct vfs_superblock {
     const block_device_t* bdev;          /* Block device (NULL for virtual FS) */
     uint32_t lba;                        /* Partition start LBA (0 for whole disk) */
     void* private_data;                  /* Filesystem-specific data (e.g. fat_mount, ext2_mount) */
+    struct fs_node* root;                /* VFS root node (for cleanup on umount) */
 } vfs_superblock_t;
 
 /* Mount result structure - returned by filesystem mount functions */

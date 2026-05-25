@@ -112,7 +112,6 @@ struct fat_node {
     uint32_t dir_entry_offset;    /* byte offset of dirent within parent dir data */
 };
 
-static struct fat_node g_fat_root;
 static uint8_t g_sec_buf[FAT_SECTOR_SIZE];
 
 /* ---- Low-level sector I/O ---- */
@@ -516,7 +515,6 @@ static const struct inode_operations fat_dir_iops = {
 static void fat_close_impl(fs_node_t* node) {
     if (!node) return;
     struct fat_node* fn = (struct fat_node*)node;
-    if (fn == &g_fat_root) return;
     kfree(fn);
 }
 
@@ -1210,21 +1208,28 @@ vfs_mount_result_t fat_mount(const block_device_t* bdev, uint32_t partition_lba)
     }
 
     /* Build root node */
-    memset(&g_fat_root, 0, sizeof(g_fat_root));
-    g_fat_root.mount = fm;
-    memcpy(g_fat_root.vfs.name, "fat", 4);
-    g_fat_root.vfs.flags = FS_DIRECTORY;
-    g_fat_root.vfs.inode = 0;
-    g_fat_root.first_cluster = (fm->type == FAT_TYPE_32) ? fm->root_cluster : 0;
-    g_fat_root.parent_cluster = 0;
-    g_fat_root.dir_entry_offset = 0;
-    g_fat_root.vfs.f_ops = &fat_dir_fops;
-    g_fat_root.vfs.i_ops = &fat_dir_iops;
+    struct fat_node* root = (struct fat_node*)kmalloc(sizeof(struct fat_node));
+    if (!root) {
+        kprintf("[FAT] Failed to allocate root node\n");
+        kfree(fm);
+        return result;
+    }
+    memset(root, 0, sizeof(*root));
+    root->mount = fm;
+    memcpy(root->vfs.name, "fat", 4);
+    root->vfs.flags = FS_DIRECTORY;
+    root->vfs.inode = 0;
+    root->first_cluster = (fm->type == FAT_TYPE_32) ? fm->root_cluster : 0;
+    root->parent_cluster = 0;
+    root->dir_entry_offset = 0;
+    root->vfs.f_ops = &fat_dir_fops;
+    root->vfs.i_ops = &fat_dir_iops;
 
     /* Build superblock */
     vfs_superblock_t* sb = (vfs_superblock_t*)kmalloc(sizeof(vfs_superblock_t));
     if (!sb) {
         kprintf("[FAT] Failed to allocate superblock\n");
+        kfree(root);
         kfree(fm);
         return result;
     }
@@ -1232,12 +1237,13 @@ vfs_mount_result_t fat_mount(const block_device_t* bdev, uint32_t partition_lba)
     sb->bdev = bdev;
     sb->lba = partition_lba;
     sb->private_data = fm;
+    sb->root = &root->vfs;
     /* fstype will be set by caller */
 
     kprintf("[FAT] Mounted FAT%u at LBA %u (%u clusters)\n",
             (unsigned)fm->type, partition_lba, fm->total_clusters);
 
-    result.root = &g_fat_root.vfs;
+    result.root = &root->vfs;
     result.sb = sb;
     return result;
 }
