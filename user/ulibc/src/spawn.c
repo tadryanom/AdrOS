@@ -18,8 +18,7 @@ int posix_spawn(int* pid, const char* path,
                 char* const argv[], char* const envp[]) {
     (void)file_actions;
     (void)attrp;
-    (void)envp;
-    int ret = _syscall2(SYS_POSIX_SPAWN, (int)path, (int)argv);
+    int ret = _syscall4(SYS_POSIX_SPAWN, (int)pid, (int)path, (int)argv, (int)envp);
     if (ret < 0) {
         errno = -ret;
         return -ret;

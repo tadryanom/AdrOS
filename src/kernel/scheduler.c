@@ -8,6 +8,33 @@
  */
 
 #include "process.h"
+
+/* ---- CLONE_VM address-space refcount table ---- */
+#define AS_REFCOUNT_MAX 64
+static struct { uintptr_t as; uint32_t refcnt; } g_as_refcnt[AS_REFCOUNT_MAX];
+
+static void as_refcount_inc(uintptr_t as) {
+    if (!as) return;
+    for (int i = 0; i < AS_REFCOUNT_MAX; i++) {
+        if (g_as_refcnt[i].as == as) { g_as_refcnt[i].refcnt++; return; }
+    }
+    for (int i = 0; i < AS_REFCOUNT_MAX; i++) {
+        if (g_as_refcnt[i].as == 0) { g_as_refcnt[i].as = as; g_as_refcnt[i].refcnt = 1; return; }
+    }
+}
+
+static uint32_t as_refcount_dec(uintptr_t as) {
+    if (!as) return 0;
+    for (int i = 0; i < AS_REFCOUNT_MAX; i++) {
+        if (g_as_refcnt[i].as == as) {
+            if (g_as_refcnt[i].refcnt > 0) g_as_refcnt[i].refcnt--;
+            uint32_t r = g_as_refcnt[i].refcnt;
+            if (r == 0) { g_as_refcnt[i].as = 0; }
+            return r;
+        }
+    }
+    return 0;
+}
 #include "pmm.h"
 #include "vmm.h"
 #include "heap.h"
@@ -336,8 +363,18 @@ static void process_reap_locked(struct process* p) {
     }
 
     if (p->addr_space && p->addr_space != kernel_as) {
-        /* Threads share addr_space with group leader; don't destroy it */
-        if (!(p->flags & PROCESS_FLAG_THREAD)) {
+        if (p->flags & PROCESS_FLAG_THREAD) {
+            /* Thread: decrement the AS refcount; destroy if last ref */
+            if (as_refcount_dec(p->addr_space) == 0) {
+                vmm_as_destroy(p->addr_space);
+            }
+        } else if (p->as_refcount > 0) {
+            /* Leader with live threads: decrement refcount; last one destroys */
+            if (as_refcount_dec(p->addr_space) == 0) {
+                vmm_as_destroy(p->addr_space);
+            }
+        } else {
+            /* Regular process (no CLONE_VM threads): safe to destroy */
             vmm_as_destroy(p->addr_space);
         }
         p->addr_space = 0;
@@ -785,6 +822,12 @@ struct process* process_clone_create(uint32_t clone_flags,
     if (clone_flags & CLONE_VM) {
         proc->addr_space = current_process->addr_space;
         proc->flags |= PROCESS_FLAG_THREAD;
+        /* If this is the first thread, add the parent's own ref to the table */
+        if (current_process->as_refcount == 0) {
+            as_refcount_inc(proc->addr_space);  /* parent's ref */
+        }
+        as_refcount_inc(proc->addr_space);      /* child's ref */
+        current_process->as_refcount++;
     } else {
         proc->addr_space = vmm_as_clone_user_cow(current_process->addr_space);
         if (!proc->addr_space) {

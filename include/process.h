@@ -152,6 +152,7 @@ struct process {
     /* Thread support */
     uint32_t tgid;              /* Thread group ID (== pid for group leader) */
     uint32_t flags;             /* PROCESS_FLAG_* */
+    uint32_t as_refcount;       /* CLONE_VM address space reference count */
     uintptr_t tls_base;         /* User-space TLS base (set via SET_THREAD_AREA) */
     uint32_t* clear_child_tid;  /* User address to clear + futex-wake on exit */
 
