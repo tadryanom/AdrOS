@@ -131,6 +131,7 @@ int vfs_mount_nolock_full(const char* mountpoint, fs_node_t* root,
     g_mounts[g_mount_count].flags = flags;
     g_mounts[g_mount_count].bdev = bdev;
     g_mounts[g_mount_count].sb = sb;
+    g_mounts[g_mount_count].refcount = 0;
     g_mount_count++;
     return 0;
 }
