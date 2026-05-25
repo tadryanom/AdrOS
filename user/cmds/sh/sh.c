@@ -472,7 +472,8 @@ static void expand_vars(const char* src, char* dst, int maxlen) {
                 char cmd[258];
                 cmd[0] = '(';  /* wrap in subshell */
                 memcpy(cmd + 1, start, (size_t)cmdlen);
-                cmd[1 + cmdlen] = '\0';
+                cmd[1 + cmdlen] = ')';  /* A18: add closing parenthesis */
+                cmd[2 + cmdlen] = '\0';
                 int pfd[2];
                 if (pipe(pfd) == 0) {
                     int pid = fork();
