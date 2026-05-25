@@ -325,53 +325,34 @@ static int syscall_sem_getvalue_impl(int sid, int* user_val) {
 }
 
 /* --- Shared library loading (dlopen/dlsym/dlclose) --- */
-#define DLOPEN_MAX_LIBS 8
 #define DLOPEN_MAX_SYMS 64
 #define DLOPEN_BASE     0x30000000U
 #define DLOPEN_STRIDE   0x00400000U  /* 4 MB per library */
 
-struct dl_sym {
-    char     name[64];
-    uint32_t value;
-};
-
-struct dl_lib {
-    int      active;
-    char     path[128];
-    uint32_t base;          /* load base address */
-    struct dl_sym syms[DLOPEN_MAX_SYMS];
-    uint32_t nsyms;
-};
-
-static struct dl_lib dl_table[DLOPEN_MAX_LIBS];
-static spinlock_t dl_lock = {0};
+/* K22: dlopen handles are now per-process (in struct process) */
 
 static int syscall_dlopen_impl(const char* user_path) {
+    if (!current_process) return -EINVAL;
     char path[128];
     if (copy_from_user(path, user_path, 127) < 0) return -EFAULT;
     path[127] = 0;
 
-    uintptr_t fl = spin_lock_irqsave(&dl_lock);
-
+    /* K22: Use per-process dl_handles */
     /* Check if already loaded */
-    for (int i = 0; i < DLOPEN_MAX_LIBS; i++) {
-        if (dl_table[i].active && strcmp(dl_table[i].path, path) == 0) {
-            spin_unlock_irqrestore(&dl_lock, fl);
+    for (int i = 0; i < PROCESS_MAX_DLOPEN; i++) {
+        if (current_process->dl_handles[i].active && strcmp(current_process->dl_handles[i].path, path) == 0) {
             return i + 1; /* handle = 1-based index */
         }
     }
 
     /* Find free slot */
     int slot = -1;
-    for (int i = 0; i < DLOPEN_MAX_LIBS; i++) {
-        if (!dl_table[i].active) { slot = i; break; }
+    for (int i = 0; i < PROCESS_MAX_DLOPEN; i++) {
+        if (!current_process->dl_handles[i].active) { slot = i; break; }
     }
     if (slot < 0) {
-        spin_unlock_irqrestore(&dl_lock, fl);
         return -ENOMEM;
     }
-
-    spin_unlock_irqrestore(&dl_lock, fl);
 
     /* Load the ELF .so file */
     extern fs_node_t* vfs_lookup(const char* path);
@@ -483,11 +464,10 @@ static int syscall_dlopen_impl(const char* user_path) {
     }
 
     /* Extract symbols from .dynsym + .dynstr via PT_DYNAMIC */
-    fl = spin_lock_irqsave(&dl_lock);
-    memset(&dl_table[slot], 0, sizeof(dl_table[slot]));
-    dl_table[slot].active = 1;
-    strcpy(dl_table[slot].path, path);
-    dl_table[slot].base = base;
+    memset(&current_process->dl_handles[slot], 0, sizeof(current_process->dl_handles[slot]));
+    current_process->dl_handles[slot].active = 1;
+    strcpy(current_process->dl_handles[slot].path, path);
+    current_process->dl_handles[slot].base = base;
 
     /* Parse PT_DYNAMIC to find SYMTAB and STRTAB */
     uint32_t symtab_va = 0, strtab_va = 0, strsz = 0;
@@ -541,21 +521,21 @@ static int syscall_dlopen_impl(const char* user_path) {
 
             uint32_t nlen = 0;
             while (nlen < 63 && name[nlen]) nlen++;
-            memcpy(dl_table[slot].syms[cnt].name, name, nlen);
-            dl_table[slot].syms[cnt].name[nlen] = 0;
-            dl_table[slot].syms[cnt].value = st_value + base;
+            memcpy(current_process->dl_handles[slot].syms[cnt].name, name, nlen);
+            current_process->dl_handles[slot].syms[cnt].name[nlen] = 0;
+            current_process->dl_handles[slot].syms[cnt].value = st_value + base;
             cnt++;
         }
-        dl_table[slot].nsyms = cnt;
+        current_process->dl_handles[slot].nsyms = cnt;
     }
 
-    spin_unlock_irqrestore(&dl_lock, fl);
     kfree(fbuf);
     return slot + 1; /* 1-based handle */
 }
 
 static int syscall_dlsym_impl(int handle, const char* user_name, uint32_t* user_addr) {
-    if (handle < 1 || handle > DLOPEN_MAX_LIBS) return -EINVAL;
+    if (!current_process) return -EINVAL;
+    if (handle < 1 || handle > PROCESS_MAX_DLOPEN) return -EINVAL;
     if (!user_name || !user_addr) return -EFAULT;
     if (user_range_ok(user_addr, 4) == 0) return -EFAULT;
 
@@ -564,35 +544,29 @@ static int syscall_dlsym_impl(int handle, const char* user_name, uint32_t* user_
     name[63] = 0;
 
     int slot = handle - 1;
-    uintptr_t fl = spin_lock_irqsave(&dl_lock);
-    if (!dl_table[slot].active) {
-        spin_unlock_irqrestore(&dl_lock, fl);
+    if (!current_process->dl_handles[slot].active) {
         return -EINVAL;
     }
 
-    for (uint32_t i = 0; i < dl_table[slot].nsyms; i++) {
-        if (strcmp(dl_table[slot].syms[i].name, name) == 0) {
-            uint32_t addr = dl_table[slot].syms[i].value;
-            spin_unlock_irqrestore(&dl_lock, fl);
+    for (uint32_t i = 0; i < current_process->dl_handles[slot].nsyms; i++) {
+        if (strcmp(current_process->dl_handles[slot].syms[i].name, name) == 0) {
+            uint32_t addr = current_process->dl_handles[slot].syms[i].value;
             if (copy_to_user(user_addr, &addr, 4) < 0) return -EFAULT;
             return 0;
         }
     }
 
-    spin_unlock_irqrestore(&dl_lock, fl);
     return -ENOENT;
 }
 
 static int syscall_dlclose_impl(int handle) {
-    if (handle < 1 || handle > DLOPEN_MAX_LIBS) return -EINVAL;
+    if (!current_process) return -EINVAL;
+    if (handle < 1 || handle > PROCESS_MAX_DLOPEN) return -EINVAL;
     int slot = handle - 1;
-    uintptr_t fl = spin_lock_irqsave(&dl_lock);
-    if (!dl_table[slot].active) {
-        spin_unlock_irqrestore(&dl_lock, fl);
+    if (!current_process->dl_handles[slot].active) {
         return -EINVAL;
     }
-    dl_table[slot].active = 0;
-    spin_unlock_irqrestore(&dl_lock, fl);
+    current_process->dl_handles[slot].active = 0;
     return 0;
 }
 
@@ -843,7 +817,8 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
 #define FUTEX_WAKE 1
 #define FUTEX_MAX_WAITERS 32
 
-static struct { uintptr_t addr; struct process* proc; } futex_waiters[FUTEX_MAX_WAITERS];
+/* K17: Key futex by (addr_space, uaddr) to prevent cross-process interference */
+static struct { uintptr_t addr_space; uintptr_t addr; struct process* proc; } futex_waiters[FUTEX_MAX_WAITERS];
 
 static void futex_cleanup_process(struct process* p) {
     if (!p) return;
@@ -851,6 +826,7 @@ static void futex_cleanup_process(struct process* p) {
         if (futex_waiters[i].proc == p) {
             futex_waiters[i].proc = NULL;
             futex_waiters[i].addr = 0;
+            futex_waiters[i].addr_space = 0;
         }
     }
 }
@@ -3447,6 +3423,10 @@ void syscall_handler(struct registers* regs) {
             flock_release_pid(current_process->pid);
             rlock_release_pid(current_process->pid);
             futex_cleanup_process(current_process);
+            /* K22: Clean up per-process dlopen handles */
+            for (int i = 0; i < PROCESS_MAX_DLOPEN; i++) {
+                current_process->dl_handles[i].active = 0;
+            }
         }
 
         for (int fd = 0; fd < PROCESS_MAX_FILES; fd++) {
@@ -4539,6 +4519,7 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
             }
             if (slot < 0) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
             futex_waiters[slot].addr = (uintptr_t)uaddr;
+            futex_waiters[slot].addr_space = current_process->addr_space;
             futex_waiters[slot].proc = current_process;
             extern void schedule(void);
 
@@ -4552,6 +4533,7 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
                         /* timeout==0 means no wait (poll) */
                         futex_waiters[slot].proc = NULL;
                         futex_waiters[slot].addr = 0;
+                        futex_waiters[slot].addr_space = 0;
                         sc_ret(regs) = (uint32_t)-ETIMEDOUT;
                         return;
                     }
@@ -4564,6 +4546,7 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
             schedule();
             futex_waiters[slot].proc = NULL;
             futex_waiters[slot].addr = 0;
+            futex_waiters[slot].addr_space = 0;
             sc_ret(regs) = 0;
             return;
         }
@@ -4573,10 +4556,11 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
             int max_wake = (int)val;
             if (max_wake <= 0) max_wake = 1;
             for (int i = 0; i < FUTEX_MAX_WAITERS && woken < max_wake; i++) {
-                if (futex_waiters[i].proc && futex_waiters[i].addr == (uintptr_t)uaddr) {
+                if (futex_waiters[i].proc && futex_waiters[i].addr == (uintptr_t)uaddr && futex_waiters[i].addr_space == current_process->addr_space) {
                     futex_waiters[i].proc->state = PROCESS_READY;
                     futex_waiters[i].proc = NULL;
                     futex_waiters[i].addr = 0;
+                    futex_waiters[i].addr_space = 0;
                     woken++;
                 }
             }

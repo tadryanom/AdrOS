@@ -162,6 +162,19 @@ struct process {
     uint32_t suid;  /* saved set-user-ID */
     uint32_t sgid;  /* saved set-group-ID */
 
+    /* K22: Per-process dlopen handles */
+#define PROCESS_MAX_DLOPEN 4
+    struct {
+        int      active;
+        char     path[128];
+        uint32_t base;
+        uint32_t nsyms;
+        struct {
+            char     name[64];
+            uint32_t value;
+        } syms[64];
+    } dl_handles[PROCESS_MAX_DLOPEN];
+
     uint8_t fpu_state[FPU_STATE_SIZE] __attribute__((aligned(FPU_STATE_ALIGN)));
 };
 
