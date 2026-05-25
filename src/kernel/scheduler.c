@@ -394,6 +394,9 @@ static void process_close_all_files_locked(struct process* p) {
             if (f->node) {
                 vfs_close(f->node);
             }
+            if (f->mount_root) {
+                vfs_mount_unref(f->mount_root);
+            }
             kfree(f);
         }
     }
