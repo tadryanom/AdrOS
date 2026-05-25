@@ -244,6 +244,12 @@ uint32_t pmm_decref(uintptr_t paddr) {
     uint64_t frame = paddr / PAGE_SIZE;
     if (frame == 0 || frame >= max_frames) return 0;
     uintptr_t flags = spin_lock_irqsave(&pmm_lock);
+    if (frame_refcount[frame] == 0) {
+        /* Underflow - bug de ownership, reportar e abortar */
+        spin_unlock_irqrestore(&pmm_lock, flags);
+        kprintf("[PMM] ERROR: pmm_decref underflow on frame %llu\n", frame);
+        return 0;
+    }
     uint32_t new_val = --frame_refcount[frame];
     if (new_val == 0) {
         bitmap_unset(frame);

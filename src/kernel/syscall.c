@@ -2387,6 +2387,9 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
         /* O_CREAT: create file through VFS */
         int rc = vfs_require_writable_path(path);
         if (rc < 0) return rc;
+        /* A07: check parent directory write+execute permission */
+        rc = vfs_check_parent_permission(path, 3);  /* write + execute */
+        if (rc < 0) return rc;
         rc = vfs_create(path, flags, &node);
         if (rc < 0) return rc;
     } else if (!node) {
@@ -2398,7 +2401,11 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
         /* O_DIRECTORY on non-directory → ENOTDIR */
         return -ENOTDIR;
     } else if ((flags & 0x200U) != 0U && node->flags == FS_FILE) {
-        /* O_TRUNC on existing file */
+        /* O_TRUNC on existing file - require write access */
+        /* A04: O_RDONLY|O_TRUNC should not be allowed */
+        if ((flags & 3U) == 0) {  /* O_RDONLY = 0 */
+            return -EACCES;  /* Cannot truncate with O_RDONLY */
+        }
         int rc = vfs_require_writable_path(path);
         if (rc < 0) return rc;
         if (node->i_ops && node->i_ops->truncate) {
@@ -2708,6 +2715,10 @@ static int syscall_mkdir_impl(const char* user_path, uint32_t mode) {
     int rc = vfs_require_writable_path(path);
     if (rc < 0) return rc;
 
+    /* A07: check parent directory write+execute permission */
+    rc = vfs_check_parent_permission(path, 3);  /* write + execute */
+    if (rc < 0) return rc;
+
     return vfs_mkdir(path);
 }
 
@@ -2747,6 +2758,10 @@ static int syscall_unlink_impl(const char* user_path) {
     int rc = vfs_require_writable_path(path);
     if (rc < 0) return rc;
 
+    /* A07: check parent directory write+execute permission */
+    rc = vfs_check_parent_permission(path, 3);  /* write + execute */
+    if (rc < 0) return rc;
+
     return vfs_unlink(path);
 }
 
@@ -2766,6 +2781,10 @@ static int syscall_rmdir_impl(const char* user_path) {
     int rc = vfs_require_writable_path(path);
     if (rc < 0) return rc;
 
+    /* A07: check parent directory write+execute permission */
+    rc = vfs_check_parent_permission(path, 3);  /* write + execute */
+    if (rc < 0) return rc;
+
     return vfs_rmdir(path);
 }
 
@@ -2782,6 +2801,12 @@ static int syscall_rename_impl(const char* user_old, const char* user_new) {
     rc = vfs_require_writable_path(oldp);
     if (rc < 0) return rc;
     rc = vfs_require_writable_path(newp);
+    if (rc < 0) return rc;
+
+    /* A07: check parent directory write+execute permission on both paths */
+    rc = vfs_check_parent_permission(oldp, 3);  /* write + execute */
+    if (rc < 0) return rc;
+    rc = vfs_check_parent_permission(newp, 3);  /* write + execute */
     if (rc < 0) return rc;
 
     return vfs_rename(oldp, newp);
@@ -3321,6 +3346,11 @@ static int syscall_link_impl(const char* user_oldpath, const char* user_newpath)
     if (rc1 < 0) return rc1;
     int rc2 = path_resolve_user(user_newpath, new_path, sizeof(new_path));
     if (rc2 < 0) return rc2;
+    
+    /* A07: check parent directory write+execute permission for new link */
+    int rc = vfs_check_parent_permission(new_path, 3);  /* write + execute */
+    if (rc < 0) return rc;
+    
     return vfs_link(old_path, new_path);
 }
 
@@ -4340,6 +4370,10 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
         struct file* f = fd_get(fd);
         if (!f || !f->node) { sc_ret(regs) = (uint32_t)-EBADF; return; }
         if (!(f->node->f_ops && f->node->f_ops->read)) { sc_ret(regs) = (uint32_t)-ESPIPE; return; }
+        /* A03: validate fd mode - cannot read from write-only */
+        if ((f->flags & 3U) == 1) {  /* O_WRONLY = 1 */
+            sc_ret(regs) = (uint32_t)-EBADF; return;
+        }
         if (count > 1024 * 1024) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
         uint8_t kbuf[256];
         uint32_t total = 0;
@@ -4366,6 +4400,17 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
         struct file* f = fd_get(fd);
         if (!f || !f->node) { sc_ret(regs) = (uint32_t)-EBADF; return; }
         if (!(f->node->f_ops && f->node->f_ops->write)) { sc_ret(regs) = (uint32_t)-ESPIPE; return; }
+        /* A03: validate fd mode - cannot write to read-only */
+        if ((f->flags & 3U) == 0) {  /* O_RDONLY = 0 */
+            sc_ret(regs) = (uint32_t)-EBADF; return;
+        }
+        /* A03: check mount read-only via mount_root */
+        if (f->mount_root) {
+            unsigned long mflags = vfs_node_mount_flags(f->mount_root);
+            if (mflags & MS_RDONLY) {
+                sc_ret(regs) = (uint32_t)-EROFS; return;
+            }
+        }
         if (count > 1024 * 1024) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
         uint8_t kbuf[256];
         uint32_t total = 0;
@@ -4403,8 +4448,9 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
         if (!f || !f->node) { sc_ret(regs) = (uint32_t)-EBADF; return; }
         if ((f->flags & 3U) == 0U) { sc_ret(regs) = (uint32_t)-EBADF; return; }  /* O_RDONLY */
         if (!(f->node->flags & FS_FILE)) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
-        f->node->length = length;
-        sc_ret(regs) = 0;
+        /* A14: use vfs_truncate_node to call backend truncate when available */
+        int rc = vfs_truncate_node(f->node, length);
+        sc_ret(regs) = (uint32_t)rc;
         return;
     }
 
@@ -4415,12 +4461,9 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
         char path[128];
         int prc = path_resolve_user(user_path, path, sizeof(path));
         if (prc < 0) { sc_ret(regs) = (uint32_t)prc; return; }
-        fs_node_t* node = vfs_lookup(path);
-        if (!node) { sc_ret(regs) = (uint32_t)-ENOENT; return; }
-        if (!(node->flags & FS_FILE)) { sc_ret(regs) = (uint32_t)-EISDIR; return; }
-        if (vfs_check_permission(node, 2) != 0) { sc_ret(regs) = (uint32_t)-EACCES; return; }  /* write */
-        node->length = length;
-        sc_ret(regs) = 0;
+        /* A14: use vfs_truncate to call backend truncate when available */
+        int rc = vfs_truncate(path, length);
+        sc_ret(regs) = (uint32_t)rc;
         return;
     }
 

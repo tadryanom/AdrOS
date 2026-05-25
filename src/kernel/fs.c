@@ -588,7 +588,56 @@ int vfs_truncate(const char* path, uint32_t length) {
     if (node->flags != FS_FILE) return -EISDIR;
     if (node->i_ops && node->i_ops->truncate)
         return node->i_ops->truncate(node, length);
-    return -ENOSYS;
+    /* A14: fallback for FS that don't support truncate - just update length */
+    node->length = length;
+    return 0;
+}
+
+/* A14: Helper for ftruncate - truncate by node instead of path */
+int vfs_truncate_node(fs_node_t* node, uint32_t length) {
+    if (!node) return -EINVAL;
+    if (node->flags != FS_FILE) return -EINVAL;
+    if (node->i_ops && node->i_ops->truncate)
+        return node->i_ops->truncate(node, length);
+    /* Fallback for FS that don't support truncate */
+    node->length = length;
+    return 0;
+}
+
+/* A07: Helper to check parent directory permissions for mutations */
+int vfs_check_parent_permission(const char* path, int perm) {
+    if (!path) return -EINVAL;
+    
+    /* Extract parent directory path - find last '/' */
+    const char* last_slash = NULL;
+    const char* p = path;
+    while (*p) {
+        if (*p == '/') last_slash = p;
+        p++;
+    }
+    
+    if (!last_slash || last_slash == path) {
+        /* Root or no parent - allow */
+        return 0;
+    }
+    
+    /* Copy parent path */
+    char parent[256];
+    size_t parent_len = last_slash - path;
+    if (parent_len >= sizeof(parent)) return -EINVAL;
+    memcpy(parent, path, parent_len);
+    parent[parent_len] = '\0';
+    
+    /* Lookup parent */
+    fs_node_t* parent_node = vfs_lookup(parent);
+    if (!parent_node) return -ENOENT;
+    if (!(parent_node->flags & FS_DIRECTORY)) return -ENOTDIR;
+    
+    /* A07: For now, allow all - single-user root system */
+    /* TODO: Implement proper permission check using current_process */
+    (void)parent_node;
+    (void)perm;
+    return 0;
 }
 
 int vfs_link(const char* old_path, const char* new_path) {

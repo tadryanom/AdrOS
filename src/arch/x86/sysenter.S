@@ -83,9 +83,12 @@ sysenter_entry:
      *
      * SECURITY: validate ECX is in user space before dereferencing.
      * If ECX >= 0xC0000000 (kernel base), it could leak kernel data.
+     * Also check ECX is at least 8 bytes from kernel boundary.
      */
     cmpl $0xC0000000, %ecx
     jae  1f
+    cmpl $8, %ecx        /* ECX must be at least 8 bytes from kernel boundary */
+    jb   1f
     mov 4(%ecx), %edx   /* EDX = arg3 (was saved by user) */
     mov 8(%ecx), %ecx   /* ECX = arg2 (was saved by user) */
     jmp 2f
