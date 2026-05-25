@@ -13,6 +13,7 @@
 #include "process.h"
 #include "spinlock.h"
 #include "uaccess.h"
+#include "blockdev.h"
 
 #include "console.h"
 #include "utils.h"
@@ -2384,7 +2385,9 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
     fs_node_t* node = vfs_lookup(path);
     if (!node && (flags & 0x40U) != 0U) {
         /* O_CREAT: create file through VFS */
-        int rc = vfs_create(path, flags, &node);
+        int rc = vfs_require_writable_path(path);
+        if (rc < 0) return rc;
+        rc = vfs_create(path, flags, &node);
         if (rc < 0) return rc;
     } else if (!node) {
         return -ENOENT;
@@ -2396,6 +2399,8 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
         return -ENOTDIR;
     } else if ((flags & 0x200U) != 0U && node->flags == FS_FILE) {
         /* O_TRUNC on existing file */
+        int rc = vfs_require_writable_path(path);
+        if (rc < 0) return rc;
         if (node->i_ops && node->i_ops->truncate) {
             node->i_ops->truncate(node, 0);
             node->length = 0;
@@ -2419,13 +2424,14 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
     f->offset = 0;
     f->flags = flags;
     f->refcount = 1;
-    vfs_mount_ref(f->mount_root);
 
     int fd = fd_alloc(f);
     if (fd < 0) {
         kfree(f);
         return -EMFILE;
     }
+    vfs_mount_ref(f->mount_root);
+
     if ((flags & O_CLOEXEC) && current_process) {
         current_process->fd_flags[fd] = FD_CLOEXEC;
     }
@@ -2699,6 +2705,9 @@ static int syscall_mkdir_impl(const char* user_path, uint32_t mode) {
     int prc = path_resolve_user(user_path, path, sizeof(path));
     if (prc < 0) return prc;
 
+    int rc = vfs_require_writable_path(path);
+    if (rc < 0) return rc;
+
     return vfs_mkdir(path);
 }
 
@@ -2735,6 +2744,9 @@ static int syscall_unlink_impl(const char* user_path) {
     int prc = path_resolve_user(user_path, path, sizeof(path));
     if (prc < 0) return prc;
 
+    int rc = vfs_require_writable_path(path);
+    if (rc < 0) return rc;
+
     return vfs_unlink(path);
 }
 
@@ -2751,6 +2763,9 @@ static int syscall_rmdir_impl(const char* user_path) {
     int prc = path_resolve_user(user_path, path, sizeof(path));
     if (prc < 0) return prc;
 
+    int rc = vfs_require_writable_path(path);
+    if (rc < 0) return rc;
+
     return vfs_rmdir(path);
 }
 
@@ -2762,6 +2777,11 @@ static int syscall_rename_impl(const char* user_old, const char* user_new) {
     int rc = path_resolve_user(user_old, oldp, sizeof(oldp));
     if (rc < 0) return rc;
     rc = path_resolve_user(user_new, newp, sizeof(newp));
+    if (rc < 0) return rc;
+
+    rc = vfs_require_writable_path(oldp);
+    if (rc < 0) return rc;
+    rc = vfs_require_writable_path(newp);
     if (rc < 0) return rc;
 
     return vfs_rename(oldp, newp);
@@ -3311,6 +3331,9 @@ static int syscall_chmod_impl(const char* user_path, uint32_t mode) {
     int prc = path_resolve_user(user_path, path, sizeof(path));
     if (prc < 0) return prc;
 
+    int rc = vfs_require_writable_path(path);
+    if (rc < 0) return rc;
+
     fs_node_t* node = vfs_lookup(path);
     if (!node) return -ENOENT;
 
@@ -3330,6 +3353,9 @@ static int syscall_chown_impl(const char* user_path, uint32_t uid, uint32_t gid)
     char path[128];
     int prc = path_resolve_user(user_path, path, sizeof(path));
     if (prc < 0) return prc;
+
+    int rc = vfs_require_writable_path(path);
+    if (rc < 0) return rc;
 
     fs_node_t* node = vfs_lookup(path);
     if (!node) return -ENOENT;
@@ -5049,9 +5075,9 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
         uintptr_t vfs_fl = spin_lock_irqsave(&g_vfs_lock);
         fs_node_t* old_root = fs_root;
         fs_root = new_root;
-        (void)vfs_mount_nolock_full("/", new_root, NULL, NULL, 0);
+        (void)vfs_mount_nolock_full("/", new_root, NULL, NULL, 0, NULL);
         if (old_root) {
-            (void)vfs_mount_nolock_full(kput, old_root, NULL, NULL, 0);
+            (void)vfs_mount_nolock_full(kput, old_root, NULL, NULL, 0, NULL);
         }
         spin_unlock_irqrestore(&g_vfs_lock, vfs_fl);
         sc_ret(regs) = 0;
@@ -5078,7 +5104,7 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
 
         /* MS_REMOUNT: update flags on existing mount */
         if (mount_flags & MS_REMOUNT) {
-            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, NULL, NULL, NULL, mount_flags & ~MS_REMOUNT);
+            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, NULL, NULL, NULL, mount_flags & ~MS_REMOUNT, NULL);
             return;
         }
 
@@ -5087,7 +5113,7 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
             fs_node_t* tmp = tmpfs_create_root();
             if (!tmp) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
             (void)vfs_mkdirp(kmp);  /* auto-create mountpoint (recursive) */
-            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, tmp, "tmpfs", kdev, mount_flags);
+            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, tmp, "tmpfs", kdev, mount_flags, NULL);
             return;
         }
         if (strcmp(ktype, "devfs") == 0) {
@@ -5095,7 +5121,7 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
             fs_node_t* dev = devfs_create_root();
             if (!dev) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
             (void)vfs_mkdirp(kmp);
-            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, dev, "devfs", kdev, mount_flags);
+            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, dev, "devfs", kdev, mount_flags, NULL);
             return;
         }
         if (strcmp(ktype, "procfs") == 0) {
@@ -5103,20 +5129,20 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
             fs_node_t* proc = procfs_create_root();
             if (!proc) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
             (void)vfs_mkdirp(kmp);
-            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, proc, "procfs", kdev, mount_flags);
+            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, proc, "procfs", kdev, mount_flags, NULL);
             return;
         }
 
-        /* Disk-based: parse /dev/hdX -> drive number */
+        /* Disk-based: parse /dev/hdX -> block device */
         const char* devname = kdev;
         if (strncmp(devname, "/dev/", 5) == 0) devname += 5;
-        extern int ata_name_to_drive(const char* name);
-        int drive = ata_name_to_drive(devname);
-        if (drive < 0) { sc_ret(regs) = (uint32_t)-ENODEV; return; }
+        extern const block_device_t* blockdev_find(const char* name);
+        const block_device_t* bdev = blockdev_find(devname);
+        if (!bdev) { sc_ret(regs) = (uint32_t)-ENODEV; return; }
 
-        extern int init_mount_fs(const char* fstype, int drive, uint32_t lba, const char* mountpoint, unsigned long flags);
+        extern int init_mount_fs(const char* fstype, const block_device_t* bdev, uint32_t lba, const char* mountpoint, unsigned long flags);
         (void)vfs_mkdirp(kmp);  /* auto-create mountpoint (recursive) */
-        int rc = init_mount_fs(ktype, drive, 0, kmp, mount_flags);
+        int rc = init_mount_fs(ktype, bdev, 0, kmp, mount_flags);
         sc_ret(regs) = (uint32_t)(rc < 0 ? rc : 0);
         return;
     }

@@ -28,6 +28,7 @@
 #include "interrupts.h"
 #include "hal/driver.h"
 #include "io.h"
+#include "blockdev.h"
 
 #include <stddef.h>
 
@@ -299,6 +300,22 @@ uint64_t virtio_blk_capacity(void) {
     return vblk_capacity_sectors;
 }
 
+/* ---- Block device operations ---- */
+static int vblk_bdev_read(const block_device_t* dev, uint32_t lba, void* buf) {
+    (void)dev;
+    return virtio_blk_read((uint64_t)lba, buf, 1);
+}
+
+static int vblk_bdev_write(const block_device_t* dev, uint32_t lba, const void* buf) {
+    (void)dev;
+    return virtio_blk_write((uint64_t)lba, buf, 1);
+}
+
+static const struct block_device_ops vblk_bdev_ops = {
+    .read  = vblk_bdev_read,
+    .write = vblk_bdev_write,
+};
+
 /* ---- HAL driver registration ---- */
 static int vblk_drv_probe(void) {
     return pci_find_device(VIRTIO_VENDOR_ID, VIRTIO_BLK_DEVICE_ID) ? 0 : -1;
@@ -317,4 +334,23 @@ static const struct hal_driver vblk_hal_driver = {
 
 void virtio_blk_driver_register(void) {
     hal_driver_register(&vblk_hal_driver);
+}
+
+/* Register virtio-blk as a block device after initialization */
+void virtio_blk_register_blockdev(void) {
+    if (!vblk_ready) return;
+
+    static block_device_t vblk_bdev;
+    vblk_bdev.sector_size = 512;
+    vblk_bdev.sector_count = (uint32_t)vblk_capacity_sectors;
+    vblk_bdev.drive_id = 100; /* Use a high ID to avoid conflict with ATA drives */
+    vblk_bdev.ops = &vblk_bdev_ops;
+    strcpy(vblk_bdev.name, "vda");
+
+    int rc = blockdev_register(&vblk_bdev);
+    if (rc < 0) {
+        kprintf("[VIRTIO-BLK] Failed to register as block device: %d\n", rc);
+    } else {
+        kprintf("[VIRTIO-BLK] Registered as block device: %s\n", vblk_bdev.name);
+    }
 }

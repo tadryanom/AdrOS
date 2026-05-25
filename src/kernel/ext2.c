@@ -1348,16 +1348,15 @@ static int ext2_link_impl(struct fs_node* dir, const char* name, struct fs_node*
 
 /* ---- Mount ---- */
 
-fs_node_t* ext2_mount(int drive, uint32_t partition_lba) {
-    const block_device_t* bdev = blockdev_by_id(drive);
+fs_node_t* ext2_mount(const block_device_t* bdev, uint32_t partition_lba) {
     if (!bdev) {
-        kprintf("[EXT2] No block device for drive %d\n", drive);
+        kprintf("[EXT2] No block device provided\n");
         return NULL;
     }
 
     memset(&g_ext2, 0, sizeof(g_ext2));
     g_ext2.bdev = bdev;
-    g_ext2.drive = drive;
+    g_ext2.drive = bdev->drive_id;
     g_ext2.part_lba = partition_lba;
 
     struct ext2_superblock sb;

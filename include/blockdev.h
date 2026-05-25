@@ -32,6 +32,7 @@ typedef struct block_device {
     uint32_t sector_size;       /* typically 512 */
     uint32_t sector_count;      /* total sectors (0 if unknown) */
     int drive_id;               /* opaque identifier passed to ops */
+    int refcount;               /* number of filesystems using this device */
     const struct block_device_ops* ops;
 } block_device_t;
 
@@ -43,6 +44,12 @@ const block_device_t* blockdev_find(const char* name);
 
 /* Look up a block device by drive_id. Returns pointer or NULL. */
 const block_device_t* blockdev_by_id(int drive_id);
+
+/* Increment block device refcount (called when filesystem mounts). */
+void blockdev_claim(const block_device_t* dev);
+
+/* Decrement block device refcount (called when filesystem unmounts). */
+void blockdev_release(const block_device_t* dev);
 
 /* Convenience: read one sector from a block device. */
 static inline int blockdev_read(const block_device_t* dev, uint32_t lba, void* buf) {

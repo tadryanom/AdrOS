@@ -11,17 +11,18 @@
 #define KERNEL_INIT_H
 
 #include "kernel/boot_info.h"
+#include "blockdev.h"
 #include <stdint.h>
 
 int init_start(const struct boot_info* bi);
 
-/* Mount a filesystem on the given ATA drive at the given mountpoint.
+/* Mount a filesystem on the given block device at the given mountpoint.
  * fstype: "fat", "ext2"
- * drive: ATA_DEV_PRIMARY_MASTER .. ATA_DEV_SECONDARY_SLAVE
+ * bdev: block device (from blockdev_find or blockdev_by_id)
  * lba: partition start LBA (0 for whole disk)
  * mountpoint: e.g. "/disk", "/fat", "/ext2"
  * flags: mount flags (MS_RDONLY, etc.) — stored in VFS mount table
  * Returns 0 on success, negative errno on failure. */
-int init_mount_fs(const char* fstype, int drive, uint32_t lba, const char* mountpoint, unsigned long flags);
+int init_mount_fs(const char* fstype, const struct block_device* bdev, uint32_t lba, const char* mountpoint, unsigned long flags);
 
 #endif

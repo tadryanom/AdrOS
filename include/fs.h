@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "spinlock.h"
+#include "blockdev.h"
 
 #define FS_FILE        0x01
 #define FS_DIRECTORY   0x02
@@ -111,7 +112,7 @@ int vfs_link(const char* old_path, const char* new_path);
 int vfs_mount(const char* mountpoint, fs_node_t* root);
 int vfs_mount_full(const char* mountpoint, fs_node_t* root,
                     const char* fstype, const char* source,
-                    unsigned long flags);
+                    unsigned long flags, const block_device_t* bdev);
 int vfs_umount(const char* mountpoint);
 
 /* _nolock variants — caller must already hold g_vfs_lock.
@@ -120,7 +121,7 @@ int vfs_umount(const char* mountpoint);
 int vfs_mount_nolock(const char* mountpoint, fs_node_t* root);
 int vfs_mount_nolock_full(const char* mountpoint, fs_node_t* root,
                             const char* fstype, const char* source,
-                            unsigned long flags);
+                            unsigned long flags, const block_device_t* bdev);
 int vfs_umount_nolock(const char* mountpoint);
 
 /* Read mount table for /proc/mounts. Returns bytes written. */
@@ -138,6 +139,10 @@ fs_node_t* vfs_find_mount_root(const char* path);
 /* Increment/decrement mount refcount (called on file open/close). */
 void vfs_mount_ref(fs_node_t* mount_root);
 void vfs_mount_unref(fs_node_t* mount_root);
+
+/* Check if the filesystem containing the given path is writable.
+ * Returns 0 if writable, -EROFS if MS_RDONLY is set. */
+int vfs_require_writable_path(const char* path);
 
 /* Global VFS spinlock — protects fs_root, g_mounts[], g_mount_count.
  * Acquire via spin_lock_irqsave() for any compound VFS mutation. */
