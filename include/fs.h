@@ -55,6 +55,7 @@ typedef struct vfs_fs_type {
     const char* name;                     /* e.g. "fat", "ext2" */
     uint32_t flags;                       /* FS_NEEDS_BDEV, etc. */
     vfs_mount_result_t (*mount)(const block_device_t* bdev, uint32_t lba);  /* Mount function */
+    void (*kill_sb)(vfs_superblock_t* sb); /* Unmount/cleanup function */
 } vfs_fs_type_t;
 
 /* poll() event flags — shared between kernel VFS and syscall layer */

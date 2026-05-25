@@ -96,19 +96,35 @@ int init_mount_fs(const char* fstype, const block_device_t* bdev, uint32_t lba, 
     return 0;
 }
 
+static void fat_kill_sb(vfs_superblock_t* sb) {
+    if (sb && sb->private_data) {
+        fat_umount((struct fat_mount*)sb->private_data);
+        kfree(sb);
+    }
+}
+
+static void ext2_kill_sb(vfs_superblock_t* sb) {
+    if (sb && sb->private_data) {
+        ext2_umount((struct ext2_mount*)sb->private_data);
+        kfree(sb);
+    }
+}
+
 int init_start(const struct boot_info* bi) {
     /* Register filesystem types */
     static vfs_fs_type_t fat_fs_type = {
         .name = "fat",
         .flags = FS_NEEDS_BDEV,
-        .mount = fat_mount
+        .mount = fat_mount,
+        .kill_sb = fat_kill_sb
     };
     vfs_fs_type_register(&fat_fs_type);
 
     static vfs_fs_type_t ext2_fs_type = {
         .name = "ext2",
         .flags = FS_NEEDS_BDEV,
-        .mount = ext2_mount
+        .mount = ext2_mount,
+        .kill_sb = ext2_kill_sb
     };
     vfs_fs_type_register(&ext2_fs_type);
 
