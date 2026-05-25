@@ -42,6 +42,7 @@ typedef enum {
 
 struct file {
     fs_node_t* node;
+    fs_node_t* mount_root;  /* mount root for flag checks (NULL if not on a mount) */
     uint32_t offset;
     uint32_t flags;
     uint32_t refcount;

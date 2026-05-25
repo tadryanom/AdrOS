@@ -53,8 +53,8 @@ The 120 smoke tests do **not** correspond 1:1 to syscalls. The relationship is:
 | 25 | `sigaction` | sigaction SIGUSR1, sigreturn, SIGSEGV |
 | 26 | `sigprocmask` | sigprocmask/sigpending, sigsuspend |
 | 27 | `sigreturn` | sigreturn test (implicit) |
-| 28 | `mkdir` | diskfs mkdir, chdir, mount |
-| 29 | `unlink` | diskfs unlink, symlink, etc. |
+| 28 | `mkdir` | tmpfs mkdir, chdir, mount |
+| 29 | `unlink` | tmpfs unlink, symlink, etc. |
 | 30 | `getdents` | getdents multi-fs, readdir /proc |
 | 31 | `fcntl` | O_NONBLOCK, pipe capacity, FD_CLOEXEC |
 | 32 | `chdir` | chdir/getcwd |

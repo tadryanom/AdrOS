@@ -21,17 +21,9 @@ set iso "adros-x86.iso"
 set disk "disk.img"
 set serial_log "serial.log"
 
-# Ensure disk image exists with diskfs superblock pre-formatted
-# (diskfs no longer auto-formats on mount)
+# Ensure blank disk image exists for ATA detection
 if {![file exists $disk]} {
     exec dd if=/dev/zero of=$disk bs=1M count=4 2>/dev/null
-    set fd [open $disk r+]
-    fconfigure $fd -translation binary
-    seek $fd 1024
-    puts -nonewline $fd [binary format iiii 0x44465331 3 4 0]
-    seek $fd [expr {1024 + 12}]
-    puts -nonewline $fd [binary format ii 1 0]
-    close $fd
 }
 
 # Remove old serial log
@@ -73,11 +65,7 @@ set tests {
     {"sigreturn"            "\\[test\\] sigreturn OK"}
     {"tmpfs/mount"          "\\[test\\] tmpfs/mount OK"}
     {"dev null"             "\\[test\\] /dev/null OK"}
-    {"persist counter"      "\\[test\\] /persist/counter="}
     {"dev tty write"        "\\[test\\] /dev/tty write OK"}
-    {"diskfs test"          "\\[test\\] /disk/test prev="}
-    {"diskfs mkdir/unlink"  "\\[test\\] diskfs mkdir/unlink OK"}
-    {"diskfs getdents"      "\\[test\\] diskfs getdents OK"}
     {"isatty"               "\\[test\\] isatty OK"}
     {"O_NONBLOCK"           "\\[test\\] O_NONBLOCK OK"}
     {"pipe2/dup3"           "\\[test\\] pipe2/dup3 OK"}
@@ -117,6 +105,7 @@ set tests {
     {"CoW fork"             "\\[test\\] CoW fork OK"}
     {"readv/writev"         "\\[test\\] readv/writev OK"}
     {"fsync"                "\\[test\\] fsync OK"}
+    {"raw ATA read"         "\\[test\\] raw ATA read OK"}
     {"truncate path"        "\\[test\\] truncate OK"}
     {"getuid/getgid"        "\\[test\\] getuid/getgid OK"}
     {"chmod"                "\\[test\\] chmod OK"}

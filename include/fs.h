@@ -21,6 +21,14 @@
 #define FS_SYMLINK     0x05
 #define FS_SOCKET      0x06
 
+/* Mount flags (match userspace sys/mount.h values) */
+#define MS_RDONLY      1       /* Mount read-only */
+#define MS_NOSUID      2       /* Ignore suid/sgid bits */
+#define MS_NODEV       4       /* Disallow access to device special files */
+#define MS_NOEXEC      8       /* Disallow program execution */
+#define MS_SYNCHRONOUS 16
+#define MS_REMOUNT     32      /* Alter flags of existing mount */
+
 /* poll() event flags — shared between kernel VFS and syscall layer */
 #define VFS_POLL_IN    0x0001
 #define VFS_POLL_OUT   0x0004
@@ -117,6 +125,19 @@ int vfs_umount_nolock(const char* mountpoint);
 
 /* Read mount table for /proc/mounts. Returns bytes written. */
 uint32_t vfs_mounts_read(uint8_t* buffer, uint32_t size);
+
+/* Look up mount flags for the filesystem containing the given path. */
+unsigned long vfs_mount_flags(const char* path);
+
+/* Look up mount flags by mount root node pointer. */
+unsigned long vfs_node_mount_flags(const fs_node_t* root);
+
+/* Find the mount root fs_node for a given path. */
+fs_node_t* vfs_find_mount_root(const char* path);
+
+/* Increment/decrement mount refcount (called on file open/close). */
+void vfs_mount_ref(fs_node_t* mount_root);
+void vfs_mount_unref(fs_node_t* mount_root);
 
 /* Global VFS spinlock — protects fs_root, g_mounts[], g_mount_count.
  * Acquire via spin_lock_irqsave() for any compound VFS mutation. */

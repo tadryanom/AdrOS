@@ -91,6 +91,7 @@ static void userspace_init_thread(void) {
         if (con) {
             struct file* f = (struct file*)kmalloc(sizeof(*f));
             if (f) {
+                memset(f, 0, sizeof(*f));
                 f->node = con;
                 f->offset = 0;
                 f->flags = 2; /* O_RDWR */

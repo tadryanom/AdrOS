@@ -152,7 +152,7 @@ int statvfs(const char* path, struct statvfs* buf) {
         buf->f_ffree  = 128;
         buf->f_favail = 128;
     } else {
-        /* Disk-based (diskfs, fat, ext2, persistfs): estimate from stat */
+        /* Disk-based (fat, ext2): estimate from stat */
         buf->f_blocks = (unsigned long)st.st_size / bsize + 512;
         buf->f_bfree  = 256;
         buf->f_bavail = 256;
