@@ -144,7 +144,7 @@ int vfs_mount_nolock_full(const char* mountpoint, fs_node_t* root,
 int vfs_umount_nolock(const char* mountpoint);
 
 /* Read mount table for /proc/mounts. Returns bytes written. */
-uint32_t vfs_mounts_read(uint8_t* buffer, uint32_t size);
+uint32_t vfs_mounts_read(uint8_t* buffer, uint32_t size, uint32_t offset);
 
 /* Look up mount flags for the filesystem containing the given path. */
 unsigned long vfs_mount_flags(const char* path);
