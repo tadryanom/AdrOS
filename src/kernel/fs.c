@@ -670,7 +670,6 @@ extern struct process* current_process;  /* From process.h */
 int vfs_check_permission(fs_node_t* node, int want) {
     if (!current_process) return 0;       /* kernel context — allow all */
     if (current_process->euid == 0) return 0;  /* root — allow all */
-    if (node->mode == 0) return 0;        /* mode not set — permissive */
 
     uint32_t mode = node->mode;
     uint32_t perm;
