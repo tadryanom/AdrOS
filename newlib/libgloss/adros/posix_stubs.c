@@ -134,56 +134,59 @@
 #define SYS_GETEGID     89
 #define SYS_SETEUID     90
 #define SYS_SETEGID     91
-#define SYS_SETITIMER   92
-#define SYS_GETITIMER   93
-#define SYS_WAITID      94
-#define SYS_SIGQUEUE    95
-#define SYS_POSIX_SPAWN 96
-#define SYS_MQ_OPEN     97
-#define SYS_MQ_CLOSE    98
-#define SYS_MQ_SEND     99
-#define SYS_MQ_RECEIVE  100
-#define SYS_MQ_UNLINK   101
-#define SYS_SEM_OPEN    102
-#define SYS_SEM_CLOSE   103
-#define SYS_SEM_WAIT    104
-#define SYS_SEM_POST    105
-#define SYS_SEM_UNLINK  106
-#define SYS_SEM_GETVALUE 107
-#define SYS_GETADDRINFO 108
-#define SYS_DLOPEN      109
-#define SYS_DLSYM       110
-#define SYS_DLCLOSE     111
-#define SYS_EPOLL_CREATE 112
-#define SYS_EPOLL_CTL   113
-#define SYS_EPOLL_WAIT  114
-#define SYS_INOTIFY_INIT     115
-#define SYS_INOTIFY_ADD_WATCH 116
-#define SYS_INOTIFY_RM_WATCH  117
-#define SYS_SENDMSG     118
-#define SYS_RECVMSG     119
-#define SYS_PIVOT_ROOT  120
-#define SYS_AIO_READ    121
-#define SYS_AIO_WRITE   122
-#define SYS_AIO_ERROR   123
-#define SYS_AIO_RETURN  124
-#define SYS_AIO_SUSPEND 125
-#define SYS_MOUNT       126
-#define SYS_GETTIMEOFDAY 127
-#define SYS_MPROTECT    128
-#define SYS_GETRLIMIT   129
-#define SYS_SETRLIMIT   130
-#define SYS_SETSOCKOPT  131
-#define SYS_GETSOCKOPT  132
-#define SYS_SHUTDOWN    133
-#define SYS_GETPEERNAME 134
-#define SYS_GETSOCKNAME 135
-#define SYS_UNAME       136
-#define SYS_GETRUSAGE   137
-#define SYS_UMOUNT2     138
-#define SYS_WAIT4       139
-#define SYS_MADVISE     140
-#define SYS_EXECVEAT    141
+#define SYS_SETREUID    92
+#define SYS_SETREGID    93
+#define SYS_SETITIMER   94
+#define SYS_GETITIMER   95
+#define SYS_WAITID      96
+#define SYS_SIGQUEUE    97
+#define SYS_POSIX_SPAWN 98
+#define SYS_MQ_OPEN     99
+#define SYS_MQ_CLOSE    100
+#define SYS_MQ_SEND     101
+#define SYS_MQ_RECEIVE  102
+#define SYS_MQ_UNLINK   103
+#define SYS_SEM_OPEN    104
+#define SYS_SEM_CLOSE   105
+#define SYS_SEM_WAIT    106
+#define SYS_SEM_POST    107
+#define SYS_SEM_UNLINK  108
+#define SYS_SEM_GETVALUE 109
+#define SYS_GETADDRINFO 110
+#define SYS_DLOPEN      111
+#define SYS_DLSYM       112
+#define SYS_DLCLOSE     113
+#define SYS_EPOLL_CREATE 114
+#define SYS_EPOLL_CTL   115
+#define SYS_EPOLL_WAIT  116
+#define SYS_INOTIFY_INIT     117
+#define SYS_INOTIFY_ADD_WATCH 118
+#define SYS_INOTIFY_RM_WATCH  119
+#define SYS_SENDMSG     120
+#define SYS_RECVMSG     121
+#define SYS_PIVOT_ROOT  122
+#define SYS_AIO_READ    123
+#define SYS_AIO_WRITE   124
+#define SYS_AIO_ERROR   125
+#define SYS_AIO_RETURN  126
+#define SYS_AIO_SUSPEND 127
+#define SYS_MOUNT       128
+#define SYS_GETTIMEOFDAY 129
+#define SYS_MPROTECT    130
+#define SYS_GETRLIMIT   131
+#define SYS_SETRLIMIT   132
+#define SYS_SETSOCKOPT  133
+#define SYS_GETSOCKOPT  134
+#define SYS_SHUTDOWN    135
+#define SYS_GETPEERNAME 136
+#define SYS_GETSOCKNAME 137
+#define SYS_UNAME       138
+#define SYS_GETRUSAGE   139
+#define SYS_UMOUNT2     140
+#define SYS_WAIT4       141
+#define SYS_MADVISE     142
+#define SYS_EXECVEAT    143
+#define SYS_REBOOT      144
 
 /* ---- Raw syscall helpers ---- */
 
@@ -350,16 +353,11 @@ int setuid(uid_t uid) { return _check(_sc1(SYS_SETUID, (int)uid)); }
 int setgid(gid_t gid) { return _check(_sc1(SYS_SETGID, (int)gid)); }
 
 int setreuid(uid_t ruid, uid_t euid) {
-    /* AdrOS has setuid/seteuid but no setreuid — approximate */
-    if (ruid != (uid_t)-1) { int r = _check(_sc1(SYS_SETUID, (int)ruid)); if (r < 0) return r; }
-    if (euid != (uid_t)-1) { int r = _check(_sc1(SYS_SETEUID, (int)euid)); if (r < 0) return r; }
-    return 0;
+    return _check(_sc2(SYS_SETREUID, (int)ruid, (int)euid));
 }
 
 int setregid(gid_t rgid, gid_t egid) {
-    if (rgid != (gid_t)-1) { int r = _check(_sc1(SYS_SETGID, (int)rgid)); if (r < 0) return r; }
-    if (egid != (gid_t)-1) { int r = _check(_sc1(SYS_SETEGID, (int)egid)); if (r < 0) return r; }
-    return 0;
+    return _check(_sc2(SYS_SETREGID, (int)rgid, (int)egid));
 }
 
 mode_t umask(mode_t mask) {

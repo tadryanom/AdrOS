@@ -180,6 +180,14 @@ int setegid(int egid) {
     return __syscall_ret(_syscall1(SYS_SETEGID, egid));
 }
 
+int setreuid(uid_t ruid, uid_t euid) {
+    return __syscall_ret(_syscall2(SYS_SETREUID, ruid, euid));
+}
+
+int setregid(gid_t rgid, gid_t egid) {
+    return __syscall_ret(_syscall2(SYS_SETREGID, rgid, egid));
+}
+
 int truncate(const char* path, off_t length) {
     return __syscall_ret(_syscall2(SYS_TRUNCATE, (int)path, (int)length));
 }
