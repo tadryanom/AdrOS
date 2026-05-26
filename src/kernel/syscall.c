@@ -4622,6 +4622,11 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
 
         if (!uaddr) { sc_ret(regs) = (uint32_t)-EFAULT; return; }
 
+        /* Validate uaddr is in user space */
+        if (user_range_ok(uaddr, sizeof(uint32_t)) == 0) {
+            sc_ret(regs) = (uint32_t)-EFAULT; return;
+        }
+
         if (op == FUTEX_WAIT) {
             uint32_t cur = 0;
             if (copy_from_user(&cur, uaddr, sizeof(cur)) < 0) {
