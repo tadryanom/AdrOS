@@ -31,4 +31,7 @@ void devfs_kill_sb(vfs_superblock_t* sb);
  */
 int devfs_register_device(fs_node_t *node);
 
+/* Register partition devices (placeholder for future implementation) */
+void devfs_register_partitions(void);
+
 #endif

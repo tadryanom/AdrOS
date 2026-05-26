@@ -75,6 +75,12 @@ int devfs_register_device(fs_node_t *node) {
     return 0;
 }
 
+/* ---- Partition device nodes ---- */
+/* Register partition devices (placeholder for future implementation) */
+void devfs_register_partitions(void) {
+    /* Placeholder - will be implemented when partition scanning is active */
+}
+
 static uint32_t prng_state = 0x12345678;
 
 static uint32_t dev_null_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
