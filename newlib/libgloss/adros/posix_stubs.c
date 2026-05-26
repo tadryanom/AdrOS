@@ -256,10 +256,15 @@ int dup2(int oldfd, int newfd) {
 }
 
 int fcntl(int fd, int cmd, ...) {
-    va_list ap;
-    va_start(ap, cmd);
-    int arg = va_arg(ap, int);
-    va_end(ap);
+    /* M11: Only read arg from varargs for commands that need it */
+    int arg = 0;
+    if (cmd == 0 /* F_DUPFD */ || cmd == 2 /* F_SETFD */ ||
+        cmd == 4 /* F_SETFL */ || cmd == 1024 /* F_DUPFD_CLOEXEC */) {
+        va_list ap;
+        va_start(ap, cmd);
+        arg = va_arg(ap, int);
+        va_end(ap);
+    }
     return _check(_sc3(SYS_FCNTL, fd, cmd, arg));
 }
 
@@ -571,10 +576,14 @@ int dup3(int oldfd, int newfd, int flags) {
 }
 
 int openat(int dirfd, const char *path, int flags, ...) {
-    va_list ap;
-    va_start(ap, flags);
-    int mode = va_arg(ap, int);
-    va_end(ap);
+    /* M11: Only read mode from varargs when O_CREAT is set */
+    int mode = 0;
+    if (flags & 0x40 /* O_CREAT */) {
+        va_list ap;
+        va_start(ap, flags);
+        mode = va_arg(ap, int);
+        va_end(ap);
+    }
     return _check(_sc4(SYS_OPENAT, dirfd, (int)path, flags, mode));
 }
 

@@ -364,10 +364,10 @@ int select(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds,
 }
 
 int fcntl(int fd, int cmd, ...) {
-    /* A17: Only read arg from varargs for commands that need it */
+    /* M10: Only read arg from varargs for commands that need it */
     int arg = 0;
-    if (cmd == 0 /* F_DUPFD */ || cmd == 1 /* F_GETFD */ || cmd == 2 /* F_SETFD */ ||
-        cmd == 3 /* F_GETFL */ || cmd == 4 /* F_SETFL */ || cmd == 1024 /* F_DUPFD_CLOEXEC */) {
+    if (cmd == 0 /* F_DUPFD */ || cmd == 2 /* F_SETFD */ ||
+        cmd == 4 /* F_SETFL */ || cmd == 1024 /* F_DUPFD_CLOEXEC */) {
         __builtin_va_list ap;
         __builtin_va_start(ap, cmd);
         arg = __builtin_va_arg(ap, int);
