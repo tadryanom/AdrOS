@@ -10,6 +10,7 @@
 #include "ext2.h"
 #include "fs.h"
 #include "blockdev.h"
+#include "partition.h"
 #include "heap.h"
 #include "utils.h"
 #include "console.h"
@@ -1570,4 +1571,12 @@ void ext2_umount(struct ext2_mount* em) {
         }
         kfree(em);
     }
+}
+
+vfs_mount_result_t ext2_mount_partition(struct partition* part) {
+    if (!part || !part->parent) {
+        vfs_mount_result_t result = {NULL, NULL};
+        return result;
+    }
+    return ext2_mount(part->parent, part->start_lba);
 }
