@@ -4043,6 +4043,60 @@ void syscall_handler(struct registers* regs) {
         return;
     }
 
+    if (syscall_no == SYSCALL_SETREUID) {
+        if (!current_process) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
+        uint32_t ruid = sc_arg0(regs);
+        uint32_t euid = sc_arg1(regs);
+        /* POSIX: If ruid != -1, caller must have CAP_SETUID or ruid must match real/saved */
+        if (ruid != (uint32_t)-1) {
+            if (current_process->euid != 0 &&
+                ruid != current_process->uid && ruid != current_process->suid) {
+                sc_ret(regs) = (uint32_t)-EPERM;
+                return;
+            }
+        }
+        /* POSIX: If euid != -1, caller must have CAP_SETUID or euid must match real/saved */
+        if (euid != (uint32_t)-1) {
+            if (current_process->euid != 0 &&
+                euid != current_process->uid && euid != current_process->suid) {
+                sc_ret(regs) = (uint32_t)-EPERM;
+                return;
+            }
+        }
+        if (ruid != (uint32_t)-1) current_process->uid = ruid;
+        if (euid != (uint32_t)-1) current_process->euid = euid;
+        if (euid != (uint32_t)-1) current_process->suid = euid;
+        sc_ret(regs) = 0;
+        return;
+    }
+
+    if (syscall_no == SYSCALL_SETREGID) {
+        if (!current_process) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
+        uint32_t rgid = sc_arg0(regs);
+        uint32_t egid = sc_arg1(regs);
+        /* POSIX: If rgid != -1, caller must have CAP_SETGID or rgid must match real/saved */
+        if (rgid != (uint32_t)-1) {
+            if (current_process->euid != 0 &&
+                rgid != current_process->gid && rgid != current_process->sgid) {
+                sc_ret(regs) = (uint32_t)-EPERM;
+                return;
+            }
+        }
+        /* POSIX: If egid != -1, caller must have CAP_SETGID or egid must match real/saved */
+        if (egid != (uint32_t)-1) {
+            if (current_process->euid != 0 &&
+                egid != current_process->gid && egid != current_process->sgid) {
+                sc_ret(regs) = (uint32_t)-EPERM;
+                return;
+            }
+        }
+        if (rgid != (uint32_t)-1) current_process->gid = rgid;
+        if (egid != (uint32_t)-1) current_process->egid = egid;
+        if (egid != (uint32_t)-1) current_process->sgid = egid;
+        sc_ret(regs) = 0;
+        return;
+    }
+
     if (syscall_no == SYSCALL_FLOCK) {
         int fd = (int)sc_arg0(regs);
         int operation = (int)sc_arg1(regs);
