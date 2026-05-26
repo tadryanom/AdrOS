@@ -12,6 +12,7 @@
 
 #include "fs.h"
 #include "blockdev.h"
+#include "partition.h"
 #include <stdint.h>
 
 enum fat_type {
@@ -43,6 +44,9 @@ struct fat_mount {
  * the given LBA offset.  Auto-detects FAT type from BPB.
  * Returns a mount result with root node and superblock, or {NULL, NULL} on failure. */
 vfs_mount_result_t fat_mount(block_device_t* bdev, uint32_t partition_lba);
+
+/* Mount FAT filesystem from a partition (uses partition's parent and start_lba) */
+vfs_mount_result_t fat_mount_partition(partition_t* part);
 
 /* Unmount a FAT filesystem and free its resources */
 void fat_umount(struct fat_mount* fm);

@@ -10,6 +10,7 @@
 #include "fat.h"
 #include "fs.h"
 #include "blockdev.h"
+#include "partition.h"
 #include "heap.h"
 #include "utils.h"
 #include "console.h"
@@ -1251,4 +1252,12 @@ void fat_umount(struct fat_mount* fm) {
     if (fm) {
         kfree(fm);
     }
+}
+
+vfs_mount_result_t fat_mount_partition(partition_t* part) {
+    if (!part || !part->parent) {
+        vfs_mount_result_t result = {NULL, NULL};
+        return result;
+    }
+    return fat_mount(part->parent, part->start_lba);
 }
