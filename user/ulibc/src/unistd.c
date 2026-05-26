@@ -306,6 +306,7 @@ int execle(const char* path, const char* arg, ...) {
     return execve(path, (char* const*)args, envp);
 }
 
+/* L2: Placeholder - real login requires utmp/sessions/TTY infrastructure */
 static char _login_buf[32] = "root";
 char* getlogin(void) {
     return _login_buf;
