@@ -10,6 +10,7 @@
 #include "tmpfs.h"
 #include "fs.h"
 #include "blockdev.h"
+#include "spinlock.h"
 
 #include "errno.h"
 #include "heap.h"
@@ -26,6 +27,7 @@ struct tmpfs_node {
 };
 
 static uint32_t g_tmpfs_next_inode = 1;
+static spinlock_t g_tmpfs_lock = {0};
 
 static struct fs_node* tmpfs_finddir_impl(struct fs_node* node, const char* name);
 static int tmpfs_readdir_impl(struct fs_node* node, uint32_t* inout_index, void* buf, uint32_t buf_len);
@@ -82,9 +84,11 @@ static struct tmpfs_node* tmpfs_child_find(struct tmpfs_node* dir, const char* n
 }
 
 static void tmpfs_child_add(struct tmpfs_node* dir, struct tmpfs_node* child) {
+    uintptr_t irqf = spin_lock_irqsave(&g_tmpfs_lock);
     child->parent = dir;
     child->next_sibling = dir->first_child;
     dir->first_child = child;
+    spin_unlock_irqrestore(&g_tmpfs_lock, irqf);
 }
 
 static struct tmpfs_node* tmpfs_child_ensure_dir(struct tmpfs_node* dir, const char* name) {
@@ -238,6 +242,7 @@ static int tmpfs_mkdir_impl(struct fs_node* dir, const char* name) {
 static int tmpfs_unlink_impl(struct fs_node* dir, const char* name) {
     if (!dir || !name || dir->flags != FS_DIRECTORY) return -EINVAL;
     struct tmpfs_node* d = (struct tmpfs_node*)dir;
+    uintptr_t irqf = spin_lock_irqsave(&g_tmpfs_lock);
     struct tmpfs_node* prev = NULL;
     struct tmpfs_node* c = d->first_child;
     while (c) {
@@ -245,10 +250,17 @@ static int tmpfs_unlink_impl(struct fs_node* dir, const char* name) {
         prev = c;
         c = c->next_sibling;
     }
-    if (!c) return -ENOENT;
-    if (c->vfs.flags == FS_DIRECTORY) return -EISDIR;
+    if (!c) {
+        spin_unlock_irqrestore(&g_tmpfs_lock, irqf);
+        return -ENOENT;
+    }
+    if (c->vfs.flags == FS_DIRECTORY) {
+        spin_unlock_irqrestore(&g_tmpfs_lock, irqf);
+        return -EISDIR;
+    }
     if (prev) prev->next_sibling = c->next_sibling;
     else d->first_child = c->next_sibling;
+    spin_unlock_irqrestore(&g_tmpfs_lock, irqf);
     if (c->data) kfree(c->data);
     kfree(c);
     return 0;
@@ -257,6 +269,7 @@ static int tmpfs_unlink_impl(struct fs_node* dir, const char* name) {
 static int tmpfs_rmdir_impl(struct fs_node* dir, const char* name) {
     if (!dir || !name || dir->flags != FS_DIRECTORY) return -EINVAL;
     struct tmpfs_node* d = (struct tmpfs_node*)dir;
+    uintptr_t irqf = spin_lock_irqsave(&g_tmpfs_lock);
     struct tmpfs_node* prev = NULL;
     struct tmpfs_node* c = d->first_child;
     while (c) {
@@ -264,11 +277,21 @@ static int tmpfs_rmdir_impl(struct fs_node* dir, const char* name) {
         prev = c;
         c = c->next_sibling;
     }
-    if (!c) return -ENOENT;
-    if (c->vfs.flags != FS_DIRECTORY) return -ENOTDIR;
-    if (c->first_child) return -ENOTEMPTY;
+    if (!c) {
+        spin_unlock_irqrestore(&g_tmpfs_lock, irqf);
+        return -ENOENT;
+    }
+    if (c->vfs.flags != FS_DIRECTORY) {
+        spin_unlock_irqrestore(&g_tmpfs_lock, irqf);
+        return -ENOTDIR;
+    }
+    if (c->first_child) {
+        spin_unlock_irqrestore(&g_tmpfs_lock, irqf);
+        return -ENOTEMPTY;
+    }
     if (prev) prev->next_sibling = c->next_sibling;
     else d->first_child = c->next_sibling;
+    spin_unlock_irqrestore(&g_tmpfs_lock, irqf);
     kfree(c);
     return 0;
 }
@@ -276,12 +299,18 @@ static int tmpfs_rmdir_impl(struct fs_node* dir, const char* name) {
 static int tmpfs_create_impl(struct fs_node* dir, const char* name, uint32_t flags, struct fs_node** out) {
     if (!dir || !name || !out || dir->flags != FS_DIRECTORY) return -EINVAL;
     struct tmpfs_node* d = (struct tmpfs_node*)dir;
+    uintptr_t irqf = spin_lock_irqsave(&g_tmpfs_lock);
     struct tmpfs_node* existing = tmpfs_child_find(d, name);
     if (existing) {
+        spin_unlock_irqrestore(&g_tmpfs_lock, irqf);
         *out = &existing->vfs;
         return 0;
     }
-    if (!(flags & 0x40U)) return -ENOENT; /* O_CREAT */
+    if (!(flags & 0x40U)) {
+        spin_unlock_irqrestore(&g_tmpfs_lock, irqf);
+        return -ENOENT; /* O_CREAT */
+    }
+    spin_unlock_irqrestore(&g_tmpfs_lock, irqf);
     struct tmpfs_node* f = tmpfs_node_alloc(name, FS_FILE);
     if (!f) return -ENOMEM;
     f->vfs.f_ops = &tmpfs_file_ops;
