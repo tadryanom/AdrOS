@@ -11,7 +11,14 @@
 #define PROCFS_H
 
 #include "fs.h"
+#include "blockdev.h"
+
+struct block_device;
 
 fs_node_t* procfs_create_root(void);
+
+/* VFS mount interface */
+vfs_mount_result_t procfs_mount(struct block_device* bdev, uint32_t lba);
+void procfs_kill_sb(vfs_superblock_t* sb);
 
 #endif

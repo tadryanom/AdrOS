@@ -8,6 +8,8 @@
  */
 
 #include "procfs.h"
+#include "fs.h"
+#include "blockdev.h"
 
 #include "process.h"
 #include "spinlock.h"
@@ -16,7 +18,6 @@
 #include "pmm.h"
 #include "timer.h"
 #include "kernel/cmdline.h"
-#include "fs.h"
 
 #include <stddef.h>
 
@@ -580,4 +581,18 @@ fs_node_t* procfs_create_root(void) {
     g_proc_mounts.f_ops = &procfs_mounts_fops;
 
     return &g_proc_root;
+}
+
+/* ---- VFS mount interface ---- */
+vfs_mount_result_t procfs_mount(block_device_t* bdev, uint32_t lba) {
+    (void)bdev;
+    (void)lba;
+    vfs_mount_result_t result = {NULL, NULL};
+    result.root = procfs_create_root();
+    return result;
+}
+
+void procfs_kill_sb(vfs_superblock_t* sb) {
+    (void)sb;
+    /* procfs uses static globals, no cleanup needed */
 }

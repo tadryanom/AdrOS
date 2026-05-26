@@ -8,6 +8,8 @@
  */
 
 #include "devfs.h"
+#include "fs.h"
+#include "blockdev.h"
 
 #include "errno.h"
 #include "utils.h"
@@ -23,6 +25,7 @@ static fs_node_t g_dev_null;
 static fs_node_t g_dev_zero;
 static fs_node_t g_dev_random;
 static fs_node_t g_dev_urandom;
+static fs_node_t g_dev_vda;
 static uint32_t g_devfs_inited = 0;
 
 static struct fs_node* devfs_finddir_impl(struct fs_node* node, const char* name);
@@ -262,9 +265,31 @@ static void devfs_init_once(void) {
     g_dev_urandom.flags = FS_CHARDEVICE;
     g_dev_urandom.inode = 9;
     g_dev_urandom.f_ops = &dev_random_ops;
+
+    /* Initialize /dev/vda block device node (placeholder, will be registered by virtio-blk) */
+    memset(&g_dev_vda, 0, sizeof(g_dev_vda));
+    strcpy(g_dev_vda.name, "vda");
+    g_dev_vda.flags = FS_BLOCKDEVICE;
+    g_dev_vda.inode = 10;
+    /* f_ops will be set by virtio-blk driver when it registers */
+    devfs_register_device(&g_dev_vda);
 }
 
 fs_node_t* devfs_create_root(void) {
     devfs_init_once();
     return &g_dev_root.vfs;
+}
+
+/* ---- VFS mount interface ---- */
+vfs_mount_result_t devfs_mount(block_device_t* bdev, uint32_t lba) {
+    (void)bdev;
+    (void)lba;
+    vfs_mount_result_t result = {NULL, NULL};
+    result.root = devfs_create_root();
+    return result;
+}
+
+void devfs_kill_sb(vfs_superblock_t* sb) {
+    (void)sb;
+    /* devfs uses static globals, no cleanup needed */
 }
