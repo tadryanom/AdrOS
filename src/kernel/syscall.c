@@ -1619,6 +1619,14 @@ static int syscall_aio_rw_impl(void* user_cb, int is_write) {
         return 0;
     }
 
+    /* Validate aio_nbytes is reasonable (avoid DoS via huge allocations) */
+    if (cb.aio_nbytes > 16 * 1024 * 1024) {  /* Max 16MB per AIO operation */
+        cb.aio_error = EINVAL;
+        cb.aio_return = -EINVAL;
+        (void)copy_to_user(user_cb, &cb, sizeof(cb));
+        return 0;
+    }
+
     if (user_range_ok(cb.aio_buf, cb.aio_nbytes) == 0) {
         cb.aio_error = EFAULT;
         cb.aio_return = -EFAULT;
