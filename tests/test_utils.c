@@ -801,7 +801,6 @@ TEST(elf_null) {
 
 /* ======== PARTITION LAYER TESTS ======== */
 static block_device_t g_test_bdev1 = {"hda", 512, 1024*1024, 0};
-static block_device_t g_test_bdev2 = {"hdb", 512, 512*1024, 1};
 
 TEST(part_register_basic) {
     partition_registry_reset();
