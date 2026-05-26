@@ -34,7 +34,7 @@ struct vfs_mount {
     char source[64];     /* e.g. "/dev/hda", "none", "initrd" */
     unsigned long flags; /* MS_RDONLY, MS_NOSUID, etc. */
     int refcount;        /* number of open files on this mount */
-    const block_device_t* bdev; /* block device (NULL for virtual FS) */
+    block_device_t* bdev; /* block device (NULL for virtual FS) */
     vfs_superblock_t* sb; /* superblock (NULL for virtual FS) */
     fs_node_t* root;
 };
@@ -85,7 +85,7 @@ static void normalize_mountpoint(const char* in, char* out, size_t out_sz) {
 
 int vfs_mount_nolock_full(const char* mountpoint, fs_node_t* root,
                             const char* fstype, const char* source,
-                            unsigned long flags, const block_device_t* bdev,
+                            unsigned long flags, block_device_t* bdev,
                             vfs_superblock_t* sb) {
     char mp[128];
     normalize_mountpoint(mountpoint, mp, sizeof(mp));
@@ -95,28 +95,11 @@ int vfs_mount_nolock_full(const char* mountpoint, fs_node_t* root,
             /* Mount already exists at this mountpoint */
             if (flags & MS_REMOUNT) {
                 /* Remount: update flags only (bdev, sb, root, source, fstype preserved) */
-                g_mounts[i].flags = flags;
+                g_mounts[i].flags = flags & ~MS_REMOUNT;
                 return 0;
             } else {
-                /* New mount attempt on existing mountpoint - reject if active */
-                if (g_mounts[i].refcount > 0) {
-                    return -EBUSY;
-                }
-                /* Allow replacement if mount is idle (refcount == 0) */
-                /* This is the old behavior for backward compatibility */
-                if (root) g_mounts[i].root = root;
-                if (fstype) {
-                    strncpy(g_mounts[i].fstype, fstype, sizeof(g_mounts[i].fstype) - 1);
-                    g_mounts[i].fstype[sizeof(g_mounts[i].fstype) - 1] = '\0';
-                }
-                if (source) {
-                    strncpy(g_mounts[i].source, source, sizeof(g_mounts[i].source) - 1);
-                    g_mounts[i].source[sizeof(g_mounts[i].source) - 1] = '\0';
-                }
-                g_mounts[i].flags = flags;
-                g_mounts[i].bdev = bdev;
-                g_mounts[i].sb = sb;
-                return 0;
+                /* Reject new mount on existing mountpoint - use MS_REMOUNT to change flags */
+                return -EBUSY;
             }
         }
     }
@@ -153,7 +136,7 @@ int vfs_mount_nolock(const char* mountpoint, fs_node_t* root) {
 
 int vfs_mount_full(const char* mountpoint, fs_node_t* root,
                     const char* fstype, const char* source,
-                    unsigned long flags, const block_device_t* bdev,
+                    unsigned long flags, block_device_t* bdev,
                     vfs_superblock_t* sb) {
     uintptr_t fl = spin_lock_irqsave(&g_vfs_lock);
     int ret = vfs_mount_nolock_full(mountpoint, root, fstype, source, flags, bdev, sb);
@@ -702,6 +685,11 @@ int vfs_check_permission(fs_node_t* node, int want) {
 
 int vfs_link(const char* old_path, const char* new_path) {
     if (!old_path || !new_path) return -EINVAL;
+    
+    /* Check if new_path is on a read-only mount */
+    int rc = vfs_require_writable_path(new_path);
+    if (rc < 0) return rc;
+    
     fs_node_t* target = vfs_lookup(old_path);
     if (!target) return -ENOENT;
     if (target->flags != FS_FILE) return -EPERM;

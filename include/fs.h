@@ -39,7 +39,7 @@ struct vfs_fs_type; /* forward declaration */
 /* VFS superblock — per-mount filesystem metadata */
 typedef struct vfs_superblock {
     const struct vfs_fs_type* fstype;    /* Filesystem type */
-    const block_device_t* bdev;          /* Block device (NULL for virtual FS) */
+    block_device_t* bdev;          /* Block device (NULL for virtual FS) */
     uint32_t lba;                        /* Partition start LBA (0 for whole disk) */
     void* private_data;                  /* Filesystem-specific data (e.g. fat_mount, ext2_mount) */
     struct fs_node* root;                /* VFS root node (for cleanup on umount) */
@@ -55,7 +55,7 @@ typedef struct vfs_mount_result {
 typedef struct vfs_fs_type {
     const char* name;                     /* e.g. "fat", "ext2" */
     uint32_t flags;                       /* FS_NEEDS_BDEV, etc. */
-    vfs_mount_result_t (*mount)(const block_device_t* bdev, uint32_t lba);  /* Mount function */
+    vfs_mount_result_t (*mount)(block_device_t* bdev, uint32_t lba);  /* Mount function */
     void (*kill_sb)(vfs_superblock_t* sb); /* Unmount/cleanup function */
 } vfs_fs_type_t;
 
@@ -145,7 +145,7 @@ int vfs_link(const char* old_path, const char* new_path);
 int vfs_mount(const char* mountpoint, fs_node_t* root);
 int vfs_mount_full(const char* mountpoint, fs_node_t* root,
                     const char* fstype, const char* source,
-                    unsigned long flags, const block_device_t* bdev,
+                    unsigned long flags, block_device_t* bdev,
                     vfs_superblock_t* sb);
 int vfs_umount(const char* mountpoint);
 
@@ -155,7 +155,7 @@ int vfs_umount(const char* mountpoint);
 int vfs_mount_nolock(const char* mountpoint, fs_node_t* root);
 int vfs_mount_nolock_full(const char* mountpoint, fs_node_t* root,
                             const char* fstype, const char* source,
-                            unsigned long flags, const block_device_t* bdev,
+                            unsigned long flags, block_device_t* bdev,
                             vfs_superblock_t* sb);
 int vfs_umount_nolock(const char* mountpoint);
 

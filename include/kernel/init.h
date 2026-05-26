@@ -23,6 +23,6 @@ int init_start(const struct boot_info* bi);
  * mountpoint: e.g. "/disk", "/fat", "/ext2"
  * flags: mount flags (MS_RDONLY, etc.) — stored in VFS mount table
  * Returns 0 on success, negative errno on failure. */
-int init_mount_fs(const char* fstype, const struct block_device* bdev, uint32_t lba, const char* mountpoint, unsigned long flags);
+int init_mount_fs(const char* fstype, struct block_device* bdev, uint32_t lba, const char* mountpoint, unsigned long flags);
 
 #endif

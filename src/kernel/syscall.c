@@ -4445,6 +4445,11 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
         if (!f || !f->node) { sc_ret(regs) = (uint32_t)-EBADF; return; }
         if ((f->flags & 3U) == 0U) { sc_ret(regs) = (uint32_t)-EBADF; return; }  /* O_RDONLY */
         if (!(f->node->flags & FS_FILE)) { sc_ret(regs) = (uint32_t)-EINVAL; return; }
+        /* Check if mount is read-only */
+        if (f->mount_root && (vfs_node_mount_flags(f->mount_root) & MS_RDONLY)) {
+            sc_ret(regs) = (uint32_t)-EROFS;
+            return;
+        }
         /* A14: use vfs_truncate_node to call backend truncate when available */
         int rc = vfs_truncate_node(f->node, length);
         sc_ret(regs) = (uint32_t)rc;
@@ -5174,7 +5179,7 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
 
         /* MS_REMOUNT: update flags on existing mount */
         if (mount_flags & MS_REMOUNT) {
-            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, NULL, NULL, NULL, mount_flags & ~MS_REMOUNT, NULL, NULL);
+            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, NULL, NULL, NULL, mount_flags, NULL, NULL);
             return;
         }
 
@@ -5208,8 +5213,8 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
         /* Disk-based: parse /dev/hdX -> block device */
         const char* devname = kdev;
         if (strncmp(devname, "/dev/", 5) == 0) devname += 5;
-        extern const block_device_t* blockdev_find(const char* name);
-        const block_device_t* bdev = blockdev_find(devname);
+        extern block_device_t* blockdev_find(const char* name);
+        block_device_t* bdev = blockdev_find(devname);
         if (!bdev) { sc_ret(regs) = (uint32_t)-ENODEV; return; }
 
         extern int init_mount_fs(const char* fstype, const block_device_t* bdev, uint32_t lba, const char* mountpoint, unsigned long flags);

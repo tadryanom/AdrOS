@@ -43,7 +43,18 @@
 
 /* ---- Mount helper: used by fstab parser and kconsole 'mount' command ---- */
 
-int init_mount_fs(const char* fstype, const block_device_t* bdev, uint32_t lba, const char* mountpoint, unsigned long flags) {
+int init_mount_fs(const char* fstype, block_device_t* bdev, uint32_t lba, const char* mountpoint, unsigned long flags) {
+    /* Validate mountpoint exists and is a directory */
+    fs_node_t* mp_node = vfs_lookup(mountpoint);
+    if (!mp_node) {
+        kprintf("[MOUNT] Mountpoint does not exist: %s\n", mountpoint);
+        return -ENOENT;
+    }
+    if (!(mp_node->flags & FS_DIRECTORY)) {
+        kprintf("[MOUNT] Mountpoint is not a directory: %s\n", mountpoint);
+        return -ENOTDIR;
+    }
+
     const vfs_fs_type_t* fst = vfs_fs_type_find(fstype);
     if (!fst) {
         kprintf("[MOUNT] Unknown filesystem type: %s\n", fstype);
@@ -85,6 +96,12 @@ int init_mount_fs(const char* fstype, const block_device_t* bdev, uint32_t lba, 
         kprintf("[MOUNT] Failed to register mount at %s (err=%d)\n", mountpoint, rc);
         if (bdev) {
             blockdev_release(bdev);
+        }
+        /* Cleanup filesystem state if mount registration failed */
+        if (mres.sb && mres.sb->fstype && mres.sb->fstype->kill_sb) {
+            mres.sb->fstype->kill_sb(mres.sb);
+        } else if (mres.root) {
+            kfree(mres.root);
         }
         return rc;
     }
@@ -245,6 +262,7 @@ int init_start(const struct boot_info* bi) {
     ata_register_devfs();
 
     /* Register ATA drives as generic block devices (used by fat/ext2) */
+    blockdev_init_lock();
     blockdev_register_ata();
 
     /* If root= is specified on the kernel command line, mount that device
@@ -260,7 +278,7 @@ int init_start(const struct boot_info* bi) {
         const char* devname = root_dev;
         if (strncmp(root_dev, "/dev/", 5) == 0)
             devname = root_dev + 5;
-        const block_device_t* bdev = blockdev_find(devname);
+        block_device_t* bdev = blockdev_find(devname);
         if (bdev) {
             /* Auto-detect: try ext2, then fat (non-destructive probes). */
             static const char* fstypes[] = { "ext2", "fat", NULL };
@@ -280,7 +298,7 @@ int init_start(const struct boot_info* bi) {
         }
     } else {
         /* No root= on cmdline — try to auto-mount primary master if present */
-        const block_device_t* bdev = blockdev_find("hda");
+        block_device_t* bdev = blockdev_find("hda");
         if (bdev) {
             static const char* fstypes[] = { "ext2", "fat", NULL };
             for (int i = 0; fstypes[i]; i++) {

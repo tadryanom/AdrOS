@@ -22,7 +22,7 @@ enum fat_type {
 
 /* Per-mount filesystem state */
 struct fat_mount {
-    const block_device_t* bdev;
+    block_device_t* bdev;
     uint32_t part_lba;
     uint16_t bytes_per_sector;
     uint8_t  sectors_per_cluster;
@@ -42,7 +42,7 @@ struct fat_mount {
 /* Mount a FAT12/16/32 filesystem on the given block device starting at
  * the given LBA offset.  Auto-detects FAT type from BPB.
  * Returns a mount result with root node and superblock, or {NULL, NULL} on failure. */
-vfs_mount_result_t fat_mount(const block_device_t* bdev, uint32_t partition_lba);
+vfs_mount_result_t fat_mount(block_device_t* bdev, uint32_t partition_lba);
 
 /* Unmount a FAT filesystem and free its resources */
 void fat_umount(struct fat_mount* fm);

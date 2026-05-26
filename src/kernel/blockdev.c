@@ -16,63 +16,87 @@
 
 static block_device_t g_blockdevs[BLOCKDEV_MAX];
 static int g_blockdev_count = 0;
+static spinlock_t g_blockdev_lock;
+
+void blockdev_init_lock(void) {
+    spinlock_init(&g_blockdev_lock);
+}
 
 int blockdev_register(const block_device_t* dev) {
     if (!dev) return -EINVAL;
-    if (g_blockdev_count >= BLOCKDEV_MAX) return -ENOSPC;
+
+    uintptr_t flags = spin_lock_irqsave(&g_blockdev_lock);
+
+    if (g_blockdev_count >= BLOCKDEV_MAX) {
+        spin_unlock_irqrestore(&g_blockdev_lock, flags);
+        return -ENOSPC;
+    }
 
     /* Check for duplicate name */
     for (int i = 0; i < g_blockdev_count; i++) {
         if (strcmp(g_blockdevs[i].name, dev->name) == 0) {
             /* Update existing entry */
             g_blockdevs[i] = *dev;
+            spin_unlock_irqrestore(&g_blockdev_lock, flags);
             return 0;
         }
     }
 
     g_blockdevs[g_blockdev_count++] = *dev;
+    spin_unlock_irqrestore(&g_blockdev_lock, flags);
     return 0;
 }
 
-const block_device_t* blockdev_find(const char* name) {
+block_device_t* blockdev_find(const char* name) {
     if (!name) return NULL;
+
+    uintptr_t flags = spin_lock_irqsave(&g_blockdev_lock);
+    block_device_t* result = NULL;
     for (int i = 0; i < g_blockdev_count; i++) {
-        if (strcmp(g_blockdevs[i].name, name) == 0)
-            return &g_blockdevs[i];
+        if (strcmp(g_blockdevs[i].name, name) == 0) {
+            result = &g_blockdevs[i];
+            break;
+        }
     }
-    return NULL;
+    spin_unlock_irqrestore(&g_blockdev_lock, flags);
+    return result;
 }
 
-const block_device_t* blockdev_by_id(int drive_id) {
+block_device_t* blockdev_by_id(int drive_id) {
+    uintptr_t flags = spin_lock_irqsave(&g_blockdev_lock);
+    block_device_t* result = NULL;
     for (int i = 0; i < g_blockdev_count; i++) {
-        if (g_blockdevs[i].drive_id == drive_id)
-            return &g_blockdevs[i];
+        if (g_blockdevs[i].drive_id == drive_id) {
+            result = &g_blockdevs[i];
+            break;
+        }
     }
-    return NULL;
+    spin_unlock_irqrestore(&g_blockdev_lock, flags);
+    return result;
 }
 
-void blockdev_claim(const block_device_t* dev) {
+void blockdev_claim(block_device_t* dev) {
     if (!dev) return;
-    /* Cast away const since we need to modify refcount */
-    block_device_t* mutable_dev = (block_device_t*)dev;
-    mutable_dev->refcount++;
+    uintptr_t flags = spin_lock_irqsave(&g_blockdev_lock);
+    dev->refcount++;
+    spin_unlock_irqrestore(&g_blockdev_lock, flags);
 }
 
-void blockdev_release(const block_device_t* dev) {
+void blockdev_release(block_device_t* dev) {
     if (!dev) return;
-    /* Cast away const since we need to modify refcount */
-    block_device_t* mutable_dev = (block_device_t*)dev;
-    if (mutable_dev->refcount > 0)
-        mutable_dev->refcount--;
+    uintptr_t flags = spin_lock_irqsave(&g_blockdev_lock);
+    if (dev->refcount > 0)
+        dev->refcount--;
+    spin_unlock_irqrestore(&g_blockdev_lock, flags);
 }
 
 /* ---- ATA block device ops ---- */
 
-static int ata_bd_read(const block_device_t* dev, uint32_t lba, void* buf) {
+static int ata_bd_read(block_device_t* dev, uint32_t lba, void* buf) {
     return ata_pio_read28(dev->drive_id, lba, (uint8_t*)buf);
 }
 
-static int ata_bd_write(const block_device_t* dev, uint32_t lba, const void* buf) {
+static int ata_bd_write(block_device_t* dev, uint32_t lba, const void* buf) {
     return ata_pio_write28(dev->drive_id, lba, (const uint8_t*)buf);
 }
 

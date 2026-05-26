@@ -1427,7 +1427,7 @@ static int ext2_link_impl(struct fs_node* dir, const char* name, struct fs_node*
 
 /* ---- Mount ---- */
 
-vfs_mount_result_t ext2_mount(const block_device_t* bdev, uint32_t partition_lba) {
+vfs_mount_result_t ext2_mount(block_device_t* bdev, uint32_t partition_lba) {
     vfs_mount_result_t result = {NULL, NULL};
 
     if (!bdev) {
