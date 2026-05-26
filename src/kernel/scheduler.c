@@ -591,6 +591,10 @@ void sched_assign_pid1(struct process* p) {
 void process_exit_notify(int status) {
     if (!current_process) return;
 
+    /* Decrement mount refcount for the exiting process's cwd */
+    extern void vfs_mount_unref_by_path(const char* path);
+    vfs_mount_unref_by_path(current_process->cwd);
+
     uintptr_t flags = spin_lock_irqsave(&sched_lock);
 
     current_process->exit_status = status;
@@ -695,6 +699,10 @@ struct process* process_fork_create(uintptr_t child_as, const void* child_regs) 
     } else {
         strcpy(proc->cwd, "/");
     }
+    
+    /* Increment mount refcount for the new process's cwd */
+    extern void vfs_mount_ref_by_path(const char* path);
+    vfs_mount_ref_by_path(proc->cwd);
 
     proc->has_user_regs = 1;
     memcpy(proc->user_regs, child_regs, ARCH_REGS_SIZE);
@@ -981,6 +989,10 @@ void process_init(void) {
     kernel_proc->wait_result_status = 0;
 
     strcpy(kernel_proc->cwd, "/");
+    
+    /* Increment mount refcount for kernel process's cwd */
+    extern void vfs_mount_ref_by_path(const char* path);
+    vfs_mount_ref_by_path(kernel_proc->cwd);
 
     for (int i = 0; i < PROCESS_MAX_FILES; i++) {
         kernel_proc->files[i] = NULL;
@@ -1047,6 +1059,10 @@ void sched_ap_init(uint32_t cpu) {
     idle->addr_space = kernel_as;
     idle->cpu_id = cpu;
     strcpy(idle->cwd, "/");
+    
+    /* Increment mount refcount for idle process's cwd */
+    extern void vfs_mount_ref_by_path(const char* path);
+    vfs_mount_ref_by_path(idle->cwd);
     for (int i = 0; i < PROCESS_MAX_MMAPS; i++)
         idle->mmaps[i].shmid = -1;
     idle->kernel_stack = (uint32_t*)kstack;

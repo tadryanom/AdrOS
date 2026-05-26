@@ -180,30 +180,9 @@ int vfs_umount_nolock(const char* mountpoint) {
         }
     }
 
-    /* Busy check: reject if any process has cwd in this mount */
-    extern struct process* ready_queue_head;
-    extern struct process* current_process;
-    extern spinlock_t sched_lock;
-    
-    uintptr_t sched_fl = spin_lock_irqsave(&sched_lock);
-    
-    /* Check current process first */
-    if (current_process && current_process->cwd[0] && path_is_mountpoint_prefix(mp, current_process->cwd)) {
-        spin_unlock_irqrestore(&sched_lock, sched_fl);
+    /* Busy check: reject if refcount > 0 (files open or cwd/root in mount) */
+    if (g_mounts[idx].refcount > 0)
         return -EBUSY;
-    }
-    
-    /* Check all processes in ready queue */
-    struct process* p = ready_queue_head;
-    while (p) {
-        /* Check if cwd is within this mount */
-        if (p->cwd[0] && path_is_mountpoint_prefix(mp, p->cwd)) {
-            spin_unlock_irqrestore(&sched_lock, sched_fl);
-            return -EBUSY;
-        }
-        p = p->rq_next;
-    }
-    spin_unlock_irqrestore(&sched_lock, sched_fl);
 
     /* Release the block device */
     if (g_mounts[idx].bdev) {
@@ -824,6 +803,57 @@ void vfs_mount_unref(fs_node_t* mount_root) {
                 g_mounts[i].refcount--;
             break;
         }
+    }
+    spin_unlock_irqrestore(&g_vfs_lock, fl);
+}
+
+/* Increment the refcount on the mount that contains the given path. */
+void vfs_mount_ref_by_path(const char* path) {
+    if (!path || !path[0]) return;
+
+    uintptr_t fl = spin_lock_irqsave(&g_vfs_lock);
+    int best_idx = -1;
+    size_t best_len = 0;
+    
+    /* Find the most specific mount (longest prefix match) */
+    for (int i = 0; i < g_mount_count; i++) {
+        if (path_is_mountpoint_prefix(g_mounts[i].mountpoint, path)) {
+            size_t len = strlen(g_mounts[i].mountpoint);
+            if (len > best_len) {
+                best_len = len;
+                best_idx = i;
+            }
+        }
+    }
+    
+    if (best_idx >= 0) {
+        g_mounts[best_idx].refcount++;
+    }
+    spin_unlock_irqrestore(&g_vfs_lock, fl);
+}
+
+/* Decrement the refcount on the mount that contains the given path. */
+void vfs_mount_unref_by_path(const char* path) {
+    if (!path || !path[0]) return;
+
+    uintptr_t fl = spin_lock_irqsave(&g_vfs_lock);
+    int best_idx = -1;
+    size_t best_len = 0;
+    
+    /* Find the most specific mount (longest prefix match) */
+    for (int i = 0; i < g_mount_count; i++) {
+        if (path_is_mountpoint_prefix(g_mounts[i].mountpoint, path)) {
+            size_t len = strlen(g_mounts[i].mountpoint);
+            if (len > best_len) {
+                best_len = len;
+                best_idx = i;
+            }
+        }
+    }
+    
+    if (best_idx >= 0) {
+        if (g_mounts[best_idx].refcount > 0)
+            g_mounts[best_idx].refcount--;
     }
     spin_unlock_irqrestore(&g_vfs_lock, fl);
 }
