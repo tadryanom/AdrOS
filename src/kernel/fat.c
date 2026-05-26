@@ -1161,13 +1161,39 @@ vfs_mount_result_t fat_mount(block_device_t* bdev, uint32_t partition_lba) {
 
     struct fat_bpb* bpb = (struct fat_bpb*)boot_sec;
 
+    /* Validate bytes_per_sector */
     if (bpb->bytes_per_sector != 512) {
         kprintf("[FAT] Unsupported sector size %u\n", bpb->bytes_per_sector);
         kfree(fm);
         return result;
     }
-    if (bpb->num_fats == 0 || bpb->sectors_per_cluster == 0) {
-        kprintf("[FAT] Invalid BPB\n");
+
+    /* Validate sectors_per_cluster is power of 2 and reasonable */
+    if (bpb->sectors_per_cluster == 0 ||
+        (bpb->sectors_per_cluster & (bpb->sectors_per_cluster - 1)) != 0 ||
+        bpb->sectors_per_cluster > 128) {
+        kprintf("[FAT] Invalid sectors_per_cluster %u\n", bpb->sectors_per_cluster);
+        kfree(fm);
+        return result;
+    }
+
+    /* Validate reserved_sectors is non-zero */
+    if (bpb->reserved_sectors == 0) {
+        kprintf("[FAT] Invalid reserved_sectors: 0\n");
+        kfree(fm);
+        return result;
+    }
+
+    /* Validate num_fats is non-zero */
+    if (bpb->num_fats == 0) {
+        kprintf("[FAT] Invalid num_fats: 0\n");
+        kfree(fm);
+        return result;
+    }
+
+    /* Validate at least one total_sectors field is non-zero */
+    if (bpb->total_sectors_16 == 0 && bpb->total_sectors_32 == 0) {
+        kprintf("[FAT] Invalid total_sectors (both fields zero)\n");
         kfree(fm);
         return result;
     }
@@ -1184,14 +1210,56 @@ vfs_mount_result_t fat_mount(block_device_t* bdev, uint32_t partition_lba) {
         fm->fat_size = bpb->fat_size_16;
     } else {
         struct fat32_ext* ext32 = (struct fat32_ext*)(boot_sec + 36);
+        /* Validate FAT32 extension fields */
+        if (ext32->fat_size_32 == 0) {
+            kprintf("[FAT] Invalid FAT32 fat_size_32: 0\n");
+            kfree(fm);
+            return result;
+        }
         fm->fat_size = ext32->fat_size_32;
         fm->root_cluster = ext32->root_cluster;
     }
 
-    fm->fat_lba = partition_lba + bpb->reserved_sectors;
-    fm->root_dir_lba = fm->fat_lba + (uint32_t)bpb->num_fats * fm->fat_size;
+    /* Validate fat_size is non-zero */
+    if (fm->fat_size == 0) {
+        kprintf("[FAT] Invalid fat_size: 0\n");
+        kfree(fm);
+        return result;
+    }
+
+    /* Validate LBA calculations don't overflow */
+    uint32_t fat_lba = partition_lba + bpb->reserved_sectors;
+    if (fat_lba < partition_lba) {  /* Overflow check */
+        kprintf("[FAT] Overflow in fat_lba calculation\n");
+        kfree(fm);
+        return result;
+    }
+    fm->fat_lba = fat_lba;
+
+    uint32_t fat_region_size = (uint32_t)bpb->num_fats * fm->fat_size;
+    if (fat_region_size / fm->fat_size != bpb->num_fats) {  /* Overflow check */
+        kprintf("[FAT] Overflow in FAT region size calculation\n");
+        kfree(fm);
+        return result;
+    }
+
+    uint32_t root_dir_lba = fm->fat_lba + fat_region_size;
+    if (root_dir_lba < fm->fat_lba) {  /* Overflow check */
+        kprintf("[FAT] Overflow in root_dir_lba calculation\n");
+        kfree(fm);
+        return result;
+    }
+    fm->root_dir_lba = root_dir_lba;
+
     fm->root_dir_sectors = ((uint32_t)bpb->root_entry_count * 32 + 511) / 512;
-    fm->data_lba = fm->root_dir_lba + fm->root_dir_sectors;
+
+    uint32_t data_lba = fm->root_dir_lba + fm->root_dir_sectors;
+    if (data_lba < fm->root_dir_lba) {  /* Overflow check */
+        kprintf("[FAT] Overflow in data_lba calculation\n");
+        kfree(fm);
+        return result;
+    }
+    fm->data_lba = data_lba;
 
     /* Total data sectors & cluster count determine FAT type */
     uint32_t total_sectors = bpb->total_sectors_16 ? bpb->total_sectors_16 : bpb->total_sectors_32;
