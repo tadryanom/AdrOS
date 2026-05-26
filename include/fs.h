@@ -179,6 +179,10 @@ fs_node_t* vfs_find_mount_root(const char* path);
 void vfs_mount_ref(fs_node_t* mount_root);
 void vfs_mount_unref(fs_node_t* mount_root);
 
+/* Increment/decrement mount refcount by path (called on cwd/root changes). */
+void vfs_mount_ref_by_path(const char* path);
+void vfs_mount_unref_by_path(const char* path);
+
 /* Check if the filesystem containing the given path is writable.
  * Returns 0 if writable, -EROFS if MS_RDONLY is set. */
 int vfs_require_writable_path(const char* path);

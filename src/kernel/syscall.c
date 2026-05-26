@@ -2644,6 +2644,11 @@ static int syscall_chdir_impl(const char* user_path) {
     fs_node_t* n = vfs_lookup(path);
     if (!n) return -ENOENT;
     if (n->flags != FS_DIRECTORY) return -ENOTDIR;
+    
+    /* Update mount refcounts */
+    vfs_mount_unref_by_path(current_process->cwd);
+    vfs_mount_ref_by_path(path);
+    
     strcpy(current_process->cwd, path);
     return 0;
 }
