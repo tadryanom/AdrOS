@@ -170,9 +170,27 @@ static int fb0_ioctl(fs_node_t* node, uint32_t cmd, void* arg) {
     return -1;
 }
 
+/* Local PROT_* definitions for fb0_mmap */
+enum {
+    PROT_NONE  = 0x0,
+    PROT_READ  = 0x1,
+    PROT_WRITE = 0x2,
+    PROT_EXEC  = 0x4,
+};
+
 static uintptr_t fb0_mmap(fs_node_t* node, uintptr_t addr, uint32_t length, uint32_t prot, uint32_t offset) {
-    (void)node; (void)prot; (void)offset;
+    (void)node; (void)offset;
     if (!g_vbe_ready) return 0;
+
+    /* Respect prot argument - deny execution, apply NX by default */
+    if (prot & PROT_EXEC) return 0; /* Framebuffer is not executable */
+
+    uint32_t vmm_flags = VMM_FLAG_PRESENT | VMM_FLAG_USER | VMM_FLAG_NOCACHE;
+    if (prot & PROT_WRITE) vmm_flags |= VMM_FLAG_RW;
+    else if (prot & PROT_READ) vmm_flags |= VMM_FLAG_RW; /* No RO flag in VMM, use RW for read */
+    else vmm_flags |= VMM_FLAG_RW; /* Default to RW if no prot specified */
+    /* NX by default */
+    vmm_flags |= VMM_FLAG_NX;
 
     uint32_t aligned_len = (length + 0xFFFU) & ~(uint32_t)0xFFFU;
     if (aligned_len > ((g_vbe.size + 0xFFFU) & ~(uint32_t)0xFFFU))
@@ -181,7 +199,7 @@ static uintptr_t fb0_mmap(fs_node_t* node, uintptr_t addr, uint32_t length, uint
     for (uint32_t i = 0; i < aligned_len; i += 0x1000U) {
         vmm_map_page((uint64_t)(g_vbe.phys_addr + i),
                      (uint64_t)(addr + i),
-                     VMM_FLAG_PRESENT | VMM_FLAG_RW | VMM_FLAG_USER | VMM_FLAG_NOCACHE);
+                     vmm_flags);
     }
 
     return addr;

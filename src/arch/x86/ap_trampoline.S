@@ -70,6 +70,21 @@ ap_pm_entry:
     or $0x20, %eax               /* CR4.PAE = bit 5 */
     mov %eax, %cr4
 
+    /* Enable NXE in IA32_EFER on this AP if the CPU supports NX. */
+    mov $0x80000000, %eax
+    cpuid
+    cmp $0x80000001, %eax
+    jb 1f
+    mov $0x80000001, %eax
+    cpuid
+    bt $20, %edx
+    jnc 1f
+    mov $0xC0000080, %ecx
+    rdmsr
+    or $0x800, %eax
+    wrmsr
+1:
+
     /* Load CR3 (PDPT physical address) from data area */
     mov (AP_DATA_BASE + 8), %eax
     mov %eax, %cr3
