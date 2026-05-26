@@ -4484,30 +4484,15 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
             sc_ret(regs) = 0;
             return;
         }
-        /* For R_OK/W_OK/X_OK, simplified check since we don't have
-         * granular file permissions implemented yet.
-         * Just check if the file exists and is of the right type. */
-        /* R_OK: check if readable (assume all files are readable if they exist) */
-        if (mode & 4) { /* R_OK = 4 */
-            /* For now, assume readable if exists */
-        }
-        /* W_OK: check if writable (check mount read-only flag) */
-        if (mode & 2) { /* W_OK = 2 */
-            fs_node_t* mount_root = vfs_find_mount_root(path);
-            if (mount_root) {
-                unsigned long mflags = vfs_node_mount_flags(mount_root);
-                if (mflags & MS_RDONLY) {
-                    sc_ret(regs) = (uint32_t)-EROFS;
-                    return;
-                }
-            }
-        }
-        /* X_OK: check if executable (check if it's a regular file) */
-        if (mode & 1) { /* X_OK = 1 */
-            if (!(node->flags & FS_FILE)) {
-                sc_ret(regs) = (uint32_t)-EACCES;
-                return;
-            }
+        /* Use vfs_check_permission for R_OK/W_OK/X_OK */
+        int want = 0;
+        if (mode & 4) want |= 4; /* R_OK = 4 */
+        if (mode & 2) want |= 2; /* W_OK = 2 */
+        if (mode & 1) want |= 1; /* X_OK = 1 */
+        int perm_rc = vfs_check_permission(node, want);
+        if (perm_rc < 0) {
+            sc_ret(regs) = (uint32_t)perm_rc;
+            return;
         }
         sc_ret(regs) = 0;
         return;
