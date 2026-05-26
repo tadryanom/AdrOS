@@ -35,6 +35,14 @@ void pmm_arch_init(void* boot_info) {
         return;
     }
 
+    /* Read total_size from Multiboot2 header */
+    uint32_t total_size = *(volatile uint32_t*)boot_info;
+    /* Validate total_size is reasonable */
+    if (total_size < 8 || total_size > 65536) {
+        kprintf("[PMM] Invalid Multiboot2 total_size: %u\n", total_size);
+        total_size = 8;  /* Use minimum valid size */
+    }
+
     struct multiboot_tag *tag;
     uint32_t total_mem = 0;
     uint32_t highest_avail = 0;
@@ -44,10 +52,21 @@ void pmm_arch_init(void* boot_info) {
     kprintf("[PMM] Parsing Multiboot2 info...\n");
 
     /* --- Pass 1: determine total usable memory size --- */
-    for (tag = (struct multiboot_tag *)((uint8_t *)boot_info + 8);
-         tag->type != MULTIBOOT_TAG_TYPE_END;
-         tag = MB2_TAG_NEXT(tag))
-    {
+    uint32_t cursor = 8;  /* Skip header */
+    while (cursor + 8 <= total_size) {
+        tag = (struct multiboot_tag *)((uint8_t *)boot_info + cursor);
+
+        /* Validate tag size */
+        if (tag->size < 8) {
+            kprintf("[PMM] Invalid Multiboot2 tag size: %u\n", tag->size);
+            break;
+        }
+        if (cursor + tag->size > total_size) {
+            kprintf("[PMM] Multiboot2 tag exceeds buffer\n");
+            break;
+        }
+
+        if (tag->type == MULTIBOOT_TAG_TYPE_END) break;
         if (tag->type == MULTIBOOT_TAG_TYPE_BASIC_MEMINFO) {
             struct multiboot_tag_basic_meminfo *mi =
                 (struct multiboot_tag_basic_meminfo *)tag;
@@ -57,6 +76,12 @@ void pmm_arch_init(void* boot_info) {
             saw_mmap = 1;
             struct multiboot_tag_mmap *mmap =
                 (struct multiboot_tag_mmap *)tag;
+            /* Validate entry_size is non-zero */
+            if (mmap->entry_size == 0) {
+                kprintf("[PMM] Invalid MMAP entry_size: 0\n");
+                cursor += (tag->size + 7) & ~7;
+                continue;
+            }
             struct multiboot_mmap_entry *e;
             for (e = mmap->entries;
                  (uint8_t *)e < (uint8_t *)mmap + mmap->size;
@@ -73,6 +98,9 @@ void pmm_arch_init(void* boot_info) {
                     highest_avail = end;
             }
         }
+
+        /* Advance to next tag (8-byte aligned) */
+        cursor += (tag->size + 7) & ~7;
     }
 
     if (highest_avail > total_mem)
@@ -85,15 +113,35 @@ void pmm_arch_init(void* boot_info) {
     pmm_set_limits((uint64_t)total_mem, 0);
 
     /* --- Pass 2: free AVAILABLE regions --- */
-    for (tag = (struct multiboot_tag *)((uint8_t *)boot_info + 8);
-         tag->type != MULTIBOOT_TAG_TYPE_END;
-         tag = MB2_TAG_NEXT(tag))
-    {
-        if (tag->type != MULTIBOOT_TAG_TYPE_MMAP)
+    cursor = 8;  /* Reset cursor for second pass */
+    while (cursor + 8 <= total_size) {
+        tag = (struct multiboot_tag *)((uint8_t *)boot_info + cursor);
+
+        /* Validate tag size */
+        if (tag->size < 8) {
+            kprintf("[PMM] Invalid Multiboot2 tag size in pass 2: %u\n", tag->size);
+            break;
+        }
+        if (cursor + tag->size > total_size) {
+            kprintf("[PMM] Multiboot2 tag exceeds buffer in pass 2\n");
+            break;
+        }
+
+        if (tag->type == MULTIBOOT_TAG_TYPE_END) break;
+
+        if (tag->type != MULTIBOOT_TAG_TYPE_MMAP) {
+            cursor += (tag->size + 7) & ~7;
             continue;
+        }
 
         struct multiboot_tag_mmap *mmap =
             (struct multiboot_tag_mmap *)tag;
+        /* Validate entry_size is non-zero */
+        if (mmap->entry_size == 0) {
+            kprintf("[PMM] Invalid MMAP entry_size in pass 2: 0\n");
+            cursor += (tag->size + 7) & ~7;
+            continue;
+        }
         struct multiboot_mmap_entry *e;
 
         for (e = mmap->entries;
@@ -117,6 +165,8 @@ void pmm_arch_init(void* boot_info) {
             pmm_mark_region(base, len, 0);
             freed_frames += len / PAGE_SIZE;
         }
+
+        cursor += (tag->size + 7) & ~7;
     }
 
     /* Fallback if no MMAP tag */
@@ -144,10 +194,22 @@ void pmm_arch_init(void* boot_info) {
     }
 
     /* Protect Multiboot2 modules (e.g. initrd) */
-    for (tag = (struct multiboot_tag *)((uint8_t *)boot_info + 8);
-         tag->type != MULTIBOOT_TAG_TYPE_END;
-         tag = MB2_TAG_NEXT(tag))
-    {
+    cursor = 8;  /* Reset cursor for third pass */
+    while (cursor + 8 <= total_size) {
+        tag = (struct multiboot_tag *)((uint8_t *)boot_info + cursor);
+
+        /* Validate tag size */
+        if (tag->size < 8) {
+            kprintf("[PMM] Invalid Multiboot2 tag size in pass 3: %u\n", tag->size);
+            break;
+        }
+        if (cursor + tag->size > total_size) {
+            kprintf("[PMM] Multiboot2 tag exceeds buffer in pass 3\n");
+            break;
+        }
+
+        if (tag->type == MULTIBOOT_TAG_TYPE_END) break;
+
         if (tag->type == MULTIBOOT_TAG_TYPE_MODULE) {
             struct multiboot_tag_module* mod =
                 (struct multiboot_tag_module*)tag;
@@ -156,6 +218,8 @@ void pmm_arch_init(void* boot_info) {
             if (me > ms)
                 pmm_mark_region(ms, me - ms, 1);
         }
+
+        cursor += (tag->size + 7) & ~7;
     }
 
     /* Protect Multiboot info structure itself */
