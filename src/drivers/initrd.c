@@ -376,6 +376,12 @@ fs_node_t* initrd_init(uint32_t location, uint32_t size) {
         uint32_t comp_sz = (uint32_t)raw[8]  | ((uint32_t)raw[9]  << 8) |
                            ((uint32_t)raw[10] << 16) | ((uint32_t)raw[11] << 24);
 
+        /* Validate LZ4 header and compressed data fit within initrd bounds */
+        if (LZ4B_HDR_SIZE + comp_sz > size) {
+            kprintf("[INITRD] LZ4: compressed data exceeds initrd bounds\n");
+            return NULL;
+        }
+
         decomp_buf = initrd_alloc_pages(orig_sz);
         if (!decomp_buf) {
             kprintf("[INITRD] OOM decompressing LZ4 (%u bytes)\n", orig_sz);
@@ -409,9 +415,12 @@ fs_node_t* initrd_init(uint32_t location, uint32_t size) {
     entries[root].parent = -1;
 
     const uint8_t* p = (const uint8_t*)(uintptr_t)location;
+    const uint8_t* end = p + size;  /* End of initrd data */
     int files = 0;
 
     while (1) {
+        /* Validate we have at least TAR_BLOCK bytes before checking zero block */
+        if (p + TAR_BLOCK > end) break;
         if (tar_is_zero_block(p)) break;
         const tar_header_t* h = (const tar_header_t*)p;
 
@@ -437,6 +446,30 @@ fs_node_t* initrd_init(uint32_t location, uint32_t size) {
         /* A05: Validate rec_len (TAR block alignment) */
         if (size > 256 * 1024 * 1024) {  /* Reasonable limit: 256MB */
             kprintf("[INITRD] TAR: size too large: %u\n", size);
+            return NULL;
+        }
+
+        /* Validate payload fits within initrd bounds */
+        uint32_t adv = TAR_BLOCK + ((size + (TAR_BLOCK - 1)) & ~(TAR_BLOCK - 1));
+        if (p + adv > end) {
+            kprintf("[INITRD] TAR: payload exceeds initrd bounds\n");
+            return NULL;
+        }
+
+        /* Validate TAR checksum (basic check - sum of header bytes should match checksum field) */
+        uint32_t checksum = tar_parse_octal(h->chksum, sizeof(h->chksum));
+        uint32_t calc_checksum = 0;
+        const uint8_t* hp = (const uint8_t*)h;
+        for (int i = 0; i < 512; i++) {
+            if (i >= 148 && i < 156) {
+                /* Skip checksum field itself (treat as spaces) */
+                calc_checksum += ' ';
+            } else {
+                calc_checksum += hp[i];
+            }
+        }
+        if (checksum != calc_checksum) {
+            kprintf("[INITRD] TAR: checksum mismatch (header=%u, calc=%u)\n", checksum, calc_checksum);
             return NULL;
         }
 
@@ -477,7 +510,6 @@ fs_node_t* initrd_init(uint32_t location, uint32_t size) {
             }
         }
 
-        uint32_t adv = TAR_BLOCK + ((size + (TAR_BLOCK - 1)) & ~(TAR_BLOCK - 1));
         p += adv;
     }
 
