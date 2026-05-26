@@ -82,10 +82,11 @@ sysenter_entry:
      *   real arg2 = *(ECX + 8)
      *
      * SECURITY: validate ECX is in user space before dereferencing.
-     * If ECX >= 0xC0000000 (kernel base), it could leak kernel data.
+     * Use hal_mm_kernel_virt_base() to get dynamic kernel base.
      * Also check ECX is at least 8 bytes from kernel boundary.
      */
-    cmpl $0xC0000000, %ecx
+    call hal_mm_kernel_virt_base
+    cmpl %eax, %ecx
     jae  1f
     cmpl $8, %ecx        /* ECX must be at least 8 bytes from kernel boundary */
     jb   1f
