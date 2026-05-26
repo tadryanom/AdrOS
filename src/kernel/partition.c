@@ -94,3 +94,74 @@ void partition_release(partition_t* part) {
         part->refcount--;
     spin_unlock_irqrestore(&g_partition_lock, flags);
 }
+
+/* MBR signature at offset 510-511 */
+#define MBR_SIGNATURE 0xAA55
+
+int partition_scan_mbr(block_device_t* bdev) {
+    if (!bdev) return -EINVAL;
+
+    /* Skip devices with unknown sector count (likely not present) */
+    if (bdev->sector_count == 0) {
+        return 0;
+    }
+
+    /* Read MBR sector (LBA 0) */
+    uint8_t mbr_sector[512];
+    int rc = blockdev_read(bdev, 0, mbr_sector);
+    if (rc < 0) {
+        return 0;
+    }
+
+    /* Check MBR signature */
+    uint16_t signature = *(uint16_t*)(mbr_sector + 510);
+    if (signature != MBR_SIGNATURE) {
+        return 0;
+    }
+
+    /* Parse 4 primary partition entries (starting at offset 446) */
+    mbr_partition_entry_t* entries = (mbr_partition_entry_t*)(mbr_sector + 446);
+    int partitions_found = 0;
+
+    for (int i = 0; i < 4; i++) {
+        mbr_partition_entry_t* entry = &entries[i];
+
+        /* Skip empty partitions (type 0) */
+        if (entry->partition_type == PART_TYPE_EMPTY)
+            continue;
+
+        /* Create partition structure */
+        partition_t part;
+        memset(&part, 0, sizeof(part));
+
+        part.parent = bdev;
+        part.start_lba = entry->start_lba;
+        part.sector_count = entry->sector_count;
+        part.partition_type = entry->partition_type;
+        part.partition_number = i + 1; /* 1-4 for primary partitions */
+        part.refcount = 0;
+
+        /* Generate partition name (e.g. "hda1", "vda2") */
+        strcpy(part.name, bdev->name);
+        int name_len = strlen(part.name);
+        if (name_len < (int)sizeof(part.name) - 2) {
+            part.name[name_len] = '0' + (i + 1);
+            part.name[name_len + 1] = '\0';
+        }
+
+        /* Register the partition */
+        rc = partition_register(&part);
+        if (rc < 0) {
+            continue;
+        }
+
+        kprintf("[PARTITION] %s: type=0x%02X, start_lba=%u, sectors=%u\n",
+                part.name, part.partition_type, part.start_lba, part.sector_count);
+        partitions_found++;
+    }
+
+    if (partitions_found > 0) {
+        kprintf("[PARTITION] Scanned %s: found %d partition(s)\n", bdev->name, partitions_found);
+    }
+    return partitions_found;
+}

@@ -58,4 +58,17 @@ void partition_release(partition_t* part);
 /* Initialize partition subsystem lock */
 void partition_init_lock(void);
 
+/* MBR partition entry structure (16 bytes) */
+typedef struct __attribute__((packed)) {
+    uint8_t boot_indicator;
+    uint8_t chs_start[3];
+    uint8_t partition_type;
+    uint8_t chs_end[3];
+    uint32_t start_lba;
+    uint32_t sector_count;
+} mbr_partition_entry_t;
+
+/* Scan a block device for MBR partitions and register them */
+int partition_scan_mbr(block_device_t* bdev);
+
 #endif /* PARTITION_H */
