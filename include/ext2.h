@@ -14,6 +14,7 @@
 #include "blockdev.h"
 #include <stdint.h>
 
+struct partition;
 struct ext2_group_desc;
 
 /* Per-mount filesystem state */
@@ -36,6 +37,9 @@ struct ext2_mount {
 /* Mount an ext2 filesystem on the given block device starting at the given
  * LBA offset.  Returns a mount result with root node and superblock, or {NULL, NULL} on failure. */
 vfs_mount_result_t ext2_mount(block_device_t* bdev, uint32_t partition_lba);
+
+/* Mount ext2 filesystem from a partition (uses partition's parent and start_lba) */
+vfs_mount_result_t ext2_mount_partition(struct partition* part);
 
 /* Unmount an ext2 filesystem and free its resources */
 void ext2_umount(struct ext2_mount* em);
