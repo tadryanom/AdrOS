@@ -23,14 +23,20 @@
 /* Commands for shmctl */
 #define IPC_RMID    0
 #define IPC_STAT    1
+#define IPC_SET     2
 
 /* Private key — always creates a new segment */
 #define IPC_PRIVATE 0
+
+struct ipc_perm {
+    uint32_t mode;          /* permission mode */
+};
 
 struct shmid_ds {
     uint32_t shm_segsz;     /* segment size in bytes */
     uint32_t shm_nattch;    /* number of current attaches */
     uint32_t shm_key;       /* key */
+    struct ipc_perm shm_perm; /* permission structure */
 };
 
 /* Kernel API */
