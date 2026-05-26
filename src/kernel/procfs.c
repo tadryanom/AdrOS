@@ -44,6 +44,14 @@ static struct process* proc_find_pid_safe(uint32_t pid) {
     return process_find_by_pid(pid);
 }
 
+/* Check if current process can access target process's /proc entries */
+static int proc_access_check(uint32_t target_pid) {
+    if (!current_process) return 0;  /* No process context, deny */
+    if (current_process->euid == 0) return 1;  /* Root can read everything */
+    if (target_pid == current_process->pid) return 1;  /* Can read own entries */
+    return 0;  /* Non-root cannot read other processes */
+}
+
 static int proc_snprintf(char* buf, uint32_t sz, const char* key, uint32_t val) {
     if (sz < 2) return 0;
     uint32_t w = 0;
@@ -194,6 +202,7 @@ static uint32_t proc_meminfo_read(fs_node_t* node, uint32_t offset, uint32_t siz
 
 static uint32_t proc_pid_status_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
     uint32_t pid = node->inode;
+    if (!proc_access_check(pid)) return 0;  /* Access denied */
     struct process* p = proc_find_pid_safe(pid);
     if (!p) return 0;
 
@@ -234,6 +243,7 @@ static uint32_t proc_pid_status_read(fs_node_t* node, uint32_t offset, uint32_t 
 
 static uint32_t proc_pid_cmdline_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
     uint32_t pid = node->inode;
+    if (!proc_access_check(pid)) return 0;  /* Access denied */
     struct process* p = proc_find_pid_safe(pid);
     if (!p) return 0;
 
@@ -252,6 +262,7 @@ static uint32_t proc_pid_cmdline_read(fs_node_t* node, uint32_t offset, uint32_t
 
 static uint32_t proc_pid_maps_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
     uint32_t pid = node->inode;
+    if (!proc_access_check(pid)) return 0;  /* Access denied */
     struct process* p = proc_find_pid_safe(pid);
     if (!p) return 0;
 
