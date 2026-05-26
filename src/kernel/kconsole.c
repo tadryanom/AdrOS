@@ -350,12 +350,24 @@ static void kconsole_mount(const char* args) {
         return;
     }
 
+    /* Validate mountpoint exists and is a directory */
+    extern fs_node_t* vfs_lookup(const char* path);
+    fs_node_t* mp_node = vfs_lookup(mountpoint);
+    if (!mp_node) {
+        kprintf("mount: mountpoint does not exist: %s\n", mountpoint);
+        return;
+    }
+    if (!(mp_node->flags & FS_DIRECTORY)) {
+        kprintf("mount: mountpoint is not a directory: %s\n", mountpoint);
+        return;
+    }
+
     /* Resolve device to block device */
     const char* devname = device;
     if (strncmp(device, "/dev/", 5) == 0) {
         devname = device + 5;
     }
-    const block_device_t* bdev = blockdev_find(devname);
+    block_device_t* bdev = blockdev_find(devname);
     if (!bdev) {
         kprintf("mount: unknown device: %s\n", device);
         return;

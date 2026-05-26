@@ -1133,7 +1133,7 @@ static int fat_truncate_impl(struct fs_node* node, uint32_t length) {
 
 /* ---- Mount ---- */
 
-vfs_mount_result_t fat_mount(const block_device_t* bdev, uint32_t partition_lba) {
+vfs_mount_result_t fat_mount(block_device_t* bdev, uint32_t partition_lba) {
     vfs_mount_result_t result = {NULL, NULL};
 
     if (!bdev) {

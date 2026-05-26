@@ -301,12 +301,12 @@ uint64_t virtio_blk_capacity(void) {
 }
 
 /* ---- Block device operations ---- */
-static int vblk_bdev_read(const block_device_t* dev, uint32_t lba, void* buf) {
+static int vblk_bdev_read(block_device_t* dev, uint32_t lba, void* buf) {
     (void)dev;
     return virtio_blk_read((uint64_t)lba, buf, 1);
 }
 
-static int vblk_bdev_write(const block_device_t* dev, uint32_t lba, const void* buf) {
+static int vblk_bdev_write(block_device_t* dev, uint32_t lba, const void* buf) {
     (void)dev;
     return virtio_blk_write((uint64_t)lba, buf, 1);
 }
