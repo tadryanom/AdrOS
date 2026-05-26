@@ -144,6 +144,16 @@ static int elf32_load_segments(const uint8_t* file, uint32_t file_len,
         if ((uint64_t)ph[i].p_offset + (uint64_t)ph[i].p_filesz > (uint64_t)file_len)
             return -EINVAL;
 
+        /* Reject p_filesz > p_memsz - would write beyond mapped region */
+        if (ph[i].p_filesz > ph[i].p_memsz)
+            return -EINVAL;
+
+        /* Validate p_align is power of 2 and reasonable */
+        if (ph[i].p_align == 0 || (ph[i].p_align & (ph[i].p_align - 1)) != 0)
+            return -EINVAL;
+        if (ph[i].p_align > 0x10000) /* Max 64KB alignment */
+            return -EINVAL;
+
         /* Map as RW initially so we can write segment data.
          * Final permissions are applied by elf32_reprotect_segments
          * after relocations are processed. */
