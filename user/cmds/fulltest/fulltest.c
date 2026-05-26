@@ -322,6 +322,9 @@ enum {
     EAGAIN = 11,
     EINVAL = 22,
     EEXIST = 17,
+    EBUSY = 16,
+    ENOENT = 2,
+    ENOTDIR = 20,
 };
 
 enum {
@@ -5130,6 +5133,133 @@ void _start(void) {
         }
         sys_write(1, "[test] busy umount OK\n",
                   (uint32_t)(sizeof("[test] busy umount OK\n") - 1));
+    }
+
+    // I16: MS_REMOUNT — update flags on existing mount
+    {
+        (void)sys_mkdir("/tmp/mnt_remount");
+        if (sys_mount("none", "/tmp/mnt_remount", "tmpfs", 0) < 0) {
+            sys_write(1, "[test] remount: initial mount failed\n",
+                      (uint32_t)(sizeof("[test] remount: initial mount failed\n") - 1));
+            sys_exit(1);
+        }
+        /* Remount with MS_RDONLY */
+        if (sys_mount("none", "/tmp/mnt_remount", "tmpfs", MS_REMOUNT | MS_RDONLY) < 0) {
+            sys_write(1, "[test] remount: remount failed\n",
+                      (uint32_t)(sizeof("[test] remount: remount failed\n") - 1));
+            sys_exit(1);
+        }
+        /* Write should now fail on read-only mount */
+        int fd = sys_openat(AT_FDCWD, "/tmp/mnt_remount/test.txt", O_CREAT | O_RDWR, 0644);
+        if (fd >= 0) {
+            sys_write(1, "[test] remount: write should fail after ro remount\n",
+                      (uint32_t)(sizeof("[test] remount: write should fail after ro remount\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_umount2("/tmp/mnt_remount") < 0) {
+            sys_write(1, "[test] remount: umount failed\n",
+                      (uint32_t)(sizeof("[test] remount: umount failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[test] MS_REMOUNT OK\n",
+                  (uint32_t)(sizeof("[test] MS_REMOUNT OK\n") - 1));
+    }
+
+    // I17: Mount replace rejection — mount without MS_REMOUNT should fail
+    {
+        (void)sys_mkdir("/tmp/mnt_replace");
+        if (sys_mount("none", "/tmp/mnt_replace", "tmpfs", 0) < 0) {
+            sys_write(1, "[test] replace: initial mount failed\n",
+                      (uint32_t)(sizeof("[test] replace: initial mount failed\n") - 1));
+            sys_exit(1);
+        }
+        /* Mount without MS_REMOUNT should fail */
+        int rc = sys_mount("none", "/tmp/mnt_replace", "tmpfs", 0);
+        if (rc >= 0) {
+            sys_write(1, "[test] replace: mount should fail\n",
+                      (uint32_t)(sizeof("[test] replace: mount should fail\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_umount2("/tmp/mnt_replace") < 0) {
+            sys_write(1, "[test] replace: umount failed\n",
+                      (uint32_t)(sizeof("[test] replace: umount failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[test] mount replace rejection OK\n",
+                  (uint32_t)(sizeof("[test] mount replace rejection OK\n") - 1));
+    }
+
+    // I18: ftruncate respects MS_RDONLY
+    {
+        (void)sys_mkdir("/tmp/mnt_ftrunc");
+        if (sys_mount("none", "/tmp/mnt_ftrunc", "tmpfs", 0) < 0) {
+            sys_write(1, "[test] ftrunc: mount failed\n",
+                      (uint32_t)(sizeof("[test] ftrunc: mount failed\n") - 1));
+            sys_exit(1);
+        }
+        int fd = sys_openat(AT_FDCWD, "/tmp/mnt_ftrunc/test.txt", O_CREAT | O_RDWR, 0644);
+        if (fd < 0) {
+            sys_write(1, "[test] ftrunc: file create failed\n",
+                      (uint32_t)(sizeof("[test] ftrunc: file create failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(fd, "hello", 5);
+        sys_close(fd);
+        /* Remount read-only */
+        if (sys_mount("none", "/tmp/mnt_ftrunc", "tmpfs", MS_REMOUNT | MS_RDONLY) < 0) {
+            sys_write(1, "[test] ftrunc: remount ro failed\n",
+                      (uint32_t)(sizeof("[test] ftrunc: remount ro failed\n") - 1));
+            sys_exit(1);
+        }
+        /* Open read-only (should succeed) */
+        fd = sys_openat(AT_FDCWD, "/tmp/mnt_ftrunc/test.txt", O_RDONLY, 0);
+        if (fd < 0) {
+            sys_write(1, "[test] ftrunc: open ro failed\n",
+                      (uint32_t)(sizeof("[test] ftrunc: open ro failed\n") - 1));
+            sys_exit(1);
+        }
+        /* ftruncate should fail on read-only mount even with file open for read */
+        if (sys_ftruncate(fd, 10) >= 0) {
+            sys_write(1, "[test] ftrunc: ftruncate should fail on ro mount\n",
+                      (uint32_t)(sizeof("[test] ftrunc: ftruncate should fail on ro mount\n") - 1));
+            sys_exit(1);
+        }
+        sys_close(fd);
+        if (sys_umount2("/tmp/mnt_ftrunc") < 0) {
+            sys_write(1, "[test] ftrunc: umount failed\n",
+                      (uint32_t)(sizeof("[test] ftrunc: umount failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[test] ftruncate readonly OK\n",
+                  (uint32_t)(sizeof("[test] ftruncate readonly OK\n") - 1));
+    }
+
+    // I19: Mountpoint validation — mount should fail if mountpoint doesn't exist
+    {
+        int rc = sys_mount("none", "/tmp/nonexistent_mnt", "tmpfs", 0);
+        if (rc >= 0) {
+            sys_write(1, "[test] mountpoint: should fail\n",
+                      (uint32_t)(sizeof("[test] mountpoint: should fail\n") - 1));
+            sys_exit(1);
+        }
+        /* Create a file instead of directory */
+        int fd = sys_openat(AT_FDCWD, "/tmp/not_a_dir", O_CREAT | O_RDWR, 0644);
+        if (fd < 0) {
+            sys_write(1, "[test] mountpoint: file create failed\n",
+                      (uint32_t)(sizeof("[test] mountpoint: file create failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_close(fd);
+        /* Mount on file should fail */
+        rc = sys_mount("none", "/tmp/not_a_dir", "tmpfs", 0);
+        if (rc >= 0) {
+            sys_write(1, "[test] mountpoint: should fail on file\n",
+                      (uint32_t)(sizeof("[test] mountpoint: should fail on file\n") - 1));
+            sys_exit(1);
+        }
+        sys_unlinkat(AT_FDCWD, "/tmp/not_a_dir", 0);
+        sys_write(1, "[test] mountpoint validation OK\n",
+                  (uint32_t)(sizeof("[test] mountpoint validation OK\n") - 1));
     }
 
     // I13: clone — create a thread sharing address space
