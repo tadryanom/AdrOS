@@ -158,6 +158,31 @@ int init_start(const struct boot_info* bi) {
     };
     vfs_fs_type_register(&ext2_fs_type);
 
+    /* Register virtual filesystems (no block device needed) */
+    static vfs_fs_type_t tmpfs_fs_type = {
+        .name = "tmpfs",
+        .flags = 0,
+        .mount = tmpfs_mount,
+        .kill_sb = tmpfs_kill_sb
+    };
+    vfs_fs_type_register(&tmpfs_fs_type);
+
+    static vfs_fs_type_t devfs_fs_type = {
+        .name = "devfs",
+        .flags = 0,
+        .mount = devfs_mount,
+        .kill_sb = devfs_kill_sb
+    };
+    vfs_fs_type_register(&devfs_fs_type);
+
+    static vfs_fs_type_t procfs_fs_type = {
+        .name = "procfs",
+        .flags = 0,
+        .mount = procfs_mount,
+        .kill_sb = procfs_kill_sb
+    };
+    vfs_fs_type_register(&procfs_fs_type);
+
     /* Parse kernel command line (Linux-like triaging) */
     cmdline_parse(bi ? bi->cmdline : NULL);
 

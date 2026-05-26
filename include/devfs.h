@@ -11,10 +11,17 @@
 #define DEVFS_H
 
 #include "fs.h"
+#include "blockdev.h"
 
 #define DEVFS_MAX_DEVICES 32
 
+struct block_device;
+
 fs_node_t* devfs_create_root(void);
+
+/* VFS mount interface */
+vfs_mount_result_t devfs_mount(struct block_device* bdev, uint32_t lba);
+void devfs_kill_sb(vfs_superblock_t* sb);
 
 /*
  * Register a device node with devfs.

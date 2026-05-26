@@ -8,6 +8,8 @@
  */
 
 #include "tmpfs.h"
+#include "fs.h"
+#include "blockdev.h"
 
 #include "errno.h"
 #include "heap.h"
@@ -296,6 +298,30 @@ fs_node_t* tmpfs_create_root(void) {
     root->vfs.i_ops = &tmpfs_dir_iops;
 
     return &root->vfs;
+}
+
+/* ---- VFS mount interface ---- */
+vfs_mount_result_t tmpfs_mount(block_device_t* bdev, uint32_t lba) {
+    (void)bdev;
+    (void)lba;
+    vfs_mount_result_t result = {NULL, NULL};
+    result.root = tmpfs_create_root();
+    return result;
+}
+
+void tmpfs_kill_sb(vfs_superblock_t* sb) {
+    if (sb && sb->root) {
+        struct tmpfs_node* root = (struct tmpfs_node*)sb->root;
+        /* Free all children recursively */
+        struct tmpfs_node* child = root->first_child;
+        while (child) {
+            struct tmpfs_node* next = child->next_sibling;
+            if (child->data) kfree(child->data);
+            kfree(child);
+            child = next;
+        }
+        kfree(root);
+    }
 }
 
 int tmpfs_add_file(fs_node_t* root_dir, const char* name, const uint8_t* data, uint32_t len) {
