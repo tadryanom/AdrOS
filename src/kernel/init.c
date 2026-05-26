@@ -291,8 +291,16 @@ int init_start(const struct boot_info* bi) {
     blockdev_init_lock();
     blockdev_register_ata();
 
-    /* Initialize partition subsystem (scan will be done later) */
+    /* Initialize partition subsystem and scan for partitions */
     partition_init_lock();
+    for (int i = 0; i < ATA_MAX_DRIVES; i++) {
+        if (!ata_pio_drive_present(i)) continue;
+        const char* names[ATA_MAX_DRIVES] = { "hda", "hdb", "hdc", "hdd" };
+        block_device_t* bdev = blockdev_find(names[i]);
+        if (bdev) {
+            partition_scan_mbr(bdev);
+        }
+    }
 
     /* If root= is specified on the kernel command line, mount that device
      * as the disk root filesystem.  The filesystem type is auto-detected
