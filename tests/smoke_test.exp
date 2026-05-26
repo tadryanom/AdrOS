@@ -161,6 +161,7 @@ set tests {
     {"mount replace rejection" "\\[test\\] mount replace rejection OK"}
     {"ftruncate readonly"   "\\[test\\] ftruncate readonly OK"}
     {"mountpoint validation" "\\[test\\] mountpoint validation OK"}
+    {"umount cwd"           "\\[test\\] umount cwd OK"}
     {"sigqueue"            "\\[test\\] sigqueue OK"}
     {"clone"               "\\[test\\] clone OK"}
     {"inotify_init1"       "\\[test\\] inotify_init1 OK"}

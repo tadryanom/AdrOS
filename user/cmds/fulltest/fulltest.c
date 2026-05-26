@@ -5262,6 +5262,44 @@ void _start(void) {
                   (uint32_t)(sizeof("[test] mountpoint validation OK\n") - 1));
     }
 
+    // I20: umount with active cwd — should fail with -EBUSY
+    {
+        (void)sys_mkdir("/tmp/mnt_cwd");
+        if (sys_mount("none", "/tmp/mnt_cwd", "tmpfs", 0) < 0) {
+            sys_write(1, "[test] umount cwd: mount failed\n",
+                      (uint32_t)(sizeof("[test] umount cwd: mount failed\n") - 1));
+            sys_exit(1);
+        }
+        /* Change cwd into the mount */
+        if (sys_chdir("/tmp/mnt_cwd") < 0) {
+            sys_write(1, "[test] umount cwd: chdir failed\n",
+                      (uint32_t)(sizeof("[test] umount cwd: chdir failed\n") - 1));
+            sys_exit(1);
+        }
+        /* umount should fail because cwd is in the mount */
+        int rc = sys_umount2("/tmp/mnt_cwd");
+        if (rc >= 0) {
+            sys_write(1, "[test] umount cwd: should fail with -EBUSY\n",
+                      (uint32_t)(sizeof("[test] umount cwd: should fail with -EBUSY\n") - 1));
+            sys_exit(1);
+        }
+        /* Change cwd back to / */
+        if (sys_chdir("/") < 0) {
+            sys_write(1, "[test] umount cwd: chdir back failed\n",
+                      (uint32_t)(sizeof("[test] umount cwd: chdir back failed\n") - 1));
+            sys_exit(1);
+        }
+        /* Now umount should succeed */
+        if (sys_umount2("/tmp/mnt_cwd") < 0) {
+            sys_write(1, "[test] umount cwd: umount failed\n",
+                      (uint32_t)(sizeof("[test] umount cwd: umount failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[test] umount cwd OK\n",
+                  (uint32_t)(sizeof("[test] umount cwd OK\n") - 1));
+    }
+
+
     // I13: clone — create a thread sharing address space
     {
         /* We use a simple clone with CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND
