@@ -55,6 +55,29 @@ static void shm_destroy(struct shm_segment* seg) {
     memset(seg, 0, sizeof(*seg));
 }
 
+/* Check POSIX permission for SHM segment */
+static int shm_perm_check(struct shm_segment* seg, int perm) {
+    if (!current_process) return 0;
+    if (current_process->euid == 0) return 1;  /* Root can do anything */
+
+    uint32_t mode = seg->mode;
+    uint32_t uid = seg->uid;
+    uint32_t gid = seg->gid;
+
+    /* Owner permissions */
+    if (current_process->uid == uid || current_process->euid == uid) {
+        return (mode & (perm << 6)) != 0;
+    }
+
+    /* Group permissions */
+    if (current_process->gid == gid || current_process->egid == gid) {
+        return (mode & (perm << 3)) != 0;
+    }
+
+    /* Other permissions */
+    return (mode & perm) != 0;
+}
+
 int shm_get(uint32_t key, uint32_t size, int flags) {
     if (size == 0) return -EINVAL;
 
@@ -143,8 +166,8 @@ void* shm_at(int shmid, uintptr_t shmaddr) {
         return (void*)(uintptr_t)-EINVAL;
     }
 
-    /* K14: Check permission - owner or root only */
-    if (seg->uid != current_process->uid && current_process->uid != 0) {
+    /* Check POSIX read permission */
+    if (!shm_perm_check(seg, 04)) {  /* R_OK = 4 */
         spin_unlock_irqrestore(&shm_lock, irqf);
         return (void*)(uintptr_t)-EACCES;
     }
@@ -264,6 +287,11 @@ int shm_ctl(int shmid, int cmd, struct shmid_ds* buf) {
     }
 
     if (cmd == IPC_STAT) {
+        /* Check read permission */
+        if (!shm_perm_check(seg, 04)) {
+            spin_unlock_irqrestore(&shm_lock, irqf);
+            return -EACCES;
+        }
         /* Copy to local struct first, then release lock before
          * writing to userspace to avoid deadlock on page fault. */
         struct shmid_ds local;
@@ -280,10 +308,34 @@ int shm_ctl(int shmid, int cmd, struct shmid_ds* buf) {
     }
 
     if (cmd == IPC_RMID) {
+        /* Only owner or root can remove */
+        if (seg->uid != current_process->uid && current_process->euid != 0) {
+            spin_unlock_irqrestore(&shm_lock, irqf);
+            return -EPERM;
+        }
         if (seg->nattch == 0) {
             shm_destroy(seg);
         } else {
             seg->marked_rm = 1;
+        }
+        spin_unlock_irqrestore(&shm_lock, irqf);
+        return 0;
+    }
+
+    if (cmd == IPC_SET) {
+        /* Only owner or root can change permissions */
+        if (seg->uid != current_process->uid && current_process->euid != 0) {
+            spin_unlock_irqrestore(&shm_lock, irqf);
+            return -EPERM;
+        }
+        if (buf) {
+            struct shmid_ds local;
+            if (copy_from_user(&local, buf, sizeof(local)) < 0) {
+                spin_unlock_irqrestore(&shm_lock, irqf);
+                return -EFAULT;
+            }
+            /* Update mode from IPC_SET */
+            seg->mode = local.shm_perm.mode & 0777;
         }
         spin_unlock_irqrestore(&shm_lock, irqf);
         return 0;
