@@ -34,6 +34,7 @@
 
 #include "ata_pio.h"
 #include "blockdev.h"
+#include "partition.h"
 #include "hal/mm.h"
 #include "heap.h"
 #include "kernel/cmdline.h"
@@ -289,6 +290,9 @@ int init_start(const struct boot_info* bi) {
     /* Register ATA drives as generic block devices (used by fat/ext2) */
     blockdev_init_lock();
     blockdev_register_ata();
+
+    /* Initialize partition subsystem (scan will be done later) */
+    partition_init_lock();
 
     /* If root= is specified on the kernel command line, mount that device
      * as the disk root filesystem.  The filesystem type is auto-detected
