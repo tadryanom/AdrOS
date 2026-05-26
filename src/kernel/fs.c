@@ -180,11 +180,20 @@ int vfs_umount_nolock(const char* mountpoint) {
         }
     }
 
-    /* Busy check: reject if any process has cwd or root in this mount */
+    /* Busy check: reject if any process has cwd in this mount */
     extern struct process* ready_queue_head;
+    extern struct process* current_process;
     extern spinlock_t sched_lock;
     
     uintptr_t sched_fl = spin_lock_irqsave(&sched_lock);
+    
+    /* Check current process first */
+    if (current_process && current_process->cwd[0] && path_is_mountpoint_prefix(mp, current_process->cwd)) {
+        spin_unlock_irqrestore(&sched_lock, sched_fl);
+        return -EBUSY;
+    }
+    
+    /* Check all processes in ready queue */
     struct process* p = ready_queue_head;
     while (p) {
         /* Check if cwd is within this mount */
@@ -192,10 +201,6 @@ int vfs_umount_nolock(const char* mountpoint) {
             spin_unlock_irqrestore(&sched_lock, sched_fl);
             return -EBUSY;
         }
-        /* Check if root is within this mount (if different from cwd) */
-        /* Note: root is not stored as a path in current process struct,
-         * so we only check cwd for now. A full implementation would require
-         * storing root as a path or implementing vfs_getpath. */
         p = p->rq_next;
     }
     spin_unlock_irqrestore(&sched_lock, sched_fl);
