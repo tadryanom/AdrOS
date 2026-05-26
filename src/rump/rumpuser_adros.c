@@ -88,11 +88,13 @@ int rumpuser_malloc(size_t len, int alignment, void **memp) {
         *memp = kmalloc(len);
     } else {
         /* Over-allocate and manually align */
-        size_t total = len + (size_t)alignment + sizeof(void*);
+        /* Store magic at mem[-2] and raw pointer at mem[-1] for rumpuser_free */
+        size_t total = len + (size_t)alignment + 2 * sizeof(void*);
         void *raw = kmalloc(total);
         if (!raw) { *memp = NULL; return 12; } /* ENOMEM */
-        uintptr_t addr = ((uintptr_t)raw + sizeof(void*) + (size_t)alignment - 1)
+        uintptr_t addr = ((uintptr_t)raw + 2 * sizeof(void*) + (size_t)alignment - 1)
                          & ~((uintptr_t)alignment - 1);
+        ((uintptr_t*)addr)[-2] = 0xDEADBEEFU; /* Magic value for aligned allocations */
         ((void**)addr)[-1] = raw;
         *memp = (void*)addr;
         return 0;
@@ -103,7 +105,21 @@ int rumpuser_malloc(size_t len, int alignment, void **memp) {
 
 void rumpuser_free(void *mem, size_t len) {
     (void)len;
-    if (mem) kfree(mem);
+    if (!mem) return;
+    /* For alignment > 16, mem is aligned pointer; raw pointer is stored at mem[-1] */
+    /* For alignment <= 16, mem is the raw pointer from kmalloc */
+    /* We use a magic value to distinguish: aligned allocations have a
+     * magic value at mem[-2], and raw pointer at mem[-1] */
+    uintptr_t addr = (uintptr_t)mem;
+    uintptr_t* maybe_magic = ((uintptr_t*)addr) - 2;
+    if (*maybe_magic == 0xDEADBEEFU) {
+        /* This is an aligned allocation - free the raw pointer at mem[-1] */
+        void* raw = ((void**)addr)[-1];
+        kfree(raw);
+    } else {
+        /* This is a standard allocation - free directly */
+        kfree(mem);
+    }
 }
 
 /* ------------------------------------------------------------------ */
