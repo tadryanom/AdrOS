@@ -2351,6 +2351,10 @@ static int syscall_open_impl(const char* user_path, uint32_t flags) {
     fs_node_t* node;
     if (flags & 0x20000) { /* O_NOFOLLOW */
         node = vfs_lookup_nofollow(path);
+        /* If O_NOFOLLOW is set and the final component is a symlink, return -ELOOP */
+        if (node && node->flags == FS_SYMLINK) {
+            return -ELOOP;
+        }
     } else {
         node = vfs_lookup(path);
     }
