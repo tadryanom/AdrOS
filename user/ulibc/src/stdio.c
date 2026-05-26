@@ -405,7 +405,7 @@ int snprintf(char* buf, size_t size, const char* fmt, ...) {
 
 int sscanf(const char* str, const char* fmt, ...) {
     /* Minimal sscanf: only supports %d and %s */
-    /* U02: %s limited to 255 chars by default to prevent buffer overflow */
+    /* U02: %s limited to 255 chars by default, or explicit field width like %20s */
     va_list ap;
     va_start(ap, fmt);
     int count = 0;
@@ -414,6 +414,15 @@ int sscanf(const char* str, const char* fmt, ...) {
     while (*f && *s) {
         if (*f == '%') {
             f++;
+            /* Parse optional field width */
+            int width = 255; /* Default limit */
+            if (*f >= '0' && *f <= '9') {
+                width = 0;
+                while (*f >= '0' && *f <= '9') {
+                    width = width * 10 + (*f - '0');
+                    f++;
+                }
+            }
             if (*f == 'd' || *f == 'i') {
                 f++;
                 int* out = va_arg(ap, int*);
@@ -431,7 +440,7 @@ int sscanf(const char* str, const char* fmt, ...) {
                 char* out = va_arg(ap, char*);
                 while (*s == ' ') s++;
                 int i = 0;
-                while (*s && *s != ' ' && *s != '\n' && *s != '\t' && i < 255) out[i++] = *s++;
+                while (*s && *s != ' ' && *s != '\n' && *s != '\t' && i < width) out[i++] = *s++;
                 out[i] = '\0';
                 count++;
             } else {
@@ -616,7 +625,7 @@ char* tmpnam(char* s) {
 
 int fscanf(FILE* fp, const char* fmt, ...) {
     /* Read a line, then delegate to sscanf */
-    /* U02: %s limited to 255 chars by default to prevent buffer overflow */
+    /* U02: %s limited to 255 chars by default, or explicit field width like %20s */
     char line[512];
     if (!fgets(line, (int)sizeof(line), fp)) return EOF;
     va_list ap;
@@ -629,6 +638,15 @@ int fscanf(FILE* fp, const char* fmt, ...) {
     while (*f && *s) {
         if (*f == '%') {
             f++;
+            /* Parse optional field width */
+            int width = 255; /* Default limit */
+            if (*f >= '0' && *f <= '9') {
+                width = 0;
+                while (*f >= '0' && *f <= '9') {
+                    width = width * 10 + (*f - '0');
+                    f++;
+                }
+            }
             if (*f == 'd' || *f == 'i') {
                 f++;
                 int* out = va_arg(ap, int*);
@@ -646,7 +664,7 @@ int fscanf(FILE* fp, const char* fmt, ...) {
                 char* out = va_arg(ap, char*);
                 while (*s == ' ') s++;
                 int i = 0;
-                while (*s && *s != ' ' && *s != '\n' && *s != '\t' && i < 255) out[i++] = *s++;
+                while (*s && *s != ' ' && *s != '\n' && *s != '\t' && i < width) out[i++] = *s++;
                 out[i] = '\0';
                 count++;
             } else if (*f == 'c') {
@@ -670,7 +688,7 @@ int fscanf(FILE* fp, const char* fmt, ...) {
 }
 
 int scanf(const char* fmt, ...) {
-    /* U02: %s limited to 255 chars by default to prevent buffer overflow */
+    /* U02: %s limited to 255 chars by default, or explicit field width like %20s */
     char line[512];
     if (!fgets(line, (int)sizeof(line), stdin)) return EOF;
     va_list ap;
@@ -681,6 +699,15 @@ int scanf(const char* fmt, ...) {
     while (*f && *s) {
         if (*f == '%') {
             f++;
+            /* Parse optional field width */
+            int width = 255; /* Default limit */
+            if (*f >= '0' && *f <= '9') {
+                width = 0;
+                while (*f >= '0' && *f <= '9') {
+                    width = width * 10 + (*f - '0');
+                    f++;
+                }
+            }
             if (*f == 'd' || *f == 'i') {
                 f++;
                 int* out = va_arg(ap, int*);
@@ -698,7 +725,7 @@ int scanf(const char* fmt, ...) {
                 char* out = va_arg(ap, char*);
                 while (*s == ' ') s++;
                 int i = 0;
-                while (*s && *s != ' ' && *s != '\n' && *s != '\t' && i < 255) out[i++] = *s++;
+                while (*s && *s != ' ' && *s != '\n' && *s != '\t' && i < width) out[i++] = *s++;
                 out[i] = '\0';
                 count++;
             } else {
