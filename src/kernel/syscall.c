@@ -4914,7 +4914,11 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
         int new_fd = fd_alloc(f);
         if (new_fd < 0) { sock_node_close(sn); kfree(f); sc_ret(regs) = (uint32_t)-EMFILE; return; }
         if (sc_arg1(regs)) {
-            (void)copy_to_user((void*)sc_arg1(regs), &sa, sizeof(sa));
+            if (user_range_ok((void*)sc_arg1(regs), sizeof(sa)) == 0) {
+                if (copy_to_user((void*)sc_arg1(regs), &sa, sizeof(sa)) < 0) {
+                    sock_node_close(sn); kfree(f); fd_close(new_fd); sc_ret(regs) = (uint32_t)-EFAULT; return;
+                }
+            }
         }
         sc_ret(regs) = (uint32_t)new_fd;
         return;
@@ -5026,7 +5030,11 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
                 kfree(kbuf_r); sc_ret(regs) = (uint32_t)-EFAULT; return;
             }
             if (sc_arg4(regs)) {
-                (void)copy_to_user((void*)sc_arg4(regs), &src, sizeof(src));
+                if (user_range_ok((void*)sc_arg4(regs), sizeof(src)) == 0) {
+                    if (copy_to_user((void*)sc_arg4(regs), &src, sizeof(src)) < 0) {
+                        kfree(kbuf_r); sc_ret(regs) = (uint32_t)-EFAULT; return;
+                    }
+                }
             }
         }
         kfree(kbuf_r);
@@ -5340,7 +5348,11 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
         memset(&sa, 0, sizeof(sa));
         int r = ksocket_getpeername(sid, &sa);
         if (r == 0 && sc_arg1(regs)) {
-            (void)copy_to_user((void*)sc_arg1(regs), &sa, sizeof(sa));
+            if (user_range_ok((void*)sc_arg1(regs), sizeof(sa)) == 0) {
+                if (copy_to_user((void*)sc_arg1(regs), &sa, sizeof(sa)) < 0) {
+                    sc_ret(regs) = (uint32_t)-EFAULT; return;
+                }
+            }
         }
         sc_ret(regs) = (uint32_t)r;
         return;
@@ -5353,7 +5365,11 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
         memset(&sa, 0, sizeof(sa));
         int r = ksocket_getsockname(sid, &sa);
         if (r == 0 && sc_arg1(regs)) {
-            (void)copy_to_user((void*)sc_arg1(regs), &sa, sizeof(sa));
+            if (user_range_ok((void*)sc_arg1(regs), sizeof(sa)) == 0) {
+                if (copy_to_user((void*)sc_arg1(regs), &sa, sizeof(sa)) < 0) {
+                    sc_ret(regs) = (uint32_t)-EFAULT; return;
+                }
+            }
         }
         sc_ret(regs) = (uint32_t)r;
         return;
