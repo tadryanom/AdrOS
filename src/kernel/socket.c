@@ -249,6 +249,13 @@ int ksocket_create(int domain, int type, int protocol) {
     if (domain != AF_INET) return -EAFNOSUPPORT;
     if (type != SOCK_STREAM && type != SOCK_DGRAM && type != SOCK_RAW) return -EPROTONOSUPPORT;
 
+    /* SOCK_RAW requires root privilege */
+    if (type == SOCK_RAW) {
+        if (!current_process || current_process->euid != 0) {
+            return -EPERM;
+        }
+    }
+
     int sid = alloc_socket();
     if (sid < 0) return sid;
 
