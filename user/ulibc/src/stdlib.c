@@ -355,13 +355,25 @@ int mkstemp(char* tmpl) {
     /* Use alphanumeric characters for XXXXXX */
     const char* charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     unsigned int seed = (unsigned int)(rand_bytes[0] ^ rand_bytes[1]);
-    for (int i = 0; i < 6; i++) {
-        suffix[i] = charset[seed % 62];
-        seed = seed * 1103515245 + 12345; /* LCG for variety */
+    
+    /* M9: Retry multiple times on EEXIST collision */
+    const int max_attempts = 100;
+    for (int attempt = 0; attempt < max_attempts; attempt++) {
+        /* Generate random suffix */
+        for (int i = 0; i < 6; i++) {
+            suffix[i] = charset[seed % 62];
+            seed = seed * 1103515245 + 12345; /* LCG for variety */
+        }
+        /* U01: Always use O_CREAT|O_EXCL to prevent race conditions */
+        int fd = open(tmpl, 1 | 0x40 | 0x80 /* O_WRONLY|O_CREAT|O_EXCL */, 0600);
+        if (fd >= 0) return fd; /* Success */
+        /* If error is not EEXIST, fail immediately */
+        extern int errno;
+        if (errno != 17) return -1; /* EEXIST = 17 */
+        /* Otherwise, retry with new random seed */
+        seed += attempt + 1;
     }
-    /* U01: Always use O_CREAT|O_EXCL to prevent race conditions */
-    int fd = open(tmpl, 1 | 0x40 | 0x80 /* O_WRONLY|O_CREAT|O_EXCL */, 0600);
-    return fd;
+    return -1; /* Max attempts exceeded */
 }
 
 double strtod(const char* nptr, char** endptr) {
