@@ -2622,30 +2622,33 @@ static int path_resolve_user(const char* user_path, char* out, size_t out_sz) {
     }
 
     if (path_is_absolute(in)) {
-        // bounded copy
-        size_t i = 0;
-        while (in[i] != 0 && i + 1 < out_sz) {
-            out[i] = in[i];
-            i++;
-        }
-        out[i] = 0;
+        /* L1: Check if path fits in output buffer */
+        size_t in_len = strlen(in);
+        if (in_len + 1 > out_sz) return -ENAMETOOLONG;
+        strcpy(out, in);
         path_normalize_inplace(out);
         return 0;
     }
 
     const char* base = (current_process && current_process->cwd[0]) ? current_process->cwd : "/";
+    size_t base_len = strlen(base);
+    size_t in_len = strlen(in);
+    
+    /* L1: Check if combined path fits in output buffer */
+    size_t needed = base_len + 1 + in_len + 1; /* base + '/' + in + null */
+    if (needed > out_sz) return -ENAMETOOLONG;
+    
     size_t w = 0;
     if (strcmp(base, "/") == 0) {
-        if (out_sz < 2) return -ENAMETOOLONG;
         out[w++] = '/';
     } else {
-        for (size_t i = 0; base[i] != 0 && w + 1 < out_sz; i++) {
+        for (size_t i = 0; base[i] != 0; i++) {
             out[w++] = base[i];
         }
-        if (w + 1 < out_sz) out[w++] = '/';
+        out[w++] = '/';
     }
 
-    for (size_t i = 0; in[i] != 0 && w + 1 < out_sz; i++) {
+    for (size_t i = 0; in[i] != 0; i++) {
         out[w++] = in[i];
     }
     out[w] = 0;

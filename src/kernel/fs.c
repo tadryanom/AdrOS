@@ -475,7 +475,8 @@ fs_node_t* vfs_lookup_parent(const char* path, char* name_out, size_t name_sz) {
     char parent_path[128];
     size_t plen = (size_t)(last_slash - path);
     if (plen == 0) plen = 1; /* root "/" */
-    if (plen >= sizeof(parent_path)) plen = sizeof(parent_path) - 1;
+    /* L1: Check if parent path fits in buffer */
+    if (plen + 1 > sizeof(parent_path)) return NULL;
     memcpy(parent_path, path, plen);
     parent_path[plen] = 0;
 
@@ -483,7 +484,8 @@ fs_node_t* vfs_lookup_parent(const char* path, char* name_out, size_t name_sz) {
     const char* base = last_slash + 1;
     size_t blen = strlen(base);
     if (blen == 0) return NULL; /* trailing slash, no basename */
-    if (blen >= name_sz) blen = name_sz - 1;
+    /* L1: Check if basename fits in output buffer */
+    if (blen + 1 > name_sz) return NULL;
     memcpy(name_out, base, blen);
     name_out[blen] = 0;
 
