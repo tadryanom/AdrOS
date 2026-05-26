@@ -4309,7 +4309,7 @@ void syscall_handler(struct registers* regs) {
         if (!owned) {
             uintptr_t kern_base = hal_mm_kernel_virt_base();
             if (kern_base && addr < kern_base && addr >= 0x08000000U)
-                owned = 1;  /* permissive: allow for text/data/bss/stack regions */
+                owned = 1;  /* Conservative: allow for text/data/bss/stack regions */
         }
 
         if (!owned) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
