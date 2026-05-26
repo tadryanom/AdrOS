@@ -21,6 +21,73 @@
 #include <string.h>
 #include <stdint.h>
 
+/* ---- Partition structures for testing ---- */
+#define PARTITION_MAX 32
+
+typedef struct partition {
+    struct block_device* parent;
+    uint32_t start_lba;
+    uint32_t sector_count;
+    uint8_t partition_type;
+    uint8_t partition_number;
+    char name[32];
+    int refcount;
+} partition_t;
+
+typedef struct block_device {
+    char name[32];
+    uint32_t sector_size;
+    uint32_t sector_count;
+    int drive_id;
+} block_device_t;
+
+/* ---- Mock partition registry ---- */
+static partition_t g_partitions[PARTITION_MAX];
+static int g_partition_count = 0;
+
+void partition_registry_reset(void) {
+    memset(g_partitions, 0, sizeof(g_partitions));
+    g_partition_count = 0;
+}
+
+int partition_register(const partition_t* part) {
+    if (!part) return -1;
+    if (!part->parent) return -1;
+    if (g_partition_count >= PARTITION_MAX) return -1;
+
+    /* Check for duplicate name */
+    for (int i = 0; i < g_partition_count; i++) {
+        if (strcmp(g_partitions[i].name, part->name) == 0) {
+            g_partitions[i] = *part;
+            return 0;
+        }
+    }
+
+    g_partitions[g_partition_count++] = *part;
+    return 0;
+}
+
+partition_t* partition_find(const char* name) {
+    if (!name) return NULL;
+    for (int i = 0; i < g_partition_count; i++) {
+        if (strcmp(g_partitions[i].name, name) == 0) {
+            return &g_partitions[i];
+        }
+    }
+    return NULL;
+}
+
+partition_t* partition_find_by_device(block_device_t* parent, uint8_t partition_number) {
+    if (!parent) return NULL;
+    for (int i = 0; i < g_partition_count; i++) {
+        if (g_partitions[i].parent == parent &&
+            g_partitions[i].partition_number == partition_number) {
+            return &g_partitions[i];
+        }
+    }
+    return NULL;
+}
+
 /* ---- Minimal test framework ---- */
 static int g_tests_run = 0;
 static int g_tests_passed = 0;
@@ -46,6 +113,14 @@ static int g_tests_failed = 0;
 #define ASSERT_STR_EQ(a, b) do { \
     if (strcmp((a), (b)) != 0) { \
         printf("FAIL\n    %s:%d: \"%s\" != \"%s\"\n", __FILE__, __LINE__, (a), (b)); \
+        g_tests_failed++; \
+        return; \
+    } \
+} while(0)
+
+#define ASSERT_NEQ(a, b) do { \
+    if ((a) == (b)) { \
+        printf("FAIL\n    %s:%d: %d == %d (expected !=)\n", __FILE__, __LINE__, (int)(a), (int)(b)); \
         g_tests_failed++; \
         return; \
     } \
@@ -724,6 +799,125 @@ TEST(elf_null) {
     ASSERT_EQ(elf32_validate(NULL, 100), -EFAULT);
 }
 
+/* ======== PARTITION LAYER TESTS ======== */
+static block_device_t g_test_bdev1 = {"hda", 512, 1024*1024, 0};
+static block_device_t g_test_bdev2 = {"hdb", 512, 512*1024, 1};
+
+TEST(part_register_basic) {
+    partition_registry_reset();
+    partition_t part;
+    memset(&part, 0, sizeof(part));
+    part.parent = &g_test_bdev1;
+    part.start_lba = 2048;
+    part.sector_count = 102400;
+    part.partition_type = 0x07;
+    part.partition_number = 1;
+    strcpy(part.name, "hda1");
+    part.refcount = 0;
+    ASSERT_EQ(partition_register(&part), 0);
+    ASSERT_EQ(g_partition_count, 1);
+}
+
+TEST(part_register_duplicate) {
+    partition_registry_reset();
+    partition_t part1;
+    memset(&part1, 0, sizeof(part1));
+    part1.parent = &g_test_bdev1;
+    part1.start_lba = 2048;
+    part1.partition_number = 1;
+    strcpy(part1.name, "hda1");
+    partition_register(&part1);
+
+    partition_t part2;
+    memset(&part2, 0, sizeof(part2));
+    part2.parent = &g_test_bdev1;
+    part2.start_lba = 4096;
+    part2.partition_number = 1;
+    strcpy(part2.name, "hda1");
+    ASSERT_EQ(partition_register(&part2), 0);
+    ASSERT_EQ(g_partition_count, 1);
+}
+
+TEST(part_register_null) {
+    partition_registry_reset();
+    ASSERT_EQ(partition_register(NULL), -1);
+}
+
+TEST(part_register_full) {
+    partition_registry_reset();
+    partition_t part;
+    memset(&part, 0, sizeof(part));
+    part.parent = &g_test_bdev1;
+    for (int i = 0; i < PARTITION_MAX; i++) {
+        snprintf(part.name, sizeof(part.name), "test%d", i);
+        partition_register(&part);
+    }
+    ASSERT_EQ(partition_register(&part), -1);
+}
+
+TEST(part_find_existing) {
+    partition_registry_reset();
+    partition_t part;
+    memset(&part, 0, sizeof(part));
+    part.parent = &g_test_bdev1;
+    strcpy(part.name, "hda1");
+    partition_register(&part);
+    partition_t* found = partition_find("hda1");
+    ASSERT_NEQ(found, NULL);
+    ASSERT_STR_EQ(found->name, "hda1");
+}
+
+TEST(part_find_nonexistent) {
+    partition_registry_reset();
+    ASSERT_EQ(partition_find("nonexistent"), NULL);
+}
+
+TEST(part_find_null) {
+    partition_registry_reset();
+    ASSERT_EQ(partition_find(NULL), NULL);
+}
+
+TEST(part_find_by_device) {
+    partition_registry_reset();
+    partition_t part;
+    memset(&part, 0, sizeof(part));
+    part.parent = &g_test_bdev1;
+    part.partition_number = 2;
+    strcpy(part.name, "hda2");
+    partition_register(&part);
+    partition_t* found = partition_find_by_device(&g_test_bdev1, 2);
+    ASSERT_NEQ(found, NULL);
+    ASSERT_EQ(found->partition_number, 2);
+}
+
+TEST(part_find_by_device_not_found) {
+    partition_registry_reset();
+    partition_t part;
+    memset(&part, 0, sizeof(part));
+    part.parent = &g_test_bdev1;
+    part.partition_number = 1;
+    strcpy(part.name, "hda1");
+    partition_register(&part);
+    ASSERT_EQ(partition_find_by_device(&g_test_bdev1, 2), NULL);
+}
+
+TEST(part_claim_release) {
+    partition_registry_reset();
+    partition_t part;
+    memset(&part, 0, sizeof(part));
+    part.parent = &g_test_bdev1;
+    part.refcount = 0;
+    strcpy(part.name, "hda1");
+    partition_register(&part);
+    partition_t* found = partition_find("hda1");
+    ASSERT_NEQ(found, NULL);
+    ASSERT_EQ(found->refcount, 0);
+    found->refcount++;
+    ASSERT_EQ(found->refcount, 1);
+    found->refcount--;
+    ASSERT_EQ(found->refcount, 0);
+}
+
 /* ======== MAIN ======== */
 int main(void) {
     printf("\n=========================================\n");
@@ -812,6 +1006,18 @@ int main(void) {
     RUN(elf_no_phnum);
     RUN(elf_truncated);
     RUN(elf_null);
+
+    /* partition layer */
+    RUN(part_register_basic);
+    RUN(part_register_duplicate);
+    RUN(part_register_null);
+    RUN(part_register_full);
+    RUN(part_find_existing);
+    RUN(part_find_nonexistent);
+    RUN(part_find_null);
+    RUN(part_find_by_device);
+    RUN(part_find_by_device_not_found);
+    RUN(part_claim_release);
 
     printf("\n  %d/%d passed, %d failed\n", g_tests_passed, g_tests_run, g_tests_failed);
 
