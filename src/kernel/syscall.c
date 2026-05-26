@@ -2111,6 +2111,10 @@ static int syscall_execve_impl(struct registers* regs, const char* user_path, co
     if (!node) node = vfs_lookup(path);
     if (!node) { ret = -ENOENT; goto out; }
 
+    /* Check execute permission on the file */
+    int exec_perm_rc = vfs_check_permission(node, 1); /* 1 = execute */
+    if (exec_perm_rc < 0) { ret = exec_perm_rc; goto out; }
+
     uintptr_t entry = 0;
     uintptr_t user_sp = 0;
     uintptr_t new_as = 0;
