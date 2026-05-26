@@ -29,6 +29,7 @@ struct overlay_node {
     fs_node_t* upper;
 
     char path[256];
+    int refcount;  /* For wrapper nodes allocated by overlay_wrap_child */
 };
 
 static struct fs_node* overlay_finddir_impl(struct fs_node* node, const char* name);
@@ -37,6 +38,7 @@ static int overlay_mkdir_impl(struct fs_node* dir, const char* name);
 static int overlay_unlink_impl(struct fs_node* dir, const char* name);
 static int overlay_rmdir_impl(struct fs_node* dir, const char* name);
 static int overlay_create_impl(struct fs_node* dir, const char* name, uint32_t flags, struct fs_node** out);
+static void overlay_wrap_close(fs_node_t* node);
 
 static void overlay_str_copy_n(char* dst, size_t dst_sz, const char* src, size_t src_n) {
     if (!dst || dst_sz == 0) return;
@@ -104,10 +106,12 @@ static uint32_t overlay_write_impl(fs_node_t* node, uint32_t offset, uint32_t si
 static const struct file_operations overlay_file_ops = {
     .read  = overlay_read_impl,
     .write = overlay_write_impl,
+    .close = overlay_wrap_close,
 };
 
 static const struct file_operations overlay_dir_ops = {
     .read    = overlay_read_impl,
+    .close   = overlay_wrap_close,
 };
 
 static const struct inode_operations overlay_dir_iops = {
@@ -118,6 +122,15 @@ static const struct inode_operations overlay_dir_iops = {
     .rmdir   = overlay_rmdir_impl,
     .create  = overlay_create_impl,
 };
+
+static void overlay_wrap_close(fs_node_t* node) {
+    if (!node) return;
+    struct overlay_node* on = (struct overlay_node*)node;
+    on->refcount--;
+    if (on->refcount <= 0) {
+        kfree(on);
+    }
+}
 
 static fs_node_t* overlay_wrap_child(struct overlay_node* parent, const char* name, fs_node_t* lower_child, fs_node_t* upper_child) {
     if (!parent || !parent->ofs || !name) return NULL;
@@ -132,6 +145,7 @@ static fs_node_t* overlay_wrap_child(struct overlay_node* parent, const char* na
     c->ofs = parent->ofs;
     c->lower = lower_child;
     c->upper = upper_child;
+    c->refcount = 1;  /* Initialize refcount for wrapper nodes */
 
     if (upper_child) {
         c->vfs.flags = upper_child->flags;
