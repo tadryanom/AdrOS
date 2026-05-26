@@ -566,7 +566,7 @@ int elf32_load_user_from_initrd(const char* filename, uintptr_t* entry_out, uint
     const uintptr_t user_stack_base = 0x40000000U + aslr_stack_slide;
     const size_t user_stack_size = 0x8000;       /* 8 pages = 32 KB */
 
-    int src2 = elf32_map_user_range(new_as, user_stack_base, user_stack_size, VMM_FLAG_RW);
+    int src2 = elf32_map_user_range(new_as, user_stack_base, user_stack_size, VMM_FLAG_RW | VMM_FLAG_NX);
     if (src2 < 0) {
         kprintf("[ELF] OOM mapping user stack\n");
         kfree(file);

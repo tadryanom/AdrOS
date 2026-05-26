@@ -3112,6 +3112,8 @@ static uintptr_t syscall_mmap_impl(uintptr_t addr, uint32_t length, uint32_t pro
         /* Anonymous mmap: allocate fresh zeroed pages */
         uint32_t vmm_flags = VMM_FLAG_PRESENT | VMM_FLAG_USER;
         if (prot & PROT_WRITE) vmm_flags |= VMM_FLAG_RW;
+        /* NX by default, remove only if PROT_EXEC is explicitly requested */
+        if (!(prot & PROT_EXEC)) vmm_flags |= VMM_FLAG_NX;
 
         uintptr_t mapped_va[1024];
         int mapped_count = 0;
@@ -3209,7 +3211,7 @@ static uintptr_t syscall_brk_impl(uintptr_t addr) {
             }
             vmm_as_map_page(current_process->addr_space,
                             (uint64_t)(uintptr_t)frame, (uint64_t)va,
-                            VMM_FLAG_PRESENT | VMM_FLAG_RW | VMM_FLAG_USER);
+                            VMM_FLAG_PRESENT | VMM_FLAG_RW | VMM_FLAG_USER | VMM_FLAG_NX);
             memset((void*)va, 0, 0x1000U);
             if (mapped_count < 1024) mapped_va[mapped_count++] = va;
         }
