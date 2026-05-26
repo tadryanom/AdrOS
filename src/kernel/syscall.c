@@ -411,7 +411,8 @@ static int syscall_dlopen_impl(const char* user_path) {
         /* Detect 32-bit overflow in p_vaddr + base */
         if (p_vaddr > (UINT32_MAX - base)) continue;
         uint32_t vaddr = p_vaddr + base;
-        if (vaddr >= 0xC0000000U) continue;
+        uintptr_t kern_base = hal_mm_kernel_virt_base();
+        if (kern_base && vaddr >= kern_base) continue;
 
         /* Detect 32-bit overflow in vaddr + p_memsz */
         if (p_memsz > (UINT32_MAX - vaddr)) continue;
@@ -497,7 +498,8 @@ static int syscall_dlopen_impl(const char* user_path) {
 
     /* Read symbol count from DT_HASH if available: hash[1] = nchain = nsyms */
     uint32_t nsyms = 0;
-    if (hash_va && hash_va < 0xC0000000U) {
+    uintptr_t kern_base = hal_mm_kernel_virt_base();
+    if (hash_va && kern_base && hash_va < kern_base) {
         nsyms = *(uint32_t*)(hash_va + 4);
     }
 
@@ -4367,10 +4369,10 @@ void syscall_handler(struct registers* regs) {
             if (kern_base && end > kern_base) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
         }
 
-        /* Check stack region (user stack is below 0xC0000000, typically around 0xBFxxxxxx) */
+        /* Check stack region (user stack is below kernel base, typically around 0xBFxxxxxx) */
         if (!owned) {
             uintptr_t kern_base = hal_mm_kernel_virt_base();
-            if (kern_base && addr < kern_base && addr >= 0x08000000U)
+            if (kern_base && addr < kern_base && addr >= HAL_MM_USER_MIN_ADDR)
                 owned = 1;  /* Conservative: allow for text/data/bss/stack regions */
         }
 
