@@ -610,9 +610,8 @@ int vfs_truncate(const char* path, uint32_t length) {
     if (node->flags != FS_FILE) return -EISDIR;
     if (node->i_ops && node->i_ops->truncate)
         return node->i_ops->truncate(node, length);
-    /* A14: fallback for FS that don't support truncate - just update length */
-    node->length = length;
-    return 0;
+    /* No truncate backend - return ENOSYS instead of silent fallback */
+    return -ENOSYS;
 }
 
 /* A14: Helper for ftruncate - truncate by node instead of path */
@@ -621,9 +620,8 @@ int vfs_truncate_node(fs_node_t* node, uint32_t length) {
     if (node->flags != FS_FILE) return -EINVAL;
     if (node->i_ops && node->i_ops->truncate)
         return node->i_ops->truncate(node, length);
-    /* Fallback for FS that don't support truncate */
-    node->length = length;
-    return 0;
+    /* No truncate backend - return ENOSYS instead of silent fallback */
+    return -ENOSYS;
 }
 
 /* A07: Helper to check parent directory permissions for mutations */
