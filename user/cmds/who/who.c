@@ -8,6 +8,7 @@
  */
 
 /* AdrOS who utility — show logged-in users */
+/* L2: Placeholder - real who requires utmp/sessions/TTY infrastructure */
 #include <stdio.h>
 #include <unistd.h>
 
