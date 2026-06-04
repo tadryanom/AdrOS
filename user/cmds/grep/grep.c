@@ -17,6 +17,8 @@
 #include <regex.h>
 #include <ctype.h>
 
+int getdents(int fd, void* buf, size_t count);
+
 static int use_regex = 1;  /* 1=BRE, 2=ERE, 0=fixed string */
 static int icase = 0;
 static int show_name = 0;

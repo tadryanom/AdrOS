@@ -15,6 +15,8 @@
 #include <dirent.h>
 #include <sys/stat.h>
 
+int getdents(int fd, void* buf, size_t count);
+
 static int sflag = 0; /* -s: summary only */
 
 static long du_path(const char* path, int print) {

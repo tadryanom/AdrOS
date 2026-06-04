@@ -19,6 +19,8 @@
 #include <grp.h>
 #include <time.h>
 
+int getdents(int fd, void* buf, size_t count);
+
 static int aflag = 0;   /* -a: show hidden files */
 static int lflag = 0;   /* -l: long format */
 static int nflag = 0;   /* -n: numeric UID/GID */

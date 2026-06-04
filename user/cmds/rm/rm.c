@@ -15,6 +15,8 @@
 #include <dirent.h>
 #include <sys/stat.h>
 
+int getdents(int fd, void* buf, size_t count);
+
 static int rflag = 0;   /* -r: recursive */
 static int fflag = 0;   /* -f: force (no errors) */
 static int dflag = 0;   /* -d: remove empty directories */

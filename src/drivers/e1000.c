@@ -100,13 +100,13 @@ static void e1000_read_mac(void) {
 /* DMA memory allocation                                              */
 /* ------------------------------------------------------------------ */
 
-static uint32_t alloc_dma_page(uintptr_t va) {
+static void* alloc_dma_page(uintptr_t va) {
     void* phys = pmm_alloc_page();
-    if (!phys) return 0;
+    if (!phys) return NULL;
     vmm_map_page((uint64_t)(uintptr_t)phys, (uint64_t)va,
                  VMM_FLAG_PRESENT | VMM_FLAG_RW | VMM_FLAG_NOCACHE);
     memset((void*)va, 0, 4096);
-    return (uint32_t)(uintptr_t)phys;
+    return phys;
 }
 
 /* ------------------------------------------------------------------ */
@@ -114,7 +114,7 @@ static uint32_t alloc_dma_page(uintptr_t va) {
 /* ------------------------------------------------------------------ */
 
 static int e1000_init_tx(void) {
-    tx_desc_phys = alloc_dma_page(E1000_TX_DESC_VA);
+    tx_desc_phys = (uint32_t)(uintptr_t)alloc_dma_page(E1000_TX_DESC_VA);
     if (!tx_desc_phys) return -1;
 
     struct e1000_tx_desc* txd = (struct e1000_tx_desc*)E1000_TX_DESC_VA;
@@ -127,7 +127,7 @@ static int e1000_init_tx(void) {
 
         if (buf_off == 0) {
             /* First buffer on this page — allocate it */
-            uint32_t phys = alloc_dma_page(va);
+            uint32_t phys = (uint32_t)(uintptr_t)alloc_dma_page(va);
             if (!phys) return -1;
             tx_buf_phys[i] = phys;
         } else {
@@ -162,7 +162,7 @@ static int e1000_init_tx(void) {
 /* ------------------------------------------------------------------ */
 
 static int e1000_init_rx(void) {
-    rx_desc_phys = alloc_dma_page(E1000_RX_DESC_VA);
+    rx_desc_phys = (uint32_t)(uintptr_t)alloc_dma_page(E1000_RX_DESC_VA);
     if (!rx_desc_phys) return -1;
 
     struct e1000_rx_desc* rxd = (struct e1000_rx_desc*)E1000_RX_DESC_VA;
@@ -173,7 +173,7 @@ static int e1000_init_rx(void) {
         uintptr_t va = E1000_RX_BUF_VA + (uintptr_t)page_idx * 4096;
 
         if (buf_off == 0) {
-            uint32_t phys = alloc_dma_page(va);
+            uint32_t phys = (uint32_t)(uintptr_t)alloc_dma_page(va);
             if (!phys) return -1;
             rx_buf_phys[i] = phys;
         } else {
@@ -197,7 +197,7 @@ static int e1000_init_rx(void) {
         e1000_write(E1000_MTA + (uint32_t)i * 4, 0);
     }
 
-    e1000_write(E1000_RDBAL, rx_desc_phys);
+    e1000_write(E1000_RDBAL, (uint32_t)rx_desc_phys);
     e1000_write(E1000_RDBAH, 0);
     e1000_write(E1000_RDLEN, E1000_NUM_RX_DESC * (uint32_t)sizeof(struct e1000_rx_desc));
     e1000_write(E1000_RDH, 0);

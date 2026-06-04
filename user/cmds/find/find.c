@@ -17,6 +17,9 @@
 #include <pwd.h>
 #include <time.h>
 #include <stdlib.h>
+#include <sys/wait.h>
+
+int getdents(int fd, void* buf, size_t count);
 
 #define MAX_PRED 32
 

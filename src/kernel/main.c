@@ -36,7 +36,7 @@
 
 
 /* Check if the compiler thinks we are targeting the wrong operating system. */
-#if defined(__linux__)
+#if defined(__linux__) && !defined(__CHECKER__)
 #warning "You are not using a cross-compiler, you may run into trouble"
 #endif
 
