@@ -538,9 +538,8 @@ int vfs_mkdirp(const char* path) {
 
     /* Skip leading '/' */
     char* p = tmp + 1;
-    char* slash;
 
-    while ((slash = p) && *p) {
+    while (*p) {
         /* Find next '/' */
         while (*p && *p != '/') p++;
         if (*p == '/') { *p = '\0'; p++; }

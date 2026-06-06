@@ -336,7 +336,7 @@ sparse:
 	@echo "[SPARSE] Done."
 
 # GCC -fanalyzer: interprocedural static analysis (use-after-free, NULL deref, etc)
-ANALYZER_FLAGS := -m32 -ffreestanding -fanalyzer -fsyntax-only -Iinclude -O2 -Wno-cpp
+ANALYZER_FLAGS := -m32 -ffreestanding -fanalyzer -fsyntax-only -Iinclude -Iinclude/net -Ithird_party/lwip/src/include -O2 -Wno-cpp
 
 analyzer:
 	@echo "[ANALYZER] Running gcc -fanalyzer on $(words $(SPARSE_SRCS)) files..."
