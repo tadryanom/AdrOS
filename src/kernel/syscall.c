@@ -13,6 +13,7 @@
 #include "process.h"
 #include "spinlock.h"
 #include "uaccess.h"
+#include "kernel/init.h"
 #include "blockdev.h"
 
 #include "console.h"
@@ -5290,15 +5291,14 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
             return;
         }
 
-        /* Disk-based: parse /dev/hdX -> block device */
-        const char* devname = kdev;
-        if (strncmp(devname, "/dev/", 5) == 0) devname += 5;
-        extern block_device_t* blockdev_find(const char* name);
-        block_device_t* bdev = blockdev_find(devname);
-        if (!bdev) { sc_ret(regs) = (uint32_t)-ENODEV; return; }
+        block_device_t* bdev = NULL;
+        uint32_t lba = 0;
+        if (init_resolve_mount_device(kdev, &bdev, &lba) < 0) {
+            sc_ret(regs) = (uint32_t)-ENODEV;
+            return;
+        }
 
-        extern int init_mount_fs(const char* fstype, const block_device_t* bdev, uint32_t lba, const char* mountpoint, unsigned long flags);
-        int rc = init_mount_fs(ktype, bdev, 0, kmp, mount_flags);
+        int rc = init_mount_fs(ktype, bdev, lba, kmp, mount_flags, kdev);
         sc_ret(regs) = (uint32_t)(rc < 0 ? rc : 0);
         return;
     }

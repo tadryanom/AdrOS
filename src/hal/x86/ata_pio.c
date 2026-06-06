@@ -46,6 +46,7 @@ static const uint8_t  ch_irq_vec[ATA_NUM_CHANNELS]    = { 46, 47 };
 
 /* Drive presence flags */
 static int drive_present[ATA_MAX_DRIVES];
+static uint32_t drive_sector_count[ATA_MAX_DRIVES];
 static int ata_pio_inited = 0;
 
 static const char* drive_names[ATA_MAX_DRIVES] = { "hda", "hdb", "hdc", "hdd" };
@@ -129,10 +130,19 @@ static int ata_probe_drive(int channel, int slave) {
     /* Wait for DRQ */
     if (ata_wait_drq(io) < 0) return 0;
 
-    /* Read and discard 256 words of identify data */
+    uint16_t identify[256];
     for (int i = 0; i < 256; i++) {
-        (void)inw((uint16_t)(io + ATA_REG_DATA));
+        identify[i] = inw((uint16_t)(io + ATA_REG_DATA));
     }
+
+    uint32_t sectors = ((uint32_t)identify[61] << 16) | identify[60];
+    if (sectors == 0) {
+        sectors = ((uint32_t)identify[103] << 16) | identify[102];
+        if (sectors == 0) {
+            sectors = ((uint32_t)identify[101] << 16) | identify[100];
+        }
+    }
+    drive_sector_count[channel * 2 + slave] = sectors;
 
     return 1;
 }
@@ -141,6 +151,11 @@ static int ata_probe_drive(int channel, int slave) {
 
 uint32_t ata_pio_sector_size(void) {
     return 512;
+}
+
+uint32_t ata_pio_sector_count(int drive) {
+    if (drive < 0 || drive >= ATA_MAX_DRIVES) return 0;
+    return drive_sector_count[drive];
 }
 
 int ata_pio_init(void) {
@@ -158,12 +173,15 @@ int ata_pio_init(void) {
         if (st == 0xFF) {
             drive_present[ch * 2]     = 0;
             drive_present[ch * 2 + 1] = 0;
+            drive_sector_count[ch * 2] = 0;
+            drive_sector_count[ch * 2 + 1] = 0;
             continue;
         }
 
         for (int sl = 0; sl < 2; sl++) {
             int id = ch * 2 + sl;
             drive_present[id] = ata_probe_drive(ch, sl);
+            if (!drive_present[id]) drive_sector_count[id] = 0;
             if (drive_present[id]) found++;
         }
 

@@ -362,18 +362,14 @@ static void kconsole_mount(const char* args) {
         return;
     }
 
-    /* Resolve device to block device */
-    const char* devname = device;
-    if (strncmp(device, "/dev/", 5) == 0) {
-        devname = device + 5;
-    }
-    block_device_t* bdev = blockdev_find(devname);
-    if (!bdev) {
+    block_device_t* bdev = NULL;
+    uint32_t lba = 0;
+    if (init_resolve_mount_device(device, &bdev, &lba) < 0) {
         kprintf("mount: unknown device: %s\n", device);
         return;
     }
 
-    (void)init_mount_fs(fstype, bdev, 0, mountpoint, 0);
+    (void)init_mount_fs(fstype, bdev, lba, mountpoint, 0, device);
 }
 
 static void kconsole_exec(const char* cmd) {

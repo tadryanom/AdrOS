@@ -46,6 +46,9 @@ block_device_t* blockdev_find(const char* name);
 /* Look up a block device by drive_id. Returns pointer or NULL. */
 block_device_t* blockdev_by_id(int drive_id);
 
+int blockdev_count(void);
+block_device_t* blockdev_get(int index);
+
 /* Increment block device refcount (called when filesystem mounts). */
 void blockdev_claim(block_device_t* dev);
 

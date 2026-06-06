@@ -36,6 +36,7 @@ int ata_pio_read28(int drive, uint32_t lba, uint8_t* buf512);
 int ata_pio_write28(int drive, uint32_t lba, const uint8_t* buf512);
 
 uint32_t ata_pio_sector_size(void);
+uint32_t ata_pio_sector_count(int drive);
 
 /* Map device name ("hda".."hdd") to drive ID. Returns -1 if invalid. */
 int ata_name_to_drive(const char* name);

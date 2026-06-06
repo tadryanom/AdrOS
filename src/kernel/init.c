@@ -44,7 +44,61 @@
 
 /* ---- Mount helper: used by fstab parser and kconsole 'mount' command ---- */
 
-int init_mount_fs(const char* fstype, block_device_t* bdev, uint32_t lba, const char* mountpoint, unsigned long flags) {
+static void init_build_mount_source_name(const char* source_name, block_device_t* bdev, char* out, size_t out_size) {
+    if (!out || out_size == 0) return;
+
+    if (source_name && source_name[0] != '\0') {
+        if (strncmp(source_name, "/dev/", 5) == 0) {
+            strncpy(out, source_name, out_size - 1);
+            out[out_size - 1] = '\0';
+            return;
+        }
+
+        strcpy(out, "/dev/");
+        char* dp = out + 5;
+        const char* sp = source_name;
+        while (*sp && (size_t)(dp - out) < out_size - 1)
+            *dp++ = *sp++;
+        *dp = '\0';
+        return;
+    }
+
+    if (!bdev) {
+        strncpy(out, "none", out_size - 1);
+        out[out_size - 1] = '\0';
+        return;
+    }
+
+    strcpy(out, "/dev/");
+    char* dp = out + 5;
+    const char* sp = bdev->name;
+    while (*sp && (size_t)(dp - out) < out_size - 1)
+        *dp++ = *sp++;
+    *dp = '\0';
+}
+
+int init_resolve_mount_device(const char* device, block_device_t** bdev, uint32_t* lba) {
+    if (!device || !bdev || !lba) return -EINVAL;
+
+    const char* devname = device;
+    if (strncmp(devname, "/dev/", 5) == 0) devname += 5;
+
+    block_device_t* resolved_bdev = blockdev_find(devname);
+    if (resolved_bdev) {
+        *bdev = resolved_bdev;
+        *lba = 0;
+        return 0;
+    }
+
+    partition_t* part = partition_find(devname);
+    if (!part || !part->parent) return -ENODEV;
+
+    *bdev = part->parent;
+    *lba = part->start_lba;
+    return 0;
+}
+
+int init_mount_fs(const char* fstype, block_device_t* bdev, uint32_t lba, const char* mountpoint, unsigned long flags, const char* source_name) {
     /* Validate mountpoint exists and is a directory */
     fs_node_t* mp_node = vfs_lookup(mountpoint);
     if (!mp_node) {
@@ -62,10 +116,13 @@ int init_mount_fs(const char* fstype, block_device_t* bdev, uint32_t lba, const 
         return -EINVAL;
     }
 
+    char devname[32];
+    init_build_mount_source_name(source_name, bdev, devname, sizeof(devname));
+
     vfs_mount_result_t mres = fst->mount(bdev, lba);
     if (!mres.root) {
         kprintf("[MOUNT] Failed to mount %s on %s at %s\n",
-                fstype, bdev ? bdev->name : "?",
+                fstype, devname,
                 mountpoint);
         return -ENODEV;
     }
@@ -78,18 +135,6 @@ int init_mount_fs(const char* fstype, block_device_t* bdev, uint32_t lba, const 
     /* Claim the block device */
     if (bdev) {
         blockdev_claim(bdev);
-    }
-
-    /* Build device name for mount table metadata */
-    char devname[32] = "none";
-    if (bdev) {
-        strcpy(devname, "/dev/");
-        /* Append device name after /dev/ */
-        char* dp = devname + 5;
-        const char* dname = bdev->name;
-        while (*dname && (dp - devname) < (int)sizeof(devname) - 2)
-            *dp++ = *dname++;
-        *dp = '\0';
     }
 
     int rc = vfs_mount_full(mountpoint, mres.root, fstype, devname, flags, bdev, mres.sb);
@@ -293,10 +338,8 @@ int init_start(const struct boot_info* bi) {
 
     /* Initialize partition subsystem and scan for partitions */
     partition_init_lock();
-    for (int i = 0; i < ATA_MAX_DRIVES; i++) {
-        if (!ata_pio_drive_present(i)) continue;
-        const char* names[ATA_MAX_DRIVES] = { "hda", "hdb", "hdc", "hdd" };
-        block_device_t* bdev = blockdev_find(names[i]);
+    for (int i = 0; i < blockdev_count(); i++) {
+        block_device_t* bdev = blockdev_get(i);
         if (bdev) {
             partition_scan_mbr(bdev);
         }
@@ -312,16 +355,14 @@ int init_start(const struct boot_info* bi) {
      * has disk access.  /etc/fstab parsing is now done by /sbin/init. */
     const char* root_dev = cmdline_get("root");
     if (root_dev) {
-        const char* devname = root_dev;
-        if (strncmp(root_dev, "/dev/", 5) == 0)
-            devname = root_dev + 5;
-        block_device_t* bdev = blockdev_find(devname);
-        if (bdev) {
+        block_device_t* bdev = NULL;
+        uint32_t lba = 0;
+        if (init_resolve_mount_device(root_dev, &bdev, &lba) == 0) {
             /* Auto-detect: try ext2, then fat (non-destructive probes). */
             static const char* fstypes[] = { "ext2", "fat", NULL };
             int mounted = 0;
             for (int i = 0; fstypes[i]; i++) {
-                if (init_mount_fs(fstypes[i], bdev, 0, "/disk", 0) == 0) {
+                if (init_mount_fs(fstypes[i], bdev, lba, "/disk", 0, root_dev) == 0) {
                     kprintf("[INIT] root=%s mounted as %s on /disk\n",
                             root_dev, fstypes[i]);
                     mounted = 1;
@@ -339,7 +380,7 @@ int init_start(const struct boot_info* bi) {
         if (bdev) {
             static const char* fstypes[] = { "ext2", "fat", NULL };
             for (int i = 0; fstypes[i]; i++) {
-                if (init_mount_fs(fstypes[i], bdev, 0, "/disk", 0) == 0) {
+                if (init_mount_fs(fstypes[i], bdev, 0, "/disk", 0, "/dev/hda") == 0) {
                     kprintf("[INIT] /dev/hda auto-mounted as %s on /disk\n", fstypes[i]);
                     break;
                 }

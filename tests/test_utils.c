@@ -88,6 +88,37 @@ partition_t* partition_find_by_device(block_device_t* parent, uint8_t partition_
     return NULL;
 }
 
+static block_device_t g_test_bdev1 = {"hda", 512, 1024*1024, 0};
+static block_device_t g_test_bdev2 = {"vda", 512, 2048*1024, 1};
+
+static block_device_t* blockdev_find(const char* name) {
+    if (!name) return NULL;
+    if (strcmp(name, g_test_bdev1.name) == 0) return &g_test_bdev1;
+    if (strcmp(name, g_test_bdev2.name) == 0) return &g_test_bdev2;
+    return NULL;
+}
+
+static int init_resolve_mount_device_test(const char* device, block_device_t** bdev, uint32_t* lba) {
+    if (!device || !bdev || !lba) return -1;
+
+    const char* devname = device;
+    if (strncmp(devname, "/dev/", 5) == 0) devname += 5;
+
+    block_device_t* resolved_bdev = blockdev_find(devname);
+    if (resolved_bdev) {
+        *bdev = resolved_bdev;
+        *lba = 0;
+        return 0;
+    }
+
+    partition_t* part = partition_find(devname);
+    if (!part || !part->parent) return -1;
+
+    *bdev = part->parent;
+    *lba = part->start_lba;
+    return 0;
+}
+
 /* ---- Minimal test framework ---- */
 static int g_tests_run = 0;
 static int g_tests_passed = 0;
@@ -800,7 +831,6 @@ TEST(elf_null) {
 }
 
 /* ======== PARTITION LAYER TESTS ======== */
-static block_device_t g_test_bdev1 = {"hda", 512, 1024*1024, 0};
 
 TEST(part_register_basic) {
     partition_registry_reset();
@@ -917,6 +947,48 @@ TEST(part_claim_release) {
     ASSERT_EQ(found->refcount, 0);
 }
 
+TEST(resolve_mount_device_blockdev) {
+    partition_registry_reset();
+    block_device_t* bdev = NULL;
+    uint32_t lba = 123;
+    ASSERT_EQ(init_resolve_mount_device_test("hda", &bdev, &lba), 0);
+    ASSERT_EQ(bdev, &g_test_bdev1);
+    ASSERT_EQ(lba, 0);
+}
+
+TEST(resolve_mount_device_blockdev_devpath) {
+    partition_registry_reset();
+    block_device_t* bdev = NULL;
+    uint32_t lba = 123;
+    ASSERT_EQ(init_resolve_mount_device_test("/dev/vda", &bdev, &lba), 0);
+    ASSERT_EQ(bdev, &g_test_bdev2);
+    ASSERT_EQ(lba, 0);
+}
+
+TEST(resolve_mount_device_partition) {
+    partition_registry_reset();
+    partition_t part;
+    memset(&part, 0, sizeof(part));
+    part.parent = &g_test_bdev1;
+    part.start_lba = 2048;
+    part.partition_number = 1;
+    strcpy(part.name, "hda1");
+    partition_register(&part);
+
+    block_device_t* bdev = NULL;
+    uint32_t lba = 0;
+    ASSERT_EQ(init_resolve_mount_device_test("/dev/hda1", &bdev, &lba), 0);
+    ASSERT_EQ(bdev, &g_test_bdev1);
+    ASSERT_EQ(lba, 2048);
+}
+
+TEST(resolve_mount_device_unknown) {
+    partition_registry_reset();
+    block_device_t* bdev = NULL;
+    uint32_t lba = 0;
+    ASSERT_EQ(init_resolve_mount_device_test("/dev/doesnotexist", &bdev, &lba), -1);
+}
+
 /* ======== MAIN ======== */
 int main(void) {
     printf("\n=========================================\n");
@@ -1017,6 +1089,10 @@ int main(void) {
     RUN(part_find_by_device);
     RUN(part_find_by_device_not_found);
     RUN(part_claim_release);
+    RUN(resolve_mount_device_blockdev);
+    RUN(resolve_mount_device_blockdev_devpath);
+    RUN(resolve_mount_device_partition);
+    RUN(resolve_mount_device_unknown);
 
     printf("\n  %d/%d passed, %d failed\n", g_tests_passed, g_tests_run, g_tests_failed);
 

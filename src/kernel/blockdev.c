@@ -75,6 +75,23 @@ block_device_t* blockdev_by_id(int drive_id) {
     return result;
 }
 
+int blockdev_count(void) {
+    uintptr_t flags = spin_lock_irqsave(&g_blockdev_lock);
+    int count = g_blockdev_count;
+    spin_unlock_irqrestore(&g_blockdev_lock, flags);
+    return count;
+}
+
+block_device_t* blockdev_get(int index) {
+    uintptr_t flags = spin_lock_irqsave(&g_blockdev_lock);
+    block_device_t* result = NULL;
+    if (index >= 0 && index < g_blockdev_count) {
+        result = &g_blockdevs[index];
+    }
+    spin_unlock_irqrestore(&g_blockdev_lock, flags);
+    return result;
+}
+
 void blockdev_claim(block_device_t* dev) {
     if (!dev) return;
     uintptr_t flags = spin_lock_irqsave(&g_blockdev_lock);
@@ -113,7 +130,7 @@ void blockdev_register_ata(void) {
         memset(&bd, 0, sizeof(bd));
         strncpy(bd.name, names[i], sizeof(bd.name) - 1);
         bd.sector_size = 512;
-        bd.sector_count = 0; /* unknown */
+        bd.sector_count = ata_pio_sector_count(i);
         bd.drive_id = i;
         bd.ops = &ata_bd_ops;
         blockdev_register(&bd);

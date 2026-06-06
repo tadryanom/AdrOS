@@ -15,6 +15,9 @@ __attribute__((weak))
 uint32_t ata_pio_sector_size(void) { return 512; }
 
 __attribute__((weak))
+uint32_t ata_pio_sector_count(int drive) { (void)drive; return 0; }
+
+__attribute__((weak))
 int ata_pio_init(void) { return -ENOSYS; }
 
 __attribute__((weak))

@@ -16,6 +16,8 @@
 
 int init_start(const struct boot_info* bi);
 
+int init_resolve_mount_device(const char* device, struct block_device** bdev, uint32_t* lba);
+
 /* Mount a filesystem on the given block device at the given mountpoint.
  * fstype: "fat", "ext2"
  * bdev: block device (from blockdev_find or blockdev_by_id)
@@ -23,6 +25,6 @@ int init_start(const struct boot_info* bi);
  * mountpoint: e.g. "/disk", "/fat", "/ext2"
  * flags: mount flags (MS_RDONLY, etc.) — stored in VFS mount table
  * Returns 0 on success, negative errno on failure. */
-int init_mount_fs(const char* fstype, struct block_device* bdev, uint32_t lba, const char* mountpoint, unsigned long flags);
+int init_mount_fs(const char* fstype, struct block_device* bdev, uint32_t lba, const char* mountpoint, unsigned long flags, const char* source_name);
 
 #endif
