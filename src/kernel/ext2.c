@@ -1472,6 +1472,12 @@ vfs_mount_result_t ext2_mount(block_device_t* bdev, uint32_t partition_lba) {
         return result;
     }
 
+    if (sb.s_log_block_size > 2) {
+        kprintf("[EXT2] Invalid s_log_block_size: %u\n", sb.s_log_block_size);
+        kfree(em);
+        return result;
+    }
+
     em->block_size = 1024U << sb.s_log_block_size;
     /* Validate block_size is power of 2 and >= 1024 */
     if (em->block_size < 1024 || em->block_size > 4096 ||
@@ -1486,6 +1492,19 @@ vfs_mount_result_t ext2_mount(block_device_t* bdev, uint32_t partition_lba) {
     em->first_data_block = sb.s_first_data_block;
     em->total_blocks = sb.s_blocks_count;
     em->total_inodes = sb.s_inodes_count;
+
+    if (em->total_blocks == 0 || em->total_inodes == 0) {
+        kprintf("[EXT2] Invalid filesystem size: blocks=%u inodes=%u\n",
+                em->total_blocks, em->total_inodes);
+        kfree(em);
+        return result;
+    }
+    if (em->first_data_block >= em->total_blocks) {
+        kprintf("[EXT2] Invalid first_data_block %u for total blocks %u\n",
+                em->first_data_block, em->total_blocks);
+        kfree(em);
+        return result;
+    }
 
     if (sb.s_rev_level >= 1 && sb.s_inode_size != 0) {
         em->inode_size = sb.s_inode_size;
@@ -1505,27 +1524,34 @@ vfs_mount_result_t ext2_mount(block_device_t* bdev, uint32_t partition_lba) {
         kfree(em);
         return result;
     }
-    em->num_groups = (sb.s_blocks_count + sb.s_blocks_per_group - 1) / sb.s_blocks_per_group;
+    uint64_t num_groups64 = ((uint64_t)sb.s_blocks_count + (uint64_t)sb.s_blocks_per_group - 1ULL) /
+                            (uint64_t)sb.s_blocks_per_group;
+    if (num_groups64 == 0 || num_groups64 > 65536ULL) {
+        kprintf("[EXT2] Invalid num_groups: %u\n", (uint32_t)num_groups64);
+        kfree(em);
+        return result;
+    }
+    em->num_groups = (uint32_t)num_groups64;
 
     /* Read Group Descriptor Table */
-    /* Validate gdt_bytes doesn't overflow */
-    if (em->num_groups > 65536) {  /* Reasonable limit for num_groups */
-        kprintf("[EXT2] Invalid num_groups: %u\n", em->num_groups);
+    uint64_t gdt_bytes64 = (uint64_t)em->num_groups * (uint64_t)sizeof(struct ext2_group_desc);
+    if (gdt_bytes64 == 0 || gdt_bytes64 > 16ULL * 1024ULL * 1024ULL) {
+        kprintf("[EXT2] GDT too large: %u bytes\n", (uint32_t)gdt_bytes64);
         kfree(em);
         return result;
     }
-    em->gdt_blocks = (em->num_groups * (uint32_t)sizeof(struct ext2_group_desc) +
-                          em->block_size - 1) / em->block_size;
-    uint32_t gdt_bytes = em->num_groups * (uint32_t)sizeof(struct ext2_group_desc);
-    /* Validate gdt_bytes doesn't overflow and is reasonable */
-    if (gdt_bytes > 16 * 1024 * 1024) {  /* Max 16MB for GDT */
-        kprintf("[EXT2] GDT too large: %u bytes\n", gdt_bytes);
+    uint32_t gdt_bytes = (uint32_t)gdt_bytes64;
+    uint64_t gdt_blocks64 = (gdt_bytes64 + (uint64_t)em->block_size - 1ULL) / (uint64_t)em->block_size;
+    if (gdt_blocks64 == 0 || gdt_blocks64 > em->total_blocks) {
+        kprintf("[EXT2] GDT blocks %u exceed total blocks %u\n", (uint32_t)gdt_blocks64, em->total_blocks);
         kfree(em);
         return result;
     }
+    em->gdt_blocks = (uint32_t)gdt_blocks64;
     /* Validate gdt_blocks against device size */
-    if (em->gdt_blocks > em->total_blocks) {
-        kprintf("[EXT2] GDT blocks %u exceed total blocks %u\n", em->gdt_blocks, em->total_blocks);
+    uint64_t gdt_end_block = (uint64_t)em->first_data_block + 1ULL + gdt_blocks64;
+    if (gdt_end_block > em->total_blocks) {
+        kprintf("[EXT2] GDT end %u exceeds total blocks %u\n", (uint32_t)gdt_end_block, em->total_blocks);
         kfree(em);
         return result;
     }

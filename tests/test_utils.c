@@ -119,6 +119,48 @@ static int init_resolve_mount_device_test(const char* device, block_device_t** b
     return 0;
 }
 
+static int fat_mount_layout_valid_test(uint32_t partition_lba,
+                                       uint32_t data_lba,
+                                       uint32_t total_sectors,
+                                       uint8_t sectors_per_cluster,
+                                       int is_fat32,
+                                       uint32_t root_cluster) {
+    if (sectors_per_cluster == 0) return -1;
+    uint32_t used_sectors = data_lba - partition_lba;
+    if (used_sectors >= total_sectors) return -1;
+    uint32_t data_sectors = total_sectors - used_sectors;
+    uint32_t total_clusters = data_sectors / sectors_per_cluster;
+    if (total_clusters == 0) return -1;
+    if (is_fat32) {
+        if (root_cluster < 2) return -1;
+        if ((uint64_t)root_cluster >= (uint64_t)total_clusters + 2ULL) return -1;
+    }
+    return 0;
+}
+
+static int ext2_mount_geometry_valid_test(uint32_t s_log_block_size,
+                                          uint32_t total_blocks,
+                                          uint32_t total_inodes,
+                                          uint32_t first_data_block,
+                                          uint32_t blocks_per_group) {
+    if (blocks_per_group == 0) return -1;
+    if (s_log_block_size > 2) return -1;
+    uint32_t block_size = 1024U << s_log_block_size;
+    if (block_size < 1024 || block_size > 4096 ||
+        (block_size & (block_size - 1)) != 0) return -1;
+    if (total_blocks == 0 || total_inodes == 0) return -1;
+    if (first_data_block >= total_blocks) return -1;
+    uint64_t num_groups = ((uint64_t)total_blocks + (uint64_t)blocks_per_group - 1ULL) /
+                          (uint64_t)blocks_per_group;
+    if (num_groups == 0 || num_groups > 65536ULL) return -1;
+    uint64_t gdt_bytes = num_groups * 32ULL;
+    if (gdt_bytes == 0 || gdt_bytes > 16ULL * 1024ULL * 1024ULL) return -1;
+    uint64_t gdt_blocks = (gdt_bytes + (uint64_t)block_size - 1ULL) / (uint64_t)block_size;
+    if (gdt_blocks == 0 || gdt_blocks > total_blocks) return -1;
+    if ((uint64_t)first_data_block + 1ULL + gdt_blocks > total_blocks) return -1;
+    return 0;
+}
+
 /* ---- Minimal test framework ---- */
 static int g_tests_run = 0;
 static int g_tests_passed = 0;
@@ -989,6 +1031,30 @@ TEST(resolve_mount_device_unknown) {
     ASSERT_EQ(init_resolve_mount_device_test("/dev/doesnotexist", &bdev, &lba), -1);
 }
 
+TEST(fat_layout_rejects_used_sectors_overflow) {
+    ASSERT_EQ(fat_mount_layout_valid_test(2048, 4096, 2048, 1, 0, 0), -1);
+}
+
+TEST(fat_layout_rejects_zero_clusters) {
+    ASSERT_EQ(fat_mount_layout_valid_test(2048, 2049, 2, 4, 0, 0), -1);
+}
+
+TEST(fat_layout_rejects_invalid_fat32_root_cluster) {
+    ASSERT_EQ(fat_mount_layout_valid_test(2048, 4096, 16384, 1, 1, 20000), -1);
+}
+
+TEST(ext2_geometry_rejects_invalid_log_block_size) {
+    ASSERT_EQ(ext2_mount_geometry_valid_test(3, 8192, 1024, 1, 8192), -1);
+}
+
+TEST(ext2_geometry_rejects_invalid_first_data_block) {
+    ASSERT_EQ(ext2_mount_geometry_valid_test(1, 4096, 1024, 4096, 1024), -1);
+}
+
+TEST(ext2_geometry_rejects_gdt_end_overflow) {
+    ASSERT_EQ(ext2_mount_geometry_valid_test(0, 64, 128, 63, 1), -1);
+}
+
 /* ======== MAIN ======== */
 int main(void) {
     printf("\n=========================================\n");
@@ -1093,6 +1159,12 @@ int main(void) {
     RUN(resolve_mount_device_blockdev_devpath);
     RUN(resolve_mount_device_partition);
     RUN(resolve_mount_device_unknown);
+    RUN(fat_layout_rejects_used_sectors_overflow);
+    RUN(fat_layout_rejects_zero_clusters);
+    RUN(fat_layout_rejects_invalid_fat32_root_cluster);
+    RUN(ext2_geometry_rejects_invalid_log_block_size);
+    RUN(ext2_geometry_rejects_invalid_first_data_block);
+    RUN(ext2_geometry_rejects_gdt_end_overflow);
 
     printf("\n  %d/%d passed, %d failed\n", g_tests_passed, g_tests_run, g_tests_failed);
 

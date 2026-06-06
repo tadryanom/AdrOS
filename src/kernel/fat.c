@@ -268,6 +268,11 @@ static uint32_t fat_eoc_mark(struct fat_mount* fm) {
     return 0x0FFFFFFF;
 }
 
+static int fat_cluster_valid(struct fat_mount* fm, uint32_t cluster) {
+    if (!fm || fm->total_clusters == 0) return 0;
+    return cluster >= 2 && (uint64_t)cluster < (uint64_t)fm->total_clusters + 2ULL;
+}
+
 static uint32_t fat_cluster_to_lba(struct fat_mount* fm, uint32_t cluster) {
     return fm->data_lba + (cluster - 2) * fm->sectors_per_cluster;
 }
@@ -280,18 +285,19 @@ static uint32_t fat_cluster_size(struct fat_mount* fm) {
 static uint32_t fat_follow_chain(struct fat_mount* fm, uint32_t start, uint32_t n) {
     uint32_t c = start;
     for (uint32_t i = 0; i < n; i++) {
-        if (c < 2 || fat_is_eoc(fm, c)) return 0;
+        if (!fat_cluster_valid(fm, c) || fat_is_eoc(fm, c)) return 0;
         c = fat_get_entry(fm, c);
     }
-    return (c >= 2 && !fat_is_eoc(fm, c)) ? c : (n == 0 ? start : 0);
+    if (n == 0) return fat_cluster_valid(fm, start) ? start : 0;
+    return (fat_cluster_valid(fm, c) && !fat_is_eoc(fm, c)) ? c : 0;
 }
 
 /* Count clusters in chain. */
 static uint32_t fat_chain_length(struct fat_mount* fm, uint32_t start) {
-    if (start < 2) return 0;
+    if (!fat_cluster_valid(fm, start)) return 0;
     uint32_t count = 0;
     uint32_t c = start;
-    while (c >= 2 && !fat_is_eoc(fm, c) && count < fm->total_clusters) {
+    while (fat_cluster_valid(fm, c) && !fat_is_eoc(fm, c) && count < fm->total_clusters) {
         count++;
         c = fat_get_entry(fm, c);
     }
@@ -360,12 +366,18 @@ static uint32_t fat_extend_chain(struct fat_mount* fm, uint32_t start, uint32_t 
 /* Free a cluster chain starting at 'start'. */
 static void fat_free_chain(struct fat_mount* fm, uint32_t start) {
     uint32_t c = start;
-    while (c >= 2 && !fat_is_eoc(fm, c)) {
+    uint32_t steps = 0;
+    while (fat_cluster_valid(fm, c) && !fat_is_eoc(fm, c) && steps < fm->total_clusters) {
         uint32_t next = fat_get_entry(fm, c);
         (void)fat_set_entry(fm, c, 0);
+        if (!fat_cluster_valid(fm, next) || fat_is_eoc(fm, next)) {
+            c = next;
+            break;
+        }
         c = next;
+        steps++;
     }
-    if (c >= 2) {
+    if (fat_cluster_valid(fm, c)) {
         (void)fat_set_entry(fm, c, 0);
     }
 }
@@ -1263,8 +1275,20 @@ vfs_mount_result_t fat_mount(block_device_t* bdev, uint32_t partition_lba) {
 
     /* Total data sectors & cluster count determine FAT type */
     uint32_t total_sectors = bpb->total_sectors_16 ? bpb->total_sectors_16 : bpb->total_sectors_32;
-    uint32_t data_sectors = total_sectors - (fm->data_lba - partition_lba);
+    uint32_t used_sectors = fm->data_lba - partition_lba;
+    if (used_sectors >= total_sectors) {
+        kprintf("[FAT] Invalid layout: used sectors %u exceed total sectors %u\n",
+                used_sectors, total_sectors);
+        kfree(fm);
+        return result;
+    }
+    uint32_t data_sectors = total_sectors - used_sectors;
     fm->total_clusters = data_sectors / fm->sectors_per_cluster;
+    if (fm->total_clusters == 0) {
+        kprintf("[FAT] Invalid cluster count: 0\n");
+        kfree(fm);
+        return result;
+    }
 
     /* Microsoft FAT spec: type is determined by cluster count */
     if (fm->total_clusters < 4085) {
@@ -1273,6 +1297,12 @@ vfs_mount_result_t fat_mount(block_device_t* bdev, uint32_t partition_lba) {
         fm->type = FAT_TYPE_16;
     } else {
         fm->type = FAT_TYPE_32;
+    }
+
+    if (fm->type == FAT_TYPE_32 && !fat_cluster_valid(fm, fm->root_cluster)) {
+        kprintf("[FAT] Invalid FAT32 root_cluster %u\n", fm->root_cluster);
+        kfree(fm);
+        return result;
     }
 
     /* Build root node */
