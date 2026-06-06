@@ -235,8 +235,8 @@ int init_start(const struct boot_info* bi) {
         if (rc < 0 && rc != -EEXIST) kprintf("[INIT] mkdir /dev failed: %d\n", rc);
         rc = vfs_mkdir("/proc");
         if (rc < 0 && rc != -EEXIST) kprintf("[INIT] mkdir /proc failed: %d\n", rc);
-        /* /disk directory is created by userspace init
-         * or by fstab-driven mount — no longer created by kernel */
+        rc = vfs_mkdir("/disk");
+        if (rc < 0 && rc != -EEXIST) kprintf("[INIT] mkdir /disk failed: %d\n", rc);
     }
 
     fs_node_t* tmp = tmpfs_create_root();
