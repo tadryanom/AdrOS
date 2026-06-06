@@ -48,6 +48,12 @@ static void init_build_mount_source_name(const char* source_name, block_device_t
     if (!out || out_size == 0) return;
 
     if (source_name && source_name[0] != '\0') {
+        if (!bdev) {
+            strncpy(out, source_name, out_size - 1);
+            out[out_size - 1] = '\0';
+            return;
+        }
+
         if (strncmp(source_name, "/dev/", 5) == 0) {
             strncpy(out, source_name, out_size - 1);
             out[out_size - 1] = '\0';
@@ -116,6 +122,11 @@ int init_mount_fs(const char* fstype, block_device_t* bdev, uint32_t lba, const 
         return -EINVAL;
     }
 
+    if ((fst->flags & FS_NEEDS_BDEV) && !bdev) {
+        kprintf("[MOUNT] Filesystem %s requires a block device\n", fstype);
+        return -ENODEV;
+    }
+
     char devname[32];
     init_build_mount_source_name(source_name, bdev, devname, sizeof(devname));
 
@@ -153,7 +164,7 @@ int init_mount_fs(const char* fstype, block_device_t* bdev, uint32_t lba, const 
     }
 
     kprintf("[MOUNT] %s on /dev/%s -> %s\n",
-            fstype, bdev ? bdev->name : "?",
+            fstype, devname,
             mountpoint);
     return 0;
 }
@@ -276,6 +287,8 @@ int init_start(const struct boot_info* bi) {
      * mounts ensure the system is functional. */
     {
         int rc;
+        rc = vfs_mkdir("/tmp");
+        if (rc < 0 && rc != -EEXIST) kprintf("[INIT] mkdir /tmp failed: %d\n", rc);
         rc = vfs_mkdir("/dev");
         if (rc < 0 && rc != -EEXIST) kprintf("[INIT] mkdir /dev failed: %d\n", rc);
         rc = vfs_mkdir("/proc");
@@ -284,10 +297,7 @@ int init_start(const struct boot_info* bi) {
         if (rc < 0 && rc != -EEXIST) kprintf("[INIT] mkdir /disk failed: %d\n", rc);
     }
 
-    fs_node_t* tmp = tmpfs_create_root();
-    if (tmp) {
-        (void)vfs_mount_full("/tmp", tmp, "tmpfs", "none", 0, NULL, NULL);
-    }
+    (void)init_mount_fs("tmpfs", NULL, 0, "/tmp", 0, "none");
 
     /* Register hardware drivers with HAL and init in priority order */
     pci_driver_register();      /* priority 10: bus */
@@ -311,18 +321,12 @@ int init_start(const struct boot_info* bi) {
      * (including fulltest) has /dev available.  When /sbin/init runs
      * it re-mounts devfs via mount() syscall; vfs_mount replaces the
      * existing entry so this is a harmless overlap. */
-    fs_node_t* dev = devfs_create_root();
-    if (dev) {
-        (void)vfs_mount_full("/dev", dev, "devfs", "none", 0, NULL, NULL);
-    }
+    (void)init_mount_fs("devfs", NULL, 0, "/dev", 0, "none");
 
     vbe_register_devfs();
     keyboard_register_devfs();
 
-    fs_node_t* proc = procfs_create_root();
-    if (proc) {
-        (void)vfs_mount_full("/proc", proc, "procfs", "none", 0, NULL, NULL);
-    }
+    (void)init_mount_fs("procfs", NULL, 0, "/proc", 0, "none");
 
     /* Initialize ATA subsystem — probe all 4 drives
      * (primary/secondary x master/slave). */

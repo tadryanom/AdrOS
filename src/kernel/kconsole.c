@@ -364,9 +364,11 @@ static void kconsole_mount(const char* args) {
 
     block_device_t* bdev = NULL;
     uint32_t lba = 0;
-    if (init_resolve_mount_device(device, &bdev, &lba) < 0) {
-        kprintf("mount: unknown device: %s\n", device);
-        return;
+    if (strcmp(fstype, "tmpfs") != 0 && strcmp(fstype, "devfs") != 0 && strcmp(fstype, "procfs") != 0) {
+        if (init_resolve_mount_device(device, &bdev, &lba) < 0) {
+            kprintf("mount: unknown device: %s\n", device);
+            return;
+        }
     }
 
     (void)init_mount_fs(fstype, bdev, lba, mountpoint, 0, device);

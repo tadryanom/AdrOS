@@ -5269,33 +5269,13 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
         if (!mp_node) { sc_ret(regs) = (uint32_t)-ENOENT; return; }
         if (!(mp_node->flags & FS_DIRECTORY)) { sc_ret(regs) = (uint32_t)-ENOTDIR; return; }
 
-        /* Virtual filesystems — no device argument needed */
-        if (strcmp(ktype, "tmpfs") == 0) {
-            fs_node_t* tmp = tmpfs_create_root();
-            if (!tmp) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
-            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, tmp, "tmpfs", kdev, mount_flags, NULL, NULL);
-            return;
-        }
-        if (strcmp(ktype, "devfs") == 0) {
-            extern fs_node_t* devfs_create_root(void);
-            fs_node_t* dev = devfs_create_root();
-            if (!dev) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
-            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, dev, "devfs", kdev, mount_flags, NULL, NULL);
-            return;
-        }
-        if (strcmp(ktype, "procfs") == 0) {
-            extern fs_node_t* procfs_create_root(void);
-            fs_node_t* proc = procfs_create_root();
-            if (!proc) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
-            sc_ret(regs) = (uint32_t)vfs_mount_full(kmp, proc, "procfs", kdev, mount_flags, NULL, NULL);
-            return;
-        }
-
         block_device_t* bdev = NULL;
         uint32_t lba = 0;
-        if (init_resolve_mount_device(kdev, &bdev, &lba) < 0) {
-            sc_ret(regs) = (uint32_t)-ENODEV;
-            return;
+        if (strcmp(ktype, "tmpfs") != 0 && strcmp(ktype, "devfs") != 0 && strcmp(ktype, "procfs") != 0) {
+            if (init_resolve_mount_device(kdev, &bdev, &lba) < 0) {
+                sc_ret(regs) = (uint32_t)-ENODEV;
+                return;
+            }
         }
 
         int rc = init_mount_fs(ktype, bdev, lba, kmp, mount_flags, kdev);
