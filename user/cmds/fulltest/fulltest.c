@@ -5299,6 +5299,66 @@ void _start(void) {
                   (uint32_t)(sizeof("[test] umount cwd OK\n") - 1));
     }
 
+    {
+        struct timespec ts = {0, 10000000};
+
+        (void)sys_mkdir("/tmp/mnt_kill_cwd");
+        if (sys_mount("none", "/tmp/mnt_kill_cwd", "tmpfs", 0) < 0) {
+            sys_write(1, "[test] umount kill cwd: mount failed\n",
+                      (uint32_t)(sizeof("[test] umount kill cwd: mount failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int pid = sys_fork();
+        if (pid < 0) {
+            sys_write(1, "[test] umount kill cwd: fork failed\n",
+                      (uint32_t)(sizeof("[test] umount kill cwd: fork failed\n") - 1));
+            sys_exit(1);
+        }
+
+        if (pid == 0) {
+            if (sys_chdir("/tmp/mnt_kill_cwd") < 0) {
+                sys_write(1, "[test] umount kill cwd: child chdir failed\n",
+                          (uint32_t)(sizeof("[test] umount kill cwd: child chdir failed\n") - 1));
+                sys_exit(1);
+            }
+            for (;;) {
+                (void)sys_nanosleep(&ts, 0);
+            }
+        }
+
+        for (int i = 0; i < 5; i++) {
+            (void)sys_nanosleep(&ts, 0);
+        }
+
+        int rc = sys_umount2("/tmp/mnt_kill_cwd");
+        if (rc >= 0) {
+            sys_write(1, "[test] umount kill cwd: should fail with -EBUSY\n",
+                      (uint32_t)(sizeof("[test] umount kill cwd: should fail with -EBUSY\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_kill(pid, SIGKILL) < 0) {
+            sys_write(1, "[test] umount kill cwd: kill failed\n",
+                      (uint32_t)(sizeof("[test] umount kill cwd: kill failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int st = 0;
+        if (sys_waitpid(pid, &st, 0) != pid || st != (128 + SIGKILL)) {
+            sys_write(1, "[test] umount kill cwd: waitpid failed\n",
+                      (uint32_t)(sizeof("[test] umount kill cwd: waitpid failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_umount2("/tmp/mnt_kill_cwd") < 0) {
+            sys_write(1, "[test] umount kill cwd: umount failed\n",
+                      (uint32_t)(sizeof("[test] umount kill cwd: umount failed\n") - 1));
+            sys_exit(1);
+        }
+
+        sys_write(1, "[test] umount kill cwd OK\n",
+                  (uint32_t)(sizeof("[test] umount kill cwd OK\n") - 1));
+    }
+
 
     // I13: clone — create a thread sharing address space
     {

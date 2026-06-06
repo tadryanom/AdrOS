@@ -35,6 +35,27 @@ static uint32_t as_refcount_dec(uintptr_t as) {
     }
     return 0;
 }
+
+static void process_mount_ref_cwd(const struct process* proc) {
+    if (!proc) return;
+    extern void vfs_mount_ref_by_path(const char* path);
+    vfs_mount_ref_by_path(proc->cwd);
+}
+
+static void process_mount_unref_cwd(const struct process* proc) {
+    if (!proc) return;
+    extern void vfs_mount_unref_by_path(const char* path);
+    vfs_mount_unref_by_path(proc->cwd);
+}
+
+static void process_release_file_refs(struct process* proc) {
+    if (!proc) return;
+    for (int i = 0; i < PROCESS_MAX_FILES; i++) {
+        if (proc->files[i]) {
+            __sync_sub_and_fetch(&proc->files[i]->refcount, 1);
+        }
+    }
+}
 #include "pmm.h"
 #include "vmm.h"
 #include "heap.h"
@@ -444,6 +465,7 @@ int process_kill(uint32_t pid, int sig) {
         sleep_queue_remove(p);
         alarm_queue_remove(p);
         process_close_all_files_locked(p);
+        process_mount_unref_cwd(p);
         p->exit_status = 128 + sig;
         p->state = PROCESS_ZOMBIE;
 
@@ -591,9 +613,7 @@ void sched_assign_pid1(struct process* p) {
 void process_exit_notify(int status) {
     if (!current_process) return;
 
-    /* Decrement mount refcount for the exiting process's cwd */
-    extern void vfs_mount_unref_by_path(const char* path);
-    vfs_mount_unref_by_path(current_process->cwd);
+    process_mount_unref_cwd(current_process);
 
     uintptr_t flags = spin_lock_irqsave(&sched_lock);
 
@@ -699,10 +719,8 @@ struct process* process_fork_create(uintptr_t child_as, const void* child_regs) 
     } else {
         strcpy(proc->cwd, "/");
     }
-    
-    /* Increment mount refcount for the new process's cwd */
-    extern void vfs_mount_ref_by_path(const char* path);
-    vfs_mount_ref_by_path(proc->cwd);
+
+    process_mount_ref_cwd(proc);
 
     proc->has_user_regs = 1;
     memcpy(proc->user_regs, child_regs, ARCH_REGS_SIZE);
@@ -754,11 +772,9 @@ struct process* process_fork_create(uintptr_t child_as, const void* child_regs) 
     if (!stack) {
         /* Undo FD refcount bumps on failure */
         if (current_process) {
-            for (int i = 0; i < PROCESS_MAX_FILES; i++) {
-                if (proc->files[i])
-                    __sync_sub_and_fetch(&proc->files[i]->refcount, 1);
-            }
+            process_release_file_refs(proc);
         }
+        process_mount_unref_cwd(proc);
         kfree(proc);
         spin_unlock_irqrestore(&sched_lock, flags);
         return NULL;
@@ -809,6 +825,7 @@ struct process* process_clone_create(uint32_t clone_flags,
     if (!child_regs || !current_process) return NULL;
 
     uintptr_t flags = spin_lock_irqsave(&sched_lock);
+    int added_parent_as_ref = 0;
 
     struct process* proc = (struct process*)kmalloc(sizeof(*proc));
     if (!proc) {
@@ -838,6 +855,7 @@ struct process* process_clone_create(uint32_t clone_flags,
         /* If this is the first thread, add the parent's own ref to the table */
         if (current_process->as_refcount == 0) {
             as_refcount_inc(proc->addr_space);  /* parent's ref */
+            added_parent_as_ref = 1;
         }
         as_refcount_inc(proc->addr_space);      /* child's ref */
         current_process->as_refcount++;
@@ -859,6 +877,7 @@ struct process* process_clone_create(uint32_t clone_flags,
 
     /* CLONE_FS: share cwd */
     strcpy(proc->cwd, current_process->cwd);
+    process_mount_ref_cwd(proc);
 
     /* CLONE_FILES: share file descriptor table */
     if (clone_flags & CLONE_FILES) {
@@ -911,6 +930,19 @@ struct process* process_clone_create(uint32_t clone_flags,
     /* Allocate kernel stack */
     void* kstack = kstack_alloc();
     if (!kstack) {
+        if (clone_flags & CLONE_FILES) {
+            process_release_file_refs(proc);
+        }
+        process_mount_unref_cwd(proc);
+        if (clone_flags & CLONE_VM) {
+            (void)as_refcount_dec(proc->addr_space);
+            if (current_process->as_refcount > 0) {
+                current_process->as_refcount--;
+            }
+            if (added_parent_as_ref) {
+                (void)as_refcount_dec(proc->addr_space);
+            }
+        }
         if (!(clone_flags & CLONE_VM) && proc->addr_space) {
             vmm_as_destroy(proc->addr_space);
         }
@@ -989,10 +1021,8 @@ void process_init(void) {
     kernel_proc->wait_result_status = 0;
 
     strcpy(kernel_proc->cwd, "/");
-    
-    /* Increment mount refcount for kernel process's cwd */
-    extern void vfs_mount_ref_by_path(const char* path);
-    vfs_mount_ref_by_path(kernel_proc->cwd);
+
+    process_mount_ref_cwd(kernel_proc);
 
     for (int i = 0; i < PROCESS_MAX_FILES; i++) {
         kernel_proc->files[i] = NULL;
@@ -1059,10 +1089,8 @@ void sched_ap_init(uint32_t cpu) {
     idle->addr_space = kernel_as;
     idle->cpu_id = cpu;
     strcpy(idle->cwd, "/");
-    
-    /* Increment mount refcount for idle process's cwd */
-    extern void vfs_mount_ref_by_path(const char* path);
-    vfs_mount_ref_by_path(idle->cwd);
+
+    process_mount_ref_cwd(idle);
     for (int i = 0; i < PROCESS_MAX_MMAPS; i++)
         idle->mmaps[i].shmid = -1;
     idle->kernel_stack = (uint32_t*)kstack;

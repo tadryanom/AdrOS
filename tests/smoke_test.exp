@@ -162,6 +162,7 @@ set tests {
     {"ftruncate readonly"   "\\[test\\] ftruncate readonly OK"}
     {"mountpoint validation" "\\[test\\] mountpoint validation OK"}
     {"umount cwd"           "\\[test\\] umount cwd OK"}
+    {"umount kill cwd"      "\\[test\\] umount kill cwd OK"}
     {"sigqueue"            "\\[test\\] sigqueue OK"}
     {"clone"               "\\[test\\] clone OK"}
     {"inotify_init1"       "\\[test\\] inotify_init1 OK"}
