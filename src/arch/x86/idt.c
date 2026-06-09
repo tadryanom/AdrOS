@@ -110,6 +110,8 @@ static void deliver_signals_to_usermode(struct registers* regs) {
                     current_process ? (int)current_process->pid : -1,
                     (unsigned)current_process->last_fault_addr,
                     (unsigned)regs->eip);
+        }
+        if (sig == 9 || sig == 11) {
             process_exit_notify(128 + sig);
             __asm__ volatile("sti");
             schedule();

@@ -23,6 +23,16 @@ static void as_refcount_inc(uintptr_t as) {
     }
 }
 
+static uint32_t as_refcount_get(uintptr_t as) {
+    if (!as) return 0;
+    for (int i = 0; i < AS_REFCOUNT_MAX; i++) {
+        if (g_as_refcnt[i].as == as) {
+            return g_as_refcnt[i].refcnt;
+        }
+    }
+    return 0;
+}
+
 static uint32_t as_refcount_dec(uintptr_t as) {
     if (!as) return 0;
     for (int i = 0; i < AS_REFCOUNT_MAX; i++) {
@@ -400,7 +410,7 @@ static void process_reap_locked(struct process* p) {
             if (as_refcount_dec(p->addr_space) == 0) {
                 vmm_as_destroy(p->addr_space);
             }
-        } else if (p->as_refcount > 0) {
+        } else if (as_refcount_get(p->addr_space) > 0) {
             /* Leader with live threads: decrement refcount; last one destroys */
             if (as_refcount_dec(p->addr_space) == 0) {
                 vmm_as_destroy(p->addr_space);
@@ -449,6 +459,7 @@ int process_kill(uint32_t pid, int sig) {
     }
 
     uintptr_t flags = spin_lock_irqsave(&sched_lock);
+    uint32_t wake_cpu = (uint32_t)-1;
     struct process* p = process_find_locked(pid);
     if (!p || p->pid == 0) {
         spin_unlock_irqrestore(&sched_lock, flags);
@@ -468,39 +479,20 @@ int process_kill(uint32_t pid, int sig) {
         }
     }
 
+    wake_cpu = p->cpu_id < SCHED_MAX_CPUS ? p->cpu_id : 0;
+    p->sig_pending_mask |= (1U << (uint32_t)sig);
     if (sig == SIG_KILL) {
-        /* Remove from runqueue/sleep queue BEFORE marking ZOMBIE */
-        if (p->state == PROCESS_READY) {
-            rq_remove_if_queued(p);
-        }
+        p->sig_blocked_mask &= ~(1U << (uint32_t)sig);
+    }
+    if (p->state == PROCESS_BLOCKED || p->state == PROCESS_SLEEPING) {
         sleep_queue_remove(p);
-        alarm_queue_remove(p);
-        process_close_all_files_locked(p);
-        process_mount_unref_cwd(p);
-        p->exit_status = 128 + sig;
-        p->state = PROCESS_ZOMBIE;
-
-        if (p->pid != 0) {
-            struct process* parent = process_find_locked(p->parent_pid);
-            if (parent && parent->state == PROCESS_BLOCKED && parent->waiting) {
-                if (parent->wait_pid == -1 || parent->wait_pid == (int)p->pid) {
-                    parent->wait_result_pid = (int)p->pid;
-                    parent->wait_result_status = p->exit_status;
-                    parent->state = PROCESS_READY;
-                    rq_enqueue(pcpu_rq[parent->cpu_id].active, parent);
-                }
-            }
-        }
-    } else {
-        p->sig_pending_mask |= (1U << (uint32_t)sig);
-        if (p->state == PROCESS_BLOCKED || p->state == PROCESS_SLEEPING) {
-            sleep_queue_remove(p);
-            p->state = PROCESS_READY;
-            rq_enqueue(pcpu_rq[p->cpu_id].active, p);
-        }
+        p->state = PROCESS_READY;
+        rq_enqueue(pcpu_rq[wake_cpu].active, p);
+        sched_pcpu_inc_load(wake_cpu);
     }
 
     spin_unlock_irqrestore(&sched_lock, flags);
+    sched_ipi_resched(wake_cpu);
     return 0;
 }
 
@@ -510,6 +502,7 @@ int process_kill_pgrp(uint32_t pgrp, int sig) {
 
     uintptr_t flags = spin_lock_irqsave(&sched_lock);
     int found = 0;
+    uint32_t ipi_mask = 0;
 
     struct process* it = ready_queue_head;
     if (it) {
@@ -521,12 +514,18 @@ int process_kill_pgrp(uint32_t pgrp, int sig) {
                     if (current_process->euid != it->uid && current_process->uid != it->uid)
                         continue;
                 }
+                uint32_t pcpu = it->cpu_id < SCHED_MAX_CPUS ? it->cpu_id : 0;
                 it->sig_pending_mask |= (1U << (uint32_t)sig);
+                if (sig == 9) {
+                    it->sig_blocked_mask &= ~(1U << (uint32_t)sig);
+                }
                 if (it->state == PROCESS_BLOCKED || it->state == PROCESS_SLEEPING) {
                     sleep_queue_remove(it);
                     it->state = PROCESS_READY;
-                    rq_enqueue(pcpu_rq[it->cpu_id].active, it);
+                    rq_enqueue(pcpu_rq[pcpu].active, it);
+                    sched_pcpu_inc_load(pcpu);
                 }
+                if (pcpu < 32) ipi_mask |= (1U << pcpu);
                 found = 1;
             }
             it = it->next;
@@ -534,6 +533,13 @@ int process_kill_pgrp(uint32_t pgrp, int sig) {
     }
 
     spin_unlock_irqrestore(&sched_lock, flags);
+    uint32_t my_cpu = percpu_cpu_index();
+    ipi_mask &= ~(1U << my_cpu);
+    while (ipi_mask) {
+        uint32_t c = (uint32_t)__builtin_ctz(ipi_mask);
+        sched_ipi_resched(c);
+        ipi_mask &= ~(1U << c);
+    }
     return found ? 0 : -ESRCH;
 }
 
@@ -864,12 +870,11 @@ struct process* process_clone_create(uint32_t clone_flags,
         proc->addr_space = current_process->addr_space;
         proc->flags |= PROCESS_FLAG_THREAD;
         /* If this is the first thread, add the parent's own ref to the table */
-        if (current_process->as_refcount == 0) {
+        if (as_refcount_get(proc->addr_space) == 0) {
             as_refcount_inc(proc->addr_space);  /* parent's ref */
             added_parent_as_ref = 1;
         }
         as_refcount_inc(proc->addr_space);      /* child's ref */
-        current_process->as_refcount++;
     } else {
         proc->addr_space = vmm_as_clone_user_cow(current_process->addr_space);
         if (!proc->addr_space) {
@@ -886,27 +891,21 @@ struct process* process_clone_create(uint32_t clone_flags,
         proc->tgid = proc->pid;
     }
 
-    /* CLONE_FS: share cwd */
     strcpy(proc->cwd, current_process->cwd);
     process_mount_ref_cwd(proc);
 
-    /* CLONE_FILES: share file descriptor table */
-    if (clone_flags & CLONE_FILES) {
-        for (int i = 0; i < PROCESS_MAX_FILES; i++) {
-            proc->files[i] = current_process->files[i];
-            if (proc->files[i]) {
-                __sync_fetch_and_add(&proc->files[i]->refcount, 1);
-            }
-            proc->fd_flags[i] = current_process->fd_flags[i];
+    for (int i = 0; i < PROCESS_MAX_FILES; i++) {
+        proc->files[i] = current_process->files[i];
+        if (proc->files[i]) {
+            __sync_fetch_and_add(&proc->files[i]->refcount, 1);
         }
+        proc->fd_flags[i] = current_process->fd_flags[i];
     }
 
-    /* CLONE_SIGHAND: share signal handlers */
-    if (clone_flags & CLONE_SIGHAND) {
-        for (int i = 0; i < PROCESS_MAX_SIG; i++) {
-            proc->sigactions[i] = current_process->sigactions[i];
-        }
+    for (int i = 0; i < PROCESS_MAX_SIG; i++) {
+        proc->sigactions[i] = current_process->sigactions[i];
     }
+    proc->sig_blocked_mask = current_process->sig_blocked_mask;
 
     /* CLONE_SETTLS: set TLS base */
     if (clone_flags & CLONE_SETTLS) {
@@ -941,15 +940,10 @@ struct process* process_clone_create(uint32_t clone_flags,
     /* Allocate kernel stack */
     void* kstack = kstack_alloc();
     if (!kstack) {
-        if (clone_flags & CLONE_FILES) {
-            process_release_file_refs(proc);
-        }
+        process_release_file_refs(proc);
         process_mount_unref_cwd(proc);
         if (clone_flags & CLONE_VM) {
             (void)as_refcount_dec(proc->addr_space);
-            if (current_process->as_refcount > 0) {
-                current_process->as_refcount--;
-            }
             if (added_parent_as_ref) {
                 (void)as_refcount_dec(proc->addr_space);
             }

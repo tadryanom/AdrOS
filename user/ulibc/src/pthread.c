@@ -24,7 +24,7 @@
 #define CLONE_PARENT_SETTID  0x00100000
 #define CLONE_CHILD_CLEARTID 0x00200000
 
-#define CLONE_THREAD_FLAGS  (CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SETTLS)
+#define CLONE_THREAD_FLAGS  (CLONE_VM | CLONE_THREAD | CLONE_SETTLS)
 
 #define THREAD_STACK_SIZE 8192
 
@@ -86,7 +86,7 @@ int pthread_create(pthread_t* thread, const pthread_attr_t* attr,
      *
      * We use _syscall5 but note: parent_tidptr and child_tidptr are 0 for now,
      * tls is 0 (no TLS for basic threads). */
-    uint32_t flags = CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD;
+    uint32_t flags = CLONE_VM | CLONE_THREAD;
     int ret = _syscall5(SYS_CLONE, (int)flags, (int)(uintptr_t)sp, 0, 0, 0);
 
     if (ret < 0) {

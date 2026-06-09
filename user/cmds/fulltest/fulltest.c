@@ -2017,6 +2017,7 @@ void _start(void) {
         }
 
         if (pid == 0) {
+            (void)sys_sigprocmask(SIG_BLOCK, (1U << SIGKILL), 0);
             for (;;) {
                 __asm__ volatile("nop");
             }
@@ -5406,8 +5407,7 @@ void _start(void) {
         /* Stack grows downward on x86 */
         void* sp = child_stack + 8192;
 
-        int tid = sys_clone(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND
-                            | CLONE_PARENT_SETTID,
+        int tid = sys_clone(CLONE_VM | CLONE_PARENT_SETTID,
                             sp, &parent_tid, 0, 0);
         if (tid < 0) {
             sys_write(1, "[test] clone failed\n",

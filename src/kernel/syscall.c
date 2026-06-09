@@ -993,8 +993,7 @@ static int syscall_clone_impl(struct registers* regs) {
     uintptr_t tls_base = (uintptr_t)sc_arg3(regs);
 
     /* Reject unsupported clone flags — prevents silent misbehavior */
-    #define CLONE_SUPPORTED_MASK (CLONE_VM | CLONE_FS | CLONE_FILES | \
-                                  CLONE_SIGHAND | CLONE_THREAD |      \
+    #define CLONE_SUPPORTED_MASK (CLONE_VM | CLONE_THREAD |      \
                                   CLONE_SETTLS | CLONE_PARENT_SETTID |\
                                   CLONE_CHILD_CLEARTID)
     if (clone_flags & ~CLONE_SUPPORTED_MASK) return -EINVAL;
@@ -3031,6 +3030,7 @@ static int syscall_getpgrp_impl(void) {
 static int syscall_sigaction_impl(int sig, const struct sigaction* user_act, struct sigaction* user_oldact) {
     if (!current_process) return -EINVAL;
     if (sig <= 0 || sig >= PROCESS_MAX_SIG) return -EINVAL;
+    if (sig == 9 || sig == 19) return -EINVAL;
 
     if (user_oldact) {
         if (user_range_ok(user_oldact, sizeof(*user_oldact)) == 0) return -EFAULT;
@@ -3057,6 +3057,8 @@ static int syscall_sigprocmask_impl(uint32_t how, uint32_t mask, uint32_t* old_o
         uint32_t old = current_process->sig_blocked_mask;
         if (copy_to_user(old_out, &old, sizeof(old)) < 0) return -EFAULT;
     }
+
+    mask &= ~((1U << 9) | (1U << 19));
 
     /* POSIX: SIG_BLOCK=0 (OR), SIG_UNBLOCK=1 (AND-NOT), SIG_SETMASK=2 (set) */
     if (how == 0U) {

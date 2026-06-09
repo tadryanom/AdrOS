@@ -28,7 +28,7 @@
 #define CLONE_CHILD_CLEARTID 0x00200000  /* Clear child tid on exit */
 
 /* Convenience: flags for a typical pthread_create */
-#define CLONE_THREAD_FLAGS  (CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SETTLS)
+#define CLONE_THREAD_FLAGS  (CLONE_VM | CLONE_THREAD | CLONE_SETTLS)
 
 #define PROCESS_FLAG_THREAD  0x01  /* This process is a thread (not group leader) */
 
