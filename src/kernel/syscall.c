@@ -4944,6 +4944,7 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
         if (!sn) { ksocket_close(sid); sc_ret(regs) = (uint32_t)-ENOMEM; return; }
         struct file* f = (struct file*)kmalloc(sizeof(struct file));
         if (!f) { sock_node_close(sn); sc_ret(regs) = (uint32_t)-ENOMEM; return; }
+        memset(f, 0, sizeof(*f));
         f->node = sn;
         f->offset = 0;
         f->flags = 2;          /* O_RDWR — sockets are bidirectional */
@@ -4983,6 +4984,7 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
         if (!sn) { ksocket_close(new_sid); sc_ret(regs) = (uint32_t)-ENOMEM; return; }
         struct file* f = (struct file*)kmalloc(sizeof(struct file));
         if (!f) { sock_node_close(sn); sc_ret(regs) = (uint32_t)-ENOMEM; return; }
+        memset(f, 0, sizeof(*f));
         f->node = sn;
         f->offset = 0;
         f->flags = 2;          /* O_RDWR — sockets are bidirectional */

@@ -351,6 +351,17 @@ static struct process* process_find_locked(uint32_t pid) {
     return NULL;
 }
 
+static int process_is_current_somewhere(struct process* p) {
+    if (!p) return 0;
+#ifdef __i386__
+    uint32_t cpu = p->cpu_id < SCHED_MAX_CPUS ? p->cpu_id : 0;
+    struct percpu_data* pcpu = percpu_get_ptr(cpu);
+    return pcpu && *(struct process**)((uint8_t*)pcpu + 12) == p;
+#else
+    return current_process == p;
+#endif
+}
+
 static void process_reap_locked(struct process* p) {
     if (!p) return;
     if (p->pid == 0) return;
@@ -537,6 +548,7 @@ int process_waitpid(int pid, int* status_out, uint32_t options) {
         struct process* it = ready_queue_head;
         struct process* start = it;
         int found_child = 0;
+        int retry_reap = 0;
 
         if (it) {
             do {
@@ -544,6 +556,10 @@ int process_waitpid(int pid, int* status_out, uint32_t options) {
                     found_child = 1;
                     if (pid == -1 || (int)it->pid == pid) {
                         if (it->state == PROCESS_ZOMBIE) {
+                            if (process_is_current_somewhere(it)) {
+                                retry_reap = 1;
+                                break;
+                            }
                             int retpid = (int)it->pid;
                             int st = it->exit_status;
                             process_reap_locked(it);
@@ -555,6 +571,15 @@ int process_waitpid(int pid, int* status_out, uint32_t options) {
                 }
                 it = it->next;
             } while (it && it != start);
+        }
+
+        if (retry_reap) {
+            spin_unlock_irqrestore(&sched_lock, flags);
+            if ((options & WNOHANG) != 0) {
+                return 0;
+            }
+            process_sleep(1);
+            continue;
         }
 
         if (!found_child) {
@@ -577,23 +602,9 @@ int process_waitpid(int pid, int* status_out, uint32_t options) {
         hal_cpu_enable_interrupts();
         schedule();
 
-        if (current_process->wait_result_pid != -1) {
-            int rp = current_process->wait_result_pid;
-            int st = current_process->wait_result_status;
-
-            uintptr_t flags2 = spin_lock_irqsave(&sched_lock);
-            struct process* child = process_find_locked((uint32_t)rp);
-            if (child && child->parent_pid == current_process->pid && child->state == PROCESS_ZOMBIE) {
-                process_reap_locked(child);
-            }
-            spin_unlock_irqrestore(&sched_lock, flags2);
-
-            current_process->waiting = 0;
-            current_process->wait_pid = -1;
-            current_process->wait_result_pid = -1;
-            if (status_out) *status_out = st;
-            return rp;
-        }
+        current_process->waiting = 0;
+        current_process->wait_pid = -1;
+        current_process->wait_result_pid = -1;
     }
 }
 
