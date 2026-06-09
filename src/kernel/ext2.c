@@ -961,7 +961,7 @@ static int ext2_readdir_impl(struct fs_node* node, uint32_t* inout_index, void* 
             if (de->rec_len % 4 != 0) goto done;
             if (off + de->rec_len > bs) goto done;
             /* F01: Validate name_len */
-            if (de->name_len >= de->rec_len - 8) goto done;
+            if (de->name_len > de->rec_len - 8) goto done;
 
             if (de->inode != 0) {
                 /* Skip . and .. */

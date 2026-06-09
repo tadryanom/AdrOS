@@ -53,6 +53,64 @@ static void gid_to_name(unsigned gid, char* buf, size_t bufsz) {
     else    { snprintf(buf, bufsz, "%u", gid); }
 }
 
+static void print_entry(const char* path, const char* display_name, unsigned char type_hint) {
+    if (lflag) {
+        struct stat st;
+        int have_stat = (stat(path, &st) == 0);
+
+        char type = '-';
+        if (have_stat) {
+            unsigned m = (unsigned)st.st_mode;
+            if (S_ISDIR(m)) type = 'd';
+            else if (S_ISCHR(m)) type = 'c';
+            else if (S_ISLNK(m)) type = 'l';
+            else if (S_ISBLK(m)) type = 'b';
+        } else {
+            if (type_hint == DT_DIR) type = 'd';
+            else if (type_hint == DT_CHR) type = 'c';
+            else if (type_hint == DT_LNK) type = 'l';
+            else if (type_hint == DT_BLK) type = 'b';
+        }
+
+        char perms[10];
+        if (have_stat) {
+            unsigned m = (unsigned)st.st_mode;
+            perms[0] = (m & S_IRUSR) ? 'r' : '-';
+            perms[1] = (m & S_IWUSR) ? 'w' : '-';
+            perms[2] = (m & S_IXUSR) ? 'x' : '-';
+            perms[3] = (m & S_IRGRP) ? 'r' : '-';
+            perms[4] = (m & S_IWGRP) ? 'w' : '-';
+            perms[5] = (m & S_IXGRP) ? 'x' : '-';
+            perms[6] = (m & S_IROTH) ? 'r' : '-';
+            perms[7] = (m & S_IWOTH) ? 'w' : '-';
+            perms[8] = (m & S_IXOTH) ? 'x' : '-';
+            perms[9] = '\0';
+        } else {
+            strcpy(perms, "---------");
+        }
+
+        unsigned long sz = have_stat ? (unsigned long)st.st_size : 0;
+        unsigned nlink = have_stat ? (unsigned)st.st_nlink : 1;
+
+        char owner[32], group[32];
+        uid_to_name(have_stat ? (unsigned)st.st_uid : 0, owner, sizeof(owner));
+        gid_to_name(have_stat ? (unsigned)st.st_gid : 0, group, sizeof(group));
+
+        char timebuf[32];
+        if (have_stat) {
+            time_t mtime = (time_t)st.st_mtime;
+            strftime(timebuf, sizeof(timebuf), "%b %d %H:%M", localtime(&mtime));
+        } else {
+            strcpy(timebuf, "?");
+        }
+
+        printf("%c%s %2u %-8s %-8s %8lu %s %s\n",
+               type, perms, nlink, owner, group, sz, timebuf, display_name);
+    } else {
+        printf("%s\n", display_name);
+    }
+}
+
 static void ls_dir(const char* path) {
     int fd = open(path, O_RDONLY);
     if (fd < 0) {
@@ -88,61 +146,27 @@ static void ls_dir(const char* path) {
     qsort(entries, count, sizeof(struct ls_entry), cmp_entry);
 
     for (int i = 0; i < count; i++) {
-        if (lflag) {
-            char fullpath[512];
-            size_t plen = strlen(path);
-            if (plen > 0 && path[plen - 1] == '/')
-                snprintf(fullpath, sizeof(fullpath), "%s%s", path, entries[i].name);
-            else
-                snprintf(fullpath, sizeof(fullpath), "%s/%s", path, entries[i].name);
-
-            struct stat st;
-            int have_stat = (stat(fullpath, &st) == 0);
-
-            char type = '-';
-            if (entries[i].type == DT_DIR) type = 'd';
-            else if (entries[i].type == DT_CHR) type = 'c';
-            else if (entries[i].type == DT_LNK) type = 'l';
-            else if (entries[i].type == DT_BLK) type = 'b';
-
-            char perms[10];
-            if (have_stat) {
-                unsigned m = (unsigned)st.st_mode;
-                perms[0] = (m & S_IRUSR) ? 'r' : '-';
-                perms[1] = (m & S_IWUSR) ? 'w' : '-';
-                perms[2] = (m & S_IXUSR) ? 'x' : '-';
-                perms[3] = (m & S_IRGRP) ? 'r' : '-';
-                perms[4] = (m & S_IWGRP) ? 'w' : '-';
-                perms[5] = (m & S_IXGRP) ? 'x' : '-';
-                perms[6] = (m & S_IROTH) ? 'r' : '-';
-                perms[7] = (m & S_IWOTH) ? 'w' : '-';
-                perms[8] = (m & S_IXOTH) ? 'x' : '-';
-                perms[9] = '\0';
-            } else {
-                strcpy(perms, "---------");
-            }
-
-            unsigned long sz = have_stat ? (unsigned long)st.st_size : 0;
-            unsigned nlink = have_stat ? (unsigned)st.st_nlink : 1;
-
-            char owner[32], group[32];
-            uid_to_name(have_stat ? (unsigned)st.st_uid : 0, owner, sizeof(owner));
-            gid_to_name(have_stat ? (unsigned)st.st_gid : 0, group, sizeof(group));
-
-            char timebuf[32];
-            if (have_stat) {
-                time_t mtime = (time_t)st.st_mtime;
-                strftime(timebuf, sizeof(timebuf), "%b %d %H:%M", localtime(&mtime));
-            } else {
-                strcpy(timebuf, "?");
-            }
-
-            printf("%c%s %2u %-8s %-8s %8lu %s %s\n",
-                   type, perms, nlink, owner, group, sz, timebuf, entries[i].name);
-        } else {
-            printf("%s\n", entries[i].name);
-        }
+        char fullpath[512];
+        size_t plen = strlen(path);
+        if (plen > 0 && path[plen - 1] == '/')
+            snprintf(fullpath, sizeof(fullpath), "%s%s", path, entries[i].name);
+        else
+            snprintf(fullpath, sizeof(fullpath), "%s/%s", path, entries[i].name);
+        print_entry(fullpath, entries[i].name, entries[i].type);
     }
+}
+
+static void ls_path(const char* path) {
+    struct stat st;
+    if (stat(path, &st) < 0) {
+        fprintf(stderr, "ls: cannot access '%s': No such file or directory\n", path);
+        return;
+    }
+    if (S_ISDIR(st.st_mode)) {
+        ls_dir(path);
+        return;
+    }
+    print_entry(path, path, 0);
 }
 
 int main(int argc, char** argv) {
@@ -168,11 +192,11 @@ int main(int argc, char** argv) {
     }
 
     if (npath == 0) {
-        ls_dir(".");
+        ls_path(".");
     } else {
         for (int i = 0; i < npath; i++) {
             if (npath > 1) printf("%s:\n", paths[i]);
-            ls_dir(paths[i]);
+            ls_path(paths[i]);
             if (npath > 1 && i < npath - 1) printf("\n");
         }
     }
