@@ -394,12 +394,19 @@ enum {
 #define S_IFREG 0100000
 
 struct stat {
+    uint32_t st_dev;
     uint32_t st_ino;
     uint32_t st_mode;
     uint32_t st_nlink;
     uint32_t st_uid;
     uint32_t st_gid;
+    uint32_t st_rdev;
     uint32_t st_size;
+    uint32_t st_blksize;
+    uint32_t st_blocks;
+    int32_t  st_atime;
+    int32_t  st_mtime;
+    int32_t  st_ctime;
 };
 
 static int sys_write(int fd, const void* buf, uint32_t len) {
@@ -4311,6 +4318,25 @@ void _start(void) {
                   (uint32_t)(sizeof("[test] readdir /bin OK\n") - 1));
     }
 
+    {
+        int fd = sys_open("/disk", 0);
+        if (fd < 0) {
+            sys_write(1, "[test] readdir /disk open failed\n",
+                      (uint32_t)(sizeof("[test] readdir /disk open failed\n") - 1));
+            sys_exit(1);
+        }
+        char dbuf[1024];
+        int r = sys_getdents(fd, dbuf, 1024);
+        (void)sys_close(fd);
+        if (r <= 0) {
+            sys_write(1, "[test] readdir /disk empty\n",
+                      (uint32_t)(sizeof("[test] readdir /disk empty\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[test] readdir /disk OK\n",
+                  (uint32_t)(sizeof("[test] readdir /disk OK\n") - 1));
+    }
+
     enum { NCHILD = 100 };
     int children[NCHILD];
     for (int i = 0; i < NCHILD; i++) {
@@ -5561,6 +5587,49 @@ void _start(void) {
         }
         sys_write(1, "[test] pivot_root OK\n",
                   (uint32_t)(sizeof("[test] pivot_root OK\n") - 1));
+    }
+
+    {
+        int dfd = sys_open("/", 0);
+        if (dfd < 0) {
+            sys_write(1, "[test] overlay root open failed\n",
+                      (uint32_t)(sizeof("[test] overlay root open failed\n") - 1));
+            sys_exit(1);
+        }
+        uint8_t dbuf[256];
+        int drc = sys_getdents(dfd, dbuf, sizeof(dbuf));
+        if (drc <= 0) {
+            sys_write(1, "[test] overlay root getdents failed\n",
+                      (uint32_t)(sizeof("[test] overlay root getdents failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_close(dfd) < 0) {
+            sys_write(1, "[test] overlay root close failed\n",
+                      (uint32_t)(sizeof("[test] overlay root close failed\n") - 1));
+            sys_exit(1);
+        }
+
+        int pid = sys_fork();
+        if (pid < 0) {
+            sys_write(1, "[test] overlay root exec fork failed\n",
+                      (uint32_t)(sizeof("[test] overlay root exec fork failed\n") - 1));
+            sys_exit(1);
+        }
+        if (pid == 0) {
+            static const char* const ev_argv[] = {"echo", "[overlay-root]", "OK", 0};
+            static const char* const ev_envp[] = {0};
+            (void)sys_execve("/bin/echo", ev_argv, ev_envp);
+            sys_exit(1);
+        }
+        int st = 0;
+        sys_waitpid(pid, &st, 0);
+        if (st != 0) {
+            sys_write(1, "[test] overlay root exec child failed\n",
+                      (uint32_t)(sizeof("[test] overlay root exec child failed\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[test] overlay root lifecycle OK\n",
+                  (uint32_t)(sizeof("[test] overlay root lifecycle OK\n") - 1));
     }
 
     // execve — fork a child that replaces itself with /bin/echo

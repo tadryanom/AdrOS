@@ -15,9 +15,6 @@
 #include "syscall.h"
 #include "errno.h"
 
-/* AdrOS getdents returns fixed-size entries: { uint32_t ino; char name[256]; } = 260 bytes */
-#define ADROS_DIRENT_SIZE 260
-
 DIR* opendir(const char* name) {
     int fd = open(name, O_RDONLY);
     if (fd < 0) return (void*)0;
@@ -42,17 +39,17 @@ struct dirent* readdir(DIR* dirp) {
         dirp->pos = 0;
     }
 
-    if (dirp->pos + ADROS_DIRENT_SIZE > dirp->len) return (void*)0;
+    struct dirent* ent = (struct dirent*)(dirp->buf + dirp->pos);
+    if (ent->d_reclen == 0) return (void*)0;
+    if (dirp->pos + ent->d_reclen > dirp->len) return (void*)0;
 
-    char* ent = dirp->buf + dirp->pos;
-    uint32_t ino;
-    memcpy(&ino, ent, 4);
-    _de_static.d_ino = ino;
-    _de_static.d_reclen = ADROS_DIRENT_SIZE;
-    _de_static.d_type = DT_UNKNOWN;
-    strncpy(_de_static.d_name, ent + 4, 255);
-    _de_static.d_name[255] = '\0';
-    dirp->pos += ADROS_DIRENT_SIZE;
+    memset(&_de_static, 0, sizeof(_de_static));
+    if (ent->d_reclen > sizeof(_de_static))
+        memcpy(&_de_static, ent, sizeof(_de_static));
+    else
+        memcpy(&_de_static, ent, ent->d_reclen);
+    _de_static.d_name[sizeof(_de_static.d_name) - 1] = '\0';
+    dirp->pos += ent->d_reclen;
     return &_de_static;
 }
 

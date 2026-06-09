@@ -1963,18 +1963,31 @@ static int syscall_pipe2_impl(int* user_fds, uint32_t flags) {
 static int stat_from_node(const fs_node_t* node, struct stat* st) {
     if (!node || !st) return -EFAULT;
 
+    memset(st, 0, sizeof(*st));
+
+    st->st_dev = 0;
     st->st_ino = node->inode;
     st->st_nlink = 1;
     st->st_size = node->length;
     st->st_uid = node->uid;
     st->st_gid = node->gid;
+    st->st_rdev = 0;
+    st->st_blksize = 4096;
+    st->st_blocks = (node->length + 511U) / 512U;
+    st->st_atime = 0;
+    st->st_mtime = 0;
+    st->st_ctime = 0;
 
     uint32_t mode = node->mode & 07777;
     if (node->flags == FS_DIRECTORY) mode |= S_IFDIR;
     else if (node->flags == FS_CHARDEVICE) mode |= S_IFCHR;
     else if (node->flags == FS_SYMLINK) mode |= S_IFLNK;
     else mode |= S_IFREG;
-    if ((mode & 07777) == 0) mode |= 0755;
+    if ((mode & 07777) == 0) {
+        if (node->flags == FS_DIRECTORY) mode |= 0755;
+        else if (node->flags == FS_SYMLINK) mode |= 0777;
+        else mode |= 0644;
+    }
     st->st_mode = mode;
     return 0;
 }
@@ -2707,6 +2720,13 @@ static int syscall_mkdir_impl(const char* user_path, uint32_t mode) {
 }
 
 static int syscall_getdents_impl(int fd, void* user_buf, uint32_t len) {
+    struct user_dirent {
+        uint32_t d_ino;
+        uint16_t d_reclen;
+        uint8_t  d_type;
+        char     d_name[256];
+    };
+
     if (len == 0) return 0;
     if (!user_buf) return -EFAULT;
     if (user_range_ok(user_buf, (size_t)len) == 0) return -EFAULT;
@@ -2719,17 +2739,69 @@ static int syscall_getdents_impl(int fd, void* user_buf, uint32_t len) {
     if (!fn_readdir) return -ENOSYS;
 
     uint8_t kbuf[256];
-    uint32_t klen = len;
-    if (klen > (uint32_t)sizeof(kbuf)) klen = (uint32_t)sizeof(kbuf);
+    uint32_t klen = (uint32_t)sizeof(kbuf);
 
     uint32_t idx = f->offset;
     int rc = fn_readdir(f->node, &idx, kbuf, klen);
     if (rc < 0) return rc;
     if (rc == 0) return 0;
 
-    if (copy_to_user(user_buf, kbuf, (uint32_t)rc) < 0) return -EFAULT;
+    uint32_t in_count = (uint32_t)rc / (uint32_t)sizeof(struct vfs_dirent);
+    struct user_dirent* ubuf = (struct user_dirent*)kmalloc(len);
+    if (!ubuf) return -ENOMEM;
+    memset(ubuf, 0, len);
+
+    struct vfs_dirent* kin = (struct vfs_dirent*)kbuf;
+    uint32_t out_len = 0;
+    for (uint32_t i = 0; i < in_count; i++) {
+        uint32_t nlen = 0;
+        while (nlen < (uint32_t)sizeof(kin[i].d_name) && kin[i].d_name[nlen] != '\0') nlen++;
+        uint32_t reclen = (uint32_t)offsetof(struct user_dirent, d_name) + nlen + 1U;
+        reclen = (reclen + 3U) & ~3U;
+        if (out_len + reclen > len) break;
+
+        struct user_dirent* ude = (struct user_dirent*)((uint8_t*)ubuf + out_len);
+        ude->d_ino = kin[i].d_ino;
+        ude->d_reclen = (uint16_t)reclen;
+        switch (kin[i].d_type) {
+            case 2:
+                ude->d_type = 4;
+                break;
+            case 3:
+                ude->d_type = 2;
+                break;
+            case 4:
+                ude->d_type = 6;
+                break;
+            case 5:
+            case 7:
+                ude->d_type = 10;
+                break;
+            case 8:
+                ude->d_type = 8;
+                break;
+            case 1:
+            default:
+                ude->d_type = 8;
+                break;
+        }
+        memcpy(ude->d_name, kin[i].d_name, nlen);
+        ude->d_name[nlen] = '\0';
+        out_len += reclen;
+    }
+
+    if (out_len == 0) {
+        kfree(ubuf);
+        return 0;
+    }
+
+    if (copy_to_user(user_buf, ubuf, out_len) < 0) {
+        kfree(ubuf);
+        return -EFAULT;
+    }
+    kfree(ubuf);
     f->offset = idx;
-    return rc;
+    return (int)out_len;
 }
 
 static int syscall_unlink_impl(const char* user_path) {

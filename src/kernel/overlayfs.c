@@ -109,6 +109,15 @@ static const struct file_operations overlay_file_ops = {
     .close = overlay_wrap_close,
 };
 
+static void overlay_root_close(fs_node_t* node) {
+    (void)node;
+}
+
+static const struct file_operations overlay_root_ops = {
+    .read  = overlay_read_impl,
+    .close = overlay_root_close,
+};
+
 static const struct file_operations overlay_dir_ops = {
     .read    = overlay_read_impl,
     .close   = overlay_wrap_close,
@@ -340,7 +349,7 @@ fs_node_t* overlayfs_create_root(fs_node_t* lower_root, fs_node_t* upper_root) {
     root->vfs.flags = FS_DIRECTORY;
     root->vfs.inode = upper_root->inode;
     root->vfs.length = 0;
-    root->vfs.f_ops = &overlay_dir_ops;
+    root->vfs.f_ops = &overlay_root_ops;
     root->vfs.i_ops = &overlay_dir_iops;
 
     root->path[0] = 0;

@@ -32,12 +32,19 @@
 #define S_IXOTH 00001
 
 struct stat {
+    uint32_t st_dev;
     uint32_t st_ino;
     uint32_t st_mode;
     uint32_t st_nlink;
     uint32_t st_uid;
     uint32_t st_gid;
+    uint32_t st_rdev;
     uint32_t st_size;
+    uint32_t st_blksize;
+    uint32_t st_blocks;
+    int32_t  st_atime;
+    int32_t  st_mtime;
+    int32_t  st_ctime;
 };
 
 #endif

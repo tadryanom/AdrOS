@@ -283,6 +283,12 @@ int vsnprintf(char* buf, size_t size, const char* fmt, va_list ap) {
             fmt++;
         }
 
+        int long_mod = 0;
+        if (*fmt == 'l') {
+            long_mod = 1;
+            fmt++;
+        }
+
         /* Specifier */
         char tmp[32];
         int tmplen = 0;
@@ -291,11 +297,11 @@ int vsnprintf(char* buf, size_t size, const char* fmt, va_list ap) {
         switch (*fmt) {
         case 'd':
         case 'i': {
-            int v = va_arg(ap, int);
+            long v = long_mod ? va_arg(ap, long) : (long)va_arg(ap, int);
             int neg = 0;
-            unsigned int uv;
+            unsigned long uv;
             if (v < 0) { neg = 1; uv = (unsigned int)(-(v + 1)) + 1; }
-            else { uv = (unsigned int)v; }
+            else { uv = (unsigned long)v; }
             if (uv == 0) { tmp[tmplen++] = '0'; }
             else { while (uv) { tmp[tmplen++] = (char)('0' + uv % 10); uv /= 10; } }
             if (neg) tmp[tmplen++] = '-';
@@ -307,7 +313,8 @@ int vsnprintf(char* buf, size_t size, const char* fmt, va_list ap) {
             break;
         }
         case 'u': {
-            unsigned int v = va_arg(ap, unsigned int);
+            unsigned long v = long_mod ? va_arg(ap, unsigned long)
+                                       : (unsigned long)va_arg(ap, unsigned int);
             if (v == 0) { tmp[tmplen++] = '0'; }
             else { while (v) { tmp[tmplen++] = (char)('0' + v % 10); v /= 10; } }
             for (int i = 0; i < tmplen / 2; i++) {
@@ -320,13 +327,14 @@ int vsnprintf(char* buf, size_t size, const char* fmt, va_list ap) {
         case 'X':
         case 'p': {
             const char* hex = (*fmt == 'X') ? "0123456789ABCDEF" : "0123456789abcdef";
-            unsigned int v;
+            unsigned long v;
             if (*fmt == 'p') {
-                v = (unsigned int)(uintptr_t)va_arg(ap, void*);
+                v = (unsigned long)(uintptr_t)va_arg(ap, void*);
                 tmp[tmplen++] = '0';
                 tmp[tmplen++] = 'x';
             } else {
-                v = va_arg(ap, unsigned int);
+                v = long_mod ? va_arg(ap, unsigned long)
+                             : (unsigned long)va_arg(ap, unsigned int);
             }
             int start = tmplen;
             if (v == 0) { tmp[tmplen++] = '0'; }

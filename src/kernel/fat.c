@@ -500,6 +500,7 @@ static int fat_rename_impl(struct fs_node* old_dir, const char* old_name,
                             struct fs_node* new_dir, const char* new_name);
 static int fat_truncate_impl(struct fs_node* node, uint32_t length);
 static void fat_close_impl(fs_node_t* node);
+static void fat_root_close_impl(fs_node_t* node);
 
 static const struct file_operations fat_file_fops = {
     .read     = fat_file_read,
@@ -513,6 +514,10 @@ static const struct inode_operations fat_file_iops = {
 
 static const struct file_operations fat_dir_fops = {
     .close   = fat_close_impl,
+};
+
+static const struct file_operations fat_root_dir_fops = {
+    .close   = fat_root_close_impl,
 };
 
 static const struct inode_operations fat_dir_iops = {
@@ -531,6 +536,10 @@ static void fat_close_impl(fs_node_t* node) {
     kfree(fn);
 }
 
+static void fat_root_close_impl(fs_node_t* node) {
+    (void)node;
+}
+
 static struct fat_node* fat_make_node(struct fat_mount* fm, const struct fat_dirent* de, uint32_t parent_cluster, uint32_t dirent_offset) {
     struct fat_node* fn = (struct fat_node*)kmalloc(sizeof(struct fat_node));
     if (!fn) return NULL;
@@ -541,19 +550,27 @@ static struct fat_node* fat_make_node(struct fat_mount* fm, const struct fat_dir
     fn->first_cluster = fat_dirent_cluster(fm, de);
     fn->parent_cluster = parent_cluster;
     fn->dir_entry_offset = dirent_offset;
+    fn->vfs.uid = 0;
+    fn->vfs.gid = 0;
 
     if (de->attr & FAT_ATTR_DIRECTORY) {
         fn->vfs.flags = FS_DIRECTORY;
         fn->vfs.length = 0;
         fn->vfs.inode = fn->first_cluster;
+        fn->vfs.mode = 0755;
         fn->vfs.f_ops = &fat_dir_fops;
         fn->vfs.i_ops = &fat_dir_iops;
     } else {
         fn->vfs.flags = FS_FILE;
         fn->vfs.length = de->file_size;
         fn->vfs.inode = fn->first_cluster;
+        fn->vfs.mode = 0644;
         fn->vfs.f_ops = &fat_file_fops;
         fn->vfs.i_ops = &fat_file_iops;
+    }
+
+    if (de->attr & FAT_ATTR_READONLY) {
+        fn->vfs.mode &= ~0222U;
     }
 
     return fn;
@@ -1317,10 +1334,13 @@ vfs_mount_result_t fat_mount(block_device_t* bdev, uint32_t partition_lba) {
     memcpy(root->vfs.name, "fat", 4);
     root->vfs.flags = FS_DIRECTORY;
     root->vfs.inode = 0;
+    root->vfs.uid = 0;
+    root->vfs.gid = 0;
+    root->vfs.mode = 0755;
     root->first_cluster = (fm->type == FAT_TYPE_32) ? fm->root_cluster : 0;
     root->parent_cluster = 0;
     root->dir_entry_offset = 0;
-    root->vfs.f_ops = &fat_dir_fops;
+    root->vfs.f_ops = &fat_root_dir_fops;
     root->vfs.i_ops = &fat_dir_iops;
 
     /* Build superblock */

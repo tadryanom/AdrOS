@@ -135,6 +135,7 @@ set tests {
     {"pipe EOF"            "\\[test\\] pipe EOF OK"}
     {"readdir /proc"       "\\[test\\] readdir /proc OK"}
     {"readdir /bin"        "\\[test\\] readdir /bin OK"}
+    {"readdir /disk"       "\\[test\\] readdir /disk OK"}
     {"gettimeofday"        "\\[test\\] gettimeofday OK"}
     {"mprotect"            "\\[test\\] mprotect OK"}
     {"madvise"             "\\[test\\] madvise OK"}
@@ -169,6 +170,7 @@ set tests {
     {"dlopen/dlsym/dlclose" "\\[test\\] dlopen/dlsym/dlclose OK"}
     {"execveat"            "\\[test\\] execveat OK"}
     {"pivot_root"          "\\[test\\] pivot_root OK"}
+    {"overlay root lifecycle" "\\[test\\] overlay root lifecycle OK"}
 }
 
 # ---- Poll serial.log for results ----

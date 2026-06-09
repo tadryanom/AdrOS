@@ -265,6 +265,9 @@ int init_start(const struct boot_info* bi) {
                                       HAL_MM_MAP_RW, &initrd_virt) == 0) {
             uint32_t initrd_sz = (uint32_t)(bi->initrd_end - bi->initrd_start);
             fs_root = initrd_init((uint32_t)initrd_virt, initrd_sz);
+            if (fs_root) {
+                vfs_set_initrd_root(fs_root);
+            }
         } else {
             kprintf("[INITRD] Failed to map initrd physical range.\n");
         }
@@ -276,7 +279,6 @@ int init_start(const struct boot_info* bi) {
             fs_node_t* ovl = overlayfs_create_root(fs_root, upper);
             if (ovl) {
                 (void)vfs_mount_full("/", ovl, "overlayfs", "initrd", 0, NULL, NULL);
-                vfs_set_initrd_root(ovl);
             }
         }
     }
