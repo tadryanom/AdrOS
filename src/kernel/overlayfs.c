@@ -29,7 +29,8 @@ struct overlay_node {
     fs_node_t* upper;
 
     char path[256];
-    int refcount;  /* For wrapper nodes allocated by overlay_wrap_child */
+    int refcount;  /* For wrapper nodes and root node */
+    int is_root;   /* M6: Flag to identify root node for cleanup */
 };
 
 static struct fs_node* overlay_finddir_impl(struct fs_node* node, const char* name);
@@ -110,7 +111,18 @@ static const struct file_operations overlay_file_ops = {
 };
 
 static void overlay_root_close(fs_node_t* node) {
-    (void)node;
+    if (!node) return;
+    struct overlay_node* on = (struct overlay_node*)node;
+    /* M6: Root node also uses refcount for proper lifetime management */
+    on->refcount--;
+    if (on->refcount <= 0 && on->is_root) {
+        /* M6: Free overlayfs structure when root is finally closed */
+        if (on->ofs) {
+            kfree(on->ofs);
+            on->ofs = NULL;
+        }
+        kfree(on);
+    }
 }
 
 static const struct file_operations overlay_root_ops = {
@@ -353,6 +365,10 @@ fs_node_t* overlayfs_create_root(fs_node_t* lower_root, fs_node_t* upper_root) {
     root->vfs.i_ops = &overlay_dir_iops;
 
     root->path[0] = 0;
+
+    /* M6: Initialize refcount and mark as root for proper lifetime management */
+    root->refcount = 1;
+    root->is_root = 1;
 
     return &root->vfs;
 }
