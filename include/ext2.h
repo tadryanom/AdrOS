@@ -48,6 +48,11 @@ vfs_mount_result_t ext2_mount_partition(struct partition* part);
  * Returns -EINVAL if filesystem has errors that prevent mount */
 int ext2_verify_state(block_device_t* bdev, uint32_t partition_lba);
 
+/* Get ext2 filesystem UUID (16 bytes) and volume name
+ * Returns 0 on success, -errno on failure */
+int ext2_get_uuid_label(block_device_t* bdev, uint32_t partition_lba,
+                        uint8_t uuid[16], char label[16]);
+
 /* Unmount an ext2 filesystem and free its resources */
 void ext2_umount(struct ext2_mount* em);
 

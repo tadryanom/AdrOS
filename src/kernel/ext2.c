@@ -246,6 +246,42 @@ int ext2_verify_state(block_device_t* bdev, uint32_t partition_lba) {
     return 0;
 }
 
+/* Get ext2 filesystem UUID (16 bytes) and volume name
+ * Returns 0 on success, -errno on failure */
+int ext2_get_uuid_label(block_device_t* bdev, uint32_t partition_lba,
+                        uint8_t uuid[16], char label[16]) {
+    if (!bdev) return -ENODEV;
+
+    /* Read superblock to get UUID and label */
+    uint8_t sec[EXT2_SECTOR_SIZE];
+    uint32_t sb_lba = partition_lba + EXT2_SUPER_OFFSET / EXT2_SECTOR_SIZE;
+
+    uint8_t raw[1024];
+    for (uint32_t i = 0; i < 1024 / EXT2_SECTOR_SIZE; i++) {
+        if (blockdev_read(bdev, sb_lba + i, sec) < 0) return -EIO;
+        memcpy(raw + i * EXT2_SECTOR_SIZE, sec, EXT2_SECTOR_SIZE);
+    }
+
+    struct ext2_superblock sb;
+    memcpy(&sb, raw, sizeof(sb));
+
+    /* Check magic */
+    if (sb.s_magic != EXT2_SUPER_MAGIC) {
+        return -EINVAL;  /* Not an ext2 filesystem */
+    }
+
+    /* Copy UUID and label */
+    if (uuid) {
+        memcpy(uuid, sb.s_uuid, 16);
+    }
+    if (label) {
+        memcpy(label, sb.s_volume_name, 16);
+        label[15] = '\0';  /* Ensure null-termination */
+    }
+
+    return 0;
+}
+
 static int ext2_read_superblock(struct ext2_mount* em, struct ext2_superblock* sb) {
     if (!em || !em->bdev) return -ENODEV;
     /* Superblock is at byte offset 1024, which is LBA 2-3 relative to partition */

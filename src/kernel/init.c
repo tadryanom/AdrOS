@@ -28,6 +28,7 @@
 #include "socket.h"
 #include "vbe.h"
 #include "keyboard.h"
+#include "blockdev.h"
 #include "console.h"
 #include "errno.h"
 #include "utils.h"
@@ -84,9 +85,112 @@ static void init_build_mount_source_name(const char* source_name, block_device_t
     *dp = '\0';
 }
 
+/* Format UUID (16 bytes) to string "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" */
+static void format_uuid(const uint8_t uuid[16], char* out, size_t out_size) {
+    if (out_size < 37) return;  /* Need 36 chars + null terminator */
+
+    const char hex[] = "0123456789abcdef";
+    int pos = 0;
+
+    /* Format: 8-4-4-4-12 */
+    for (int i = 0; i < 16; i++) {
+        if (i == 4 || i == 6 || i == 8 || i == 10) {
+            out[pos++] = '-';
+        }
+        out[pos++] = hex[uuid[i] >> 4];
+        out[pos++] = hex[uuid[i] & 0x0F];
+    }
+    out[pos] = '\0';
+}
+
+/* Compare UUID string with binary UUID */
+static int uuid_matches(const char* uuid_str, const uint8_t uuid[16]) {
+    char formatted[37];
+    format_uuid(uuid, formatted, sizeof(formatted));
+    return strcmp(uuid_str, formatted) == 0;
+}
+
+/* Resolve device by UUID or LABEL
+ * Scans all block devices and partitions to find matching UUID or LABEL
+ * Returns 0 on success, -errno on failure */
+static int resolve_by_uuid_label(const char* prefix, const char* value,
+                                 block_device_t** bdev, uint32_t* lba) {
+    /* Scan all block devices */
+    for (int i = 0; i < 8; i++) {  /* ATA devices: hda-hdd */
+        char devname[8];
+        devname[0] = 'h';
+        devname[1] = 'd';
+        devname[2] = 'a' + i;
+        devname[3] = '\0';
+        block_device_t* dev = blockdev_find(devname);
+        if (!dev) continue;
+
+        /* Check whole device (ext2 on raw disk) */
+        uint8_t uuid[16];
+        char label[16];
+        if (ext2_get_uuid_label(dev, 0, uuid, label) == 0) {
+            if (strcmp(prefix, "UUID") == 0) {
+                if (uuid_matches(value, uuid)) {
+                    *bdev = dev;
+                    *lba = 0;
+                    return 0;
+                }
+            } else if (strcmp(prefix, "LABEL") == 0) {
+                if (strcmp(value, label) == 0) {
+                    *bdev = dev;
+                    *lba = 0;
+                    return 0;
+                }
+            }
+        }
+
+        /* Check partitions */
+        for (int part_num = 1; part_num <= 4; part_num++) {
+            char partname[16];
+            partname[0] = 'h';
+            partname[1] = 'd';
+            partname[2] = 'a' + i;
+            partname[3] = '0' + part_num;
+            partname[4] = '\0';
+            partition_t* part = partition_find(partname);
+            if (!part || !part->parent) continue;
+
+            if (ext2_get_uuid_label(part->parent, part->start_lba, uuid, label) == 0) {
+                if (strcmp(prefix, "UUID") == 0) {
+                    if (uuid_matches(value, uuid)) {
+                        *bdev = part->parent;
+                        *lba = part->start_lba;
+                        return 0;
+                    }
+                } else if (strcmp(prefix, "LABEL") == 0) {
+                    if (strcmp(value, label) == 0) {
+                        *bdev = part->parent;
+                        *lba = part->start_lba;
+                        return 0;
+                    }
+                }
+            }
+        }
+    }
+
+    return -ENODEV;
+}
+
 int init_resolve_mount_device(const char* device, block_device_t** bdev, uint32_t* lba) {
     if (!device || !bdev || !lba) return -EINVAL;
 
+    /* Check for UUID= or LABEL= prefix */
+    if (strncmp(device, "UUID=", 5) == 0) {
+        const char* uuid_str = device + 5;
+        return resolve_by_uuid_label("UUID", uuid_str, bdev, lba);
+    }
+
+    if (strncmp(device, "LABEL=", 6) == 0) {
+        const char* label_str = device + 6;
+        return resolve_by_uuid_label("LABEL", label_str, bdev, lba);
+    }
+
+    /* Regular device path */
     const char* devname = device;
     if (strncmp(devname, "/dev/", 5) == 0) devname += 5;
 
