@@ -31,6 +31,7 @@
 #include "console.h"
 #include "errno.h"
 #include "utils.h"
+#include "process.h"
 
 #include "ata_pio.h"
 #include "blockdev.h"
@@ -357,8 +358,16 @@ int init_start(const struct boot_info* bi) {
 
     /* If root= is specified on the kernel command line, mount that device
      * as the final root filesystem on /newroot for staging.  The filesystem
-     * type is auto-detected by trying each supported type in order.
+     * type is auto-detected by trying each supported type in order, unless
+     * rootfstype= is specified.
      * Example:  root=/dev/hda  or  root=/dev/hdb
+     *
+     * Boot policy parameters:
+     * - rootfstype=: explicit filesystem type (ext2, fat)
+     * - rootflags=: comma-separated mount options (ro, nosuid, nodev, noexec)
+     * - ro/rw: mount read-only or read-write (default rw)
+     * - rootdelay=N: wait N seconds before mounting
+     * - rootwait: wait indefinitely for device to appear (not yet implemented)
      *
      * If no root= is given but the primary master (hda) is present,
      * auto-mount it on /newroot so that any init= binary (including fulltest)
@@ -366,23 +375,107 @@ int init_start(const struct boot_info* bi) {
      *
      * /disk is kept as an optional secondary mountpoint for manual use. */
     const char* root_dev = cmdline_get("root");
+    const char* rootfstype = cmdline_get("rootfstype");
+    const char* rootflags = cmdline_get("rootflags");
+    const char* rootdelay_str = cmdline_get("rootdelay");
+    int root_ro = cmdline_has("ro");
+    int root_rw = cmdline_has("rw");
+
+    /* Apply rootdelay if specified */
+    if (rootdelay_str) {
+        int delay = 0;
+        const char* p = rootdelay_str;
+        while (*p >= '0' && *p <= '9') {
+            delay = delay * 10 + (*p - '0');
+            p++;
+        }
+        if (delay > 0) {
+            kprintf("[INIT] rootdelay=%d: waiting %d seconds before mounting root\n", delay, delay);
+            for (int i = 0; i < delay; i++) {
+                process_sleep(1000);  /* sleep 1 second */
+            }
+        }
+    }
+
+    /* Parse rootflags: ro, nosuid, nodev, noexec */
+    unsigned long mount_flags = 0;
+    if (rootflags) {
+        char flags_copy[64];
+        strncpy(flags_copy, rootflags, sizeof(flags_copy) - 1);
+        flags_copy[sizeof(flags_copy) - 1] = '\0';
+
+        /* Manual tokenization by comma */
+        char* token = flags_copy;
+        while (*token) {
+            /* Skip leading commas */
+            while (*token == ',') token++;
+            if (!*token) break;
+
+            /* Find end of token */
+            char* end = token;
+            while (*end && *end != ',') end++;
+
+            /* Temporarily terminate token */
+            char saved = *end;
+            *end = '\0';
+
+            /* Process token */
+            if (strcmp(token, "ro") == 0) {
+                mount_flags |= MS_RDONLY;
+            } else if (strcmp(token, "nosuid") == 0) {
+                mount_flags |= MS_NOSUID;
+            } else if (strcmp(token, "nodev") == 0) {
+                mount_flags |= MS_NODEV;
+            } else if (strcmp(token, "noexec") == 0) {
+                mount_flags |= MS_NOEXEC;
+            } else if (strcmp(token, "rw") == 0) {
+                /* rw is default, no flag needed */
+            } else {
+                kprintf("[INIT] rootflags: unknown option '%s'\n", token);
+            }
+
+            /* Restore and advance */
+            *end = saved;
+            token = end;
+        }
+    }
+
+    /* Apply ro/rw flags from cmdline (override rootflags if specified) */
+    if (root_ro) {
+        mount_flags |= MS_RDONLY;
+    } else if (root_rw) {
+        mount_flags &= ~MS_RDONLY;
+    }
+
     if (root_dev) {
         block_device_t* bdev = NULL;
         uint32_t lba = 0;
         if (init_resolve_mount_device(root_dev, &bdev, &lba) == 0) {
-            /* Auto-detect: try ext2, then fat (non-destructive probes). */
-            static const char* fstypes[] = { "ext2", "fat", NULL };
             int mounted = 0;
-            for (int i = 0; fstypes[i]; i++) {
-                if (init_mount_fs(fstypes[i], bdev, lba, "/newroot", 0, root_dev) == 0) {
-                    kprintf("[INIT] root=%s mounted as %s on /newroot\n",
-                            root_dev, fstypes[i]);
+
+            if (rootfstype) {
+                /* Use explicit filesystem type */
+                if (init_mount_fs(rootfstype, bdev, lba, "/newroot", mount_flags, root_dev) == 0) {
+                    kprintf("[INIT] root=%s mounted as %s on /newroot (flags=0x%lx)\n",
+                            root_dev, rootfstype, mount_flags);
                     mounted = 1;
-                    break;
+                } else {
+                    kprintf("[INIT] root=%s: failed to mount as %s\n", root_dev, rootfstype);
                 }
+            } else {
+                /* Auto-detect: try ext2, then fat (non-destructive probes). */
+                static const char* fstypes[] = { "ext2", "fat", NULL };
+                for (int i = 0; fstypes[i]; i++) {
+                    if (init_mount_fs(fstypes[i], bdev, lba, "/newroot", mount_flags, root_dev) == 0) {
+                        kprintf("[INIT] root=%s mounted as %s on /newroot (flags=0x%lx)\n",
+                                root_dev, fstypes[i], mount_flags);
+                        mounted = 1;
+                        break;
+                    }
+                }
+                if (!mounted)
+                    kprintf("[INIT] root=%s: no supported filesystem found\n", root_dev);
             }
-            if (!mounted)
-                kprintf("[INIT] root=%s: no supported filesystem found\n", root_dev);
         } else {
             kprintf("[INIT] root=%s: device not found\n", root_dev);
         }
@@ -392,12 +485,17 @@ int init_start(const struct boot_info* bi) {
         if (bdev) {
             static const char* fstypes[] = { "ext2", "fat", NULL };
             for (int i = 0; fstypes[i]; i++) {
-                if (init_mount_fs(fstypes[i], bdev, 0, "/newroot", 0, "/dev/hda") == 0) {
-                    kprintf("[INIT] /dev/hda auto-mounted as %s on /newroot\n", fstypes[i]);
+                if (init_mount_fs(fstypes[i], bdev, 0, "/newroot", mount_flags, "/dev/hda") == 0) {
+                    kprintf("[INIT] /dev/hda auto-mounted as %s on /newroot (flags=0x%lx)\n", fstypes[i], mount_flags);
                     break;
                 }
             }
         }
+    }
+
+    /* Note: rootwait flag is recognized but not yet implemented */
+    if (cmdline_has("rootwait")) {
+        kprintf("[INIT] rootwait flag recognized but not yet implemented\n");
     }
 
     /* Disk-based filesystems can also be mounted via /etc/fstab entries
