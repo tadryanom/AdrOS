@@ -85,7 +85,7 @@ void cmdline_parse(const char* raw) {
     kflag_count = 0;
     init_argc = 0;
     init_envc = 0;
-    init_path_val = "/sbin/init";
+    init_path_val = "/init";  /* Default to early /init for root handoff */
 
     if (!raw) {
         raw_copy[0] = '\0';

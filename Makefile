@@ -127,7 +127,7 @@ ifeq ($(ARCH),x86)
                       grep id uname dmesg \
                       printenv tr dd pwd stat \
                       sed awk who top du find which \
-                      login init
+                      login init initrd_init
 
     # ELF paths for dynamically-linked commands
     USER_CMD_ELFS := $(foreach cmd,$(USER_CMD_NAMES),$(USER_BUILD)/cmds/$(cmd)/$(cmd).elf)
