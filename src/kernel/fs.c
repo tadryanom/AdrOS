@@ -389,6 +389,10 @@ static fs_node_t* vfs_lookup_depth(const char* path, int depth, int lookup_flags
     if (!path) return NULL;
     if (depth > 8) return NULL;
 
+    /* L1: Check path length against PATH_MAX (128) */
+    size_t path_len = strlen(path);
+    if (path_len >= 128) return NULL;  /* ENAMETOOLONG */
+
     /* Snapshot mount-table state under the VFS lock so that concurrent
      * mount/umount/pivot_root on another CPU cannot corrupt our view. */
     uintptr_t fl = spin_lock_irqsave(&g_vfs_lock);
@@ -463,6 +467,10 @@ fs_node_t* vfs_lookup_parent(const char* path, char* name_out, size_t name_sz) {
     if (!path || !name_out || name_sz == 0) return NULL;
     name_out[0] = 0;
 
+    /* L1: Check total path length against PATH_MAX (128) */
+    size_t path_len = strlen(path);
+    if (path_len >= 128) return NULL;  /* ENAMETOOLONG */
+
     /* Find last '/' separator */
     const char* last_slash = NULL;
     for (const char* p = path; *p; p++) {
@@ -523,6 +531,10 @@ int vfs_mkdir(const char* path) {
  * or a negative errno on failure. */
 int vfs_mkdirp(const char* path) {
     if (!path || path[0] != '/') return -EINVAL;
+
+    /* L1: Check path length against PATH_MAX (128) */
+    size_t path_len = strlen(path);
+    if (path_len >= 128) return -ENAMETOOLONG;
 
     /* Check if it already exists */
     fs_node_t* node = vfs_lookup(path);
