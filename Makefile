@@ -265,14 +265,15 @@ USER_BIN_NAMES := $(filter-out init,$(USER_CMD_NAMES))
 FSTAB := rootfs/etc/fstab
 RCS   := rootfs/etc/init.d/rcS
 PASSWD := rootfs/etc/passwd
+SHADOW := rootfs/etc/shadow
 INITRD_FILES := $(FULLTEST_ELF):sbin/fulltest \
     $(USER_BUILD)/cmds/init/init.elf:sbin/init \
     $(foreach cmd,$(USER_BIN_NAMES),$(USER_BUILD)/cmds/$(cmd)/$(cmd).elf:bin/$(cmd)) \
     $(LDSO_ELF):lib/ld.so $(ULIBC_SO):lib/libc.so \
     $(PIE_SO):lib/libpietest.so $(PIE_ELF):bin/pie_test \
-    $(FSTAB):etc/fstab $(RCS):etc/init.d/rcS $(PASSWD):etc/passwd
+    $(FSTAB):etc/fstab $(RCS):etc/init.d/rcS $(PASSWD):etc/passwd $(SHADOW):etc/shadow
 
-INITRD_DEPS := $(MKINITRD) $(FULLTEST_ELF) $(USER_CMD_ELFS) $(LDSO_ELF) $(ULIBC_SO) $(PIE_SO) $(PIE_ELF) $(FSTAB) $(RCS) $(PASSWD)
+INITRD_DEPS := $(MKINITRD) $(FULLTEST_ELF) $(USER_CMD_ELFS) $(LDSO_ELF) $(ULIBC_SO) $(PIE_SO) $(PIE_ELF) $(FSTAB) $(RCS) $(PASSWD) $(SHADOW)
 
 # doom (build via 'make doom', included in initrd if present)
 doom: $(DOOM_SENTINEL) $(ULIBC_LIB) $(ULIBC_SO)

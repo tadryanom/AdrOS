@@ -15,7 +15,8 @@
 #include <stddef.h>
 
 /* /etc/passwd and /etc/group parsing with static fallback.
- * Format: name:passwd:uid:gid:gecos:dir:shell */
+ * Format: name:passwd:uid:gid:gecos:dir:shell
+ * /etc/shadow format: name:passwd:lastchg:min:max:warn:inactive:expire */
 
 static struct passwd _root = {
     .pw_name   = "root",
@@ -206,4 +207,39 @@ struct group* getgrent(void) {
     }
     if (_gr_idx == 0) { _gr_idx++; return &_root_grp; }
     return (struct group*)0;
+}
+
+/* Simple password verification against /etc/shadow (plaintext for now) */
+int check_password(const char* username, const char* password) {
+    if (!username || !password) return -1;
+
+    FILE* fp = fopen("/etc/shadow", "r");
+    if (!fp) return -1;
+
+    char line[256];
+    while (fgets(line, (int)sizeof(line), fp)) {
+        /* Parse shadow line: name:passwd:lastchg:min:max:warn:inactive:expire */
+        char* saveptr = NULL;
+        char* name = strtok_r(line, ":\n", &saveptr);
+        if (!name) continue;
+
+        if (strcmp(name, username) == 0) {
+            char* passwd = strtok_r(NULL, ":\n", &saveptr);
+            if (!passwd) { fclose(fp); return -1; }
+
+            /* '*' or '!' means locked account */
+            if (passwd[0] == '*' || passwd[0] == '!') {
+                fclose(fp);
+                return -1;
+            }
+
+            /* Simple plaintext comparison (TODO: add SHA256/crypt) */
+            int match = (strcmp(passwd, password) == 0);
+            fclose(fp);
+            return match ? 0 : -1;
+        }
+    }
+
+    fclose(fp);
+    return -1;  /* User not found */
 }

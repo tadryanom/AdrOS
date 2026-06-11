@@ -28,4 +28,7 @@ void           setpwent(void);
 void           endpwent(void);
 struct passwd* getpwent(void);
 
+/* Password verification against /etc/shadow */
+int check_password(const char* username, const char* password);
+
 #endif
