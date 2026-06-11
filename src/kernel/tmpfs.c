@@ -29,6 +29,10 @@ struct tmpfs_node {
 static uint32_t g_tmpfs_next_inode = 1;
 static spinlock_t g_tmpfs_lock = {0};
 
+/* H7: global tmpfs quota to prevent DoS via memory exhaustion */
+static uint64_t g_tmpfs_total_used = 0;
+static const uint64_t TMPFS_GLOBAL_QUOTA = 512 * 1024 * 1024; /* 512MB global quota */
+
 static struct fs_node* tmpfs_finddir_impl(struct fs_node* node, const char* name);
 static int tmpfs_readdir_impl(struct fs_node* node, uint32_t* inout_index, void* buf, uint32_t buf_len);
 static uint32_t tmpfs_read_impl(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer);
@@ -153,9 +157,25 @@ static uint32_t tmpfs_write_impl(fs_node_t* node, uint32_t offset, uint32_t size
 
     if ((uint32_t)end > tn->cap) {
         uint32_t new_cap = tn->cap ? tn->cap : 64;
+        /* H7: prevent overflow in new_cap *= 2 loop */
+        const uint32_t TMPFS_MAX_CAP = 256 * 1024 * 1024; /* 256MB per file */
         while (new_cap < (uint32_t)end) {
+            if (new_cap > TMPFS_MAX_CAP / 2) {
+                new_cap = TMPFS_MAX_CAP;
+                break;
+            }
             new_cap *= 2;
         }
+        if (new_cap < (uint32_t)end) return 0; /* Requested size exceeds max cap */
+
+        /* H7: check global quota before allocation */
+        uintptr_t irqf = spin_lock_irqsave(&g_tmpfs_lock);
+        uint64_t additional = new_cap - tn->cap;
+        if (g_tmpfs_total_used + additional > TMPFS_GLOBAL_QUOTA) {
+            spin_unlock_irqrestore(&g_tmpfs_lock, irqf);
+            return 0; /* Would exceed global quota */
+        }
+        spin_unlock_irqrestore(&g_tmpfs_lock, irqf);
 
         uint8_t* new_data = (uint8_t*)kmalloc(new_cap);
         if (!new_data) return 0;
@@ -163,9 +183,17 @@ static uint32_t tmpfs_write_impl(fs_node_t* node, uint32_t offset, uint32_t size
         if (tn->data && tn->vfs.length) {
             memcpy(new_data, tn->data, tn->vfs.length);
         }
-        if (tn->data) kfree(tn->data);
+        if (tn->data) {
+            irqf = spin_lock_irqsave(&g_tmpfs_lock);
+            g_tmpfs_total_used -= tn->cap;
+            spin_unlock_irqrestore(&g_tmpfs_lock, irqf);
+            kfree(tn->data);
+        }
         tn->data = new_data;
         tn->cap = new_cap;
+        irqf = spin_lock_irqsave(&g_tmpfs_lock);
+        g_tmpfs_total_used += new_cap;
+        spin_unlock_irqrestore(&g_tmpfs_lock, irqf);
     }
 
     memcpy(tn->data + offset, buffer, size);
@@ -260,6 +288,10 @@ static int tmpfs_unlink_impl(struct fs_node* dir, const char* name) {
     }
     if (prev) prev->next_sibling = c->next_sibling;
     else d->first_child = c->next_sibling;
+    /* H7: decrement global quota when freeing file data */
+    if (c->data) {
+        g_tmpfs_total_used -= c->cap;
+    }
     spin_unlock_irqrestore(&g_tmpfs_lock, irqf);
     if (c->data) kfree(c->data);
     kfree(c);
@@ -343,12 +375,18 @@ void tmpfs_kill_sb(vfs_superblock_t* sb) {
         struct tmpfs_node* root = (struct tmpfs_node*)sb->root;
         /* Free all children recursively */
         struct tmpfs_node* child = root->first_child;
+        uintptr_t irqf = spin_lock_irqsave(&g_tmpfs_lock);
         while (child) {
             struct tmpfs_node* next = child->next_sibling;
-            if (child->data) kfree(child->data);
+            /* H7: decrement global quota when freeing file data */
+            if (child->data) {
+                g_tmpfs_total_used -= child->cap;
+            }
+            kfree(child->data);
             kfree(child);
             child = next;
         }
+        spin_unlock_irqrestore(&g_tmpfs_lock, irqf);
         kfree(root);
     }
 }
@@ -366,6 +404,15 @@ int tmpfs_add_file(fs_node_t* root_dir, const char* name, const uint8_t* data, u
     f->vfs.f_ops = &tmpfs_file_ops;
 
     if (len) {
+        /* H7: check global quota before allocation */
+        uintptr_t irqf = spin_lock_irqsave(&g_tmpfs_lock);
+        if (g_tmpfs_total_used + len > TMPFS_GLOBAL_QUOTA) {
+            spin_unlock_irqrestore(&g_tmpfs_lock, irqf);
+            kfree(f);
+            return -ENOMEM; /* Would exceed global quota */
+        }
+        spin_unlock_irqrestore(&g_tmpfs_lock, irqf);
+
         f->data = (uint8_t*)kmalloc(len);
         if (!f->data) {
             kfree(f);
@@ -374,6 +421,9 @@ int tmpfs_add_file(fs_node_t* root_dir, const char* name, const uint8_t* data, u
         memcpy(f->data, data, len);
         f->cap = len;
         f->vfs.length = len;
+        irqf = spin_lock_irqsave(&g_tmpfs_lock);
+        g_tmpfs_total_used += len;
+        spin_unlock_irqrestore(&g_tmpfs_lock, irqf);
     }
 
     tmpfs_child_add(dir, f);
@@ -438,6 +488,15 @@ fs_node_t* tmpfs_create_file(fs_node_t* root_dir, const char* path, const uint8_
     f->vfs.f_ops = &tmpfs_file_ops;
 
     if (len && data) {
+        /* H7: check global quota before allocation */
+        uintptr_t irqf = spin_lock_irqsave(&g_tmpfs_lock);
+        if (g_tmpfs_total_used + len > TMPFS_GLOBAL_QUOTA) {
+            spin_unlock_irqrestore(&g_tmpfs_lock, irqf);
+            kfree(f);
+            return NULL; /* Would exceed global quota */
+        }
+        spin_unlock_irqrestore(&g_tmpfs_lock, irqf);
+
         f->data = (uint8_t*)kmalloc(len);
         if (!f->data) {
             kfree(f);
@@ -446,6 +505,9 @@ fs_node_t* tmpfs_create_file(fs_node_t* root_dir, const char* path, const uint8_
         memcpy(f->data, data, len);
         f->cap = len;
         f->vfs.length = len;
+        irqf = spin_lock_irqsave(&g_tmpfs_lock);
+        g_tmpfs_total_used += len;
+        spin_unlock_irqrestore(&g_tmpfs_lock, irqf);
     }
 
     tmpfs_child_add(cur, f);
