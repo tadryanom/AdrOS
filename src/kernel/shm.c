@@ -145,7 +145,7 @@ int shm_get(uint32_t key, uint32_t size, int flags) {
     return slot;
 }
 
-void* shm_at(int shmid, uintptr_t shmaddr) {
+void* shm_at(int shmid, uintptr_t shmaddr, int shmflg) {
     if (shmid < 0 || shmid >= SHM_MAX_SEGMENTS) return (void*)(uintptr_t)-EINVAL;
 
     uintptr_t irqf = spin_lock_irqsave(&shm_lock);
@@ -166,10 +166,18 @@ void* shm_at(int shmid, uintptr_t shmaddr) {
         return (void*)(uintptr_t)-EINVAL;
     }
 
-    /* Check POSIX read permission */
+    /* Check POSIX read permission (always required) */
     if (!shm_perm_check(seg, 04)) {  /* R_OK = 4 */
         spin_unlock_irqrestore(&shm_lock, irqf);
         return (void*)(uintptr_t)-EACCES;
+    }
+
+    /* If not SHM_RDONLY, also check write permission */
+    if (!(shmflg & SHM_RDONLY)) {
+        if (!shm_perm_check(seg, 02)) {  /* W_OK = 2 */
+            spin_unlock_irqrestore(&shm_lock, irqf);
+            return (void*)(uintptr_t)-EACCES;
+        }
     }
 
     /* Find a free mmap slot (always needed to track the mapping) */
@@ -211,11 +219,16 @@ void* shm_at(int shmid, uintptr_t shmaddr) {
 
     /* Map physical pages into user address space.
      * vmm_map_page signature: (phys, virt, flags)
-     * NX by default - IA32_EFER.NXE MSR is now enabled (A01 completed) */
+     * NX by default - IA32_EFER.NXE MSR is now enabled (A01 completed)
+     * H3: If SHM_RDONLY is set, map without VMM_FLAG_RW for read-only access */
+    uint64_t map_flags = VMM_FLAG_PRESENT | VMM_FLAG_USER | VMM_FLAG_NX;
+    if (!(shmflg & SHM_RDONLY)) {
+        map_flags |= VMM_FLAG_RW;
+    }
     for (uint32_t i = 0; i < seg->npages; i++) {
         vmm_map_page((uint64_t)seg->pages[i],
                      (uint64_t)(vaddr + i * PAGE_SIZE),
-                     VMM_FLAG_PRESENT | VMM_FLAG_RW | VMM_FLAG_USER | VMM_FLAG_NX);
+                     map_flags);
     }
 
     /* Record mapping in process mmap table with shmid for detach lookup */

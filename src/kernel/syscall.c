@@ -3974,7 +3974,8 @@ void syscall_handler(struct registers* regs) {
     if (syscall_no == SYSCALL_SHMAT) {
         int shmid = (int)sc_arg0(regs);
         uintptr_t shmaddr = (uintptr_t)sc_arg1(regs);
-        sc_ret(regs) = (uint32_t)(uintptr_t)shm_at(shmid, shmaddr);
+        int shmflg = (int)sc_arg2(regs);
+        sc_ret(regs) = (uint32_t)(uintptr_t)shm_at(shmid, shmaddr, shmflg);
         return;
     }
 

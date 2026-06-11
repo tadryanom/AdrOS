@@ -20,6 +20,9 @@
 #define IPC_CREAT   0x0200
 #define IPC_EXCL    0x0400
 
+/* Flags for shmat */
+#define SHM_RDONLY  0x1000  /* Attach read-only */
+
 /* Commands for shmctl */
 #define IPC_RMID    0
 #define IPC_STAT    1
@@ -41,7 +44,7 @@ struct shmid_ds {
 
 /* Kernel API */
 int    shm_get(uint32_t key, uint32_t size, int flags);
-void*  shm_at(int shmid, uintptr_t shmaddr);
+void*  shm_at(int shmid, uintptr_t shmaddr, int shmflg);
 int    shm_dt(const void* shmaddr);
 int    shm_ctl(int shmid, int cmd, struct shmid_ds* buf);
 
