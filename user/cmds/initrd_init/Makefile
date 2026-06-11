@@ -6,6 +6,7 @@
 #
 # Source: https://github.com/tadryanom/AdrOS
 #
+# Makefile for initrd_init (early /init for root handoff)
 
 NAME := initrd_init
 SRCS := initrd_init.c
