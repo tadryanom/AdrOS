@@ -45,4 +45,9 @@ struct utmp*   pututline(const struct utmp* ut);
 void           endutent(void);
 void           utmpname(const char* file);
 
+/* Syscall wrappers for utmp management */
+int utmp_login(uint32_t pid, const char* line, const char* user, const char* host);
+int utmp_logout(uint32_t pid, const char* line);
+int utmp_dead(uint32_t pid, int exit_status);
+
 #endif

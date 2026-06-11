@@ -186,6 +186,9 @@ enum {
     SYSCALL_MADVISE      = 142,
     SYSCALL_EXECVEAT     = 143,
     SYSCALL_REBOOT       = 144,
+    SYSCALL_UTMP_LOGIN   = 145,
+    SYSCALL_UTMP_LOGOUT  = 146,
+    SYSCALL_UTMP_DEAD    = 147,
 };
 
 #endif

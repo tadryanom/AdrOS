@@ -8,6 +8,8 @@
  */
 
 #include "utmp.h"
+#include "syscall.h"
+#include "errno.h"
 #include <stddef.h>
 
 /* Stub implementation — AdrOS does not maintain utmp/wtmp records yet.
@@ -45,4 +47,17 @@ void endutent(void) {
 
 void utmpname(const char* file) {
     (void)file;
+}
+
+/* Syscall wrappers for utmp management */
+int utmp_login(uint32_t pid, const char* line, const char* user, const char* host) {
+    return _syscall4(SYS_UTMP_LOGIN, (int)pid, (int)line, (int)user, (int)host);
+}
+
+int utmp_logout(uint32_t pid, const char* line) {
+    return _syscall2(SYS_UTMP_LOGOUT, (int)pid, (int)line);
+}
+
+int utmp_dead(uint32_t pid, int exit_status) {
+    return _syscall2(SYS_UTMP_DEAD, (int)pid, exit_status);
 }

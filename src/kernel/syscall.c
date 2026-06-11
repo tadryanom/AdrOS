@@ -41,6 +41,7 @@
 #include "arch_syscall.h"
 #include "arch_process.h"
 #include "rtc.h"
+#include "utmp.h"
 
 #include <stddef.h>
 
@@ -4444,6 +4445,32 @@ void syscall_handler(struct registers* regs) {
         hal_cpu_disable_interrupts();
         for (;;) hal_cpu_idle();
         sc_ret(regs) = 0;  /* unreachable */
+        return;
+    }
+
+    if (syscall_no == SYSCALL_UTMP_LOGIN) {
+        /* utmp_login(pid, line, user, host) */
+        uint32_t pid = sc_arg0(regs);
+        const char* line = (const char*)sc_arg1(regs);
+        const char* user = (const char*)sc_arg2(regs);
+        const char* host = (const char*)sc_arg3(regs);
+        sc_ret(regs) = (uint32_t)utmp_login(pid, line, user, host);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_UTMP_LOGOUT) {
+        /* utmp_logout(pid, line) */
+        uint32_t pid = sc_arg0(regs);
+        const char* line = (const char*)sc_arg1(regs);
+        sc_ret(regs) = (uint32_t)utmp_logout(pid, line);
+        return;
+    }
+
+    if (syscall_no == SYSCALL_UTMP_DEAD) {
+        /* utmp_dead(pid, exit_status) */
+        uint32_t pid = sc_arg0(regs);
+        int exit_status = (int)sc_arg1(regs);
+        sc_ret(regs) = (uint32_t)utmp_dead(pid, exit_status);
         return;
     }
 

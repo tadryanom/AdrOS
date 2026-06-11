@@ -14,6 +14,8 @@
 #include <pwd.h>
 #include <termios.h>
 #include <sys/types.h>
+#include <utmp.h>
+#include <sys/utsname.h>
 
 /* Simple login command */
 int main(int argc, char** argv) {
@@ -25,6 +27,19 @@ int main(int argc, char** argv) {
     while (1) {
         char username[64];
         char password[64];
+        char tty_name[32] = "ttyS0";  /* Default TTY */
+
+        /* Get TTY name from environment or default */
+        char* tty = ttyname(STDIN_FILENO);
+        if (tty) {
+            /* Strip /dev/ prefix if present */
+            if (strncmp(tty, "/dev/", 5) == 0) {
+                strncpy(tty_name, tty + 5, sizeof(tty_name) - 1);
+            } else {
+                strncpy(tty_name, tty, sizeof(tty_name) - 1);
+            }
+            tty_name[sizeof(tty_name) - 1] = '\0';
+        }
 
         /* Prompt for username */
         printf("login: ");
@@ -92,6 +107,15 @@ int main(int argc, char** argv) {
                 if (pw->pw_dir && pw->pw_dir[0] != '\0') {
                     chdir(pw->pw_dir);
                 }
+
+                /* Register login in utmp */
+                struct utsname uts;
+                char hostname[64] = "localhost";
+                if (uname(&uts) == 0) {
+                    strncpy(hostname, uts.nodename, sizeof(hostname) - 1);
+                    hostname[sizeof(hostname) - 1] = '\0';
+                }
+                utmp_login(getpid(), tty_name, username, hostname);
 
                 /* Execute shell */
                 char* shell = pw->pw_shell;

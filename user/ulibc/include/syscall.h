@@ -156,6 +156,9 @@ enum {
     SYS_MADVISE = 142,
     SYS_EXECVEAT = 143,
     SYS_REBOOT   = 144,
+    SYS_UTMP_LOGIN  = 145,
+    SYS_UTMP_LOGOUT = 146,
+    SYS_UTMP_DEAD   = 147,
 };
 
 /* Raw syscall wrappers — up to 5 args via INT 0x80 */
