@@ -604,8 +604,16 @@ int init_start(const struct boot_info* bi) {
             /* Remount read-write if filesystem is clean and was forced read-only due to verification */
             if (mounted && force_ro && !(mount_flags & MS_RDONLY)) {
                 kprintf("[INIT] root=%s: filesystem verified clean, remounting read-write\n", root_dev);
-                /* TODO: Implement remount,rw after verification */
-                /* This requires syscall support for remount with flag changes */
+                /* Remount with original flags (without MS_RDONLY) */
+                /* Use vfs_mount_full with MS_REMOUNT to update flags */
+                int rc = vfs_mount_full("/newroot", NULL, NULL, NULL,
+                                       (mount_flags & ~MS_RDONLY) | MS_REMOUNT,
+                                       NULL, NULL);
+                if (rc == 0) {
+                    kprintf("[INIT] root=%s: remounted read-write successfully\n", root_dev);
+                } else {
+                    kprintf("[INIT] root=%s: remount read-write failed (%d), keeping read-only\n", root_dev, rc);
+                }
             }
         } else {
             kprintf("[INIT] root=%s: device not found\n", root_dev);
