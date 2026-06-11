@@ -4595,12 +4595,12 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
             sc_ret(regs) = 0;
             return;
         }
-        /* Use vfs_check_permission for R_OK/W_OK/X_OK */
+        /* Use vfs_check_permission_real for R_OK/W_OK/X_OK (POSIX strict: use real IDs) */
         int want = 0;
         if (mode & 4) want |= 4; /* R_OK = 4 */
         if (mode & 2) want |= 2; /* W_OK = 2 */
         if (mode & 1) want |= 1; /* X_OK = 1 */
-        int perm_rc = vfs_check_permission(node, want);
+        int perm_rc = vfs_check_permission_real(node, want);
         if (perm_rc < 0) {
             sc_ret(regs) = (uint32_t)perm_rc;
             return;

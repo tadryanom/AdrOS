@@ -685,6 +685,31 @@ int vfs_check_permission(fs_node_t* node, int want) {
     return 0;
 }
 
+/*
+ * Check permission using real UID/GID for POSIX strict compliance.
+ * Used by access() syscall which must use real IDs, not effective IDs.
+ * want: bitmask of 4 (read), 2 (write), 1 (execute).
+ * Returns 0 if allowed, -EACCES if denied.
+ */
+int vfs_check_permission_real(fs_node_t* node, int want) {
+    if (!current_process) return 0;       /* kernel context — allow all */
+    if (current_process->uid == 0) return 0;  /* root — allow all */
+
+    uint32_t mode = node->mode;
+    uint32_t perm;
+
+    if (current_process->uid == node->uid) {
+        perm = (mode >> 6) & 7;  /* owner bits */
+    } else if (current_process->gid == node->gid) {
+        perm = (mode >> 3) & 7;  /* group bits */
+    } else {
+        perm = mode & 7;         /* other bits */
+    }
+
+    if ((want & perm) != (uint32_t)want) return -EACCES;
+    return 0;
+}
+
 int vfs_link(const char* old_path, const char* new_path) {
     if (!old_path || !new_path) return -EINVAL;
     
