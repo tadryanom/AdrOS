@@ -4705,6 +4705,133 @@ void _start(void) {
                   (uint32_t)(sizeof("[test] futex OK\n") - 1));
     }
 
+    // I7: /proc/dmesg root-only access (H2 hardening)
+    {
+        /* As root, /proc/dmesg should be readable */
+        int fd = sys_open("/proc/dmesg", 0);
+        if (fd < 0) {
+            sys_write(1, "[test] /proc/dmesg open failed (root)\n",
+                      (uint32_t)(sizeof("[test] /proc/dmesg open failed (root)\n") - 1));
+            sys_exit(1);
+        }
+        char dbuf[64];
+        int r = sys_read(fd, dbuf, 63);
+        (void)sys_close(fd);
+        if (r <= 0) {
+            sys_write(1, "[test] /proc/dmesg read failed (root)\n",
+                      (uint32_t)(sizeof("[test] /proc/dmesg read failed (root)\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[test] /proc/dmesg root access OK\n",
+                  (uint32_t)(sizeof("[test] /proc/dmesg root access OK\n") - 1));
+    }
+
+    // I8: /proc/cmdline root-only access (H2 hardening)
+    {
+        /* As root, /proc/cmdline should be readable */
+        int fd = sys_open("/proc/cmdline", 0);
+        if (fd < 0) {
+            sys_write(1, "[test] /proc/cmdline open failed (root)\n",
+                      (uint32_t)(sizeof("[test] /proc/cmdline open failed (root)\n") - 1));
+            sys_exit(1);
+        }
+        char cbuf[64];
+        int r = sys_read(fd, cbuf, 63);
+        (void)sys_close(fd);
+        if (r <= 0) {
+            sys_write(1, "[test] /proc/cmdline read failed (root)\n",
+                      (uint32_t)(sizeof("[test] /proc/cmdline read failed (root)\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[test] /proc/cmdline root access OK\n",
+                  (uint32_t)(sizeof("[test] /proc/cmdline root access OK\n") - 1));
+    }
+
+    // I9: /proc/PID/maps address redaction (H2 hardening)
+    {
+        /* Test that addresses in /proc/self/maps are redacted for non-root */
+        /* Since we're running as root, we can't test non-root denial directly */
+        /* But we can verify the format is correct (contains "heap:", "mmap:", etc) */
+        int me = sys_getpid();
+        char ppath[32];
+        ppath[0] = '/'; ppath[1] = 'p'; ppath[2] = 'r'; ppath[3] = 'o';
+        ppath[4] = 'c'; ppath[5] = '/';
+        int pp = 6;
+        {
+            char tmp[8];
+            int ti = 0;
+            int v = me;
+            if (v == 0) { tmp[ti++] = '0'; }
+            else { while (v > 0) { tmp[ti++] = (char)('0' + v % 10); v /= 10; } }
+            for (int j = ti - 1; j >= 0; j--) ppath[pp++] = tmp[j];
+        }
+        ppath[pp++] = '/';
+        static const char maps_name[] = "maps";
+        for (int j = 0; maps_name[j]; j++) ppath[pp++] = maps_name[j];
+        ppath[pp] = 0;
+
+        int fd = sys_open(ppath, 0);
+        if (fd < 0) {
+            sys_write(1, "[test] /proc/PID/maps open failed\n",
+                      (uint32_t)(sizeof("[test] /proc/PID/maps open failed\n") - 1));
+            sys_exit(1);
+        }
+        char mbuf[256];
+        int r = sys_read(fd, mbuf, 255);
+        (void)sys_close(fd);
+        if (r <= 0) {
+            sys_write(1, "[test] /proc/PID/maps read failed\n",
+                      (uint32_t)(sizeof("[test] /proc/PID/maps read failed\n") - 1));
+            sys_exit(1);
+        }
+        /* Verify format contains expected keywords */
+        int has_heap = 0;
+        for (int i = 0; i < r - 4; i++) {
+            if (mbuf[i] == 'h' && mbuf[i+1] == 'e' && mbuf[i+2] == 'a' && mbuf[i+3] == 'p') {
+                has_heap = 1;
+                break;
+            }
+        }
+        if (!has_heap) {
+            sys_write(1, "[test] /proc/PID/maps format bad\n",
+                      (uint32_t)(sizeof("[test] /proc/PID/maps format bad\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[test] /proc/PID/maps format OK\n",
+                  (uint32_t)(sizeof("[test] /proc/PID/maps format OK\n") - 1));
+    }
+
+    // I10: /dev/random CSPRNG uniqueness (M8 hardening)
+    {
+        /* Test that multiple reads from /dev/random produce different values */
+        int fd = sys_open("/dev/random", 0);
+        if (fd < 0) {
+            sys_write(1, "[test] /dev/random open failed\n",
+                      (uint32_t)(sizeof("[test] /dev/random open failed\n") - 1));
+            sys_exit(1);
+        }
+        uint32_t r1, r2;
+        if (sys_read(fd, (char*)&r1, 4) != 4) {
+            sys_write(1, "[test] /dev/random read 1 failed\n",
+                      (uint32_t)(sizeof("[test] /dev/random read 1 failed\n") - 1));
+            sys_exit(1);
+        }
+        if (sys_read(fd, (char*)&r2, 4) != 4) {
+            sys_write(1, "[test] /dev/random read 2 failed\n",
+                      (uint32_t)(sizeof("[test] /dev/random read 2 failed\n") - 1));
+            sys_exit(1);
+        }
+        (void)sys_close(fd);
+        /* Very unlikely to get same value twice from CSPRNG */
+        if (r1 == r2) {
+            sys_write(1, "[test] /dev/random values identical (unlikely)\n",
+                      (uint32_t)(sizeof("[test] /dev/random values identical (unlikely)\n") - 1));
+            sys_exit(1);
+        }
+        sys_write(1, "[test] /dev/random CSPRNG uniqueness OK\n",
+                  (uint32_t)(sizeof("[test] /dev/random CSPRNG uniqueness OK\n") - 1));
+    }
+
     // I6: sigaltstack — set and query alternate signal stack
     {
         /* Allocate a page for the alt stack */

@@ -255,6 +255,10 @@ set patterns {
     {"CLOCK_MONOTONIC"     "\\[test\\] CLOCK_MONOTONIC OK"}
     {"chown"               "\\[test\\] chown OK"}
     {"futex"               "\\[test\\] futex OK"}
+    {"/proc/dmesg"         "\\[test\\] /proc/dmesg root access OK"}
+    {"/proc/cmdline"       "\\[test\\] /proc/cmdline root access OK"}
+    {"/proc/PID/maps"      "\\[test\\] /proc/PID/maps format OK"}
+    {"/dev/random CSPRNG"   "\\[test\\] /dev/random CSPRNG uniqueness OK"}
     {"sigaltstack"         "\\[test\\] sigaltstack OK"}
     {"socket API"          "\\[test\\] socket API OK"}
     {"ICMP ping"           "\\[test\\] ICMP ping (OK|timeout \\(non-fatal\\))"}
