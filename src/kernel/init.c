@@ -295,6 +295,8 @@ int init_start(const struct boot_info* bi) {
         if (rc < 0 && rc != -EEXIST) kprintf("[INIT] mkdir /dev failed: %d\n", rc);
         rc = vfs_mkdir("/proc");
         if (rc < 0 && rc != -EEXIST) kprintf("[INIT] mkdir /proc failed: %d\n", rc);
+        rc = vfs_mkdir("/newroot");
+        if (rc < 0 && rc != -EEXIST) kprintf("[INIT] mkdir /newroot failed: %d\n", rc);
         rc = vfs_mkdir("/disk");
         if (rc < 0 && rc != -EEXIST) kprintf("[INIT] mkdir /disk failed: %d\n", rc);
     }
@@ -351,14 +353,18 @@ int init_start(const struct boot_info* bi) {
         }
     }
 
+    /* L2: Initialize utmp database for session tracking (deferred after all init) */
+
     /* If root= is specified on the kernel command line, mount that device
-     * as the disk root filesystem.  The filesystem type is auto-detected
-     * by trying each supported type in order.
+     * as the final root filesystem on /newroot for staging.  The filesystem
+     * type is auto-detected by trying each supported type in order.
      * Example:  root=/dev/hda  or  root=/dev/hdb
      *
      * If no root= is given but the primary master (hda) is present,
-     * auto-mount it on /disk so that any init= binary (including fulltest)
-     * has disk access.  /etc/fstab parsing is now done by /sbin/init. */
+     * auto-mount it on /newroot so that any init= binary (including fulltest)
+     * has disk access.  /etc/fstab parsing is now done by /sbin/init.
+     *
+     * /disk is kept as an optional secondary mountpoint for manual use. */
     const char* root_dev = cmdline_get("root");
     if (root_dev) {
         block_device_t* bdev = NULL;
@@ -368,8 +374,8 @@ int init_start(const struct boot_info* bi) {
             static const char* fstypes[] = { "ext2", "fat", NULL };
             int mounted = 0;
             for (int i = 0; fstypes[i]; i++) {
-                if (init_mount_fs(fstypes[i], bdev, lba, "/disk", 0, root_dev) == 0) {
-                    kprintf("[INIT] root=%s mounted as %s on /disk\n",
+                if (init_mount_fs(fstypes[i], bdev, lba, "/newroot", 0, root_dev) == 0) {
+                    kprintf("[INIT] root=%s mounted as %s on /newroot\n",
                             root_dev, fstypes[i]);
                     mounted = 1;
                     break;
@@ -386,8 +392,8 @@ int init_start(const struct boot_info* bi) {
         if (bdev) {
             static const char* fstypes[] = { "ext2", "fat", NULL };
             for (int i = 0; fstypes[i]; i++) {
-                if (init_mount_fs(fstypes[i], bdev, 0, "/disk", 0, "/dev/hda") == 0) {
-                    kprintf("[INIT] /dev/hda auto-mounted as %s on /disk\n", fstypes[i]);
+                if (init_mount_fs(fstypes[i], bdev, 0, "/newroot", 0, "/dev/hda") == 0) {
+                    kprintf("[INIT] /dev/hda auto-mounted as %s on /newroot\n", fstypes[i]);
                     break;
                 }
             }
