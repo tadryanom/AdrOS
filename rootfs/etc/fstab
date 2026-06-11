@@ -1,4 +1,11 @@
 # /etc/fstab — AdrOS filesystem table
 # <device>      <mountpoint>  <fstype>     <options>
-# Disk-based filesystems (fat, ext2) are auto-mounted by /sbin/init
-# or the kernel when a root= device is specified.
+#
+# POST-HANDOFF CONFIGURATION (Milestone D):
+# - Root filesystem is already mounted by kernel on /newroot
+# - Early /init performs pivot_root to make /newroot the new root
+# - Virtual filesystems (/dev, /proc, /tmp) are moved by early /init
+# - /sbin/init runs after handoff and skips already-mounted filesystems
+#
+# Additional disk filesystems can be added here if needed:
+# Example: /dev/hdb1 /mnt/data ext2 defaults
