@@ -11,6 +11,7 @@
 
 #include "vmm.h"
 #include "arch/x86/kernel_va_map.h"
+#include "kva_alloc.h"
 
 #include <stddef.h>
 
@@ -19,13 +20,17 @@ int hal_mm_map_physical_range(uintptr_t phys_start, uintptr_t phys_end, uint32_t
 
     if (phys_end < phys_start) phys_end = phys_start;
 
-    const uintptr_t virt_base = KVA_PHYS_MAP;
-
     uintptr_t phys_start_aligned = phys_start & ~(uintptr_t)0xFFF;
     uintptr_t phys_end_aligned = (phys_end + 0xFFF) & ~(uintptr_t)0xFFF;
 
     uintptr_t size = phys_end_aligned - phys_start_aligned;
     uintptr_t pages = size >> 12;
+
+    /* Allocate dynamic VA range instead of using fixed KVA_PHYS_MAP */
+    uintptr_t virt_base = kva_alloc_pages((uint32_t)pages);
+    if (virt_base == 0) {
+        return -1;
+    }
 
     uint32_t vmm_flags = VMM_FLAG_PRESENT;
     if (flags & HAL_MM_MAP_RW) vmm_flags |= VMM_FLAG_RW;

@@ -25,6 +25,7 @@
 #include "spinlock.h"
 #include "pmm.h"
 #include "vmm.h"
+#include "kva_alloc.h"
 #include "interrupts.h"
 #include "hal/driver.h"
 #include "io.h"
@@ -170,8 +171,14 @@ int virtio_blk_init(void) {
     uint32_t total = vring_size(vblk_queue_size);
     uint32_t pages = (total + 4095U) / 4096U;
 
-    /* Use a fixed VA range for virtio vring */
-    #define VIRTIO_VRING_VA 0xC0340000U
+    /* Use dynamic VA allocation for virtio vring */
+    uintptr_t vring_va = kva_alloc_pages(pages);
+    if (vring_va == 0) {
+        kprintf("[VIRTIO-BLK] Failed to allocate vring VA.\n");
+        outb(vblk_iobase + VIRTIO_PCI_STATUS, VIRTIO_STATUS_FAILED);
+        return -1;
+    }
+
     for (uint32_t i = 0; i < pages; i++) {
         void* frame = pmm_alloc_page();
         if (!frame) {
@@ -180,22 +187,22 @@ int virtio_blk_init(void) {
             return -1;
         }
         vmm_map_page((uint64_t)(uintptr_t)frame,
-                     (uint64_t)(VIRTIO_VRING_VA + i * 4096U),
+                     (uint64_t)(vring_va + i * 4096U),
                      VMM_FLAG_PRESENT | VMM_FLAG_RW | VMM_FLAG_NOCACHE);
     }
-    memset((void*)VIRTIO_VRING_VA, 0, pages * 4096U);
+    memset((void*)vring_va, 0, pages * 4096U);
 
     /* Set up vring pointers */
-    vblk_desc = (struct vring_desc*)VIRTIO_VRING_VA;
+    vblk_desc = (struct vring_desc*)vring_va;
     uint32_t avail_off = vblk_queue_size * (uint32_t)sizeof(struct vring_desc);
-    vblk_avail = (struct vring_avail*)(VIRTIO_VRING_VA + avail_off);
+    vblk_avail = (struct vring_avail*)(vring_va + avail_off);
     uint32_t used_off = avail_off + sizeof(uint16_t) * (3 + vblk_queue_size);
     used_off = (used_off + 4095U) & ~4095U;
-    vblk_used = (struct vring_used*)(VIRTIO_VRING_VA + used_off);
+    vblk_used = (struct vring_used*)(vring_va + used_off);
     vblk_last_used_idx = 0;
 
     /* Tell device where the vring lives (page-aligned physical address) */
-    uint32_t vring_phys = (uint32_t)V2P(VIRTIO_VRING_VA);
+    uint32_t vring_phys = (uint32_t)V2P(vring_va);
     outl(vblk_iobase + VIRTIO_PCI_QUEUE_PFN, vring_phys / 4096U);
 
     /* Mark driver ready */
