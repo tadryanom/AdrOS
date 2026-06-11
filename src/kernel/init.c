@@ -554,7 +554,32 @@ int init_start(const struct boot_info* bi) {
     if (root_dev) {
         block_device_t* bdev = NULL;
         uint32_t lba = 0;
-        if (init_resolve_mount_device(root_dev, &bdev, &lba) == 0) {
+        int resolved = 0;
+
+        /* rootwait: wait indefinitely for device to appear (with 30s timeout) */
+        if (cmdline_has("rootwait")) {
+            kprintf("[INIT] rootwait: waiting for device %s to appear\n", root_dev);
+            int timeout = 30;  /* 30 seconds timeout */
+            while (timeout > 0) {
+                if (init_resolve_mount_device(root_dev, &bdev, &lba) == 0) {
+                    kprintf("[INIT] rootwait: device %s appeared\n", root_dev);
+                    resolved = 1;
+                    break;
+                }
+                process_sleep(1000);  /* Wait 1 second */
+                timeout--;
+            }
+            if (!resolved) {
+                kprintf("[INIT] rootwait: timeout, device %s not found\n", root_dev);
+            }
+        } else {
+            /* Normal path: try once */
+            if (init_resolve_mount_device(root_dev, &bdev, &lba) == 0) {
+                resolved = 1;
+            }
+        }
+
+        if (resolved) {
             int mounted = 0;
             int force_ro = 0;
 
@@ -630,11 +655,6 @@ int init_start(const struct boot_info* bi) {
                 }
             }
         }
-    }
-
-    /* Note: rootwait flag is recognized but not yet implemented */
-    if (cmdline_has("rootwait")) {
-        kprintf("[INIT] rootwait flag recognized but not yet implemented\n");
     }
 
     /* Disk-based filesystems can also be mounted via /etc/fstab entries
