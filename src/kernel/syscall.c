@@ -820,11 +820,15 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
 #define FUTEX_WAKE 1
 #define FUTEX_MAX_WAITERS 32
 
+/* H5: spinlock to protect futex table in SMP */
+static spinlock_t g_futex_lock = {0};
+
 /* K17: Key futex by (addr_space, uaddr) to prevent cross-process interference */
 static struct { uintptr_t addr_space; uintptr_t addr; struct process* proc; } futex_waiters[FUTEX_MAX_WAITERS];
 
 static void futex_cleanup_process(struct process* p) {
     if (!p) return;
+    uintptr_t irqf = spin_lock_irqsave(&g_futex_lock);
     for (int i = 0; i < FUTEX_MAX_WAITERS; i++) {
         if (futex_waiters[i].proc == p) {
             futex_waiters[i].proc = NULL;
@@ -832,6 +836,7 @@ static void futex_cleanup_process(struct process* p) {
             futex_waiters[i].addr_space = 0;
         }
     }
+    spin_unlock_irqrestore(&g_futex_lock, irqf);
 }
 
 struct pollfd {
@@ -4732,13 +4737,18 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
             if (cur != val) { sc_ret(regs) = (uint32_t)-EAGAIN; return; }
             /* Add to waiter list and sleep */
             int slot = -1;
+            uintptr_t irqf = spin_lock_irqsave(&g_futex_lock);
             for (int i = 0; i < FUTEX_MAX_WAITERS; i++) {
                 if (!futex_waiters[i].proc) { slot = i; break; }
             }
-            if (slot < 0) { sc_ret(regs) = (uint32_t)-ENOMEM; return; }
+            if (slot < 0) {
+                spin_unlock_irqrestore(&g_futex_lock, irqf);
+                sc_ret(regs) = (uint32_t)-ENOMEM; return;
+            }
             futex_waiters[slot].addr = (uintptr_t)uaddr;
             futex_waiters[slot].addr_space = current_process->addr_space;
             futex_waiters[slot].proc = current_process;
+            spin_unlock_irqrestore(&g_futex_lock, irqf);
             extern void schedule(void);
 
             /* Compute timeout: arg3 is a userspace timespec* or NULL */
@@ -4749,9 +4759,11 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
                 if (copy_from_user(&kts, user_ts, sizeof(kts)) == 0) {
                     if (kts.tv_sec == 0 && kts.tv_usec == 0) {
                         /* timeout==0 means no wait (poll) */
+                        irqf = spin_lock_irqsave(&g_futex_lock);
                         futex_waiters[slot].proc = NULL;
                         futex_waiters[slot].addr = 0;
                         futex_waiters[slot].addr_space = 0;
+                        spin_unlock_irqrestore(&g_futex_lock, irqf);
                         sc_ret(regs) = (uint32_t)-ETIMEDOUT;
                         return;
                     }
@@ -4762,9 +4774,11 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
             current_process->state = PROCESS_SLEEPING;
             current_process->wake_at_tick = get_tick_count() + timeout_ticks;
             schedule();
+            irqf = spin_lock_irqsave(&g_futex_lock);
             futex_waiters[slot].proc = NULL;
             futex_waiters[slot].addr = 0;
             futex_waiters[slot].addr_space = 0;
+            spin_unlock_irqrestore(&g_futex_lock, irqf);
             sc_ret(regs) = 0;
             return;
         }
@@ -4773,6 +4787,7 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
             int woken = 0;
             int max_wake = (int)val;
             if (max_wake <= 0) max_wake = 1;
+            uintptr_t irqf = spin_lock_irqsave(&g_futex_lock);
             for (int i = 0; i < FUTEX_MAX_WAITERS && woken < max_wake; i++) {
                 if (futex_waiters[i].proc && futex_waiters[i].addr == (uintptr_t)uaddr && futex_waiters[i].addr_space == current_process->addr_space) {
                     futex_waiters[i].proc->state = PROCESS_READY;
@@ -4782,6 +4797,7 @@ static void posix_ext_syscall_dispatch(struct registers* regs, uint32_t syscall_
                     woken++;
                 }
             }
+            spin_unlock_irqrestore(&g_futex_lock, irqf);
             sc_ret(regs) = (uint32_t)woken;
             return;
         }
