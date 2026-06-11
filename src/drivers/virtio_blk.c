@@ -201,8 +201,10 @@ int virtio_blk_init(void) {
     vblk_used = (struct vring_used*)(vring_va + used_off);
     vblk_last_used_idx = 0;
 
-    /* Tell device where the vring lives (page-aligned physical address) */
-    uint32_t vring_phys = (uint32_t)V2P(vring_va);
+    /* Tell device where the vring lives (page-aligned physical address)
+     * Use vmm_virt_to_phys instead of V2P because vring_va comes from
+     * kva_alloc_pages() and may not be in the linear mapping region. */
+    uint32_t vring_phys = (uint32_t)vmm_virt_to_phys(vring_va);
     outl(vblk_iobase + VIRTIO_PCI_QUEUE_PFN, vring_phys / 4096U);
 
     /* Mark driver ready */
