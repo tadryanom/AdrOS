@@ -184,6 +184,14 @@ int virtio_blk_init(void) {
         if (!frame) {
             kprintf("[VIRTIO-BLK] Failed to alloc vring page.\n");
             outb(vblk_iobase + VIRTIO_PCI_STATUS, VIRTIO_STATUS_FAILED);
+            /* Rollback: free previously allocated pages and VA range */
+            for (uint32_t j = 0; j < i; j++) {
+                uintptr_t page_va = vring_va + j * 4096U;
+                uintptr_t p = vmm_virt_to_phys(page_va);
+                vmm_unmap_page(page_va);
+                if (p) pmm_free_page((void*)p);
+            }
+            kva_free_pages(vring_va, pages);
             return -1;
         }
         vmm_map_page((uint64_t)(uintptr_t)frame,
