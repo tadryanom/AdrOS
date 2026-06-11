@@ -21,6 +21,11 @@
  * Allocator region: 0xC0500000 .. 0xC0800000 (3 MB, 768 pages)
  * - Below 0xC0500000: Fixed MMIO regions (ACPI, ATA, E1000, LAPIC, IOAPIC)
  * - Above 0xC0800000: Kernel stacks, heap, initrd, framebuffer
+ *
+ * NOTE: The allocator region (0xC0500000..0xC0800000) falls within the initial
+ * 16MB linear mapping set up by boot.S (0xC0000000..0xC0100000). This means
+ * V2P() works by coincidence for addresses in this range, but code should use
+ * vmm_virt_to_phys() instead to be portable and future-proof.
  */
 
 /* Initialize the KVA allocator */
