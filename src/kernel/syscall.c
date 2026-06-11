@@ -5432,9 +5432,10 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
         int r = ksocket_getpeername(sid, &sa);
         if (r == 0 && sc_arg1(regs)) {
             if (user_range_ok((void*)sc_arg1(regs), sizeof(sa)) == 0) {
-                if (copy_to_user((void*)sc_arg1(regs), &sa, sizeof(sa)) < 0) {
-                    sc_ret(regs) = (uint32_t)-EFAULT; return;
-                }
+                sc_ret(regs) = (uint32_t)-EFAULT; return;
+            }
+            if (copy_to_user((void*)sc_arg1(regs), &sa, sizeof(sa)) < 0) {
+                sc_ret(regs) = (uint32_t)-EFAULT; return;
             }
         }
         sc_ret(regs) = (uint32_t)r;
@@ -5449,9 +5450,10 @@ static void extended_syscall_dispatch(struct registers* regs, uint32_t syscall_n
         int r = ksocket_getsockname(sid, &sa);
         if (r == 0 && sc_arg1(regs)) {
             if (user_range_ok((void*)sc_arg1(regs), sizeof(sa)) == 0) {
-                if (copy_to_user((void*)sc_arg1(regs), &sa, sizeof(sa)) < 0) {
-                    sc_ret(regs) = (uint32_t)-EFAULT; return;
-                }
+                sc_ret(regs) = (uint32_t)-EFAULT; return;
+            }
+            if (copy_to_user((void*)sc_arg1(regs), &sa, sizeof(sa)) < 0) {
+                sc_ret(regs) = (uint32_t)-EFAULT; return;
             }
         }
         sc_ret(regs) = (uint32_t)r;
