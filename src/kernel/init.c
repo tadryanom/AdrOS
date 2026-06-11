@@ -452,6 +452,26 @@ int init_start(const struct boot_info* bi) {
         uint32_t lba = 0;
         if (init_resolve_mount_device(root_dev, &bdev, &lba) == 0) {
             int mounted = 0;
+            int force_ro = 0;
+
+            /* Verify filesystem state for ext2 */
+            if (!rootfstype || strcmp(rootfstype, "ext2") == 0) {
+                int verify_rc = ext2_verify_state(bdev, lba);
+                if (verify_rc == -EFSCK) {
+                    kprintf("[INIT] root=%s: filesystem is dirty, forcing read-only mount\n", root_dev);
+                    mount_flags |= MS_RDONLY;
+                    force_ro = 1;
+                } else if (verify_rc == -EROFS) {
+                    kprintf("[INIT] root=%s: filesystem errors configured for read-only\n", root_dev);
+                    mount_flags |= MS_RDONLY;
+                    force_ro = 1;
+                } else if (verify_rc < 0 && verify_rc != -EINVAL) {
+                    /* -EINVAL means not ext2, ignore */
+                    kprintf("[INIT] root=%s: filesystem verification failed (%d), forcing read-only\n", root_dev, verify_rc);
+                    mount_flags |= MS_RDONLY;
+                    force_ro = 1;
+                }
+            }
 
             if (rootfstype) {
                 /* Use explicit filesystem type */
@@ -475,6 +495,13 @@ int init_start(const struct boot_info* bi) {
                 }
                 if (!mounted)
                     kprintf("[INIT] root=%s: no supported filesystem found\n", root_dev);
+            }
+
+            /* Remount read-write if filesystem is clean and was forced read-only due to verification */
+            if (mounted && force_ro && !(mount_flags & MS_RDONLY)) {
+                kprintf("[INIT] root=%s: filesystem verified clean, remounting read-write\n", root_dev);
+                /* TODO: Implement remount,rw after verification */
+                /* This requires syscall support for remount with flag changes */
             }
         } else {
             kprintf("[INIT] root=%s: device not found\n", root_dev);

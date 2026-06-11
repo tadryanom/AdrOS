@@ -190,6 +190,62 @@ static int ext2_write_block(struct ext2_mount* em, uint32_t block, const void* b
 
 /* ---- Superblock I/O ---- */
 
+/* ext2 superblock state values (s_state) */
+#define EXT2_VALID_FS         1  /* Clean */
+#define EXT2_ERROR_FS         2  /* Dirty */
+
+/* ext2 error handling values (s_errors) */
+#define EXT2_ERRORS_CONTINUE  1  /* Continue on error */
+#define EXT2_ERRORS_RO        2  /* Remount read-only on error */
+#define EXT2_ERRORS_PANIC     3  /* Panic on error */
+
+/* Verify ext2 filesystem state before mount
+ * Returns 0 if filesystem is clean and safe to mount
+ * Returns -EFSCK if filesystem needs fsck (dirty state)
+ * Returns -EROFS if filesystem has errors that require read-only mount
+ * Returns -EINVAL if filesystem has errors that prevent mount */
+int ext2_verify_state(block_device_t* bdev, uint32_t partition_lba) {
+    if (!bdev) return -ENODEV;
+
+    /* Read superblock to check state */
+    uint8_t sec[EXT2_SECTOR_SIZE];
+    uint32_t sb_lba = partition_lba + EXT2_SUPER_OFFSET / EXT2_SECTOR_SIZE;
+
+    uint8_t raw[1024];
+    for (uint32_t i = 0; i < 1024 / EXT2_SECTOR_SIZE; i++) {
+        if (blockdev_read(bdev, sb_lba + i, sec) < 0) return -EIO;
+        memcpy(raw + i * EXT2_SECTOR_SIZE, sec, EXT2_SECTOR_SIZE);
+    }
+
+    struct ext2_superblock sb;
+    memcpy(&sb, raw, sizeof(sb));
+
+    /* Check magic */
+    if (sb.s_magic != EXT2_SUPER_MAGIC) {
+        return -EINVAL;  /* Not an ext2 filesystem */
+    }
+
+    /* Check filesystem state */
+    if (sb.s_state == EXT2_ERROR_FS) {
+        kprintf("[EXT2] filesystem is dirty (needs fsck)\n");
+        return -EFSCK;
+    }
+
+    /* Check error handling policy */
+    if (sb.s_errors == EXT2_ERRORS_RO) {
+        kprintf("[EXT2] filesystem has errors configured for read-only mount\n");
+        return -EROFS;
+    }
+
+    if (sb.s_errors == EXT2_ERRORS_PANIC) {
+        kprintf("[EXT2] filesystem has errors configured for panic\n");
+        return -EINVAL;
+    }
+
+    /* Filesystem is clean and safe to mount */
+    return 0;
+}
+
 static int ext2_read_superblock(struct ext2_mount* em, struct ext2_superblock* sb) {
     if (!em || !em->bdev) return -ENODEV;
     /* Superblock is at byte offset 1024, which is LBA 2-3 relative to partition */

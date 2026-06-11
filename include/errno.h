@@ -56,5 +56,6 @@
 #define EIDRM 43
 #define ENOTSOCK 88
 #define ENETUNREACH 101
+#define EFSCK 102  /* Filesystem needs fsck */
 
 #endif

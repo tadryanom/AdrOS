@@ -41,6 +41,13 @@ vfs_mount_result_t ext2_mount(block_device_t* bdev, uint32_t partition_lba);
 /* Mount ext2 filesystem from a partition (uses partition's parent and start_lba) */
 vfs_mount_result_t ext2_mount_partition(struct partition* part);
 
+/* Verify ext2 filesystem state before mount
+ * Returns 0 if filesystem is clean and safe to mount
+ * Returns -EFSCK if filesystem needs fsck (dirty state)
+ * Returns -EROFS if filesystem has errors that require read-only mount
+ * Returns -EINVAL if filesystem has errors that prevent mount */
+int ext2_verify_state(block_device_t* bdev, uint32_t partition_lba);
+
 /* Unmount an ext2 filesystem and free its resources */
 void ext2_umount(struct ext2_mount* em);
 
