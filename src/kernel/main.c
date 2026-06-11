@@ -33,6 +33,7 @@
 #include "arch_fpu.h"
 #include "shm.h"
 #include "net.h"
+#include "csprng.h"
 
 
 /* Check if the compiler thinks we are targeting the wrong operating system. */
@@ -65,6 +66,9 @@ void kernel_main(const struct boot_info* bi) {
 
     // 4. Initialize Kernel Heap
     kheap_init();
+
+    // 4b. Initialize CSPRNG (M8: real entropy source)
+    csprng_init();
 
     // 5. Initialize Shared Memory IPC
     shm_init();

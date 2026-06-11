@@ -13,6 +13,7 @@
 
 #include "errno.h"
 #include "utils.h"
+#include "csprng.h"
 
 extern uint32_t get_tick_count(void);
 
@@ -81,8 +82,6 @@ void devfs_register_partitions(void) {
     /* Placeholder - will be implemented when partition scanning is active */
 }
 
-static uint32_t prng_state = 0x12345678;
-
 static uint32_t dev_null_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
     (void)node;
     (void)offset;
@@ -113,38 +112,21 @@ static uint32_t dev_zero_write(fs_node_t* node, uint32_t offset, uint32_t size, 
     return size;
 }
 
-static uint32_t prng_next(void) {
-    uint32_t s = prng_state;
-    s ^= s << 13;
-    s ^= s >> 17;
-    s ^= s << 5;
-    prng_state = s;
-    return s;
-}
-
 static uint32_t dev_random_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
     (void)node;
     (void)offset;
     if (!buffer || size == 0) return 0;
-    prng_state ^= get_tick_count();
-    for (uint32_t i = 0; i < size; i++) {
-        if ((i & 3) == 0) {
-            uint32_t r = prng_next();
-            buffer[i] = (uint8_t)(r & 0xFF);
-        } else {
-            buffer[i] = (uint8_t)((prng_next() >> ((i & 3) * 8)) & 0xFF);
-        }
-    }
+    /* M8: Use central CSPRNG for cryptographic randomness */
+    csprng_get_bytes(buffer, size);
     return size;
 }
 
 static uint32_t dev_random_write(fs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer) {
     (void)node;
     (void)offset;
-    if (buffer && size >= 4) {
-        uint32_t seed = 0;
-        memcpy(&seed, buffer, 4);
-        prng_state ^= seed;
+    /* M8: Add entropy to central CSPRNG */
+    if (buffer && size > 0) {
+        csprng_add_entropy(buffer, size);
     }
     return size;
 }
