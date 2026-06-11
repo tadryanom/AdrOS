@@ -113,10 +113,14 @@ void csprng_init(void) {
     
     g_csprng_chacha.counter = 1;
     g_csprng_chacha.initialized = 1;
-    
-    /* Initialize entropy pool */
-    for (int i = 0; i < 64; i++) {
+
+    /* Initialize entropy pool with TSC bytes (8 bytes) */
+    for (int i = 0; i < 8; i++) {
         g_entropy_pool.pool[i] = (uint8_t)(tsc >> (i * 8));
+    }
+    /* Fill remaining pool with tick count variations */
+    for (int i = 8; i < 64; i++) {
+        g_entropy_pool.pool[i] = (uint8_t)(ticks ^ (i * 0x9E3779B9));
     }
     g_entropy_pool.pool_pos = 0;
     g_entropy_pool.reseed_counter = 0;
