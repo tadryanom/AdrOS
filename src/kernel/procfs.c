@@ -30,6 +30,13 @@ static fs_node_t g_proc_cmdline;
 static fs_node_t g_proc_dmesg;
 static fs_node_t g_proc_mounts;
 
+/* H2: hidepid controls visibility of /proc/<pid> entries
+ * 0 = visible to all (default)
+ * 1 = invisible to non-root, except own process
+ * 2 = invisible to non-root, including own process
+ */
+static int g_proc_hidepid = 1;
+
 #define PID_NODE_POOL 8
 static fs_node_t g_pid_dir[PID_NODE_POOL];
 static fs_node_t g_pid_status[PID_NODE_POOL];
@@ -107,6 +114,8 @@ extern size_t klog_read(char* out, size_t out_size);
 
 static uint32_t proc_dmesg_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
     (void)node;
+    /* H2: dmesg is root-only */
+    if (!current_process || current_process->euid != 0) return 0;
     /* Allocate from heap — too large for kernel stack */
     char* tmp = kmalloc(16384);
     if (!tmp) return 0;
@@ -124,6 +133,8 @@ static uint32_t proc_dmesg_read(fs_node_t* node, uint32_t offset, uint32_t size,
 
 static uint32_t proc_cmdline_read(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
     (void)node;
+    /* H2: cmdline is root-only */
+    if (!current_process || current_process->euid != 0) return 0;
     const char* raw = cmdline_raw();
     uint32_t len = (uint32_t)strlen(raw);
     char tmp[CMDLINE_MAX + 1];
@@ -269,14 +280,26 @@ static uint32_t proc_pid_maps_read(fs_node_t* node, uint32_t offset, uint32_t si
     char tmp[1024];
     uint32_t len = 0;
 
+    /* H2: redact addresses for non-root (even own process) */
+    int redact = (current_process && current_process->euid != 0);
+
     if (p->heap_start && p->heap_break > p->heap_start) {
-        len += (uint32_t)proc_snprintf(tmp + len, sizeof(tmp) - len, "heap:\t", (uint32_t)p->heap_start);
-        len += (uint32_t)proc_snprintf(tmp + len, sizeof(tmp) - len, "brk:\t", (uint32_t)p->heap_break);
+        if (redact) {
+            len += (uint32_t)proc_snprintf(tmp + len, sizeof(tmp) - len, "heap:\t", 0);
+            len += (uint32_t)proc_snprintf(tmp + len, sizeof(tmp) - len, "brk:\t", 0);
+        } else {
+            len += (uint32_t)proc_snprintf(tmp + len, sizeof(tmp) - len, "heap:\t", (uint32_t)p->heap_start);
+            len += (uint32_t)proc_snprintf(tmp + len, sizeof(tmp) - len, "brk:\t", (uint32_t)p->heap_break);
+        }
     }
 
     for (int i = 0; i < PROCESS_MAX_MMAPS; i++) {
         if (p->mmaps[i].length == 0) continue;
-        len += (uint32_t)proc_snprintf(tmp + len, sizeof(tmp) - len, "mmap:\t", (uint32_t)p->mmaps[i].base);
+        if (redact) {
+            len += (uint32_t)proc_snprintf(tmp + len, sizeof(tmp) - len, "mmap:\t", 0);
+        } else {
+            len += (uint32_t)proc_snprintf(tmp + len, sizeof(tmp) - len, "mmap:\t", (uint32_t)p->mmaps[i].base);
+        }
         len += (uint32_t)proc_snprintf(tmp + len, sizeof(tmp) - len, "len:\t", p->mmaps[i].length);
     }
 
@@ -431,7 +454,15 @@ static fs_node_t* proc_root_finddir(fs_node_t* node, const char* name) {
     if (strcmp(name, "cmdline") == 0) return &g_proc_cmdline;
     if (strcmp(name, "dmesg") == 0) return &g_proc_dmesg;
     if (strcmp(name, "mounts") == 0) return &g_proc_mounts;
-    if (is_numeric(name)) return proc_get_pid_dir(parse_uint(name));
+    if (is_numeric(name)) {
+        uint32_t pid = parse_uint(name);
+        /* H2: respect hidepid for direct PID access */
+        int is_root = current_process && current_process->euid == 0;
+        uint32_t my_pid = current_process ? current_process->pid : 0;
+        if (g_proc_hidepid == 1 && !is_root && pid != my_pid) return NULL;
+        if (g_proc_hidepid == 2 && !is_root) return NULL;
+        return proc_get_pid_dir(pid);
+    }
     return NULL;
 }
 
@@ -456,6 +487,10 @@ static int proc_root_readdir(fs_node_t* node, uint32_t* inout_index, void* buf, 
         return (int)sizeof(struct vfs_dirent);
     }
 
+    /* H2: respect hidepid for PID visibility */
+    int is_root = current_process && current_process->euid == 0;
+    uint32_t my_pid = current_process ? current_process->pid : 0;
+
     /* After fixed entries, list numeric PIDs (under sched_lock) */
     uint32_t pi = idx - 5;
     uint32_t count = 0;
@@ -466,6 +501,16 @@ static int proc_root_readdir(fs_node_t* node, uint32_t* inout_index, void* buf, 
             struct process* it = ready_queue_head;
             const struct process* start = it;
             do {
+                /* Skip based on hidepid setting */
+                if (g_proc_hidepid == 1 && !is_root && it->pid != my_pid) {
+                    it = it->next;
+                    continue;
+                }
+                if (g_proc_hidepid == 2 && !is_root) {
+                    it = it->next;
+                    continue;
+                }
+
                 if (count == pi) {
                     char num[16];
                     itoa(it->pid, num, 10);
