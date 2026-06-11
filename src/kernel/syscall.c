@@ -1614,6 +1614,30 @@ static int syscall_aio_rw_impl(void* user_cb, int is_write) {
         return 0;
     }
 
+    /* H1: reject aio_read on O_WRONLY fd (except char devices) */
+    if (!is_write && (f->flags & 3U) == 1U && f->node->flags != FS_CHARDEVICE) {
+        cb.aio_error = EBADF;
+        cb.aio_return = -EBADF;
+        (void)copy_to_user(user_cb, &cb, sizeof(cb));
+        return 0;
+    }
+
+    /* H1: reject aio_write on O_RDONLY fd (except char devices) */
+    if (is_write && (f->flags & 3U) == 0U && f->node->flags != FS_CHARDEVICE) {
+        cb.aio_error = EBADF;
+        cb.aio_return = -EBADF;
+        (void)copy_to_user(user_cb, &cb, sizeof(cb));
+        return 0;
+    }
+
+    /* H1: reject aio_write on MS_RDONLY mount */
+    if (is_write && f->mount_root && (vfs_node_mount_flags(f->mount_root) & MS_RDONLY)) {
+        cb.aio_error = EROFS;
+        cb.aio_return = -EROFS;
+        (void)copy_to_user(user_cb, &cb, sizeof(cb));
+        return 0;
+    }
+
     if (!cb.aio_buf || cb.aio_nbytes == 0) {
         cb.aio_error = 0;
         cb.aio_return = 0;

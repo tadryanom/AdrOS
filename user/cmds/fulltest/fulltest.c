@@ -3558,7 +3558,7 @@ void _start(void) {
 
     // C24: aio_read/aio_write smoke
     {
-        int fd = sys_open("/tmp/aiotest", O_CREAT | O_TRUNC | 1);
+        int fd = sys_open("/tmp/aiotest", O_CREAT | O_TRUNC | 2);
         if (fd < 0) {
             sys_write(1, "[test] aio open failed\n", (uint32_t)(sizeof("[test] aio open failed\n") - 1));
             sys_exit(1);
